@@ -27,6 +27,8 @@
 //! | `planner.gate_result.v1` | `GateResultV1` |
 //! | `planner.decision.v1` | `DecisionV1` |
 //! | `planner.context_pack.v1` | `ContextPackV1` |
+//! | `planner.dtu_config.v1` | `DtuConfigV1` |
+//! | `planner.pyramid_summary.v1` | `PyramidSummaryV1` |
 
 pub mod artifacts;
 pub mod turn;
@@ -38,12 +40,14 @@ pub use turn::{ArtifactPayload, Turn, TurnMetadata};
 pub use artifacts::agents_manifest::*;
 pub use artifacts::ar_report::*;
 pub use artifacts::consequence_card::*;
+pub use artifacts::dtu::*;
 pub use artifacts::factory_output::*;
 pub use artifacts::git_commit::*;
 pub use artifacts::graph_dot::*;
 pub use artifacts::intake::*;
 pub use artifacts::nlspec::*;
 pub use artifacts::preview_snapshot::*;
+pub use artifacts::pyramid_summary::*;
 pub use artifacts::ralph_finding::*;
 pub use artifacts::run_budget::*;
 pub use artifacts::runtime::*;

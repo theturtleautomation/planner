@@ -15,6 +15,7 @@
 //! 11. **Approve** — Behavioral approval → Git Projection
 
 pub mod steps;
+pub mod pyramid;
 
 use uuid::Uuid;
 

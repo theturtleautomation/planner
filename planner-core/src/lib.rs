@@ -7,6 +7,7 @@
 //! wired into main.rs. They're used by tests and will be used in Phase 1+.
 #![allow(dead_code)]
 
+pub mod dtu;
 pub mod llm;
 pub mod pipeline;
 pub mod storage;

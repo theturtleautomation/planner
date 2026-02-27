@@ -36,6 +36,8 @@ pub enum RalphMode {
     ScenarioAugmentation,
     /// Pattern-matching: surfaces advisory findings for known component types.
     GeneTransfusion,
+    /// DTU Configuration: generates behavioral clone specs for high-priority dependencies.
+    DtuConfiguration,
 }
 
 // ---------------------------------------------------------------------------
@@ -79,7 +81,7 @@ pub enum RalphSeverity {
 // Ralph output
 // ---------------------------------------------------------------------------
 
-/// Complete Ralph output after both modes run.
+/// Complete Ralph output after all modes run.
 #[derive(Debug, Clone)]
 pub struct RalphOutput {
     /// Additional scenarios from ScenarioAugmentation.
@@ -90,6 +92,9 @@ pub struct RalphOutput {
 
     /// ConsequenceCards for high-severity findings.
     pub consequence_cards: Vec<ConsequenceCardV1>,
+
+    /// DTU configurations generated for high-priority dependencies.
+    pub dtu_configs: Vec<DtuConfigV1>,
 }
 
 // ---------------------------------------------------------------------------
@@ -392,13 +397,456 @@ pub fn surface_consequence_cards(
 }
 
 // ---------------------------------------------------------------------------
+// DTU Configuration Generation (Mode 3)
+// ---------------------------------------------------------------------------
+
+/// Known DTU provider mappings — maps dependency names to DTU provider IDs.
+const DTU_PROVIDER_MAP: &[(&str, &str)] = &[
+    ("stripe", "stripe"),
+    ("auth0", "auth0"),
+    ("sendgrid", "sendgrid"),
+    ("supabase", "supabase"),
+    ("twilio", "twilio"),
+];
+
+/// DTU Configuration generation prompt.
+const DTU_CONFIG_PROMPT: &str = r#"You are Ralph, the DTU Configuration generator for Planner v2.
+Your job: analyze how an external dependency is used in the NLSpec and generate
+a behavioral clone configuration.
+
+## Output Format
+Respond with ONLY a JSON object (no markdown fences):
+
+{
+  "behavioral_rules": [
+    {
+      "id": "RULE-1",
+      "endpoint": "/v1/...",
+      "method": "POST",
+      "behavior": "Plain-English description",
+      "state_transitions": [
+        {
+          "entity_type": "...",
+          "from_state": null,
+          "to_state": "..."
+        }
+      ]
+    }
+  ],
+  "seed_state": [
+    {
+      "entity_type": "...",
+      "entity_id": "...",
+      "initial_state": {}
+    }
+  ],
+  "failure_modes": [
+    {
+      "id": "FAIL-1",
+      "endpoint": "/v1/...",
+      "trigger": "always | nth_request:N | condition",
+      "status_code": 500,
+      "error_body": {},
+      "description": "What this tests"
+    }
+  ]
+}
+
+## Rules
+1. Only include endpoints actually referenced in the NLSpec
+2. Seed state should support the scenarios in the NLSpec
+3. Include 1-3 failure modes for common edge cases
+4. behavioral_rules should cover the happy path AND error handling"#;
+
+/// Generate DTU configurations for all high-priority external dependencies.
+pub fn generate_dtu_configs_deterministic(
+    spec: &NLSpecV1,
+    project_id: Uuid,
+) -> Vec<DtuConfigV1> {
+    spec.external_dependencies.iter()
+        .filter(|dep| dep.dtu_priority == DtuPriority::High)
+        .filter_map(|dep| {
+            let dep_lower = dep.name.to_lowercase();
+            let provider_id = DTU_PROVIDER_MAP.iter()
+                .find(|(name, _)| dep_lower.contains(name))
+                .map(|(_, id)| id.to_string());
+
+            provider_id.map(|pid| {
+                generate_default_dtu_config(project_id, &dep.name, &pid, &dep.usage_description)
+            })
+        })
+        .collect()
+}
+
+/// Generate a sensible default DTU config based on the provider type.
+fn generate_default_dtu_config(
+    project_id: Uuid,
+    dependency_name: &str,
+    provider_id: &str,
+    usage_description: &str,
+) -> DtuConfigV1 {
+    match provider_id {
+        "stripe" => generate_stripe_dtu_config(project_id, dependency_name, usage_description),
+        "auth0" => generate_auth0_dtu_config(project_id, dependency_name, usage_description),
+        _ => DtuConfigV1 {
+            project_id,
+            dependency_name: dependency_name.to_string(),
+            provider_id: provider_id.to_string(),
+            behavioral_rules: vec![],
+            seed_state: vec![],
+            failure_modes: vec![],
+            validated: false,
+        },
+    }
+}
+
+fn generate_stripe_dtu_config(
+    project_id: Uuid,
+    dependency_name: &str,
+    usage_description: &str,
+) -> DtuConfigV1 {
+    use planner_schemas::{DtuBehavioralRule, DtuStateTransition, DtuSeedEntry, DtuFailureMode};
+
+    let usage_lower = usage_description.to_lowercase();
+
+    let mut rules = vec![
+        DtuBehavioralRule {
+            id: "STRIPE-RULE-1".into(),
+            endpoint: "/v1/customers".into(),
+            method: "POST".into(),
+            behavior: "Create a new customer with email and metadata".into(),
+            state_transitions: vec![
+                DtuStateTransition {
+                    entity_type: "customer".into(),
+                    from_state: None,
+                    to_state: "active".into(),
+                },
+            ],
+        },
+    ];
+
+    // Add payment-specific rules if usage mentions payments
+    if usage_lower.contains("payment") || usage_lower.contains("charge") || usage_lower.contains("checkout") {
+        rules.push(DtuBehavioralRule {
+            id: "STRIPE-RULE-2".into(),
+            endpoint: "/v1/payment_intents".into(),
+            method: "POST".into(),
+            behavior: "Create payment intent with amount and currency. Transitions to requires_payment_method.".into(),
+            state_transitions: vec![
+                DtuStateTransition {
+                    entity_type: "payment_intent".into(),
+                    from_state: None,
+                    to_state: "requires_payment_method".into(),
+                },
+            ],
+        });
+        rules.push(DtuBehavioralRule {
+            id: "STRIPE-RULE-3".into(),
+            endpoint: "/v1/payment_intents/{id}/confirm".into(),
+            method: "POST".into(),
+            behavior: "Confirm payment. Auto-capture transitions to succeeded. Manual-capture to requires_capture.".into(),
+            state_transitions: vec![
+                DtuStateTransition {
+                    entity_type: "payment_intent".into(),
+                    from_state: Some("requires_payment_method".into()),
+                    to_state: "succeeded".into(),
+                },
+            ],
+        });
+    }
+
+    let seed_state = vec![
+        DtuSeedEntry {
+            entity_type: "customer".into(),
+            entity_id: "cus_test_1".into(),
+            initial_state: serde_json::json!({
+                "id": "cus_test_1",
+                "object": "customer",
+                "email": "test@example.com",
+                "name": "Test Customer"
+            }),
+        },
+    ];
+
+    let failure_modes = vec![
+        DtuFailureMode {
+            id: "STRIPE-FAIL-1".into(),
+            endpoint: "/v1/payment_intents".into(),
+            trigger: "amount > 999999".into(),
+            status_code: 400,
+            error_body: serde_json::json!({
+                "error": {
+                    "type": "invalid_request_error",
+                    "message": "Amount must be no more than $9,999.99"
+                }
+            }),
+            description: "Reject excessively large payment amounts".into(),
+        },
+        DtuFailureMode {
+            id: "STRIPE-FAIL-2".into(),
+            endpoint: "/v1/payment_intents".into(),
+            trigger: "nth_request:5".into(),
+            status_code: 429,
+            error_body: serde_json::json!({
+                "error": {
+                    "type": "rate_limit_error",
+                    "message": "Rate limit exceeded"
+                }
+            }),
+            description: "Simulate rate limiting on high-frequency calls".into(),
+        },
+    ];
+
+    DtuConfigV1 {
+        project_id,
+        dependency_name: dependency_name.to_string(),
+        provider_id: "stripe".to_string(),
+        behavioral_rules: rules,
+        seed_state,
+        failure_modes,
+        validated: false,
+    }
+}
+
+fn generate_auth0_dtu_config(
+    project_id: Uuid,
+    dependency_name: &str,
+    usage_description: &str,
+) -> DtuConfigV1 {
+    use planner_schemas::{DtuBehavioralRule, DtuStateTransition, DtuSeedEntry, DtuFailureMode};
+
+    let usage_lower = usage_description.to_lowercase();
+
+    let mut rules = vec![
+        DtuBehavioralRule {
+            id: "AUTH0-RULE-1".into(),
+            endpoint: "/oauth/token".into(),
+            method: "POST".into(),
+            behavior: "Password grant: validate credentials, return access + refresh + id tokens".into(),
+            state_transitions: vec![
+                DtuStateTransition {
+                    entity_type: "token".into(),
+                    from_state: None,
+                    to_state: "active".into(),
+                },
+            ],
+        },
+        DtuBehavioralRule {
+            id: "AUTH0-RULE-2".into(),
+            endpoint: "/api/v2/users".into(),
+            method: "POST".into(),
+            behavior: "Create user with email + password. Reject duplicate emails.".into(),
+            state_transitions: vec![
+                DtuStateTransition {
+                    entity_type: "user".into(),
+                    from_state: None,
+                    to_state: "active".into(),
+                },
+            ],
+        },
+    ];
+
+    // Add role-based rules if RBAC is mentioned
+    if usage_lower.contains("role") || usage_lower.contains("permission") || usage_lower.contains("rbac") {
+        rules.push(DtuBehavioralRule {
+            id: "AUTH0-RULE-3".into(),
+            endpoint: "/api/v2/users/{id}/roles".into(),
+            method: "POST".into(),
+            behavior: "Assign roles to user. Validate role IDs exist.".into(),
+            state_transitions: vec![
+                DtuStateTransition {
+                    entity_type: "user_role".into(),
+                    from_state: None,
+                    to_state: "assigned".into(),
+                },
+            ],
+        });
+    }
+
+    let seed_state = vec![
+        DtuSeedEntry {
+            entity_type: "user".into(),
+            entity_id: "auth0|test_1".into(),
+            initial_state: serde_json::json!({
+                "user_id": "auth0|test_1",
+                "email": "test@example.com",
+                "email_verified": true,
+                "name": "Test User",
+                "_password": "TestPassword123"
+            }),
+        },
+    ];
+
+    let failure_modes = vec![
+        DtuFailureMode {
+            id: "AUTH0-FAIL-1".into(),
+            endpoint: "/oauth/token".into(),
+            trigger: "nth_request:10".into(),
+            status_code: 429,
+            error_body: serde_json::json!({
+                "error": "too_many_requests",
+                "error_description": "Rate limit exceeded"
+            }),
+            description: "Simulate rate limiting on login attempts".into(),
+        },
+    ];
+
+    DtuConfigV1 {
+        project_id,
+        dependency_name: dependency_name.to_string(),
+        provider_id: "auth0".to_string(),
+        behavioral_rules: rules,
+        seed_state,
+        failure_modes,
+        validated: false,
+    }
+}
+
+/// LLM-enhanced DTU configuration generation (for complex/unknown dependencies).
+pub async fn generate_dtu_config_with_llm(
+    router: &LlmRouter,
+    spec: &NLSpecV1,
+    dependency: &ExternalDependency,
+    project_id: Uuid,
+) -> StepResult<DtuConfigV1> {
+    let context = serde_json::json!({
+        "dependency_name": dependency.name,
+        "usage_description": dependency.usage_description,
+        "requirements": spec.requirements.iter().map(|r| &r.statement).collect::<Vec<_>>(),
+        "constraints": spec.architectural_constraints,
+    });
+
+    let request = CompletionRequest {
+        system: Some(DTU_CONFIG_PROMPT.to_string()),
+        messages: vec![Message {
+            role: Role::User,
+            content: format!(
+                "Generate a DTU configuration for this dependency:\n\n{}",
+                serde_json::to_string_pretty(&context).unwrap_or_default(),
+            ),
+        }],
+        max_tokens: 2048,
+        temperature: 0.2,
+        model: DefaultModels::RALPH_LOOPS.to_string(),
+    };
+
+    let response = router.complete(request).await?;
+    parse_dtu_config(&response.content, project_id, &dependency.name)
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct DtuConfigJson {
+    #[serde(default)]
+    behavioral_rules: Vec<DtuRuleJson>,
+    #[serde(default)]
+    seed_state: Vec<DtuSeedJson>,
+    #[serde(default)]
+    failure_modes: Vec<DtuFailureJson>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct DtuRuleJson {
+    id: String,
+    endpoint: String,
+    method: String,
+    behavior: String,
+    #[serde(default)]
+    state_transitions: Vec<DtuTransitionJson>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct DtuTransitionJson {
+    entity_type: String,
+    from_state: Option<String>,
+    to_state: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct DtuSeedJson {
+    entity_type: String,
+    entity_id: String,
+    initial_state: serde_json::Value,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct DtuFailureJson {
+    id: String,
+    endpoint: String,
+    trigger: String,
+    status_code: u16,
+    error_body: serde_json::Value,
+    description: String,
+}
+
+fn parse_dtu_config(
+    content: &str,
+    project_id: Uuid,
+    dependency_name: &str,
+) -> StepResult<DtuConfigV1> {
+    use planner_schemas::{DtuBehavioralRule, DtuStateTransition, DtuSeedEntry, DtuFailureMode};
+
+    let cleaned = super::intake::strip_code_fences(content);
+    let json: DtuConfigJson = serde_json::from_str(&cleaned).map_err(|e| {
+        StepError::JsonError(format!(
+            "Failed to parse DTU config response: {}. Raw: {}",
+            e, &content[..content.len().min(300)],
+        ))
+    })?;
+
+    let dep_lower = dependency_name.to_lowercase();
+    let provider_id = DTU_PROVIDER_MAP.iter()
+        .find(|(name, _)| dep_lower.contains(name))
+        .map(|(_, id)| id.to_string())
+        .unwrap_or_else(|| dep_lower.replace(' ', "_"));
+
+    Ok(DtuConfigV1 {
+        project_id,
+        dependency_name: dependency_name.to_string(),
+        provider_id,
+        behavioral_rules: json.behavioral_rules.into_iter().map(|r| {
+            DtuBehavioralRule {
+                id: r.id,
+                endpoint: r.endpoint,
+                method: r.method,
+                behavior: r.behavior,
+                state_transitions: r.state_transitions.into_iter().map(|t| {
+                    DtuStateTransition {
+                        entity_type: t.entity_type,
+                        from_state: t.from_state,
+                        to_state: t.to_state,
+                    }
+                }).collect(),
+            }
+        }).collect(),
+        seed_state: json.seed_state.into_iter().map(|s| {
+            DtuSeedEntry {
+                entity_type: s.entity_type,
+                entity_id: s.entity_id,
+                initial_state: s.initial_state,
+            }
+        }).collect(),
+        failure_modes: json.failure_modes.into_iter().map(|f| {
+            DtuFailureMode {
+                id: f.id,
+                endpoint: f.endpoint,
+                trigger: f.trigger,
+                status_code: f.status_code,
+                error_body: f.error_body,
+                description: f.description,
+            }
+        }).collect(),
+        validated: false,
+    })
+}
+
+// ---------------------------------------------------------------------------
 // Full Ralph execution
 // ---------------------------------------------------------------------------
 
-/// Run the full Ralph loop: ScenarioAugmentation + GeneTransfusion.
+/// Run the full Ralph loop: ScenarioAugmentation + GeneTransfusion + DTU Configuration.
 ///
-/// Returns augmented scenarios, advisory findings, and ConsequenceCards
-/// for the Impact Inbox.
+/// Returns augmented scenarios, advisory findings, ConsequenceCards,
+/// and DTU configurations for the Impact Inbox.
 pub async fn execute_ralph(
     router: &LlmRouter,
     spec: &NLSpecV1,
@@ -417,6 +865,11 @@ pub async fn execute_ralph(
     let findings = gene_transfusion(spec);
     tracing::info!("    → {} advisory findings", findings.len());
 
+    // Mode 3: DTU Configuration (deterministic for known providers)
+    tracing::info!("  Ralph DTU Configuration...");
+    let dtu_configs = generate_dtu_configs_deterministic(spec, project_id);
+    tracing::info!("    → {} DTU configuration(s) generated", dtu_configs.len());
+
     // Surface high-severity findings as ConsequenceCards
     let consequence_cards = surface_consequence_cards(&findings, project_id);
     if !consequence_cards.is_empty() {
@@ -430,6 +883,7 @@ pub async fn execute_ralph(
         augmented_scenarios: augmented,
         findings,
         consequence_cards,
+        dtu_configs,
     })
 }
 
@@ -583,5 +1037,235 @@ mod tests {
         let content = "```json\n{\"scenarios\": [{\"id\": \"SC-RALPH-1\", \"tier\": \"Medium\", \"title\": \"Edge case\", \"bdd_text\": \"Given...\\nWhen...\\nThen...\"}]}\n```";
         let result = parse_augmented_scenarios(content);
         assert!(result.is_ok());
+    }
+
+    // -----------------------------------------------------------------------
+    // DTU Configuration tests
+    // -----------------------------------------------------------------------
+
+    fn make_spec_with_stripe_dep() -> NLSpecV1 {
+        let mut spec = make_auth_spec();
+        spec.external_dependencies = vec![
+            ExternalDependency {
+                name: "Stripe".into(),
+                usage_description: "Process payment intents and charge customers".into(),
+                dtu_priority: DtuPriority::High,
+            },
+        ];
+        spec
+    }
+
+    fn make_spec_with_auth0_dep() -> NLSpecV1 {
+        let mut spec = make_auth_spec();
+        spec.external_dependencies = vec![
+            ExternalDependency {
+                name: "Auth0".into(),
+                usage_description: "User authentication with role-based access control and RBAC permissions".into(),
+                dtu_priority: DtuPriority::High,
+            },
+        ];
+        spec
+    }
+
+    fn make_spec_with_mixed_deps() -> NLSpecV1 {
+        let mut spec = make_auth_spec();
+        spec.external_dependencies = vec![
+            ExternalDependency {
+                name: "Stripe Payments".into(),
+                usage_description: "Checkout flow for subscriptions".into(),
+                dtu_priority: DtuPriority::High,
+            },
+            ExternalDependency {
+                name: "Auth0".into(),
+                usage_description: "Login and signup with permissions".into(),
+                dtu_priority: DtuPriority::Low,
+            },
+            ExternalDependency {
+                name: "Redis".into(),
+                usage_description: "Caching layer".into(),
+                dtu_priority: DtuPriority::None,
+            },
+        ];
+        spec
+    }
+
+    #[test]
+    fn dtu_config_stripe_generates_rules() {
+        let spec = make_spec_with_stripe_dep();
+        let project_id = Uuid::new_v4();
+        let configs = generate_dtu_configs_deterministic(&spec, project_id);
+
+        assert_eq!(configs.len(), 1);
+        let cfg = &configs[0];
+        assert_eq!(cfg.provider_id, "stripe");
+        assert_eq!(cfg.dependency_name, "Stripe");
+        assert_eq!(cfg.project_id, project_id);
+        assert!(!cfg.validated);
+
+        // Should have customer rule + payment rules (usage mentions "payment")
+        assert!(cfg.behavioral_rules.len() >= 2);
+        assert!(cfg.behavioral_rules.iter().any(|r| r.endpoint.contains("customers")));
+        assert!(cfg.behavioral_rules.iter().any(|r| r.endpoint.contains("payment_intents")));
+
+        // Seed state
+        assert!(!cfg.seed_state.is_empty());
+        assert_eq!(cfg.seed_state[0].entity_type, "customer");
+
+        // Failure modes
+        assert!(cfg.failure_modes.len() >= 2);
+        assert!(cfg.failure_modes.iter().any(|f| f.status_code == 400));
+        assert!(cfg.failure_modes.iter().any(|f| f.status_code == 429));
+    }
+
+    #[test]
+    fn dtu_config_auth0_generates_rules() {
+        let spec = make_spec_with_auth0_dep();
+        let project_id = Uuid::new_v4();
+        let configs = generate_dtu_configs_deterministic(&spec, project_id);
+
+        assert_eq!(configs.len(), 1);
+        let cfg = &configs[0];
+        assert_eq!(cfg.provider_id, "auth0");
+        assert_eq!(cfg.dependency_name, "Auth0");
+
+        // Should have token + user rules + RBAC rule (usage mentions "role")
+        assert!(cfg.behavioral_rules.len() >= 3);
+        assert!(cfg.behavioral_rules.iter().any(|r| r.endpoint.contains("oauth/token")));
+        assert!(cfg.behavioral_rules.iter().any(|r| r.endpoint.contains("users")));
+        assert!(cfg.behavioral_rules.iter().any(|r| r.endpoint.contains("roles")));
+
+        // Seed state
+        assert!(!cfg.seed_state.is_empty());
+        assert_eq!(cfg.seed_state[0].entity_type, "user");
+    }
+
+    #[test]
+    fn dtu_config_filters_by_priority() {
+        let spec = make_spec_with_mixed_deps();
+        let project_id = Uuid::new_v4();
+        let configs = generate_dtu_configs_deterministic(&spec, project_id);
+
+        // Only Stripe is High priority — Auth0 is Low, Redis is None
+        assert_eq!(configs.len(), 1);
+        assert_eq!(configs[0].provider_id, "stripe");
+    }
+
+    #[test]
+    fn dtu_config_no_deps_returns_empty() {
+        let spec = make_auth_spec(); // no external_dependencies
+        let project_id = Uuid::new_v4();
+        let configs = generate_dtu_configs_deterministic(&spec, project_id);
+        assert!(configs.is_empty());
+    }
+
+    #[test]
+    fn dtu_config_unknown_provider_skipped() {
+        let mut spec = make_auth_spec();
+        spec.external_dependencies = vec![
+            ExternalDependency {
+                name: "SomeCustomAPI".into(),
+                usage_description: "Internal microservice".into(),
+                dtu_priority: DtuPriority::High,
+            },
+        ];
+        let configs = generate_dtu_configs_deterministic(&spec, Uuid::new_v4());
+        // Unknown provider not in DTU_PROVIDER_MAP → skipped
+        assert!(configs.is_empty());
+    }
+
+    #[test]
+    fn dtu_config_stripe_no_payment_usage_fewer_rules() {
+        let mut spec = make_auth_spec();
+        spec.external_dependencies = vec![
+            ExternalDependency {
+                name: "Stripe".into(),
+                usage_description: "Customer management only".into(),
+                dtu_priority: DtuPriority::High,
+            },
+        ];
+        let configs = generate_dtu_configs_deterministic(&spec, Uuid::new_v4());
+        assert_eq!(configs.len(), 1);
+        // Only customer rule (no payment_intents rules since usage doesn't mention payments)
+        assert_eq!(configs[0].behavioral_rules.len(), 1);
+        assert!(configs[0].behavioral_rules[0].endpoint.contains("customers"));
+    }
+
+    #[test]
+    fn parse_dtu_config_valid_json() {
+        let content = r#"{
+            "behavioral_rules": [
+                {
+                    "id": "RULE-1",
+                    "endpoint": "/v1/things",
+                    "method": "POST",
+                    "behavior": "Create a thing",
+                    "state_transitions": [
+                        {
+                            "entity_type": "thing",
+                            "from_state": null,
+                            "to_state": "created"
+                        }
+                    ]
+                }
+            ],
+            "seed_state": [
+                {
+                    "entity_type": "thing",
+                    "entity_id": "thing_1",
+                    "initial_state": {"id": "thing_1", "status": "active"}
+                }
+            ],
+            "failure_modes": [
+                {
+                    "id": "FAIL-1",
+                    "endpoint": "/v1/things",
+                    "trigger": "always",
+                    "status_code": 500,
+                    "error_body": {"error": "server_error"},
+                    "description": "Simulated server error"
+                }
+            ]
+        }"#;
+
+        let result = parse_dtu_config(content, Uuid::new_v4(), "TestAPI");
+        assert!(result.is_ok());
+        let cfg = result.unwrap();
+        assert_eq!(cfg.behavioral_rules.len(), 1);
+        assert_eq!(cfg.seed_state.len(), 1);
+        assert_eq!(cfg.failure_modes.len(), 1);
+        assert_eq!(cfg.provider_id, "testapi"); // lowercased + no spaces
+        assert!(!cfg.validated);
+    }
+
+    #[test]
+    fn parse_dtu_config_with_code_fences() {
+        let content = "```json\n{\"behavioral_rules\": [], \"seed_state\": [], \"failure_modes\": []}\n```";
+        let result = parse_dtu_config(content, Uuid::new_v4(), "Stripe");
+        assert!(result.is_ok());
+        let cfg = result.unwrap();
+        assert!(cfg.behavioral_rules.is_empty());
+        assert_eq!(cfg.provider_id, "stripe");
+    }
+
+    #[test]
+    fn parse_dtu_config_invalid_json_errors() {
+        let content = "this is not json at all";
+        let result = parse_dtu_config(content, Uuid::new_v4(), "Stripe");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn dtu_config_state_transitions_are_populated() {
+        let spec = make_spec_with_stripe_dep();
+        let configs = generate_dtu_configs_deterministic(&spec, Uuid::new_v4());
+        let cfg = &configs[0];
+
+        for rule in &cfg.behavioral_rules {
+            assert!(!rule.state_transitions.is_empty(), "Rule {} has no state transitions", rule.id);
+            for transition in &rule.state_transitions {
+                assert!(!transition.entity_type.is_empty());
+                assert!(!transition.to_state.is_empty());
+            }
+        }
     }
 }
