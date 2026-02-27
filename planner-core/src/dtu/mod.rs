@@ -19,6 +19,9 @@
 
 pub mod stripe;
 pub mod auth0;
+pub mod sendgrid;
+pub mod supabase;
+pub mod twilio;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -80,6 +83,15 @@ impl DtuRegistry {
         let mut registry = Self::new();
         registry.register(Arc::new(stripe::StripeDtu::new()));
         registry.register(Arc::new(auth0::Auth0Dtu::new()));
+        registry
+    }
+
+    /// Create a registry pre-loaded with all Phase 5 providers (all 5 APIs).
+    pub fn with_phase5_defaults() -> Self {
+        let mut registry = Self::with_phase4_defaults();
+        registry.register(Arc::new(sendgrid::SendGridDtu::new()));
+        registry.register(Arc::new(supabase::SupabaseDtu::new()));
+        registry.register(Arc::new(twilio::TwilioDtu::new()));
         registry
     }
 
@@ -157,7 +169,7 @@ mod tests {
         let registry = DtuRegistry::with_phase4_defaults();
         assert!(registry.get("stripe").is_some());
         assert!(registry.get("auth0").is_some());
-        assert!(registry.get("sendgrid").is_none()); // Phase 5
+        assert!(registry.get("sendgrid").is_none()); // Phase 5 only
     }
 
     #[test]
@@ -182,5 +194,17 @@ mod tests {
         let ids: Vec<&str> = providers.iter().map(|p| p.id.as_str()).collect();
         assert!(ids.contains(&"stripe"));
         assert!(ids.contains(&"auth0"));
+    }
+
+    #[test]
+    fn registry_phase5_defaults_has_all_five() {
+        let registry = DtuRegistry::with_phase5_defaults();
+        let providers = registry.list_providers();
+        assert_eq!(providers.len(), 5);
+        assert!(registry.get("stripe").is_some());
+        assert!(registry.get("auth0").is_some());
+        assert!(registry.get("sendgrid").is_some());
+        assert!(registry.get("supabase").is_some());
+        assert!(registry.get("twilio").is_some());
     }
 }

@@ -16,6 +16,9 @@
 
 pub mod steps;
 pub mod pyramid;
+pub mod project;
+pub mod verification;
+pub mod audit;
 
 use uuid::Uuid;
 
