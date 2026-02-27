@@ -1,24 +1,31 @@
 //! # Pipeline Step Executors
 //!
 //! Each step type has its own module. Phase 0/1 implementations
-//! prove the full loop; Phase 2 adds Adversarial Review.
+//! prove the full loop; Phase 2 adds Adversarial Review;
+//! Phase 3 adds multi-chunk compilation, Context Packs, and Ralph Loops.
 //!
 //! Modules:
-//! - `intake`         — Socratic interview → IntakeV1
-//! - `compile`        — IntakeV1 → NLSpecV1 → GraphDotV1 → ScenarioSetV1 → AgentsManifestV1
-//! - `linter`         — 12-rule NLSpec validation (deterministic, no LLM)
-//! - `ar`             — Adversarial Review: 3-model parallel NLSpec review
-//! - `ar_refinement`  — AR findings → spec amendments → re-lint loop
-//! - `factory`        — Artifact handoff + Kilroy CLI invocation + checkpoint polling
-//! - `validate`       — Cross-model scenario evaluation (Gemini judges Claude)
-//! - `telemetry`      — Factory output → plain English + Consequence Cards
-//! - `git`            — Behavioral approval → standard Git commit
+//! - `intake`          — Socratic interview → IntakeV1
+//! - `compile`         — IntakeV1 → NLSpecV1 → GraphDotV1 → ScenarioSetV1 → AgentsManifestV1
+//! - `linter`          — 12-rule NLSpec validation (deterministic, no LLM)
+//! - `chunk_planner`   — IntakeV1 → ChunkPlan (single vs multi-chunk decision)
+//! - `context_pack`    — Token-budgeted LLM context assembly
+//! - `ar`              — Adversarial Review: 3-model parallel NLSpec review
+//! - `ar_refinement`   — AR findings → spec amendments → re-lint loop
+//! - `ralph`           — Scenario Augmentation + Gene Transfusion advisory
+//! - `factory`         — Artifact handoff + Kilroy CLI invocation + checkpoint polling
+//! - `validate`        — Cross-model scenario evaluation (Gemini judges Claude)
+//! - `telemetry`       — Factory output → plain English + Consequence Cards
+//! - `git`             — Behavioral approval → standard Git commit
 
 pub mod intake;
 pub mod compile;
 pub mod linter;
+pub mod chunk_planner;
+pub mod context_pack;
 pub mod ar;
 pub mod ar_refinement;
+pub mod ralph;
 pub mod factory;
 pub mod validate;
 pub mod telemetry;

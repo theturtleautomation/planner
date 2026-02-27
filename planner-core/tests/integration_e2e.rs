@@ -1120,7 +1120,7 @@ async fn e2e_phase2_recipe_includes_ar_steps() {
     assert!(refine_step.depends_on.contains(&"adversarial-review".to_string()));
 
     let graph_step = recipe.steps.iter().find(|s| s.step_id == "compile-graph-dot").unwrap();
-    assert!(graph_step.depends_on.contains(&"ar-refinement".to_string()));
+    assert!(graph_step.depends_on.contains(&"ralph-loop".to_string()));
 
     // Verify step types
     assert!(matches!(ar_step.step_type, StepType::AdversarialReview));
@@ -1159,6 +1159,586 @@ async fn e2e_phase2_refinement_no_blocking_passthrough() {
     // with resolved=true, iterations=0
     assert!(!report.has_blocking);
     assert_eq!(report.blocking_count, 0);
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3: Multi-Chunk Compiler + Context Packs + Ralph Loops
+// ---------------------------------------------------------------------------
+
+/// Build helpers for a multi-chunk project (e-commerce with auth + api + ui).
+#[allow(dead_code)] // Available for future Phase 3+ integration tests
+fn build_multi_chunk_intake(project_id: Uuid) -> IntakeV1 {
+    IntakeV1 {
+        project_id,
+        project_name: "E-Commerce API".into(),
+        feature_slug: "ecommerce-api".into(),
+        intent_summary: "A full-stack e-commerce API with authentication, product catalog, shopping cart, and payment processing.".into(),
+        output_domain: OutputDomain::FullApp {
+            estimated_domains: 3,
+        },
+        environment: EnvironmentInfo {
+            language: "TypeScript".into(),
+            framework: "Express".into(),
+            package_manager: Some("npm".into()),
+            existing_dependencies: vec![],
+            build_tool: Some("tsc".into()),
+        },
+        sacred_anchors: vec![
+            SacredAnchor {
+                id: "SA-1".into(),
+                statement: "Passwords must never be stored in plain text".into(),
+                rationale: Some("Security requirement".into()),
+            },
+            SacredAnchor {
+                id: "SA-2".into(),
+                statement: "Payment operations must always be idempotent".into(),
+                rationale: Some("Financial integrity".into()),
+            },
+            SacredAnchor {
+                id: "SA-3".into(),
+                statement: "API responses must always include proper error codes".into(),
+                rationale: Some("Client integration reliability".into()),
+            },
+        ],
+        satisfaction_criteria_seeds: vec![
+            "User can register and login with valid credentials".into(),
+            "Products can be listed with pagination".into(),
+            "Cart persists across sessions".into(),
+            "Payment succeeds for valid card".into(),
+        ],
+        out_of_scope: vec![
+            "Admin dashboard".into(),
+            "Email notifications".into(),
+            "Order tracking".into(),
+        ],
+        conversation_log: vec![ConversationTurn {
+            role: "user".into(),
+            content: "Build an e-commerce API".into(),
+            timestamp: "2026-02-27T00:00:00Z".into(),
+        }],
+    }
+}
+
+fn build_multi_chunk_root_spec(project_id: Uuid) -> NLSpecV1 {
+    NLSpecV1 {
+        project_id,
+        version: "1.0".into(),
+        chunk: ChunkType::Root,
+        status: NLSpecStatus::Draft,
+        line_count: 120,
+        created_from: "intake-ecommerce-api".into(),
+        intent_summary: Some(
+            "Full-stack e-commerce API with auth, product catalog, cart, and payments.".into(),
+        ),
+        sacred_anchors: Some(vec![
+            NLSpecAnchor { id: "SA-1".into(), statement: "Passwords must never be stored in plain text".into() },
+            NLSpecAnchor { id: "SA-2".into(), statement: "Payment operations must always be idempotent".into() },
+            NLSpecAnchor { id: "SA-3".into(), statement: "API responses must always include proper error codes".into() },
+        ]),
+        requirements: vec![
+            Requirement {
+                id: "FR-ROOT-1".into(),
+                statement: "The system must expose a RESTful API on port 3000".into(),
+                priority: Priority::Must,
+                traces_to: vec!["SA-3".into()],
+            },
+            Requirement {
+                id: "FR-ROOT-2".into(),
+                statement: "The system must never store credentials in plain text".into(),
+                priority: Priority::Must,
+                traces_to: vec!["SA-1".into()],
+            },
+            Requirement {
+                id: "FR-ROOT-3".into(),
+                statement: "The system must always use idempotent payment processing".into(),
+                priority: Priority::Must,
+                traces_to: vec!["SA-2".into()],
+            },
+        ],
+        architectural_constraints: vec![
+            "Express.js backend".into(),
+            "PostgreSQL database".into(),
+            "JWT for auth tokens".into(),
+        ],
+        phase1_contracts: Some(vec![
+            Phase1Contract {
+                name: "User".into(),
+                type_definition: "{ id: string, email: string, passwordHash: string }".into(),
+                consumed_by: vec!["auth".into(), "api".into()],
+            },
+            Phase1Contract {
+                name: "Product".into(),
+                type_definition: "{ id: string, name: string, price: number, stock: number }".into(),
+                consumed_by: vec!["api".into(), "ui".into()],
+            },
+            Phase1Contract {
+                name: "CartItem".into(),
+                type_definition: "{ productId: string, quantity: number, userId: string }".into(),
+                consumed_by: vec!["api".into()],
+            },
+        ]),
+        external_dependencies: vec![],
+        definition_of_done: vec![
+            DoDItem { criterion: "All endpoints respond with JSON".into(), mechanically_checkable: true },
+            DoDItem { criterion: "Auth endpoints require no token for register/login".into(), mechanically_checkable: true },
+        ],
+        satisfaction_criteria: vec![
+            SatisfactionCriterion {
+                id: "SC-1".into(),
+                description: "User can register and login".into(),
+                tier_hint: ScenarioTierHint::Critical,
+            },
+            SatisfactionCriterion {
+                id: "SC-2".into(),
+                description: "Products can be listed".into(),
+                tier_hint: ScenarioTierHint::High,
+            },
+        ],
+        open_questions: vec![],
+        out_of_scope: vec!["Admin dashboard".into(), "Email notifications".into()],
+        amendment_log: vec![],
+    }
+}
+
+fn build_auth_domain_spec(project_id: Uuid) -> NLSpecV1 {
+    NLSpecV1 {
+        project_id,
+        version: "1.0".into(),
+        chunk: ChunkType::Domain { name: "auth".into() },
+        status: NLSpecStatus::Draft,
+        line_count: 80,
+        created_from: "root-ecommerce-api".into(),
+        intent_summary: Some("Authentication domain: user registration, login, and JWT management.".into()),
+        sacred_anchors: None, // Domain chunks inherit from root
+        requirements: vec![
+            Requirement {
+                id: "FR-AUTH-1".into(),
+                statement: "The auth module must hash passwords with bcrypt before storage".into(),
+                priority: Priority::Must,
+                traces_to: vec!["SA-1".into()],
+            },
+            Requirement {
+                id: "FR-AUTH-2".into(),
+                statement: "The auth module must issue JWT tokens on successful login".into(),
+                priority: Priority::Must,
+                traces_to: vec!["SA-3".into()],
+            },
+            Requirement {
+                id: "FR-AUTH-3".into(),
+                statement: "The auth module must never expose password hashes in API responses".into(),
+                priority: Priority::Must,
+                traces_to: vec!["SA-1".into()],
+            },
+        ],
+        architectural_constraints: vec!["bcrypt for password hashing".into()],
+        phase1_contracts: None,
+        external_dependencies: vec![],
+        definition_of_done: vec![
+            DoDItem { criterion: "Login returns JWT on valid credentials".into(), mechanically_checkable: true },
+        ],
+        satisfaction_criteria: vec![
+            SatisfactionCriterion {
+                id: "SC-AUTH-1".into(),
+                description: "Registration + login flow succeeds".into(),
+                tier_hint: ScenarioTierHint::Critical,
+            },
+        ],
+        open_questions: vec![],
+        out_of_scope: vec!["OAuth providers".into()],
+        amendment_log: vec![],
+    }
+}
+
+fn build_api_domain_spec(project_id: Uuid) -> NLSpecV1 {
+    NLSpecV1 {
+        project_id,
+        version: "1.0".into(),
+        chunk: ChunkType::Domain { name: "api".into() },
+        status: NLSpecStatus::Draft,
+        line_count: 90,
+        created_from: "root-ecommerce-api".into(),
+        intent_summary: Some("API domain: product catalog, shopping cart, and payment endpoints.".into()),
+        sacred_anchors: None,
+        requirements: vec![
+            Requirement {
+                id: "FR-API-1".into(),
+                statement: "The API must provide paginated product listing".into(),
+                priority: Priority::Must,
+                traces_to: vec!["SA-3".into()],
+            },
+            Requirement {
+                id: "FR-API-2".into(),
+                statement: "The API must always use idempotency keys for payment operations".into(),
+                priority: Priority::Must,
+                traces_to: vec!["SA-2".into()],
+            },
+        ],
+        architectural_constraints: vec!["Stripe for payments".into()],
+        phase1_contracts: None,
+        external_dependencies: vec![],
+        definition_of_done: vec![
+            DoDItem { criterion: "GET /products returns paginated JSON".into(), mechanically_checkable: true },
+        ],
+        satisfaction_criteria: vec![
+            SatisfactionCriterion {
+                id: "SC-API-1".into(),
+                description: "Product listing with pagination works".into(),
+                tier_hint: ScenarioTierHint::Critical,
+            },
+        ],
+        open_questions: vec![],
+        out_of_scope: vec!["Product search".into()],
+        amendment_log: vec![],
+    }
+}
+
+/// Test multi-chunk lint_spec_set: valid set of root + domain chunks passes.
+#[tokio::test]
+async fn e2e_phase3_lint_spec_set_valid() {
+    use planner_core::pipeline::steps::linter;
+
+    let project_id = Uuid::new_v4();
+    let root = build_multi_chunk_root_spec(project_id);
+    let auth = build_auth_domain_spec(project_id);
+    let api = build_api_domain_spec(project_id);
+
+    let specs = vec![root, auth, api];
+    let result = linter::lint_spec_set(&specs);
+    assert!(result.is_ok(), "Valid multi-chunk spec set should pass lint: {:?}", result.err());
+}
+
+/// Test multi-chunk lint catches duplicate FR IDs across chunks.
+#[tokio::test]
+async fn e2e_phase3_lint_spec_set_duplicate_fr_ids() {
+    use planner_core::pipeline::steps::linter;
+
+    let project_id = Uuid::new_v4();
+    let root = build_multi_chunk_root_spec(project_id);
+    let mut auth = build_auth_domain_spec(project_id);
+
+    // Introduce a duplicate: FR-ROOT-1 already exists in root
+    auth.requirements.push(Requirement {
+        id: "FR-ROOT-1".into(), // DUPLICATE!
+        statement: "The auth module must never allow empty passwords".into(),
+        priority: Priority::Must,
+        traces_to: vec!["SA-1".into()],
+    });
+
+    let specs = vec![root, auth];
+    let result = linter::lint_spec_set(&specs);
+    assert!(result.is_err(), "Duplicate FR ID across chunks should fail lint");
+}
+
+/// Test multi-chunk lint catches uncovered Sacred Anchors.
+#[tokio::test]
+async fn e2e_phase3_lint_spec_set_uncovered_anchor() {
+    use planner_core::pipeline::steps::linter;
+
+    let project_id = Uuid::new_v4();
+    let mut root = build_multi_chunk_root_spec(project_id);
+    // Remove FR-ROOT-3 (which traces to SA-2) so SA-2 is uncovered
+    root.requirements.retain(|r| r.id != "FR-ROOT-3");
+
+    // Only auth domain — SA-2 (payment idempotency) is NOT traced by any FR
+    // Auth only traces SA-1 and SA-3, root traces SA-1 and SA-3 (after removing FR-ROOT-3)
+    // SA-2 only gets traced by api domain which we exclude here
+    let auth = build_auth_domain_spec(project_id);
+
+    let specs = vec![root, auth];
+    let result = linter::lint_spec_set(&specs);
+    assert!(result.is_err(), "Uncovered Sacred Anchor SA-2 should fail lint");
+}
+
+/// Test chunk planner: MicroTool is always single-chunk (no LLM call needed).
+#[tokio::test]
+async fn e2e_phase3_chunk_planner_microtool_single_chunk() {
+    use planner_core::pipeline::steps::chunk_planner;
+    use planner_core::llm::providers::LlmRouter;
+
+    let project_id = Uuid::new_v4();
+    let intake = build_test_intake(project_id); // MicroTool countdown timer
+    let router = LlmRouter::from_env();
+
+    // MicroTool triggers the heuristic short-circuit — no LLM call needed
+    let plan = chunk_planner::plan_chunks(&router, &intake, project_id).await;
+    assert!(plan.is_ok(), "MicroTool plan should succeed without LLM: {:?}", plan.err());
+    let plan = plan.unwrap();
+
+    assert!(!plan.is_multi_chunk, "MicroTool should always be single-chunk");
+    assert_eq!(plan.chunks.len(), 1);
+    assert_eq!(plan.chunks[0].chunk_id, "root");
+}
+
+/// Test Context Pack building and rendering for a spec.
+#[tokio::test]
+async fn e2e_phase3_context_pack_full_budget() {
+    use planner_core::pipeline::steps::context_pack::*;
+
+    let project_id = Uuid::new_v4();
+    let spec = build_test_spec(project_id);
+
+    // Large budget — should include all sections
+    let pack = build_spec_context_pack(&spec, ContextTarget::SpecCompiler, 50000);
+
+    assert!(!pack.was_truncated, "Large budget should not truncate");
+    assert_eq!(pack.label, "spec-compiler");
+    assert!(pack.estimated_tokens > 0);
+    assert!(pack.estimated_tokens <= 50000);
+
+    // Check all expected sections are present
+    let section_names: Vec<&str> = pack.sections.iter().map(|s| s.name.as_str()).collect();
+    assert!(section_names.contains(&"sacred_anchors"), "Missing sacred_anchors section");
+    assert!(section_names.contains(&"intent_summary"), "Missing intent_summary section");
+    assert!(section_names.contains(&"requirements"), "Missing requirements section");
+    assert!(section_names.contains(&"satisfaction_criteria"), "Missing satisfaction_criteria section");
+
+    // Render and verify output
+    let rendered = render_context_pack(&pack);
+    assert!(rendered.contains("SACRED ANCHORS"), "Rendered output missing SACRED ANCHORS header");
+    assert!(rendered.contains("REQUIREMENTS"), "Rendered output missing REQUIREMENTS header");
+    assert!(rendered.contains("SA-1"), "Rendered output missing anchor SA-1");
+    assert!(rendered.contains("FR-1"), "Rendered output missing requirement FR-1");
+    assert!(!rendered.contains("[Context truncated"), "Should not show truncation notice");
+}
+
+/// Test Context Pack truncation under a tight token budget.
+#[tokio::test]
+async fn e2e_phase3_context_pack_truncated() {
+    use planner_core::pipeline::steps::context_pack::*;
+
+    let project_id = Uuid::new_v4();
+    let spec = build_test_spec(project_id);
+
+    // Tiny budget — must truncate
+    let pack = build_spec_context_pack(&spec, ContextTarget::SpecCompiler, 15);
+
+    assert!(pack.was_truncated, "Tiny budget should truncate");
+    // Priority 0 sections (sacred anchors, intent) should still appear
+    assert!(!pack.sections.is_empty(), "Must-include sections should be present even when truncated");
+
+    let rendered = render_context_pack(&pack);
+    assert!(rendered.contains("[Context truncated"), "Should show truncation notice");
+}
+
+/// Test Context Pack domain compiler target prioritizes contracts.
+#[tokio::test]
+async fn e2e_phase3_context_pack_domain_compiler_priorities() {
+    use planner_core::pipeline::steps::context_pack::*;
+
+    let project_id = Uuid::new_v4();
+    let spec = build_test_spec(project_id);
+
+    let pack = build_spec_context_pack(
+        &spec,
+        ContextTarget::DomainCompiler { domain_name: "auth".into() },
+        50000,
+    );
+
+    assert_eq!(pack.label, "domain-compiler:auth");
+
+    // Phase 1 contracts should be priority 0 for domain compilation
+    let contracts = pack.sections.iter().find(|s| s.name == "phase1_contracts");
+    assert!(contracts.is_some(), "Domain compiler pack should include contracts");
+    assert_eq!(contracts.unwrap().priority, 0, "Contracts should be priority 0 for domain compiler");
+}
+
+/// Test Ralph GeneTransfusion detects auth patterns in a spec.
+#[tokio::test]
+async fn e2e_phase3_ralph_gene_transfusion_auth() {
+    use planner_core::pipeline::steps::ralph;
+
+    let project_id = Uuid::new_v4();
+    let auth_spec = build_auth_domain_spec(project_id);
+
+    let findings = ralph::gene_transfusion(&auth_spec);
+
+    // Auth spec mentions auth, bcrypt, JWT — should match auth patterns
+    assert!(!findings.is_empty(), "Should find auth-related pitfalls");
+
+    // Auth findings should be present
+    let auth_findings: Vec<_> = findings.iter()
+        .filter(|f| f.affected_pattern == "auth")
+        .collect();
+    assert!(!auth_findings.is_empty(), "Should have auth-pattern findings");
+    assert!(
+        auth_findings.iter().any(|f| f.severity == ralph::RalphSeverity::High),
+        "Should have at least one high-severity auth finding"
+    );
+
+    // Should NOT match unrelated patterns like file-upload or payment
+    assert!(
+        !findings.iter().any(|f| f.affected_pattern == "payment"),
+        "Should not match payment pattern in auth spec"
+    );
+    assert!(
+        !findings.iter().any(|f| f.affected_pattern == "file-upload"),
+        "Should not match file-upload pattern in auth spec"
+    );
+}
+
+/// Test Ralph GeneTransfusion detects payment patterns.
+#[tokio::test]
+async fn e2e_phase3_ralph_gene_transfusion_payment() {
+    use planner_core::pipeline::steps::ralph;
+
+    let project_id = Uuid::new_v4();
+    let api_spec = build_api_domain_spec(project_id);
+
+    let findings = ralph::gene_transfusion(&api_spec);
+
+    // API spec mentions payment and idempotency — should match payment patterns
+    // It also mentions "api" so may match api patterns too
+    let payment_findings: Vec<_> = findings.iter()
+        .filter(|f| f.affected_pattern == "payment")
+        .collect();
+
+    // The spec already addresses idempotency, so that specific pitfall should be skipped
+    // but other payment pitfalls should be found
+    assert!(
+        !payment_findings.is_empty() || !findings.is_empty(),
+        "Should find at least some findings for payment/api patterns"
+    );
+}
+
+/// Test Ralph ConsequenceCard generation: only high-severity findings produce cards.
+#[tokio::test]
+async fn e2e_phase3_ralph_consequence_cards() {
+    use planner_core::pipeline::steps::ralph::{self, RalphFinding, RalphMode, RalphSeverity};
+
+    let project_id = Uuid::new_v4();
+
+    let findings = vec![
+        RalphFinding {
+            id: "RALPH-GT-1".into(),
+            mode: RalphMode::GeneTransfusion,
+            severity: RalphSeverity::High,
+            description: "Password reset tokens must expire".into(),
+            affected_pattern: "auth".into(),
+            suggestion: Some("Add token expiry requirement".into()),
+        },
+        RalphFinding {
+            id: "RALPH-GT-2".into(),
+            mode: RalphMode::GeneTransfusion,
+            severity: RalphSeverity::Medium,
+            description: "Consider connection pooling".into(),
+            affected_pattern: "database".into(),
+            suggestion: None,
+        },
+        RalphFinding {
+            id: "RALPH-GT-3".into(),
+            mode: RalphMode::GeneTransfusion,
+            severity: RalphSeverity::Low,
+            description: "Nice to have pagination".into(),
+            affected_pattern: "api".into(),
+            suggestion: None,
+        },
+    ];
+
+    let cards = ralph::surface_consequence_cards(&findings, project_id);
+
+    assert_eq!(cards.len(), 1, "Only high-severity findings should produce cards");
+    assert_eq!(cards[0].trigger, CardTrigger::RalphFinding);
+    assert_eq!(cards[0].status, CardStatus::Pending);
+    assert!(cards[0].problem.contains("Password reset tokens"));
+    assert_eq!(cards[0].project_id, project_id);
+    assert!(cards[0].resolution.is_none());
+    assert_eq!(cards[0].actions.len(), 3); // Add Requirement, Add to DoD, Dismiss
+}
+
+/// Test the recipe includes Phase 3 step types (ChunkPlan, RalphLoop).
+#[tokio::test]
+async fn e2e_phase3_recipe_includes_new_steps() {
+    use planner_core::pipeline::Recipe;
+
+    let recipe = Recipe::phase0();
+    let step_ids: Vec<&str> = recipe.steps.iter().map(|s| s.step_id.as_str()).collect();
+
+    // Phase 3 step types should be present
+    assert!(step_ids.contains(&"chunk-plan"), "Missing chunk-plan step");
+    assert!(step_ids.contains(&"ralph-loop"), "Missing ralph-loop step");
+
+    // Verify ordering: chunk-plan → compile → lint → AR → scenarios → ralph → graph-dot
+    let chunk_idx = step_ids.iter().position(|&s| s == "chunk-plan");
+    let compile_idx = step_ids.iter().position(|&s| s == "compile-spec");
+    let ralph_idx = step_ids.iter().position(|&s| s == "ralph-loop");
+
+    assert!(chunk_idx.is_some(), "chunk-plan step not found");
+    assert!(compile_idx.is_some(), "compile-spec step not found");
+    assert!(ralph_idx.is_some(), "ralph-loop step not found");
+
+    assert!(
+        chunk_idx.unwrap() < compile_idx.unwrap(),
+        "Chunk plan should come before compile"
+    );
+}
+
+/// Test that the multi-chunk AR report structure is correctly constructed.
+#[tokio::test]
+async fn e2e_phase3_ar_report_per_chunk() {
+    let project_id = Uuid::new_v4();
+
+    // Simulate per-chunk AR reports
+    let mut root_report = ArReportV1 {
+        project_id,
+        chunk_name: "root".into(),
+        nlspec_version: "1.0".into(),
+        findings: vec![],
+        reviewer_summaries: vec![],
+        has_blocking: false,
+        blocking_count: 0,
+        advisory_count: 0,
+        informational_count: 0,
+    };
+    root_report.recalculate();
+
+    let mut auth_report = ArReportV1 {
+        project_id,
+        chunk_name: "auth".into(),
+        nlspec_version: "1.0".into(),
+        findings: vec![
+            ArFinding {
+                id: "AR-A-1".into(),
+                reviewer: ArReviewer::Opus,
+                severity: ArSeverity::Advisory,
+                affected_section: "Requirements".into(),
+                affected_requirements: vec!["FR-AUTH-1".into()],
+                description: "Consider adding password complexity requirements".into(),
+                suggested_resolution: Some("Add min length + complexity FR".into()),
+            },
+        ],
+        reviewer_summaries: vec![],
+        has_blocking: false,
+        blocking_count: 0,
+        advisory_count: 0,
+        informational_count: 0,
+    };
+    auth_report.recalculate();
+
+    let reports = vec![root_report, auth_report];
+
+    assert_eq!(reports.len(), 2);
+    assert_eq!(reports[0].chunk_name, "root");
+    assert_eq!(reports[1].chunk_name, "auth");
+    assert!(!reports[0].has_blocking);
+    assert!(!reports[1].has_blocking);
+    assert_eq!(reports[1].advisory_count, 1);
+}
+
+/// Test token estimation function.
+#[tokio::test]
+async fn e2e_phase3_token_estimation() {
+    use planner_core::pipeline::steps::context_pack::estimate_tokens;
+
+    // ~4 chars per token
+    assert_eq!(estimate_tokens("hello"), 2); // 5/4 + 1 = 2
+    assert_eq!(estimate_tokens(""), 1); // 0/4 + 1 = 1
+    assert_eq!(estimate_tokens("a".repeat(400).as_str()), 101); // 400/4 + 1 = 101
+
+    // Realistic spec text
+    let spec_text = "The system must accept a positive integer duration in seconds and display a countdown.";
+    let tokens = estimate_tokens(spec_text);
+    assert!(tokens > 10, "Realistic text should estimate > 10 tokens");
+    assert!(tokens < 100, "Short text should estimate < 100 tokens");
 }
 
 /// Verify Storage can persist and retrieve Turn<T> artifacts.

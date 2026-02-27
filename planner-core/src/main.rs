@@ -89,9 +89,12 @@ async fn main() {
                 println!();
 
                 println!("Compilation:");
-                println!("  NLSpecV1:           {} requirements, {} DoD items",
-                    output.front_office.spec.requirements.len(),
-                    output.front_office.spec.definition_of_done.len());
+                let total_reqs: usize = output.front_office.specs.iter().map(|s| s.requirements.len()).sum();
+                let total_dod: usize = output.front_office.specs.iter().map(|s| s.definition_of_done.len()).sum();
+                println!("  NLSpecV1:           {} chunk(s), {} total requirements, {} DoD items",
+                    output.front_office.specs.len(),
+                    total_reqs,
+                    total_dod);
                 println!("  GraphDotV1:         {} nodes, ${:.2} budget",
                     output.front_office.graph_dot.node_count,
                     output.front_office.graph_dot.run_budget_usd);
@@ -148,9 +151,12 @@ async fn main() {
                 println!("  IntakeV1:           {} sacred anchors, {} satisfaction seeds",
                     output.intake.sacred_anchors.len(),
                     output.intake.satisfaction_criteria_seeds.len());
-                println!("  NLSpecV1:           {} requirements, {} DoD items",
-                    output.spec.requirements.len(),
-                    output.spec.definition_of_done.len());
+                let fo_total_reqs: usize = output.specs.iter().map(|s| s.requirements.len()).sum();
+                let fo_total_dod: usize = output.specs.iter().map(|s| s.definition_of_done.len()).sum();
+                println!("  NLSpecV1:           {} chunk(s), {} total requirements, {} DoD items",
+                    output.specs.len(),
+                    fo_total_reqs,
+                    fo_total_dod);
                 println!("  GraphDotV1:         {} nodes, ${:.2} budget",
                     output.graph_dot.node_count,
                     output.graph_dot.run_budget_usd);

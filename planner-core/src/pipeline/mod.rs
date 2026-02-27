@@ -3,15 +3,16 @@
 //! The Phase 1 pipeline orchestrates the Dark Factory workflow:
 //!
 //! 1. **Intake** — Socratic interview → IntakeV1
-//! 2. **Compile** — IntakeV1 → NLSpecV1 + GraphDotV1 + ScenarioSetV1 + AgentsManifestV1
-//! 3. **Lint** — 12-rule NLSpec validation (deterministic)
-//! 4. **Adversarial Review** — 3-model parallel NLSpec review → ArReportV1
-//! 5. **AR Refinement** — Blocking findings → spec amendments → re-lint loop
-//! 6. **Handoff** — Factory Diplomat → Kilroy CLI invocation
-//! 7. **Validate** — Scenario Validator → SatisfactionResultV1
-//! 8. **Retry** — If gates fail and budget allows, re-run Factory (up to 2 retries)
-//! 9. **Present** — Telemetry Presenter → Plain English + Consequence Cards
-//! 10. **Approve** — Behavioral approval → Git Projection
+//! 2. **Chunk Plan** — IntakeV1 → ChunkPlan (single vs multi-chunk decision)
+//! 3. **Compile** — IntakeV1 → NLSpecV1 (single) or Vec<NLSpecV1> (multi-chunk)
+//! 4. **Lint** — 12-rule NLSpec validation + cross-chunk rules
+//! 5. **Adversarial Review** — 3-model parallel NLSpec review + coherence → ArReportV1
+//! 6. **AR Refinement** — Blocking findings → spec amendments → re-lint loop
+//! 7. **Handoff** — Factory Diplomat → Kilroy CLI invocation
+//! 8. **Validate** — Scenario Validator → SatisfactionResultV1
+//! 9. **Retry** — If gates fail and budget allows, re-run Factory (up to 2 retries)
+//! 10. **Present** — Telemetry Presenter → Plain English + Consequence Cards
+//! 11. **Approve** — Behavioral approval → Git Projection
 
 pub mod steps;
 
@@ -24,8 +25,10 @@ use steps::StepResult;
 use steps::intake;
 use steps::compile;
 use steps::linter;
+use steps::chunk_planner;
 use steps::ar;
 use steps::ar_refinement;
+use steps::ralph;
 use steps::factory;
 use steps::validate;
 use steps::telemetry;
@@ -54,6 +57,8 @@ pub struct PipelineStep {
 pub enum StepType {
     /// Socratic interview → IntakeV1.
     Intake,
+    /// IntakeV1 → ChunkPlan (single vs multi-chunk decision).
+    ChunkPlan,
     /// IntakeV1 → NLSpecV1 (single root chunk in Phase 0).
     CompileSpec,
     /// NLSpecV1 → 12-rule linting.
@@ -62,6 +67,8 @@ pub enum StepType {
     AdversarialReview,
     /// Blocking AR findings → spec amendments → re-lint.
     ArRefinement,
+    /// Scenario Augmentation + Gene Transfusion.
+    RalphLoop,
     /// NLSpecV1 → GraphDotV1.
     CompileGraphDot,
     /// NLSpecV1 + Sacred Anchors → ScenarioSetV1 (critical tier only in Phase 0).
@@ -95,10 +102,16 @@ impl Recipe {
                 depends_on: vec![],
             },
             PipelineStep {
+                step_id: "chunk-plan".into(),
+                name: "Chunk Planner".into(),
+                step_type: StepType::ChunkPlan,
+                depends_on: vec!["intake".into()],
+            },
+            PipelineStep {
                 step_id: "compile-spec".into(),
                 name: "Compile NLSpec".into(),
                 step_type: StepType::CompileSpec,
-                depends_on: vec!["intake".into()],
+                depends_on: vec!["chunk-plan".into()],
             },
             PipelineStep {
                 step_id: "lint-spec".into(),
@@ -119,22 +132,28 @@ impl Recipe {
                 depends_on: vec!["adversarial-review".into()],
             },
             PipelineStep {
-                step_id: "compile-graph-dot".into(),
-                name: "Generate graph.dot".into(),
-                step_type: StepType::CompileGraphDot,
-                depends_on: vec!["ar-refinement".into()],
-            },
-            PipelineStep {
                 step_id: "generate-scenarios".into(),
                 name: "Generate Scenarios".into(),
                 step_type: StepType::GenerateScenarios,
                 depends_on: vec!["ar-refinement".into()],
             },
             PipelineStep {
+                step_id: "ralph-loop".into(),
+                name: "Ralph Advisory Loop".into(),
+                step_type: StepType::RalphLoop,
+                depends_on: vec!["generate-scenarios".into()],
+            },
+            PipelineStep {
+                step_id: "compile-graph-dot".into(),
+                name: "Generate graph.dot".into(),
+                step_type: StepType::CompileGraphDot,
+                depends_on: vec!["ralph-loop".into()],
+            },
+            PipelineStep {
                 step_id: "compile-agents-manifest".into(),
                 name: "Generate AGENTS.md".into(),
                 step_type: StepType::CompileAgentsManifest,
-                depends_on: vec!["ar-refinement".into()],
+                depends_on: vec!["ralph-loop".into()],
             },
             PipelineStep {
                 step_id: "factory-handoff".into(),
@@ -204,8 +223,8 @@ impl Recipe {
 #[derive(Debug)]
 pub struct Phase0FrontOfficeOutput {
     pub intake: IntakeV1,
-    pub spec: NLSpecV1,
-    pub ar_report: ArReportV1,
+    pub specs: Vec<NLSpecV1>,
+    pub ar_reports: Vec<ArReportV1>,
     pub graph_dot: GraphDotV1,
     pub scenarios: ScenarioSetV1,
     pub agents_manifest: AgentsManifestV1,
@@ -214,103 +233,176 @@ pub struct Phase0FrontOfficeOutput {
 /// Run the Phase 0 Front Office pipeline: user description → all compilation
 /// artifacts ready for Kilroy handoff.
 ///
-/// Steps: Intake → Compile Spec → Lint → AR Review → AR Refinement →
-///        (GraphDot + Scenarios + AGENTS.md)
+/// Phase 3: Now supports multi-chunk compilation via ChunkPlan.
+/// Steps: Intake → ChunkPlan → Compile Spec(s) → Lint → AR Review →
+///        AR Refinement → (GraphDot + Scenarios + AGENTS.md)
 pub async fn run_phase0_front_office(
     router: &LlmRouter,
     project_id: Uuid,
     user_description: &str,
 ) -> StepResult<Phase0FrontOfficeOutput> {
-    tracing::info!("Phase 0 Front Office: starting pipeline");
+    tracing::info!("Phase 3 Front Office: starting pipeline");
 
     // Step 1: Intake Gateway
-    tracing::info!("Step 1/8: Intake Gateway");
+    tracing::info!("Step 1: Intake Gateway");
     let intake_result = intake::execute_intake(router, project_id, user_description).await?;
     tracing::info!("  → IntakeV1 produced: {}", intake_result.project_name);
 
-    // Step 2: Compile Spec
-    tracing::info!("Step 2/8: Compile NLSpec");
-    let mut spec = compile::compile_spec(router, &intake_result).await?;
-    tracing::info!("  → NLSpecV1 produced: {} requirements, {} satisfaction criteria",
-        spec.requirements.len(), spec.satisfaction_criteria.len());
+    // Step 2: Chunk Planning
+    tracing::info!("Step 2: Chunk Planner");
+    let chunk_plan = chunk_planner::plan_chunks(router, &intake_result, project_id).await?;
+    tracing::info!(
+        "  → ChunkPlan: {} chunk(s), multi_chunk={}",
+        chunk_plan.chunks.len(),
+        chunk_plan.is_multi_chunk,
+    );
 
-    // Step 3: Lint Spec
-    tracing::info!("Step 3/8: Spec Linter");
-    linter::lint_spec(&spec)?;
-    tracing::info!("  → Spec passes all 12 linting rules");
+    // Step 3: Compile Spec(s)
+    tracing::info!("Step 3: Compile NLSpec(s)");
+    let mut specs = if chunk_plan.is_multi_chunk {
+        compile::compile_spec_multichunk(router, &intake_result, &chunk_plan).await?
+    } else {
+        vec![compile::compile_spec(router, &intake_result).await?]
+    };
+    tracing::info!(
+        "  → {} NLSpecV1 chunk(s) produced",
+        specs.len(),
+    );
 
-    // Step 4: Adversarial Review — 3 models review the spec independently
-    tracing::info!("Step 4/8: Adversarial Review");
-    let mut ar_report = ar::execute_adversarial_review(router, &spec, project_id).await?;
-    tracing::info!("  → ArReportV1: {} blocking, {} advisory, {} informational",
-        ar_report.blocking_count, ar_report.advisory_count, ar_report.informational_count);
+    // Step 4: Lint
+    tracing::info!("Step 4: Spec Linter");
+    if specs.len() > 1 {
+        linter::lint_spec_set(&specs)?;
+        tracing::info!("  → Multi-chunk spec set passes all lint rules");
+    } else {
+        linter::lint_spec(&specs[0])?;
+        tracing::info!("  → Spec passes all 12 linting rules");
+    }
 
-    // Step 5: AR Refinement — if blocking findings, refine the spec
-    if ar_report.has_blocking {
-        tracing::info!("Step 5/8: AR Refinement (blocking findings detected)");
-        let refinement = ar_refinement::execute_ar_refinement(
-            router, spec, &ar_report, project_id,
-        ).await?;
+    // Step 5: Adversarial Review
+    tracing::info!("Step 5: Adversarial Review");
+    let mut ar_reports = if specs.len() > 1 {
+        let mut reports = ar::execute_adversarial_review_set(router, &specs, project_id).await?;
+        // Also run cross-chunk coherence review
+        let coherence = ar::execute_cross_chunk_coherence_review(router, &specs, project_id).await?;
+        reports.push(coherence);
+        reports
+    } else {
+        vec![ar::execute_adversarial_review(router, &specs[0], project_id).await?]
+    };
 
-        spec = refinement.spec;
-        tracing::info!("  → Refinement: {} iterations, resolved={}",
-            refinement.iterations, refinement.resolved);
+    let total_blocking: u32 = ar_reports.iter().map(|r| r.blocking_count).sum();
+    let total_advisory: u32 = ar_reports.iter().map(|r| r.advisory_count).sum();
+    tracing::info!(
+        "  → AR: {} total blocking, {} total advisory across {} report(s)",
+        total_blocking, total_advisory, ar_reports.len(),
+    );
 
-        // Generate Consequence Cards for any Open Questions
-        if !refinement.open_questions.is_empty() {
-            let oq_cards = ar_refinement::generate_oq_consequence_cards(
-                &refinement.open_questions, project_id,
+    // Step 6: AR Refinement — handle blocking findings
+    if total_blocking > 0 {
+        tracing::info!("Step 6: AR Refinement (blocking findings detected)");
+        // Refine each chunk that has blocking findings
+        // Process in reverse order to avoid index shifting issues
+        let report_count = ar_reports.len().min(specs.len());
+        for i in 0..report_count {
+            if !ar_reports[i].has_blocking {
+                continue;
+            }
+            let spec = specs.remove(i);
+            let refinement = ar_refinement::execute_ar_refinement(
+                router, spec, &ar_reports[i], project_id,
+            ).await?;
+
+            specs.insert(i, refinement.spec);
+            tracing::info!(
+                "  → Chunk '{}' refinement: {} iterations, resolved={}",
+                ar_reports[i].chunk_name, refinement.iterations, refinement.resolved,
             );
-            tracing::warn!("  → {} Open Question(s) need user resolution:", oq_cards.len());
-            for card in &oq_cards {
-                tracing::warn!("    • {}", card.problem);
+
+            if !refinement.resolved {
+                return Err(steps::StepError::ArRefinementExhausted(
+                    ar_refinement::MAX_REFINEMENT_ITERATIONS,
+                ));
             }
         }
 
-        if !refinement.resolved {
-            tracing::error!("  AR refinement exhausted — {} blocking finding(s) unresolved",
-                ar_report.blocking_count);
-            return Err(steps::StepError::ArRefinementExhausted(
-                ar_refinement::MAX_REFINEMENT_ITERATIONS,
-            ));
+        // Re-lint after refinement
+        if specs.len() > 1 {
+            linter::lint_spec_set(&specs)?;
+        } else {
+            linter::lint_spec(&specs[0])?;
         }
 
-        // Re-run AR on the refined spec to verify
-        tracing::info!("  Re-running Adversarial Review on refined spec...");
-        ar_report = ar::execute_adversarial_review(router, &spec, project_id).await?;
-        tracing::info!("  → Post-refinement AR: {} blocking, {} advisory, {} informational",
-            ar_report.blocking_count, ar_report.advisory_count, ar_report.informational_count);
+        // Re-run AR to verify
+        tracing::info!("  Re-running AR on refined specs...");
+        ar_reports = if specs.len() > 1 {
+            let mut reports = ar::execute_adversarial_review_set(router, &specs, project_id).await?;
+            let coherence = ar::execute_cross_chunk_coherence_review(router, &specs, project_id).await?;
+            reports.push(coherence);
+            reports
+        } else {
+            vec![ar::execute_adversarial_review(router, &specs[0], project_id).await?]
+        };
 
-        if ar_report.has_blocking {
-            return Err(steps::StepError::ArBlockingFindings(ar_report.blocking_count));
+        let remaining_blocking: u32 = ar_reports.iter().map(|r| r.blocking_count).sum();
+        if remaining_blocking > 0 {
+            return Err(steps::StepError::ArBlockingFindings(remaining_blocking));
         }
     } else {
-        tracing::info!("Step 5/8: AR Refinement (skipped — no blocking findings)");
+        tracing::info!("Step 6: AR Refinement (skipped — no blocking findings)");
     }
 
-    // Steps 6-8 can run in parallel (all depend on AR-reviewed spec)
-    // Phase 0: run sequentially for simplicity
-    tracing::info!("Step 6/8: Compile graph.dot");
-    let graph_dot = compile::compile_graph_dot(router, &spec).await?;
-    tracing::info!("  → GraphDotV1 produced: {} nodes, ${:.2} estimated cost",
-        graph_dot.node_count, graph_dot.estimated_cost_usd);
+    // Steps 7-9: GraphDot + Scenarios + AGENTS.md
+    let root_spec = &specs[0];
 
-    tracing::info!("Step 7/8: Generate Scenarios");
-    let scenarios = compile::generate_scenarios(router, &spec).await?;
-    tracing::info!("  → ScenarioSetV1 produced: {} scenarios",
-        scenarios.scenarios.len());
+    tracing::info!("Step 7: Compile graph.dot");
+    let graph_dot = if specs.len() > 1 {
+        compile::compile_graph_dot_multichunk(router, &specs).await?
+    } else {
+        compile::compile_graph_dot(router, root_spec).await?
+    };
+    tracing::info!(
+        "  → GraphDotV1 produced: {} nodes, ${:.2} estimated cost",
+        graph_dot.node_count, graph_dot.estimated_cost_usd,
+    );
 
-    tracing::info!("Step 8/8: Generate AGENTS.md");
-    let agents_manifest = compile::compile_agents_manifest(router, &spec).await?;
-    tracing::info!("  → AgentsManifestV1 produced: {} bytes",
-        agents_manifest.root_agents_md.len());
+    tracing::info!("Step 8: Generate Scenarios");
+    // Generate scenarios from root spec (which has sacred anchors + satisfaction criteria)
+    // Domain chunks' satisfaction criteria are also included
+    let mut scenarios = compile::generate_scenarios(router, root_spec).await?;
+    tracing::info!("  → ScenarioSetV1 produced: {} scenarios", scenarios.scenarios.len());
 
-    tracing::info!("Phase 0 Front Office: pipeline complete — ready for Kilroy handoff");
+    // Step 8b: Ralph Loop — adversarial scenario augmentation + gene transfusion
+    tracing::info!("Step 8b: Ralph Loop");
+    let ralph_output = ralph::execute_ralph(router, root_spec, &scenarios, project_id).await?;
+
+    // Merge augmented scenarios into the scenario set
+    if !ralph_output.augmented_scenarios.is_empty() {
+        tracing::info!(
+            "  → Ralph added {} edge-case scenarios",
+            ralph_output.augmented_scenarios.len(),
+        );
+        scenarios.scenarios.extend(ralph_output.augmented_scenarios);
+        scenarios.ralph_augmented = true;
+    }
+
+    if !ralph_output.consequence_cards.is_empty() {
+        tracing::warn!(
+            "  → Ralph surfaced {} ConsequenceCard(s) to Impact Inbox",
+            ralph_output.consequence_cards.len(),
+        );
+    }
+
+    tracing::info!("Step 9: Generate AGENTS.md");
+    let agents_manifest = compile::compile_agents_manifest(router, root_spec).await?;
+    tracing::info!("  → AgentsManifestV1 produced: {} bytes", agents_manifest.root_agents_md.len());
+
+    tracing::info!("Phase 3 Front Office: pipeline complete — ready for Kilroy handoff");
 
     Ok(Phase0FrontOfficeOutput {
         intake: intake_result,
-        spec,
-        ar_report,
+        specs,
+        ar_reports,
         graph_dot,
         scenarios,
         agents_manifest,
@@ -369,6 +461,7 @@ pub async fn run_phase0_full(
     let mut factory_output;
     let mut satisfaction;
     let mut attempt = 0usize;
+    let root_spec = &front_office.specs[0];
 
     loop {
         attempt += 1;
@@ -377,7 +470,7 @@ pub async fn run_phase0_full(
         factory_output = factory::execute_factory_handoff(
             &front_office.graph_dot,
             &front_office.agents_manifest,
-            &front_office.spec,
+            root_spec,
             &mut budget,
         )
         .await?;

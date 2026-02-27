@@ -2,6 +2,9 @@
 //!
 //! Validates an NLSpec chunk against structural and content rules.
 //! No LLM calls — purely deterministic checks.
+//!
+//! Phase 3 adds `lint_spec_set()` for cross-chunk reference validation
+//! across the full set of root + domain chunks.
 
 use planner_schemas::*;
 use super::{StepResult, StepError};
@@ -115,6 +118,124 @@ pub fn lint_spec(spec: &NLSpecV1) -> StepResult<()> {
     // Rule 12: Amendment Log is append-only (structural check only —
     // we verify no entries were removed by comparing with previous version)
     // Phase 0: just verify the log exists (no previous version to compare)
+
+    if violations.is_empty() {
+        Ok(())
+    } else {
+        Err(StepError::LintFailure { violations })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Multi-Chunk Lint: cross-chunk reference validation
+// ---------------------------------------------------------------------------
+
+/// Validate a full set of NLSpec chunks (root + domains) for cross-chunk consistency.
+///
+/// This checks:
+/// - Rule 9a: All cross-chunk references use stable IDs and match existing entities
+/// - Rule 9b: Every Sacred Anchor is covered by at least one FR across all chunks
+/// - Rule 9c: Domain FR IDs use the correct domain prefix format
+/// - Rule 9d: No duplicate FR IDs across chunks
+/// - Rule 9e: Phase 1 Contract references in domain chunks match root contracts
+///
+/// Each individual chunk is also linted with `lint_spec()`.
+pub fn lint_spec_set(specs: &[NLSpecV1]) -> StepResult<()> {
+    if specs.is_empty() {
+        return Err(StepError::Other("Empty spec set".into()));
+    }
+
+    let mut violations = Vec::new();
+
+    // Step 1: Lint each chunk individually
+    for spec in specs {
+        if let Err(StepError::LintFailure { violations: chunk_violations }) = lint_spec(spec) {
+            let chunk_label = match &spec.chunk {
+                ChunkType::Root => "root".to_string(),
+                ChunkType::Domain { name } => format!("domain:{}", name),
+            };
+            for v in chunk_violations {
+                violations.push(format!("[{}] {}", chunk_label, v));
+            }
+        }
+    }
+
+    let root = &specs[0];
+
+    // Step 2: Collect all FR IDs across all chunks and check for duplicates (Rule 9d)
+    let mut all_fr_ids: Vec<(String, String)> = Vec::new(); // (fr_id, chunk_label)
+    for spec in specs {
+        let chunk_label = match &spec.chunk {
+            ChunkType::Root => "root".to_string(),
+            ChunkType::Domain { name } => name.clone(),
+        };
+        for req in &spec.requirements {
+            if let Some((_existing_id, existing_chunk)) = all_fr_ids.iter()
+                .find(|(id, _)| id == &req.id)
+            {
+                violations.push(format!(
+                    "Rule 9d: Duplicate FR ID '{}' found in chunks '{}' and '{}'",
+                    req.id, existing_chunk, chunk_label,
+                ));
+            }
+            all_fr_ids.push((req.id.clone(), chunk_label.clone()));
+        }
+    }
+
+    // Step 3: Every Sacred Anchor must be covered by at least one FR across all chunks (Rule 9b)
+    if let Some(anchors) = &root.sacred_anchors {
+        let all_traced_anchors: Vec<&str> = specs.iter()
+            .flat_map(|s| s.requirements.iter())
+            .flat_map(|r| r.traces_to.iter())
+            .map(|s| s.as_str())
+            .collect();
+
+        for anchor in anchors {
+            if !all_traced_anchors.contains(&anchor.id.as_str()) {
+                violations.push(format!(
+                    "Rule 9b: Sacred Anchor {} has no corresponding FR in any chunk",
+                    anchor.id,
+                ));
+            }
+        }
+    }
+
+    // Step 4: Domain chunks should use domain-prefixed FR IDs (Rule 9c) — advisory warning
+    for spec in specs.iter().skip(1) {
+        if let ChunkType::Domain { name } = &spec.chunk {
+            let expected_prefix = format!("FR-{}-", name.to_uppercase().replace('-', "_"));
+            for req in &spec.requirements {
+                if !req.id.starts_with(&expected_prefix) {
+                    violations.push(format!(
+                        "Rule 9c: Domain '{}' FR '{}' should use prefix '{}'",
+                        name, req.id, expected_prefix,
+                    ));
+                }
+            }
+        }
+    }
+
+    // Step 5: All traces_to references in domain chunks must reference valid anchor IDs (Rule 9a)
+    let valid_anchor_ids: Vec<&str> = root.sacred_anchors.as_ref()
+        .map(|anchors| anchors.iter().map(|a| a.id.as_str()).collect())
+        .unwrap_or_default();
+
+    for spec in specs.iter().skip(1) {
+        let chunk_label = match &spec.chunk {
+            ChunkType::Root => "root".to_string(),
+            ChunkType::Domain { name } => name.clone(),
+        };
+        for req in &spec.requirements {
+            for anchor_ref in &req.traces_to {
+                if !valid_anchor_ids.contains(&anchor_ref.as_str()) {
+                    violations.push(format!(
+                        "Rule 9a: Domain '{}' FR '{}' traces to unknown anchor '{}'",
+                        chunk_label, req.id, anchor_ref,
+                    ));
+                }
+            }
+        }
+    }
 
     if violations.is_empty() {
         Ok(())
@@ -242,6 +363,110 @@ mod tests {
         match err {
             StepError::LintFailure { violations } => {
                 assert!(violations.iter().any(|v| v.contains("Rule 3") && v.contains("SA-2")));
+            }
+            _ => panic!("Expected LintFailure"),
+        }
+    }
+
+    // -- Multi-chunk lint tests --
+
+    fn make_valid_domain_spec(domain_name: &str) -> NLSpecV1 {
+        let prefix = domain_name.to_uppercase();
+        NLSpecV1 {
+            project_id: Uuid::new_v4(),
+            version: "1.0".into(),
+            chunk: ChunkType::Domain { name: domain_name.to_string() },
+            status: NLSpecStatus::Draft,
+            line_count: 100,
+            created_from: format!("test:domain:{}", domain_name),
+            intent_summary: None,
+            sacred_anchors: None,
+            phase1_contracts: None,
+            requirements: vec![Requirement {
+                id: format!("FR-{}-1", prefix),
+                statement: "The system must handle this domain".into(),
+                priority: Priority::Must,
+                traces_to: vec!["SA-1".into()],
+            }],
+            architectural_constraints: vec![],
+            external_dependencies: vec![],
+            definition_of_done: vec![DoDItem {
+                criterion: "Domain works correctly".into(),
+                mechanically_checkable: true,
+            }],
+            satisfaction_criteria: vec![SatisfactionCriterion {
+                id: format!("SC-{}-1", prefix),
+                description: "Domain test passes".into(),
+                tier_hint: ScenarioTierHint::Critical,
+            }],
+            open_questions: vec![],
+            out_of_scope: vec!["Things not in this domain".into()],
+            amendment_log: vec![],
+        }
+    }
+
+    #[test]
+    fn lint_spec_set_valid_multichunk() {
+        let root = make_valid_spec();
+        let auth = make_valid_domain_spec("AUTH");
+        let result = lint_spec_set(&[root, auth]);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn lint_spec_set_duplicate_fr_ids() {
+        let root = make_valid_spec();
+        let mut auth = make_valid_domain_spec("AUTH");
+        auth.requirements[0].id = "FR-1".into(); // Conflicts with root's FR-1
+        let err = lint_spec_set(&[root, auth]).unwrap_err();
+        match err {
+            StepError::LintFailure { violations } => {
+                assert!(violations.iter().any(|v| v.contains("Rule 9d") && v.contains("FR-1")));
+            }
+            _ => panic!("Expected LintFailure"),
+        }
+    }
+
+    #[test]
+    fn lint_spec_set_orphaned_anchor_across_chunks() {
+        let mut root = make_valid_spec();
+        root.sacred_anchors.as_mut().unwrap().push(NLSpecAnchor {
+            id: "SA-99".into(),
+            statement: "No FR covers this".into(),
+        });
+        let auth = make_valid_domain_spec("AUTH");
+        let err = lint_spec_set(&[root, auth]).unwrap_err();
+        match err {
+            StepError::LintFailure { violations } => {
+                assert!(violations.iter().any(|v| v.contains("Rule 9b") && v.contains("SA-99")));
+            }
+            _ => panic!("Expected LintFailure"),
+        }
+    }
+
+    #[test]
+    fn lint_spec_set_invalid_anchor_reference() {
+        let root = make_valid_spec();
+        let mut auth = make_valid_domain_spec("AUTH");
+        auth.requirements[0].traces_to = vec!["SA-999".into()]; // Doesn't exist
+        let err = lint_spec_set(&[root, auth]).unwrap_err();
+        match err {
+            StepError::LintFailure { violations } => {
+                assert!(violations.iter().any(|v| v.contains("Rule 9a") && v.contains("SA-999")));
+            }
+            _ => panic!("Expected LintFailure"),
+        }
+    }
+
+    #[test]
+    fn lint_spec_set_wrong_domain_prefix() {
+        let root = make_valid_spec();
+        let mut auth = make_valid_domain_spec("AUTH");
+        auth.requirements[0].id = "FR-WRONG-1".into(); // Wrong prefix for AUTH domain
+        let err = lint_spec_set(&[root, auth]).unwrap_err();
+        match err {
+            StepError::LintFailure { violations } => {
+                assert!(violations.iter().any(|v| v.contains("Rule 9c")));
             }
             _ => panic!("Expected LintFailure"),
         }

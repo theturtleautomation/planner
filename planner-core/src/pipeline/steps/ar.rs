@@ -12,6 +12,11 @@
 //! Findings are categorized as blocking / advisory / informational.
 //! Blocking findings prevent graph.dot generation — the spec must be
 //! amended, re-linted, and re-reviewed before proceeding.
+//!
+//! Phase 3 adds:
+//! - `execute_adversarial_review_set()`: runs AR on each chunk in a multi-chunk set
+//! - `execute_cross_chunk_coherence_review()`: 4th review pass checking
+//!   consistency between chunks (duplicate logic, contract coverage, gap detection)
 
 use uuid::Uuid;
 
@@ -237,6 +242,149 @@ pub async fn execute_adversarial_review(
 
     tracing::info!(
         "Adversarial Review complete: {} blocking, {} advisory, {} informational",
+        report.blocking_count, report.advisory_count, report.informational_count,
+    );
+
+    Ok(report)
+}
+
+// ---------------------------------------------------------------------------
+// Multi-Chunk AR: per-chunk + cross-chunk coherence
+// ---------------------------------------------------------------------------
+
+/// Run Adversarial Review on every chunk in a multi-chunk spec set.
+///
+/// Returns one ArReportV1 per chunk. Each chunk gets the standard
+/// 3-reviewer treatment.
+pub async fn execute_adversarial_review_set(
+    router: &LlmRouter,
+    specs: &[NLSpecV1],
+    project_id: Uuid,
+) -> StepResult<Vec<ArReportV1>> {
+    let mut reports = Vec::with_capacity(specs.len());
+
+    for spec in specs {
+        let report = execute_adversarial_review(router, spec, project_id).await?;
+        let chunk_label = match &spec.chunk {
+            ChunkType::Root => "root",
+            ChunkType::Domain { name } => name.as_str(),
+        };
+        tracing::info!(
+            "AR for chunk '{}': {} blocking, {} advisory",
+            chunk_label, report.blocking_count, report.advisory_count,
+        );
+        reports.push(report);
+    }
+
+    Ok(reports)
+}
+
+const COHERENCE_REVIEW_PROMPT: &str = r#"You are the Cross-Chunk Coherence Reviewer for Planner v2. Your job: verify consistency across multiple NLSpec domain chunks that together form one project.
+
+## Your Lens: Cross-Chunk Coherence
+You verify that the domain chunks work together as a coherent system.
+
+## Checks
+1. No duplicate or overlapping FRs between domains (same requirement in two chunks)
+2. Every Phase 1 Contract is consumed by at least one domain chunk
+3. No gaps — functionality described in the Intent Summary is covered by some domain
+4. Domain boundaries are clean — no FR references cross-domain internal state
+5. Combined Definition of Done items cover the full system (not just individual domains)
+6. Satisfaction Criteria across all domains cover all Sacred Anchors
+
+## Output Format
+Respond with ONLY a JSON object (no markdown fences):
+
+{
+  "findings": [
+    {
+      "severity": "blocking"|"advisory"|"informational",
+      "affected_section": "section name",
+      "affected_requirements": ["FR-AUTH-1", "FR-API-2"],
+      "description": "What the cross-chunk issue is",
+      "suggested_resolution": "How to fix it"
+    }
+  ],
+  "summary": "One paragraph overall coherence assessment"
+}
+
+## Rules
+- "blocking" = cross-chunk inconsistency that would cause integration failure
+- "advisory" = potential gap or overlap worth addressing
+- "informational" = design observation
+- Focus on INTEGRATION issues, not per-chunk quality (that's handled by per-chunk AR)"#;
+
+/// Run a cross-chunk coherence review across all chunks.
+///
+/// This is a 4th review pass (in addition to the per-chunk 3-reviewer pass)
+/// that checks for consistency, gaps, and overlaps between domain chunks.
+pub async fn execute_cross_chunk_coherence_review(
+    router: &LlmRouter,
+    specs: &[NLSpecV1],
+    project_id: Uuid,
+) -> StepResult<ArReportV1> {
+    tracing::info!("Cross-Chunk Coherence Review: {} chunks", specs.len());
+
+    // Build a combined view of all chunks for the reviewer
+    let mut combined_text = String::new();
+    for spec in specs {
+        combined_text.push_str(&render_spec_for_review(spec));
+        combined_text.push_str("\n\n---\n\n");
+    }
+
+    let coherence_result = run_single_reviewer(
+        router,
+        &combined_text,
+        ArReviewer::Opus, // Use Opus for coherence (best at intent reasoning)
+        COHERENCE_REVIEW_PROMPT,
+        DefaultModels::AR_REVIEWER_OPUS,
+    ).await?;
+
+    // Build report
+    let mut findings = coherence_result.findings;
+
+    // Assign IDs with COHER prefix
+    let mut blocking_idx = 0u32;
+    let mut advisory_idx = 0u32;
+    let mut info_idx = 0u32;
+
+    for finding in &mut findings {
+        match finding.severity {
+            ArSeverity::Blocking => {
+                blocking_idx += 1;
+                finding.id = format!("AR-COHER-B-{}", blocking_idx);
+            }
+            ArSeverity::Advisory => {
+                advisory_idx += 1;
+                finding.id = format!("AR-COHER-A-{}", advisory_idx);
+            }
+            ArSeverity::Informational => {
+                info_idx += 1;
+                finding.id = format!("AR-COHER-I-{}", info_idx);
+            }
+        }
+    }
+
+    let mut report = ArReportV1 {
+        project_id,
+        chunk_name: "cross-chunk-coherence".into(),
+        nlspec_version: specs[0].version.clone(),
+        findings,
+        reviewer_summaries: vec![ReviewerSummary {
+            reviewer: ArReviewer::Opus,
+            summary: coherence_result.summary,
+            finding_count: blocking_idx + advisory_idx + info_idx,
+            blocking_count: blocking_idx,
+        }],
+        has_blocking: false,
+        blocking_count: 0,
+        advisory_count: 0,
+        informational_count: 0,
+    };
+    report.recalculate();
+
+    tracing::info!(
+        "Coherence Review complete: {} blocking, {} advisory, {} informational",
         report.blocking_count, report.advisory_count, report.informational_count,
     );
 
@@ -655,5 +803,28 @@ mod tests {
         assert!(!report.has_blocking);
         assert_eq!(report.blocking_count, 0);
         assert_eq!(report.advisory_count, 1);
+    }
+
+    #[test]
+    fn parse_coherence_review_response() {
+        let content = r#"{
+            "findings": [
+                {
+                    "severity": "advisory",
+                    "affected_section": "Requirements",
+                    "affected_requirements": ["FR-AUTH-1", "FR-API-1"],
+                    "description": "Both auth and api domains handle input validation — potential overlap",
+                    "suggested_resolution": "Clarify which domain owns input validation"
+                }
+            ],
+            "summary": "Generally cohesive with minor overlap."
+        }"#;
+
+        let result = parse_review_response(content, &ArReviewer::Opus);
+        assert!(result.is_ok());
+        let review = result.unwrap();
+        assert_eq!(review.findings.len(), 1);
+        assert_eq!(review.findings[0].severity, ArSeverity::Advisory);
+        assert_eq!(review.findings[0].affected_requirements.len(), 2);
     }
 }

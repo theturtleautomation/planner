@@ -6,6 +6,7 @@
 //!
 //! Phase 0: Single root NLSpec chunk, simplified graph.dot, single AGENTS.md.
 //! Phase 1: All scenario tiers (Critical + High + Medium).
+//! Phase 3: Multi-chunk compilation — ChunkPlan + IntakeV1 → root + N domain NLSpecV1s.
 
 use uuid::Uuid;
 
@@ -13,6 +14,7 @@ use crate::llm::{CompletionRequest, CompletionResponse, DefaultModels, Message, 
 use crate::llm::providers::LlmRouter;
 use planner_schemas::*;
 use super::{StepResult, StepError};
+use super::chunk_planner::{ChunkPlan, PlannedChunk};
 
 // ===========================================================================
 // IntakeV1 → NLSpecV1
@@ -260,6 +262,264 @@ fn parse_spec_response(
 }
 
 // ===========================================================================
+// Multi-Chunk Compilation: ChunkPlan + IntakeV1 → Vec<NLSpecV1>
+// ===========================================================================
+
+const DOMAIN_SPEC_SYSTEM_PROMPT: &str = r#"You are the Domain Spec Compiler for Planner v2. Your job: generate a domain-scoped NLSpecV1 chunk for ONE domain of a multi-chunk project.
+
+## Context
+You are compiling the **{domain_name}** domain chunk. The root chunk has already defined the shared Sacred Anchors and Phase 1 Contracts. Your job is to produce domain-specific FRs, constraints, DoD, and satisfaction criteria.
+
+## Cross-Chunk References
+- Reference Phase 1 Contracts by name (e.g. "UserSession", "PaymentIntent") — the root chunk owns them.
+- Reference Sacred Anchors by ID (e.g. "SA-1") — the root chunk owns them.
+- FR IDs in this domain MUST use the format: FR-{domain_prefix}-N (e.g. FR-AUTH-1, FR-API-2, FR-UI-3)
+- Satisfaction Criteria IDs: SC-{domain_prefix}-N (e.g. SC-AUTH-1)
+
+## Output Format
+Respond with ONLY a JSON object (no markdown fences, no explanation):
+
+{
+  "requirements": [
+    {
+      "id": "FR-{domain_prefix}-1",
+      "statement": "The system must ... (imperative language required)",
+      "priority": "Must" | "Should" | "Could",
+      "traces_to": ["SA-1"]
+    }
+  ],
+  "architectural_constraints": ["Domain-specific constraint", ...],
+  "external_dependencies": [
+    { "name": "Stripe", "dtu_priority": "High", "usage_description": "Payment processing" }
+  ],
+  "definition_of_done": [
+    { "criterion": "What must be true", "mechanically_checkable": true|false }
+  ],
+  "satisfaction_criteria": [
+    {
+      "id": "SC-{domain_prefix}-1",
+      "description": "Plain-English expected behavior",
+      "tier_hint": "Critical" | "High" | "Medium"
+    }
+  ],
+  "out_of_scope": ["Items this domain does NOT handle"]
+}
+
+## Rules
+1. Only include FRs relevant to the {domain_name} domain — do NOT duplicate FRs from other domains
+2. ALL FR statements MUST use imperative language: must, must not, always, never, shall
+3. Every FR MUST trace to at least one Sacred Anchor from the root chunk
+4. At least one Satisfaction Criterion MUST have tier_hint "Critical"
+5. Keep this domain chunk ≤500 lines
+6. Reference shared Phase 1 Contracts by name when your domain consumes them
+7. 3-8 FRs is typical for a domain chunk"#;
+
+/// Multi-chunk compilation: ChunkPlan + IntakeV1 → Vec<NLSpecV1>.
+///
+/// Generates a root NLSpecV1 (via the standard compiler) and then N domain
+/// NLSpecV1s (one per non-root chunk in the plan). Domain chunks reference
+/// the root's Sacred Anchors and Phase 1 Contracts by stable ID.
+pub async fn compile_spec_multichunk(
+    router: &LlmRouter,
+    intake: &IntakeV1,
+    plan: &ChunkPlan,
+) -> StepResult<Vec<NLSpecV1>> {
+    // Step 1: Compile the root chunk (same as single-chunk compilation)
+    let root_spec = compile_spec(router, intake).await?;
+    tracing::info!(
+        "Multi-chunk root compiled: {} FRs, {} contracts",
+        root_spec.requirements.len(),
+        root_spec.phase1_contracts.as_ref().map(|c| c.len()).unwrap_or(0),
+    );
+
+    let mut specs = vec![root_spec];
+
+    // Step 2: Compile each domain chunk
+    for planned in &plan.chunks {
+        if planned.chunk_id == "root" {
+            continue; // Already compiled
+        }
+
+        let domain_spec = compile_domain_chunk(
+            router, intake, &specs[0], planned,
+        ).await?;
+
+        tracing::info!(
+            "Domain chunk '{}' compiled: {} FRs",
+            planned.chunk_id,
+            domain_spec.requirements.len(),
+        );
+
+        specs.push(domain_spec);
+    }
+
+    tracing::info!(
+        "Multi-chunk compilation complete: {} total chunk(s)",
+        specs.len(),
+    );
+
+    Ok(specs)
+}
+
+/// Compile a single domain chunk using the root spec as context.
+async fn compile_domain_chunk(
+    router: &LlmRouter,
+    intake: &IntakeV1,
+    root_spec: &NLSpecV1,
+    planned: &PlannedChunk,
+) -> StepResult<NLSpecV1> {
+    let domain_name = &planned.chunk_id;
+    let domain_prefix = domain_name.to_uppercase().replace('-', "_");
+
+    // Build the system prompt with domain-specific substitutions
+    let system_prompt = DOMAIN_SPEC_SYSTEM_PROMPT
+        .replace("{domain_name}", domain_name)
+        .replace("{domain_prefix}", &domain_prefix);
+
+    // Build context for the LLM: root contracts + anchors + domain-specific info
+    let context = serde_json::json!({
+        "project_name": intake.project_name,
+        "intent_summary": intake.intent_summary,
+        "domain_name": domain_name,
+        "domain_context": planned.domain_context,
+        "relevant_sacred_anchors": root_spec.sacred_anchors.as_ref()
+            .map(|anchors| anchors.iter()
+                .filter(|a| planned.relevant_anchor_ids.contains(&a.id))
+                .collect::<Vec<_>>()
+            ).unwrap_or_default(),
+        "phase1_contracts": root_spec.phase1_contracts,
+        "estimated_fr_count": planned.estimated_fr_count,
+        "environment": intake.environment,
+        "out_of_scope": intake.out_of_scope,
+    });
+
+    let request = CompletionRequest {
+        system: Some(system_prompt),
+        messages: vec![Message {
+            role: Role::User,
+            content: format!(
+                "Compile the '{}' domain chunk for this project:\n\n{}",
+                domain_name,
+                serde_json::to_string_pretty(&context).unwrap_or_default(),
+            ),
+        }],
+        max_tokens: 4096,
+        temperature: 0.2,
+        model: DefaultModels::COMPILER_SPEC.to_string(),
+    };
+
+    let response = router.complete(request).await?;
+    parse_domain_chunk_response(
+        intake.project_id,
+        &root_spec.version,
+        domain_name,
+        &response,
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Domain chunk response parsing
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, serde::Deserialize)]
+struct DomainSpecJson {
+    requirements: Vec<RequirementJson>,
+    #[serde(default)]
+    architectural_constraints: Vec<String>,
+    #[serde(default)]
+    external_dependencies: Vec<ExtDepJson>,
+    definition_of_done: Vec<DoDJson>,
+    satisfaction_criteria: Vec<SatCritJson>,
+    #[serde(default)]
+    out_of_scope: Vec<String>,
+}
+
+fn parse_domain_chunk_response(
+    project_id: Uuid,
+    root_version: &str,
+    domain_name: &str,
+    response: &CompletionResponse,
+) -> StepResult<NLSpecV1> {
+    let content = super::intake::strip_code_fences(&response.content);
+
+    let json: DomainSpecJson = serde_json::from_str(&content)
+        .map_err(|e| StepError::JsonError(format!(
+            "Failed to parse domain '{}' Spec Compiler response: {}. Raw: {}",
+            domain_name, e, &response.content[..response.content.len().min(500)]
+        )))?;
+
+    let line_count = (content.len() / 60).min(500) as u32;
+
+    let requirements: Vec<Requirement> = json.requirements.into_iter()
+        .map(|r| Requirement {
+            id: r.id,
+            statement: r.statement,
+            priority: match r.priority.to_lowercase().as_str() {
+                "must" => Priority::Must,
+                "should" => Priority::Should,
+                "could" => Priority::Could,
+                _ => Priority::Must,
+            },
+            traces_to: r.traces_to,
+        })
+        .collect();
+
+    let external_dependencies: Vec<ExternalDependency> = json.external_dependencies.into_iter()
+        .map(|d| ExternalDependency {
+            name: d.name,
+            dtu_priority: match d.dtu_priority.to_lowercase().as_str() {
+                "high" => DtuPriority::High,
+                "medium" => DtuPriority::Medium,
+                "low" => DtuPriority::Low,
+                _ => DtuPriority::None,
+            },
+            usage_description: d.usage_description,
+        })
+        .collect();
+
+    let definition_of_done: Vec<DoDItem> = json.definition_of_done.into_iter()
+        .map(|d| DoDItem {
+            criterion: d.criterion,
+            mechanically_checkable: d.mechanically_checkable,
+        })
+        .collect();
+
+    let satisfaction_criteria: Vec<SatisfactionCriterion> = json.satisfaction_criteria.into_iter()
+        .map(|s| SatisfactionCriterion {
+            id: s.id,
+            description: s.description,
+            tier_hint: match s.tier_hint.to_lowercase().as_str() {
+                "critical" => ScenarioTierHint::Critical,
+                "high" => ScenarioTierHint::High,
+                _ => ScenarioTierHint::Medium,
+            },
+        })
+        .collect();
+
+    Ok(NLSpecV1 {
+        project_id,
+        version: root_version.to_string(),
+        chunk: ChunkType::Domain { name: domain_name.to_string() },
+        status: NLSpecStatus::Draft,
+        line_count,
+        created_from: format!("{}:{}:domain:{}", IntakeV1::TYPE_ID, project_id, domain_name),
+        // Domain chunks don't have these root-only fields
+        intent_summary: None,
+        sacred_anchors: None,
+        phase1_contracts: None,
+        // Domain-specific fields
+        requirements,
+        architectural_constraints: json.architectural_constraints,
+        external_dependencies,
+        definition_of_done,
+        satisfaction_criteria,
+        open_questions: vec![],
+        out_of_scope: json.out_of_scope,
+        amendment_log: vec![],
+    })
+}
+
+// ===========================================================================
 // NLSpecV1 → GraphDotV1
 // ===========================================================================
 
@@ -312,13 +572,66 @@ Respond with ONLY a JSON object (no markdown fences):
 - Use project-specific tool_commands derived from the NLSpec environment info
 - Keep it simple for Phase 0 — no fan-out branches, just a linear pipeline with retry"#;
 
+const MULTI_CHUNK_GRAPH_DOT_SYSTEM_PROMPT: &str = r#"You are the Graph.dot Compiler for Planner v2 (multi-chunk mode). Your job: transform a set of NLSpec chunks into a Kilroy Attractor-compatible DOT pipeline with PARALLEL domain branches.
+
+## Multi-Chunk Pipeline Topology
+For multi-domain projects, generate a pipeline with parallel branches:
+
+1. start → check_toolchain → lock_contracts
+2. lock_contracts → [parallel domain branches]
+   - Each domain: expand_spec_{domain} → implement_{domain} → verify_build_{domain} → verify_test_{domain}
+3. All domain branches → merge_integration → integration_test → review → exit
+
+## Output Format
+Respond with ONLY a JSON object (no markdown fences):
+
+{
+  "dot_content": "digraph pipeline { ... }",
+  "node_count": N,
+  "estimated_cost_usd": X.XX,
+  "run_budget_usd": Y.YY,
+  "model_routing": [
+    {
+      "node_name": "implement_auth",
+      "node_class": "hard",
+      "model": "claude-sonnet-4-6",
+      "fidelity": "truncate",
+      "goal_gate": false,
+      "max_retries": 2
+    }
+  ]
+}
+
+## DOT Format Rules (same as single-chunk, plus):
+- Domain branches run in parallel (use `rank=same` for parallel nodes)
+- `lock_contracts` node ensures Phase 1 Contracts are finalized before domain work
+- `merge_integration` is a join node that waits for all domain branches
+- Each domain's implement node gets `class="hard"`
+- Cost estimation should sum across all parallel branches
+- Budget should account for per-domain retries
+
+## Key Constraints
+- Valid Graphviz DOT
+- Parallel branches must converge at merge_integration
+- Each domain gets its own implement + verify cycle
+- Integration test runs AFTER all domains merge"#;
+
 /// NLSpecV1 → GraphDotV1 (Attractor-compatible DOT pipeline).
+///
+/// For single-chunk specs, produces a linear pipeline.
+/// For multi-chunk specs (passed as a full set), produces parallel domain branches.
 pub async fn compile_graph_dot(
     router: &LlmRouter,
     spec: &NLSpecV1,
 ) -> StepResult<GraphDotV1> {
-    let spec_json = serde_json::to_string_pretty(spec)
-        .map_err(|e| StepError::JsonError(e.to_string()))?;
+    use super::context_pack::{build_spec_context_pack, render_context_pack, ContextTarget};
+
+    let pack = build_spec_context_pack(spec, ContextTarget::GraphDotCompiler, 8000);
+    let context_text = render_context_pack(&pack);
+    tracing::debug!(
+        "graph.dot context pack: {} tokens (truncated: {})",
+        pack.estimated_tokens, pack.was_truncated,
+    );
 
     let request = CompletionRequest {
         system: Some(GRAPH_DOT_SYSTEM_PROMPT.to_string()),
@@ -326,7 +639,7 @@ pub async fn compile_graph_dot(
             role: Role::User,
             content: format!(
                 "Generate a Kilroy Attractor DOT pipeline for this NLSpec:\n\n{}",
-                spec_json
+                context_text
             ),
         }],
         max_tokens: 8192,
@@ -336,6 +649,62 @@ pub async fn compile_graph_dot(
 
     let response = router.complete(request).await?;
     parse_graph_dot_response(spec.project_id, &spec.version, &response)
+}
+
+/// Multi-chunk graph.dot: generates parallel DOT branches for each domain.
+///
+/// Takes the full set of NLSpec chunks (root + domains) and produces a
+/// single GraphDotV1 with a contracts-first node, then parallel domain
+/// implementation branches converging at integration.
+pub async fn compile_graph_dot_multichunk(
+    router: &LlmRouter,
+    specs: &[NLSpecV1],
+) -> StepResult<GraphDotV1> {
+    if specs.is_empty() {
+        return Err(StepError::Other("No NLSpec chunks provided for multi-chunk graph.dot".into()));
+    }
+
+    let root = &specs[0];
+    let domains: Vec<&NLSpecV1> = specs.iter().skip(1).collect();
+
+    let domain_names: Vec<String> = domains.iter().map(|d| {
+        match &d.chunk {
+            ChunkType::Domain { name } => name.clone(),
+            ChunkType::Root => "root".into(),
+        }
+    }).collect();
+
+    let context = serde_json::json!({
+        "root_spec": {
+            "intent_summary": root.intent_summary,
+            "sacred_anchors": root.sacred_anchors,
+            "phase1_contracts": root.phase1_contracts,
+            "architectural_constraints": root.architectural_constraints,
+        },
+        "domain_chunks": domains.iter().map(|d| serde_json::json!({
+            "chunk": d.chunk,
+            "requirements": d.requirements,
+            "external_dependencies": d.external_dependencies,
+        })).collect::<Vec<_>>(),
+        "domain_names": domain_names,
+    });
+
+    let request = CompletionRequest {
+        system: Some(MULTI_CHUNK_GRAPH_DOT_SYSTEM_PROMPT.to_string()),
+        messages: vec![Message {
+            role: Role::User,
+            content: format!(
+                "Generate a multi-chunk Kilroy Attractor DOT pipeline with parallel domain branches:\n\n{}",
+                serde_json::to_string_pretty(&context).unwrap_or_default(),
+            ),
+        }],
+        max_tokens: 8192,
+        temperature: 0.2,
+        model: DefaultModels::COMPILER_GRAPH_DOT.to_string(),
+    };
+
+    let response = router.complete(request).await?;
+    parse_graph_dot_response(root.project_id, &root.version, &response)
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -434,15 +803,14 @@ pub async fn generate_scenarios(
     router: &LlmRouter,
     spec: &NLSpecV1,
 ) -> StepResult<ScenarioSetV1> {
-    // Extract only the relevant parts for scenario generation
-    let context = serde_json::json!({
-        "project_id": spec.project_id,
-        "intent_summary": spec.intent_summary,
-        "sacred_anchors": spec.sacred_anchors,
-        "satisfaction_criteria": spec.satisfaction_criteria,
-        "requirements": spec.requirements,
-        "definition_of_done": spec.definition_of_done,
-    });
+    use super::context_pack::{build_spec_context_pack, render_context_pack, ContextTarget};
+
+    let pack = build_spec_context_pack(spec, ContextTarget::ScenarioGenerator, 6000);
+    let context_text = render_context_pack(&pack);
+    tracing::debug!(
+        "Scenario gen context pack: {} tokens (truncated: {})",
+        pack.estimated_tokens, pack.was_truncated,
+    );
 
     let request = CompletionRequest {
         system: Some(SCENARIO_SYSTEM_PROMPT.to_string()),
@@ -450,7 +818,7 @@ pub async fn generate_scenarios(
             role: Role::User,
             content: format!(
                 "Generate BDD scenarios for this NLSpec:\n\n{}",
-                serde_json::to_string_pretty(&context).unwrap_or_default()
+                context_text
             ),
         }],
         max_tokens: 4096,
@@ -553,8 +921,14 @@ pub async fn compile_agents_manifest(
     router: &LlmRouter,
     spec: &NLSpecV1,
 ) -> StepResult<AgentsManifestV1> {
-    let spec_json = serde_json::to_string_pretty(spec)
-        .map_err(|e| StepError::JsonError(e.to_string()))?;
+    use super::context_pack::{build_spec_context_pack, render_context_pack, ContextTarget};
+
+    let pack = build_spec_context_pack(spec, ContextTarget::SpecCompiler, 6000);
+    let context_text = render_context_pack(&pack);
+    tracing::debug!(
+        "AGENTS.md context pack: {} tokens (truncated: {})",
+        pack.estimated_tokens, pack.was_truncated,
+    );
 
     let request = CompletionRequest {
         system: Some(AGENTS_SYSTEM_PROMPT.to_string()),
@@ -562,7 +936,7 @@ pub async fn compile_agents_manifest(
             role: Role::User,
             content: format!(
                 "Generate an AGENTS.md from this NLSpec:\n\n{}",
-                spec_json
+                context_text
             ),
         }],
         max_tokens: 4096,
@@ -708,5 +1082,63 @@ mod tests {
         let agents = result.unwrap();
         assert!(agents.root_agents_md.contains("AGENTS.md"));
         assert!(agents.domain_docs.is_empty());
+    }
+
+    #[test]
+    fn parse_valid_domain_chunk_json() {
+        let response = sample_response(r#"{
+            "requirements": [
+                {
+                    "id": "FR-AUTH-1",
+                    "statement": "The system must hash all user passwords with bcrypt",
+                    "priority": "Must",
+                    "traces_to": ["SA-1"]
+                },
+                {
+                    "id": "FR-AUTH-2",
+                    "statement": "The system must issue JWT tokens on successful login",
+                    "priority": "Must",
+                    "traces_to": ["SA-1"]
+                }
+            ],
+            "architectural_constraints": ["Use bcrypt with cost factor 12"],
+            "external_dependencies": [],
+            "definition_of_done": [
+                { "criterion": "User can sign up and login", "mechanically_checkable": true }
+            ],
+            "satisfaction_criteria": [
+                { "id": "SC-AUTH-1", "description": "User creates account and logs in", "tier_hint": "Critical" }
+            ],
+            "out_of_scope": ["OAuth social login"]
+        }"#);
+
+        let result = parse_domain_chunk_response(
+            Uuid::new_v4(), "1.0", "auth", &response,
+        );
+        assert!(result.is_ok());
+        let spec = result.unwrap();
+        assert_eq!(spec.chunk, ChunkType::Domain { name: "auth".into() });
+        assert_eq!(spec.requirements.len(), 2);
+        assert_eq!(spec.requirements[0].id, "FR-AUTH-1");
+        assert!(spec.intent_summary.is_none()); // Domain chunks don't have intent_summary
+        assert!(spec.sacred_anchors.is_none()); // Domain chunks don't have sacred_anchors
+        assert!(spec.phase1_contracts.is_none()); // Domain chunks don't have contracts
+        assert!(!spec.definition_of_done.is_empty());
+        assert!(!spec.out_of_scope.is_empty());
+    }
+
+    #[test]
+    fn parse_domain_chunk_with_code_fences() {
+        let response = sample_response(
+            "```json\n{\"requirements\": [{\"id\": \"FR-API-1\", \"statement\": \"The system must validate all inputs\", \"priority\": \"Must\", \"traces_to\": [\"SA-2\"]}], \"definition_of_done\": [{\"criterion\": \"API returns 400 for invalid input\", \"mechanically_checkable\": true}], \"satisfaction_criteria\": [{\"id\": \"SC-API-1\", \"description\": \"Invalid input is rejected\", \"tier_hint\": \"Critical\"}], \"out_of_scope\": [\"Rate limiting\"]}\n```"
+        );
+
+        let result = parse_domain_chunk_response(
+            Uuid::new_v4(), "1.0", "api", &response,
+        );
+        assert!(result.is_ok());
+        let spec = result.unwrap();
+        assert_eq!(spec.chunk, ChunkType::Domain { name: "api".into() });
+        assert_eq!(spec.requirements[0].id, "FR-API-1");
     }
 }
