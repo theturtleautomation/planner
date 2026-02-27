@@ -160,4 +160,10 @@ impl DefaultModels {
     pub const SCENARIO_VALIDATOR: &'static str = "gemini-2.5-pro";
     pub const TELEMETRY_PRESENTER: &'static str = "claude-haiku-4-5";
     pub const RALPH_LOOPS: &'static str = "claude-sonnet-4-6";
+    // Adversarial Review — three different model families for diverse perspectives
+    pub const AR_REVIEWER_OPUS: &'static str = "claude-opus-4-6";
+    pub const AR_REVIEWER_GPT: &'static str = "gpt-4.1";
+    pub const AR_REVIEWER_GEMINI: &'static str = "gemini-2.5-pro";
+    // AR refinement uses Opus for high-precision spec amendments
+    pub const AR_REFINER: &'static str = "claude-opus-4-6";
 }

@@ -4,11 +4,14 @@
 //!
 //! 1. **Intake** — Socratic interview → IntakeV1
 //! 2. **Compile** — IntakeV1 → NLSpecV1 + GraphDotV1 + ScenarioSetV1 + AgentsManifestV1
-//! 3. **Handoff** — Factory Diplomat → Kilroy CLI invocation
-//! 4. **Validate** — Scenario Validator → SatisfactionResultV1
-//! 5. **Retry** — If gates fail and budget allows, re-run Factory (up to 2 retries)
-//! 6. **Present** — Telemetry Presenter → Plain English + Consequence Cards
-//! 7. **Approve** — Behavioral approval → Git Projection
+//! 3. **Lint** — 12-rule NLSpec validation (deterministic)
+//! 4. **Adversarial Review** — 3-model parallel NLSpec review → ArReportV1
+//! 5. **AR Refinement** — Blocking findings → spec amendments → re-lint loop
+//! 6. **Handoff** — Factory Diplomat → Kilroy CLI invocation
+//! 7. **Validate** — Scenario Validator → SatisfactionResultV1
+//! 8. **Retry** — If gates fail and budget allows, re-run Factory (up to 2 retries)
+//! 9. **Present** — Telemetry Presenter → Plain English + Consequence Cards
+//! 10. **Approve** — Behavioral approval → Git Projection
 
 pub mod steps;
 
@@ -21,6 +24,8 @@ use steps::StepResult;
 use steps::intake;
 use steps::compile;
 use steps::linter;
+use steps::ar;
+use steps::ar_refinement;
 use steps::factory;
 use steps::validate;
 use steps::telemetry;
@@ -53,6 +58,10 @@ pub enum StepType {
     CompileSpec,
     /// NLSpecV1 → 12-rule linting.
     LintSpec,
+    /// NLSpecV1 → 3-model Adversarial Review.
+    AdversarialReview,
+    /// Blocking AR findings → spec amendments → re-lint.
+    ArRefinement,
     /// NLSpecV1 → GraphDotV1.
     CompileGraphDot,
     /// NLSpecV1 + Sacred Anchors → ScenarioSetV1 (critical tier only in Phase 0).
@@ -98,22 +107,34 @@ impl Recipe {
                 depends_on: vec!["compile-spec".into()],
             },
             PipelineStep {
+                step_id: "adversarial-review".into(),
+                name: "Adversarial Review".into(),
+                step_type: StepType::AdversarialReview,
+                depends_on: vec!["lint-spec".into()],
+            },
+            PipelineStep {
+                step_id: "ar-refinement".into(),
+                name: "AR Refinement".into(),
+                step_type: StepType::ArRefinement,
+                depends_on: vec!["adversarial-review".into()],
+            },
+            PipelineStep {
                 step_id: "compile-graph-dot".into(),
                 name: "Generate graph.dot".into(),
                 step_type: StepType::CompileGraphDot,
-                depends_on: vec!["lint-spec".into()],
+                depends_on: vec!["ar-refinement".into()],
             },
             PipelineStep {
                 step_id: "generate-scenarios".into(),
                 name: "Generate Scenarios".into(),
                 step_type: StepType::GenerateScenarios,
-                depends_on: vec!["lint-spec".into()],
+                depends_on: vec!["ar-refinement".into()],
             },
             PipelineStep {
                 step_id: "compile-agents-manifest".into(),
                 name: "Generate AGENTS.md".into(),
                 step_type: StepType::CompileAgentsManifest,
-                depends_on: vec!["lint-spec".into()],
+                depends_on: vec!["ar-refinement".into()],
             },
             PipelineStep {
                 step_id: "factory-handoff".into(),
@@ -184,6 +205,7 @@ impl Recipe {
 pub struct Phase0FrontOfficeOutput {
     pub intake: IntakeV1,
     pub spec: NLSpecV1,
+    pub ar_report: ArReportV1,
     pub graph_dot: GraphDotV1,
     pub scenarios: ScenarioSetV1,
     pub agents_manifest: AgentsManifestV1,
@@ -192,7 +214,8 @@ pub struct Phase0FrontOfficeOutput {
 /// Run the Phase 0 Front Office pipeline: user description → all compilation
 /// artifacts ready for Kilroy handoff.
 ///
-/// Steps: Intake → Compile Spec → Lint → (GraphDot + Scenarios + AGENTS.md)
+/// Steps: Intake → Compile Spec → Lint → AR Review → AR Refinement →
+///        (GraphDot + Scenarios + AGENTS.md)
 pub async fn run_phase0_front_office(
     router: &LlmRouter,
     project_id: Uuid,
@@ -201,34 +224,83 @@ pub async fn run_phase0_front_office(
     tracing::info!("Phase 0 Front Office: starting pipeline");
 
     // Step 1: Intake Gateway
-    tracing::info!("Step 1/6: Intake Gateway");
+    tracing::info!("Step 1/8: Intake Gateway");
     let intake_result = intake::execute_intake(router, project_id, user_description).await?;
     tracing::info!("  → IntakeV1 produced: {}", intake_result.project_name);
 
     // Step 2: Compile Spec
-    tracing::info!("Step 2/6: Compile NLSpec");
-    let spec = compile::compile_spec(router, &intake_result).await?;
+    tracing::info!("Step 2/8: Compile NLSpec");
+    let mut spec = compile::compile_spec(router, &intake_result).await?;
     tracing::info!("  → NLSpecV1 produced: {} requirements, {} satisfaction criteria",
         spec.requirements.len(), spec.satisfaction_criteria.len());
 
     // Step 3: Lint Spec
-    tracing::info!("Step 3/6: Spec Linter");
+    tracing::info!("Step 3/8: Spec Linter");
     linter::lint_spec(&spec)?;
     tracing::info!("  → Spec passes all 12 linting rules");
 
-    // Steps 4-6 can run in parallel (all depend on linted spec only)
+    // Step 4: Adversarial Review — 3 models review the spec independently
+    tracing::info!("Step 4/8: Adversarial Review");
+    let mut ar_report = ar::execute_adversarial_review(router, &spec, project_id).await?;
+    tracing::info!("  → ArReportV1: {} blocking, {} advisory, {} informational",
+        ar_report.blocking_count, ar_report.advisory_count, ar_report.informational_count);
+
+    // Step 5: AR Refinement — if blocking findings, refine the spec
+    if ar_report.has_blocking {
+        tracing::info!("Step 5/8: AR Refinement (blocking findings detected)");
+        let refinement = ar_refinement::execute_ar_refinement(
+            router, spec, &ar_report, project_id,
+        ).await?;
+
+        spec = refinement.spec;
+        tracing::info!("  → Refinement: {} iterations, resolved={}",
+            refinement.iterations, refinement.resolved);
+
+        // Generate Consequence Cards for any Open Questions
+        if !refinement.open_questions.is_empty() {
+            let oq_cards = ar_refinement::generate_oq_consequence_cards(
+                &refinement.open_questions, project_id,
+            );
+            tracing::warn!("  → {} Open Question(s) need user resolution:", oq_cards.len());
+            for card in &oq_cards {
+                tracing::warn!("    • {}", card.problem);
+            }
+        }
+
+        if !refinement.resolved {
+            tracing::error!("  AR refinement exhausted — {} blocking finding(s) unresolved",
+                ar_report.blocking_count);
+            return Err(steps::StepError::ArRefinementExhausted(
+                ar_refinement::MAX_REFINEMENT_ITERATIONS,
+            ));
+        }
+
+        // Re-run AR on the refined spec to verify
+        tracing::info!("  Re-running Adversarial Review on refined spec...");
+        ar_report = ar::execute_adversarial_review(router, &spec, project_id).await?;
+        tracing::info!("  → Post-refinement AR: {} blocking, {} advisory, {} informational",
+            ar_report.blocking_count, ar_report.advisory_count, ar_report.informational_count);
+
+        if ar_report.has_blocking {
+            return Err(steps::StepError::ArBlockingFindings(ar_report.blocking_count));
+        }
+    } else {
+        tracing::info!("Step 5/8: AR Refinement (skipped — no blocking findings)");
+    }
+
+    // Steps 6-8 can run in parallel (all depend on AR-reviewed spec)
     // Phase 0: run sequentially for simplicity
-    tracing::info!("Step 4/6: Compile graph.dot");
+    tracing::info!("Step 6/8: Compile graph.dot");
     let graph_dot = compile::compile_graph_dot(router, &spec).await?;
     tracing::info!("  → GraphDotV1 produced: {} nodes, ${:.2} estimated cost",
         graph_dot.node_count, graph_dot.estimated_cost_usd);
 
-    tracing::info!("Step 5/6: Generate Scenarios");
+    tracing::info!("Step 7/8: Generate Scenarios");
     let scenarios = compile::generate_scenarios(router, &spec).await?;
     tracing::info!("  → ScenarioSetV1 produced: {} scenarios",
         scenarios.scenarios.len());
 
-    tracing::info!("Step 6/6: Generate AGENTS.md");
+    tracing::info!("Step 8/8: Generate AGENTS.md");
     let agents_manifest = compile::compile_agents_manifest(router, &spec).await?;
     tracing::info!("  → AgentsManifestV1 produced: {} bytes",
         agents_manifest.root_agents_md.len());
@@ -238,6 +310,7 @@ pub async fn run_phase0_front_office(
     Ok(Phase0FrontOfficeOutput {
         intake: intake_result,
         spec,
+        ar_report,
         graph_dot,
         scenarios,
         agents_manifest,
@@ -284,7 +357,7 @@ pub async fn run_phase0_full(
     user_description: &str,
 ) -> StepResult<Phase0FullOutput> {
     tracing::info!("═══════════════════════════════════════════════");
-    tracing::info!("  Planner v2 — Phase 1 Full Pipeline");
+    tracing::info!("  Planner v2 — Phase 2 Full Pipeline");
     tracing::info!("═══════════════════════════════════════════════");
 
     // ---- Layer 1: Front Office ----

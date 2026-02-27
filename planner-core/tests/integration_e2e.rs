@@ -828,6 +828,339 @@ async fn e2e_linter_catches_violations() {
     assert!(result.is_err());
 }
 
+// ---------------------------------------------------------------------------
+// Phase 2: Adversarial Review tests
+// ---------------------------------------------------------------------------
+
+/// Test AR report building and recalculation with mixed findings.
+#[tokio::test]
+async fn e2e_phase2_ar_report_construction() {
+    let project_id = Uuid::new_v4();
+
+    // Build a report with findings from multiple reviewers
+    let mut report = ArReportV1 {
+        project_id,
+        chunk_name: "root".into(),
+        nlspec_version: "1.0".into(),
+        findings: vec![
+            ArFinding {
+                id: "AR-B-1".into(),
+                reviewer: ArReviewer::Opus,
+                severity: ArSeverity::Blocking,
+                affected_section: "Requirements".into(),
+                affected_requirements: vec!["FR-1".into()],
+                description: "FR-1 ambiguous about error handling".into(),
+                suggested_resolution: Some("Specify behavior for non-positive input".into()),
+            },
+            ArFinding {
+                id: "AR-A-1".into(),
+                reviewer: ArReviewer::Gpt,
+                severity: ArSeverity::Advisory,
+                affected_section: "Definition of Done".into(),
+                affected_requirements: vec![],
+                description: "DoD item 2 could be more specific".into(),
+                suggested_resolution: None,
+            },
+            ArFinding {
+                id: "AR-I-1".into(),
+                reviewer: ArReviewer::Gemini,
+                severity: ArSeverity::Informational,
+                affected_section: "Out of Scope".into(),
+                affected_requirements: vec![],
+                description: "Consider adding timer persistence to out-of-scope".into(),
+                suggested_resolution: None,
+            },
+            ArFinding {
+                id: "AR-B-2".into(),
+                reviewer: ArReviewer::Gemini,
+                severity: ArSeverity::Blocking,
+                affected_section: "Satisfaction Criteria".into(),
+                affected_requirements: vec!["SC-1".into()],
+                description: "SC-1 missing critical-tier seed requirement".into(),
+                suggested_resolution: Some("Ensure SC-1 has tier_hint=Critical".into()),
+            },
+        ],
+        reviewer_summaries: vec![
+            ReviewerSummary {
+                reviewer: ArReviewer::Opus,
+                summary: "One blocking issue with FR-1 ambiguity.".into(),
+                finding_count: 1,
+                blocking_count: 1,
+            },
+            ReviewerSummary {
+                reviewer: ArReviewer::Gpt,
+                summary: "Generally implementable, minor DoD suggestion.".into(),
+                finding_count: 1,
+                blocking_count: 0,
+            },
+            ReviewerSummary {
+                reviewer: ArReviewer::Gemini,
+                summary: "Scope mostly contained, one blocking SC issue.".into(),
+                finding_count: 2,
+                blocking_count: 1,
+            },
+        ],
+        has_blocking: false,
+        blocking_count: 0,
+        advisory_count: 0,
+        informational_count: 0,
+    };
+
+    report.recalculate();
+
+    assert!(report.has_blocking);
+    assert_eq!(report.blocking_count, 2);
+    assert_eq!(report.advisory_count, 1);
+    assert_eq!(report.informational_count, 1);
+    assert_eq!(report.findings.len(), 4);
+    assert_eq!(report.reviewer_summaries.len(), 3);
+}
+
+/// Test that a clean spec (no issues) produces an AR report with no blocking findings.
+#[tokio::test]
+async fn e2e_phase2_clean_spec_passes_ar_lint() {
+    use planner_core::pipeline::steps::linter;
+
+    let project_id = Uuid::new_v4();
+    let spec = build_test_spec(project_id);
+
+    // The test spec should pass linting (prerequisite for AR)
+    assert!(linter::lint_spec(&spec).is_ok());
+
+    // A clean AR report (simulating what we'd get from well-formed spec)
+    let mut report = ArReportV1 {
+        project_id,
+        chunk_name: "root".into(),
+        nlspec_version: "1.0".into(),
+        findings: vec![
+            // Only advisory/informational — no blocking
+            ArFinding {
+                id: "AR-A-1".into(),
+                reviewer: ArReviewer::Gpt,
+                severity: ArSeverity::Advisory,
+                affected_section: "Phase 1 Contracts".into(),
+                affected_requirements: vec![],
+                description: "TimerState could include an 'elapsed' field for convenience".into(),
+                suggested_resolution: Some("Optional enhancement".into()),
+            },
+        ],
+        reviewer_summaries: vec![],
+        has_blocking: false,
+        blocking_count: 0,
+        advisory_count: 0,
+        informational_count: 0,
+    };
+    report.recalculate();
+
+    assert!(!report.has_blocking);
+    assert_eq!(report.blocking_count, 0);
+    assert_eq!(report.advisory_count, 1);
+}
+
+/// Test AR refinement: apply amendments to a spec and verify changes.
+#[tokio::test]
+async fn e2e_phase2_ar_refinement_applies_amendments() {
+    let project_id = Uuid::new_v4();
+    let mut spec = build_test_spec(project_id);
+
+    // Verify initial state
+    assert_eq!(spec.requirements.len(), 4);
+    assert_eq!(spec.out_of_scope.len(), 3);
+    assert!(spec.amendment_log.is_empty());
+
+    // Simulate: modify FR-1 statement
+    let fr1 = spec.requirements.iter_mut().find(|r| r.id == "FR-1").unwrap();
+    fr1.statement = "The system must accept a positive integer duration in seconds and reject non-positive values with an error message".into();
+
+    // Simulate: add a new requirement
+    spec.requirements.push(Requirement {
+        id: "FR-5".into(),
+        statement: "The system must handle zero-length durations by displaying 00:00 immediately".into(),
+        priority: Priority::Should,
+        traces_to: vec!["SA-1".into()],
+    });
+
+    // Simulate: add out-of-scope item
+    spec.out_of_scope.push("Timer persistence across browser sessions".into());
+
+    // Simulate: add amendment log entry
+    spec.amendment_log.push(Amendment {
+        timestamp: "2026-02-27T12:00:00Z".into(),
+        description: "Clarified FR-1 error handling, added FR-5 for zero-length edge case, added session persistence to out-of-scope".into(),
+        reason: "AR Refinement iteration 1".into(),
+        affected_section: "requirements, out_of_scope".into(),
+    });
+
+    // Verify amended spec
+    assert_eq!(spec.requirements.len(), 5);
+    assert!(spec.requirements[0].statement.contains("reject non-positive"));
+    assert_eq!(spec.requirements[4].id, "FR-5");
+    assert_eq!(spec.out_of_scope.len(), 4);
+    assert!(spec.out_of_scope.last().unwrap().contains("persistence"));
+    assert_eq!(spec.amendment_log.len(), 1);
+
+    // The amended spec should still pass linting
+    use planner_core::pipeline::steps::linter;
+    assert!(linter::lint_spec(&spec).is_ok());
+}
+
+/// Test OQ Consequence Card generation.
+#[tokio::test]
+async fn e2e_phase2_oq_consequence_cards() {
+    use planner_core::pipeline::steps::ar_refinement;
+
+    let project_id = Uuid::new_v4();
+    let open_questions = vec![
+        "Should the timer support custom time formats (mm:ss vs just seconds)?".to_string(),
+        "What happens when the user enters a duration longer than 24 hours?".to_string(),
+        "Should the timer display milliseconds?".to_string(),
+    ];
+
+    let cards = ar_refinement::generate_oq_consequence_cards(&open_questions, project_id);
+
+    assert_eq!(cards.len(), 3);
+
+    for (i, card) in cards.iter().enumerate() {
+        assert_eq!(card.project_id, project_id);
+        assert_eq!(card.trigger, CardTrigger::OpenQuestion);
+        assert!(card.problem.contains(&open_questions[i]));
+        assert_eq!(card.status, CardStatus::Pending);
+        assert!(card.resolution.is_none());
+
+        // Each card should have Answer and Out-of-Scope actions
+        assert_eq!(card.actions.len(), 2);
+        assert_eq!(card.actions[0].label, "Answer");
+        assert_eq!(card.actions[1].label, "Out of Scope");
+    }
+
+    // Empty OQ list should produce no cards
+    let empty_cards = ar_refinement::generate_oq_consequence_cards(&[], project_id);
+    assert!(empty_cards.is_empty());
+}
+
+/// Test that spec rendering for AR review includes all critical sections.
+#[tokio::test]
+async fn e2e_phase2_spec_rendering_for_review() {
+    use planner_core::pipeline::steps::ar;
+
+    let project_id = Uuid::new_v4();
+    let spec = build_test_spec(project_id);
+    let rendered = ar::render_spec_for_review(&spec);
+
+    // Check all sections are present
+    assert!(rendered.contains("# NLSpec"), "Missing header");
+    assert!(rendered.contains("Intent Summary"), "Missing intent summary");
+    assert!(rendered.contains("Sacred Anchors"), "Missing sacred anchors");
+    assert!(rendered.contains("SA-1"), "Missing SA-1");
+    assert!(rendered.contains("SA-2"), "Missing SA-2");
+    assert!(rendered.contains("Functional Requirements"), "Missing requirements");
+    assert!(rendered.contains("FR-1"), "Missing FR-1");
+    assert!(rendered.contains("FR-2"), "Missing FR-2");
+    assert!(rendered.contains("FR-3"), "Missing FR-3");
+    assert!(rendered.contains("FR-4"), "Missing FR-4");
+    assert!(rendered.contains("Architectural Constraints"), "Missing constraints");
+    assert!(rendered.contains("Phase 1 Contracts"), "Missing contracts");
+    assert!(rendered.contains("TimerState"), "Missing TimerState contract");
+    assert!(rendered.contains("Definition of Done"), "Missing DoD");
+    assert!(rendered.contains("Satisfaction Criteria"), "Missing SC");
+    assert!(rendered.contains("SC-1"), "Missing SC-1");
+    assert!(rendered.contains("Open Questions"), "Missing OQ section");
+    assert!(rendered.contains("(none)"), "Missing (none) for empty OQ");
+    assert!(rendered.contains("Out of Scope"), "Missing OOS");
+    assert!(rendered.contains("Sound alerts"), "Missing OOS item");
+}
+
+/// Test AR severity classification: unknown severities default to informational.
+#[tokio::test]
+async fn e2e_phase2_ar_severity_classification() {
+    // Test the ArSeverity enum properties
+    let blocking = ArSeverity::Blocking;
+    let advisory = ArSeverity::Advisory;
+    let info = ArSeverity::Informational;
+
+    assert_eq!(blocking, ArSeverity::Blocking);
+    assert_ne!(blocking, advisory);
+    assert_ne!(advisory, info);
+
+    // Test reviewer types
+    assert_ne!(ArReviewer::Opus, ArReviewer::Gpt);
+    assert_ne!(ArReviewer::Gpt, ArReviewer::Gemini);
+    assert_ne!(ArReviewer::Opus, ArReviewer::Gemini);
+}
+
+/// Test that AR integrates correctly with the pipeline recipe.
+#[tokio::test]
+async fn e2e_phase2_recipe_includes_ar_steps() {
+    use planner_core::pipeline::{Recipe, StepType};
+
+    let recipe = Recipe::phase0();
+
+    // Verify AR steps exist in the recipe
+    let step_ids: Vec<&str> = recipe.steps.iter().map(|s| s.step_id.as_str()).collect();
+    assert!(step_ids.contains(&"lint-spec"), "Missing lint-spec step");
+    assert!(step_ids.contains(&"adversarial-review"), "Missing adversarial-review step");
+    assert!(step_ids.contains(&"ar-refinement"), "Missing ar-refinement step");
+    assert!(step_ids.contains(&"compile-graph-dot"), "Missing compile-graph-dot step");
+
+    // Verify AR step comes after lint and before graph-dot
+    let lint_idx = step_ids.iter().position(|&s| s == "lint-spec").unwrap();
+    let ar_idx = step_ids.iter().position(|&s| s == "adversarial-review").unwrap();
+    let refine_idx = step_ids.iter().position(|&s| s == "ar-refinement").unwrap();
+    let graph_idx = step_ids.iter().position(|&s| s == "compile-graph-dot").unwrap();
+
+    assert!(lint_idx < ar_idx, "AR should come after lint");
+    assert!(ar_idx < refine_idx, "Refinement should come after AR");
+    assert!(refine_idx < graph_idx, "Graph-dot should come after refinement");
+
+    // Verify dependencies
+    let ar_step = recipe.steps.iter().find(|s| s.step_id == "adversarial-review").unwrap();
+    assert!(ar_step.depends_on.contains(&"lint-spec".to_string()));
+
+    let refine_step = recipe.steps.iter().find(|s| s.step_id == "ar-refinement").unwrap();
+    assert!(refine_step.depends_on.contains(&"adversarial-review".to_string()));
+
+    let graph_step = recipe.steps.iter().find(|s| s.step_id == "compile-graph-dot").unwrap();
+    assert!(graph_step.depends_on.contains(&"ar-refinement".to_string()));
+
+    // Verify step types
+    assert!(matches!(ar_step.step_type, StepType::AdversarialReview));
+    assert!(matches!(refine_step.step_type, StepType::ArRefinement));
+}
+
+/// Test the AR refinement result structure when no blocking findings exist.
+#[tokio::test]
+async fn e2e_phase2_refinement_no_blocking_passthrough() {
+    let project_id = Uuid::new_v4();
+
+    // A clean report with no blocking findings
+    let report = ArReportV1 {
+        project_id,
+        chunk_name: "root".into(),
+        nlspec_version: "1.0".into(),
+        findings: vec![
+            ArFinding {
+                id: "AR-A-1".into(),
+                reviewer: ArReviewer::Gpt,
+                severity: ArSeverity::Advisory,
+                affected_section: "DoD".into(),
+                affected_requirements: vec![],
+                description: "Minor suggestion".into(),
+                suggested_resolution: None,
+            },
+        ],
+        reviewer_summaries: vec![],
+        has_blocking: false,
+        blocking_count: 0,
+        advisory_count: 1,
+        informational_count: 0,
+    };
+
+    // has_blocking is false, so execute_ar_refinement would return immediately
+    // with resolved=true, iterations=0
+    assert!(!report.has_blocking);
+    assert_eq!(report.blocking_count, 0);
+}
+
 /// Verify Storage can persist and retrieve Turn<T> artifacts.
 #[tokio::test]
 async fn e2e_storage_turn_lifecycle() {

@@ -1,20 +1,24 @@
 //! # Pipeline Step Executors
 //!
-//! Each step type has its own module. Phase 0 implementations
-//! are minimal — just enough to prove the full loop.
+//! Each step type has its own module. Phase 0/1 implementations
+//! prove the full loop; Phase 2 adds Adversarial Review.
 //!
 //! Modules:
-//! - `intake`    — Socratic interview → IntakeV1
-//! - `compile`   — IntakeV1 → NLSpecV1 → GraphDotV1 → ScenarioSetV1 → AgentsManifestV1
-//! - `linter`    — 12-rule NLSpec validation (deterministic, no LLM)
-//! - `factory`   — Artifact handoff + Kilroy CLI invocation + checkpoint polling
-//! - `validate`  — Cross-model scenario evaluation (Gemini judges Claude)
-//! - `telemetry` — Factory output → plain English + Consequence Cards
-//! - `git`       — Behavioral approval → standard Git commit
+//! - `intake`         — Socratic interview → IntakeV1
+//! - `compile`        — IntakeV1 → NLSpecV1 → GraphDotV1 → ScenarioSetV1 → AgentsManifestV1
+//! - `linter`         — 12-rule NLSpec validation (deterministic, no LLM)
+//! - `ar`             — Adversarial Review: 3-model parallel NLSpec review
+//! - `ar_refinement`  — AR findings → spec amendments → re-lint loop
+//! - `factory`        — Artifact handoff + Kilroy CLI invocation + checkpoint polling
+//! - `validate`       — Cross-model scenario evaluation (Gemini judges Claude)
+//! - `telemetry`      — Factory output → plain English + Consequence Cards
+//! - `git`            — Behavioral approval → standard Git commit
 
 pub mod intake;
 pub mod compile;
 pub mod linter;
+pub mod ar;
+pub mod ar_refinement;
 pub mod factory;
 pub mod validate;
 pub mod telemetry;
@@ -37,6 +41,12 @@ pub enum StepError {
 
     #[error("Scenario validation failed: {0}")]
     ValidationError(String),
+
+    #[error("Adversarial Review has {0} blocking finding(s)")]
+    ArBlockingFindings(u32),
+
+    #[error("AR refinement loop exhausted after {0} iterations")]
+    ArRefinementExhausted(u32),
 
     #[error("Sandbox deployment failed: {0}")]
     SandboxError(String),
