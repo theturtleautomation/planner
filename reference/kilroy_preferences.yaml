@@ -1,0 +1,37 @@
+# ==========================================================================
+# Pipeline Model Preferences
+# ==========================================================================
+#
+# This file controls model defaults for the create-dotfile
+# skill when generating .dot pipeline files.
+#
+# The skill reads this file at the start of model selection.
+# These values are defaults; catalog-derived choices and user overrides
+# may supersede them.
+#
+# To lock a choice, set the value. To let the skill pick dynamically,
+# leave it blank ("").
+#
+
+# --------------------------------------------------------------------------
+# Default models per pipeline role
+# --------------------------------------------------------------------------
+#
+# Each pipeline node has a "class" that determines which model runs it.
+# Set a model ID here to lock that role to a specific model. Leave blank
+# to let the skill choose from Kilroy modeldb/OpenRouter catalog data.
+#
+# Roles:
+#   default — general implementation nodes (no class attribute)
+#   hard    — complex implementation nodes (class="hard")
+#   verify  — verification/test-runner nodes (class="verify")
+#   review  — final review nodes (class="review")
+#
+# Example values: "gpt-5.3-codex", "claude-opus-4-6", "gemini/gemini-3-pro-preview"
+
+defaults:
+  models:
+    default: ""
+    hard: ""
+    verify: ""
+    review: ""

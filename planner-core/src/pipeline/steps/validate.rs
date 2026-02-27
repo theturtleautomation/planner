@@ -1,0 +1,486 @@
+//! # Scenario Validator — Cross-Model Evaluation
+//!
+//! Evaluates Kilroy's output against the hidden scenario set using a
+//! different model family than the coding agent (Gemini evaluates
+//! Claude's code — never the same model family).
+//!
+//! Phase 0: Critical tier only. Each scenario runs 3x, majority pass (2/3).
+//! The factory receives only generalized errors (category + severity),
+//! never the scenario text.
+//!
+//! Flow:
+//! 1. For each scenario in the ScenarioSetV1
+//! 2. Gemini reads the BDD text and plans evaluation
+//! 3. Gemini scores 0.0–1.0 per run
+//! 4. Majority pass required (2/3 runs with score ≥ 0.5)
+//! 5. Tiered gates applied: 100% Critical → 95% High → 90% Medium
+
+use uuid::Uuid;
+
+use crate::llm::{CompletionRequest, DefaultModels, Message, Role};
+use crate::llm::providers::LlmRouter;
+use planner_schemas::*;
+use super::{StepResult, StepError};
+
+// ---------------------------------------------------------------------------
+// Evaluation prompt
+// ---------------------------------------------------------------------------
+
+const EVALUATOR_SYSTEM_PROMPT: &str = r#"You are the Scenario Validator for Planner v2. You evaluate whether a built application satisfies BDD scenarios.
+
+## Your Role
+You are a DIFFERENT model family from the coding agent. You judge the code's output objectively, preventing shared blind spots.
+
+## Input
+You receive:
+1. A BDD scenario (Given/When/Then)
+2. The application's output path (where the code lives)
+3. The build status from the factory
+
+## Output Format
+Respond with ONLY a JSON object (no markdown fences):
+
+{
+  "score": 0.0 to 1.0,
+  "passed": true|false,
+  "reasoning": "Brief explanation of the evaluation",
+  "error_category": "category-name" or null,
+  "error_severity": "Critical"|"High"|"Medium"|"Low" or null
+}
+
+## Scoring Rules
+- 1.0 = scenario fully satisfied
+- 0.7-0.9 = mostly satisfied, minor gaps
+- 0.3-0.6 = partially satisfied
+- 0.0-0.2 = not satisfied
+- Score >= 0.5 counts as a "pass" for majority voting
+
+## Rules
+1. If the build failed entirely, score 0.0 for all scenarios
+2. Be objective — evaluate what was actually built, not intent
+3. error_category should be a kebab-case domain label (e.g., "data-persistence", "ui-rendering")
+4. Only set error fields if the scenario did NOT pass"#;
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+/// Evaluate all scenarios against the factory output.
+///
+/// Phase 0: Critical tier only. Each scenario runs 3 times.
+/// Returns a SatisfactionResultV1 with tiered pass rates.
+pub async fn execute_scenario_validation(
+    router: &LlmRouter,
+    scenarios: &ScenarioSetV1,
+    factory_output: &FactoryOutputV1,
+) -> StepResult<SatisfactionResultV1> {
+    tracing::info!(
+        "Scenario Validator: evaluating {} scenarios against {}",
+        scenarios.scenarios.len(),
+        factory_output.output_path,
+    );
+
+    // If the build failed entirely, short-circuit with all failures
+    if factory_output.build_status == BuildStatus::Failed {
+        tracing::warn!("Build failed — all scenarios automatically fail");
+        return Ok(build_all_failed_result(
+            factory_output.kilroy_run_id,
+            scenarios,
+        ));
+    }
+
+    let mut scenario_results = Vec::new();
+
+    for scenario in &scenarios.scenarios {
+        tracing::info!(
+            "  Evaluating scenario {} [{}] — {}",
+            scenario.id,
+            format!("{:?}", scenario.tier),
+            scenario.title,
+        );
+
+        let result = evaluate_single_scenario(
+            router,
+            scenario,
+            factory_output,
+        )
+        .await?;
+
+        tracing::info!(
+            "    → score={:.2}, majority_pass={}",
+            result.score,
+            result.majority_pass,
+        );
+
+        scenario_results.push(result);
+    }
+
+    // Calculate tiered pass rates
+    let critical_results: Vec<&ScenarioResult> = scenario_results
+        .iter()
+        .filter(|r| r.tier == ScenarioTier::Critical)
+        .collect();
+    let high_results: Vec<&ScenarioResult> = scenario_results
+        .iter()
+        .filter(|r| r.tier == ScenarioTier::High)
+        .collect();
+    let medium_results: Vec<&ScenarioResult> = scenario_results
+        .iter()
+        .filter(|r| r.tier == ScenarioTier::Medium)
+        .collect();
+
+    let critical_pass_rate = if critical_results.is_empty() {
+        1.0 // No critical scenarios = pass
+    } else {
+        let passed = critical_results.iter().filter(|r| r.majority_pass).count();
+        passed as f32 / critical_results.len() as f32
+    };
+
+    let high_pass_rate = if high_results.is_empty() {
+        1.0
+    } else {
+        let passed = high_results.iter().filter(|r| r.majority_pass).count();
+        passed as f32 / high_results.len() as f32
+    };
+
+    let medium_pass_rate = if medium_results.is_empty() {
+        1.0
+    } else {
+        let passed = medium_results.iter().filter(|r| r.majority_pass).count();
+        passed as f32 / medium_results.len() as f32
+    };
+
+    let result = SatisfactionResultV1 {
+        kilroy_run_id: factory_output.kilroy_run_id,
+        critical_pass_rate,
+        high_pass_rate,
+        medium_pass_rate,
+        gates_passed: critical_pass_rate >= 1.0
+            && high_pass_rate >= 0.95
+            && medium_pass_rate >= 0.90,
+        scenario_results,
+    };
+
+    tracing::info!(
+        "Scenario Validator complete: critical={:.0}%, high={:.0}%, medium={:.0}% — gates={}",
+        result.critical_pass_rate * 100.0,
+        result.high_pass_rate * 100.0,
+        result.medium_pass_rate * 100.0,
+        if result.gates_passed { "PASSED" } else { "FAILED" },
+    );
+
+    Ok(result)
+}
+
+// ---------------------------------------------------------------------------
+// Single scenario evaluation (3x runs)
+// ---------------------------------------------------------------------------
+
+/// Evaluate a single scenario 3 times and compute majority pass.
+async fn evaluate_single_scenario(
+    router: &LlmRouter,
+    scenario: &Scenario,
+    factory_output: &FactoryOutputV1,
+) -> StepResult<ScenarioResult> {
+    let mut runs = [0.0f32; 3];
+    let mut last_error_category: Option<String> = None;
+    let mut last_error_severity: Option<Severity> = None;
+
+    for run_idx in 0..3 {
+        let eval = evaluate_scenario_once(
+            router,
+            scenario,
+            factory_output,
+            run_idx + 1,
+        )
+        .await?;
+
+        runs[run_idx] = eval.score;
+
+        if let Some(cat) = eval.error_category {
+            last_error_category = Some(cat);
+        }
+        if let Some(sev) = eval.error_severity {
+            last_error_severity = Some(sev);
+        }
+    }
+
+    let majority_pass = ScenarioResult::compute_majority_pass(&runs);
+    let score = runs.iter().sum::<f32>() / 3.0;
+
+    let generalized_error = if !majority_pass {
+        Some(GeneralizedError {
+            category: last_error_category.unwrap_or_else(|| "unknown".into()),
+            severity: last_error_severity.unwrap_or(Severity::Medium),
+        })
+    } else {
+        None
+    };
+
+    Ok(ScenarioResult {
+        scenario_id: scenario.id.clone(),
+        tier: scenario.tier.clone(),
+        runs,
+        majority_pass,
+        score,
+        generalized_error,
+    })
+}
+
+/// Single evaluation result from the LLM.
+struct SingleEvalResult {
+    score: f32,
+    #[allow(dead_code)]
+    passed: bool,
+    error_category: Option<String>,
+    error_severity: Option<Severity>,
+}
+
+/// Run one evaluation of a scenario against the factory output.
+async fn evaluate_scenario_once(
+    router: &LlmRouter,
+    scenario: &Scenario,
+    factory_output: &FactoryOutputV1,
+    run_number: usize,
+) -> StepResult<SingleEvalResult> {
+    let context = serde_json::json!({
+        "scenario": {
+            "id": scenario.id,
+            "tier": format!("{:?}", scenario.tier),
+            "title": scenario.title,
+            "bdd_text": scenario.bdd_text,
+        },
+        "factory_output": {
+            "build_status": format!("{:?}", factory_output.build_status),
+            "output_path": factory_output.output_path,
+            "nodes_completed": factory_output.node_results.iter()
+                .filter(|n| n.success)
+                .map(|n| &n.node_name)
+                .collect::<Vec<_>>(),
+        },
+        "run_number": run_number,
+    });
+
+    let request = CompletionRequest {
+        system: Some(EVALUATOR_SYSTEM_PROMPT.to_string()),
+        messages: vec![Message {
+            role: Role::User,
+            content: format!(
+                "Evaluate this scenario against the factory output:\n\n{}",
+                serde_json::to_string_pretty(&context).unwrap_or_default()
+            ),
+        }],
+        max_tokens: 1024,
+        temperature: 0.3, // Some variation across runs is desired
+        model: DefaultModels::SCENARIO_VALIDATOR.to_string(),
+    };
+
+    let response = router.complete(request).await?;
+    parse_eval_response(&response.content)
+}
+
+// ---------------------------------------------------------------------------
+// Response parsing
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, serde::Deserialize)]
+struct EvalJson {
+    score: f32,
+    #[serde(default)]
+    passed: bool,
+    #[allow(dead_code)]
+    #[serde(default)]
+    reasoning: String,
+    error_category: Option<String>,
+    error_severity: Option<String>,
+}
+
+fn parse_eval_response(content: &str) -> StepResult<SingleEvalResult> {
+    let cleaned = super::intake::strip_code_fences(content);
+
+    let json: EvalJson = serde_json::from_str(&cleaned).map_err(|e| {
+        StepError::JsonError(format!(
+            "Failed to parse evaluator response: {}. Raw: {}",
+            e,
+            &content[..content.len().min(300)]
+        ))
+    })?;
+
+    let error_severity = json.error_severity.and_then(|s| {
+        match s.to_lowercase().as_str() {
+            "critical" => Some(Severity::Critical),
+            "high" => Some(Severity::High),
+            "medium" => Some(Severity::Medium),
+            "low" => Some(Severity::Low),
+            _ => None,
+        }
+    });
+
+    Ok(SingleEvalResult {
+        score: json.score.clamp(0.0, 1.0),
+        passed: json.passed || json.score >= 0.5,
+        error_category: json.error_category,
+        error_severity,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/// Build a result where all scenarios fail (used when build itself failed).
+fn build_all_failed_result(
+    kilroy_run_id: Uuid,
+    scenarios: &ScenarioSetV1,
+) -> SatisfactionResultV1 {
+    let scenario_results: Vec<ScenarioResult> = scenarios
+        .scenarios
+        .iter()
+        .map(|s| ScenarioResult {
+            scenario_id: s.id.clone(),
+            tier: s.tier.clone(),
+            runs: [0.0, 0.0, 0.0],
+            majority_pass: false,
+            score: 0.0,
+            generalized_error: Some(GeneralizedError {
+                category: "build-failure".into(),
+                severity: Severity::Critical,
+            }),
+        })
+        .collect();
+
+    SatisfactionResultV1 {
+        kilroy_run_id,
+        critical_pass_rate: 0.0,
+        high_pass_rate: 0.0,
+        medium_pass_rate: 0.0,
+        gates_passed: false,
+        scenario_results,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_valid_eval_response() {
+        let content = r#"{"score": 0.85, "passed": true, "reasoning": "Looks good", "error_category": null, "error_severity": null}"#;
+        let result = parse_eval_response(content);
+        assert!(result.is_ok());
+        let eval = result.unwrap();
+        assert!((eval.score - 0.85).abs() < 0.01);
+        assert!(eval.error_category.is_none());
+    }
+
+    #[test]
+    fn parse_failed_eval_response() {
+        let content = r#"{"score": 0.2, "passed": false, "reasoning": "Data not persisted", "error_category": "data-persistence", "error_severity": "Critical"}"#;
+        let result = parse_eval_response(content);
+        assert!(result.is_ok());
+        let eval = result.unwrap();
+        assert!(eval.score < 0.5);
+        assert_eq!(eval.error_category.unwrap(), "data-persistence");
+        assert_eq!(eval.error_severity.unwrap(), Severity::Critical);
+    }
+
+    #[test]
+    fn parse_eval_with_code_fences() {
+        let content = "```json\n{\"score\": 1.0, \"passed\": true, \"reasoning\": \"Perfect\"}\n```";
+        let result = parse_eval_response(content);
+        assert!(result.is_ok());
+        assert!((result.unwrap().score - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn score_clamped_to_range() {
+        let content = r#"{"score": 1.5, "passed": true, "reasoning": "Over-scored"}"#;
+        let result = parse_eval_response(content);
+        assert!(result.is_ok());
+        assert!((result.unwrap().score - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn build_all_failed_result_zeros_pass_rates() {
+        let scenarios = ScenarioSetV1 {
+            project_id: Uuid::new_v4(),
+            nlspec_version: "1.0".into(),
+            scenarios: vec![
+                Scenario {
+                    id: "SC-CRIT-1".into(),
+                    tier: ScenarioTier::Critical,
+                    title: "Test".into(),
+                    bdd_text: "Given/When/Then".into(),
+                    dtu_deps: vec![],
+                    traces_to_anchors: vec![],
+                    source_criterion: None,
+                },
+            ],
+            isolation_context_id: Uuid::new_v4(),
+            ralph_augmented: false,
+        };
+
+        let result = build_all_failed_result(Uuid::new_v4(), &scenarios);
+        assert_eq!(result.critical_pass_rate, 0.0);
+        assert!(!result.gates_passed);
+        assert_eq!(result.scenario_results.len(), 1);
+        assert!(!result.scenario_results[0].majority_pass);
+    }
+
+    #[test]
+    fn tiered_gates_logic() {
+        // All passing
+        let result = SatisfactionResultV1 {
+            kilroy_run_id: Uuid::new_v4(),
+            critical_pass_rate: 1.0,
+            high_pass_rate: 0.96,
+            medium_pass_rate: 0.92,
+            gates_passed: true,
+            scenario_results: vec![],
+        };
+        assert!(result.evaluate_gates());
+
+        // Critical failing
+        let result2 = SatisfactionResultV1 {
+            critical_pass_rate: 0.5,
+            ..result.clone()
+        };
+        assert!(!result2.evaluate_gates());
+
+        // High below threshold
+        let result3 = SatisfactionResultV1 {
+            high_pass_rate: 0.90,
+            ..result.clone()
+        };
+        assert!(!result3.evaluate_gates());
+    }
+
+    #[test]
+    fn user_messages_by_tier() {
+        let all_pass = SatisfactionResultV1 {
+            kilroy_run_id: Uuid::new_v4(),
+            critical_pass_rate: 1.0,
+            high_pass_rate: 1.0,
+            medium_pass_rate: 1.0,
+            gates_passed: true,
+            scenario_results: vec![],
+        };
+        assert_eq!(all_pass.user_message(), "Everything works as described.");
+
+        let medium_low = SatisfactionResultV1 {
+            medium_pass_rate: 0.8,
+            ..all_pass.clone()
+        };
+        assert!(medium_low.user_message().contains("minor behaviors"));
+
+        let critical_fail = SatisfactionResultV1 {
+            critical_pass_rate: 0.5,
+            ..all_pass.clone()
+        };
+        assert!(critical_fail.user_message().contains("critical"));
+    }
+}
