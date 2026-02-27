@@ -4,8 +4,8 @@
 //! compilation steps. Each step takes a structured artifact and produces
 //! the next one in the pipeline.
 //!
-//! Phase 0: Single root NLSpec chunk, simplified graph.dot, critical-tier
-//! scenarios only, single AGENTS.md (no domain docs).
+//! Phase 0: Single root NLSpec chunk, simplified graph.dot, single AGENTS.md.
+//! Phase 1: All scenario tiers (Critical + High + Medium).
 
 use uuid::Uuid;
 
@@ -396,7 +396,7 @@ fn parse_graph_dot_response(
 // NLSpecV1 → ScenarioSetV1
 // ===========================================================================
 
-const SCENARIO_SYSTEM_PROMPT: &str = r#"You are the Scenario Generator for Planner v2. Your job: transform NLSpec Sacred Anchors and Satisfaction Criteria into BDD scenarios.
+const SCENARIO_SYSTEM_PROMPT: &str = r#"You are the Scenario Generator for Planner v2. Your job: transform NLSpec Sacred Anchors and Satisfaction Criteria into BDD scenarios across ALL tiers.
 
 ## Output Format
 Respond with ONLY a JSON object (no markdown fences):
@@ -418,13 +418,18 @@ Respond with ONLY a JSON object (no markdown fences):
 ## Rules
 1. Every Sacred Anchor MUST have at least one Critical scenario
 2. Every Satisfaction Criterion seed MUST produce at least one scenario
-3. Phase 0: Generate ONLY Critical tier scenarios (simplify for micro-tools)
+3. Generate scenarios for ALL THREE tiers: Critical, High, and Medium
 4. BDD text must use Given/When/Then format
 5. Scenarios must be testable against a running instance
 6. ID format: SC-CRIT-N for Critical, SC-HIGH-N for High, SC-MED-N for Medium
-7. For micro-tools: 2-5 Critical scenarios is typical"#;
+7. Tier assignment rules:
+   - Critical: Core functionality, data integrity, security invariants. Must NEVER fail.
+   - High: Important UX flows, performance expectations, edge cases. Expect ≥95% pass.
+   - Medium: Minor UX polish, cosmetic behaviors, graceful degradation. Expect ≥90% pass.
+8. For micro-tools: 2-4 Critical, 2-3 High, 1-3 Medium scenarios is typical
+9. Respect the tier_hint on each Satisfaction Criterion — use it as the starting tier"#;
 
-/// NLSpecV1 → ScenarioSetV1 (BDD scenarios, critical tier only in Phase 0).
+/// NLSpecV1 → ScenarioSetV1 (BDD scenarios, all tiers).
 pub async fn generate_scenarios(
     router: &LlmRouter,
     spec: &NLSpecV1,

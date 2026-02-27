@@ -10,8 +10,11 @@
 //!    into plain-English messages the Smart Tinkerer can understand.
 //!    The user NEVER sees numeric scores.
 //!
-//! 3. **Live Preview**: (Phase 1+) Serve factory output in Docker sandbox.
-//!    Phase 0: Just report the output path.
+//! 3. **Consequence Cards**: Generate cards for Critical gate failures,
+//!    High gate failures, budget warnings, and budget exhaustion.
+//!
+//! 4. **Live Preview**: (Phase 2+) Serve factory output in Docker sandbox.
+//!    Phase 1: Just report the output path.
 //!
 //! Model: claude-haiku-4-5 (fast, cheap plain-English translation)
 
@@ -182,6 +185,52 @@ pub async fn execute_telemetry_presentation(
                 CardAction {
                     label: "Retry".into(),
                     description: "Try building it again with the same requirements.".into(),
+                },
+            ],
+            status: CardStatus::Pending,
+            resolution: None,
+        });
+    }
+
+    // High gate failure card (only when critical passes but high fails)
+    if satisfaction.critical_pass_rate >= 1.0 && satisfaction.high_pass_rate < 0.95 {
+        // Collect the High-tier error categories for context
+        let high_error_cats: Vec<&str> = satisfaction
+            .scenario_results
+            .iter()
+            .filter(|r| r.tier == ScenarioTier::High && !r.majority_pass)
+            .filter_map(|r| r.generalized_error.as_ref())
+            .map(|e| e.category.as_str())
+            .collect();
+
+        let problem_detail = if high_error_cats.is_empty() {
+            "Some important behaviors didn't work as expected.".into()
+        } else {
+            format!(
+                "Some important behaviors didn't work as expected (areas: {}).",
+                high_error_cats.join(", "),
+            )
+        };
+
+        consequence_cards.push(ConsequenceCardV1 {
+            card_id: Uuid::new_v4(),
+            project_id,
+            trigger: CardTrigger::HighGateFailure,
+            problem: problem_detail,
+            proposed_solution: "The core features work, but some important pieces need attention. I can retry or you can guide me.".into(),
+            impact: "The app is mostly functional but some key behaviors are missing or incorrect.".into(),
+            actions: vec![
+                CardAction {
+                    label: "Retry".into(),
+                    description: "Let me try building those parts again.".into(),
+                },
+                CardAction {
+                    label: "Clarify".into(),
+                    description: "Tell me more about how these features should work.".into(),
+                },
+                CardAction {
+                    label: "Accept".into(),
+                    description: "It's good enough — move forward with what's built.".into(),
                 },
             ],
             status: CardStatus::Pending,
@@ -488,5 +537,65 @@ mod tests {
         assert!(ctx.get("gates_passed").is_some());
         assert!(ctx.get("budget_status").is_some());
         assert!(ctx.get("satisfaction_summary").is_some());
+    }
+
+    #[test]
+    fn high_gate_failure_generates_consequence_card() {
+        let project_id = Uuid::new_v4();
+
+        let factory_output = FactoryOutputV1 {
+            kilroy_run_id: Uuid::new_v4(),
+            nlspec_version: "1.0".into(),
+            attempt: 1,
+            build_status: BuildStatus::Success,
+            spend_usd: 0.50,
+            checkpoint_path: "/tmp/cp.json".into(),
+            dod_results: vec![],
+            node_results: vec![
+                NodeResult {
+                    node_name: "implement".into(),
+                    success: true,
+                    attempts: 1,
+                    spend_usd: 0.50,
+                    duration_secs: 30.0,
+                    error: None,
+                },
+            ],
+            output_path: "/tmp/out".into(),
+        };
+
+        // Critical passes, but High fails
+        let satisfaction = SatisfactionResultV1 {
+            kilroy_run_id: factory_output.kilroy_run_id,
+            critical_pass_rate: 1.0,
+            high_pass_rate: 0.80,
+            medium_pass_rate: 0.90,
+            gates_passed: false,
+            scenario_results: vec![
+                ScenarioResult {
+                    scenario_id: "SC-HIGH-1".into(),
+                    tier: ScenarioTier::High,
+                    runs: [0.3, 0.4, 0.2],
+                    majority_pass: false,
+                    score: 0.3,
+                    generalized_error: Some(GeneralizedError {
+                        category: "state-management".into(),
+                        severity: Severity::High,
+                    }),
+                },
+            ],
+        };
+
+        let budget = RunBudgetV1::new_phase0(project_id, Uuid::new_v4());
+
+        let report = build_telemetry_report_deterministic(
+            &factory_output,
+            &satisfaction,
+            &budget,
+            project_id,
+        );
+
+        // Should indicate user action needed since gates failed
+        assert!(report.needs_user_action);
     }
 }

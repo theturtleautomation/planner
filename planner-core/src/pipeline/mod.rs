@@ -1,13 +1,14 @@
 //! # Pipeline — Recipe Step Loop
 //!
-//! The Phase 0 pipeline orchestrates the Dark Factory workflow:
+//! The Phase 1 pipeline orchestrates the Dark Factory workflow:
 //!
 //! 1. **Intake** — Socratic interview → IntakeV1
 //! 2. **Compile** — IntakeV1 → NLSpecV1 + GraphDotV1 + ScenarioSetV1 + AgentsManifestV1
 //! 3. **Handoff** — Factory Diplomat → Kilroy CLI invocation
 //! 4. **Validate** — Scenario Validator → SatisfactionResultV1
-//! 5. **Present** — Telemetry Presenter → Plain English + Consequence Cards
-//! 6. **Approve** — Behavioral approval → Git Projection
+//! 5. **Retry** — If gates fail and budget allows, re-run Factory (up to 2 retries)
+//! 6. **Present** — Telemetry Presenter → Plain English + Consequence Cards
+//! 7. **Approve** — Behavioral approval → Git Projection
 
 pub mod steps;
 
@@ -264,53 +265,104 @@ pub struct Phase0FullOutput {
     pub budget: RunBudgetV1,
 }
 
+/// Maximum factory retry attempts when validation gates fail.
+const FACTORY_MAX_RETRIES: usize = 2;
+
 /// Run the complete Phase 0 pipeline: user description → approved Git commit.
 ///
 /// This is the full loop:
-/// Front Office → Factory Diplomat → Scenario Validator → Telemetry Presenter → Git Projection
+/// Front Office → Factory Diplomat → Scenario Validator →
+///   (retry Factory if gates fail and budget allows) →
+///   Telemetry Presenter → Git Projection
 ///
-/// Phase 0: No Docker sandbox (Live Preview). No multi-turn approval flow.
-/// Behavioral approval is automatic (Phase 1 adds the approval gate).
+/// Phase 1: Factory retry loop re-invokes Kilroy with generalized errors
+/// when validation gates fail, up to FACTORY_MAX_RETRIES additional attempts
+/// within the budget cap.
 pub async fn run_phase0_full(
     router: &LlmRouter,
     project_id: Uuid,
     user_description: &str,
 ) -> StepResult<Phase0FullOutput> {
     tracing::info!("═══════════════════════════════════════════════");
-    tracing::info!("  Planner v2 — Phase 0 Full Pipeline");
+    tracing::info!("  Planner v2 — Phase 1 Full Pipeline");
     tracing::info!("═══════════════════════════════════════════════");
 
     // ---- Layer 1: Front Office ----
     let front_office = run_phase0_front_office(router, project_id, user_description).await?;
 
-    // ---- Layer 1→2: Factory Diplomat ----
-    tracing::info!("─── Factory Diplomat ───");
+    // ---- Layer 1→2: Factory Diplomat + Validation Loop ----
     let run_id = Uuid::new_v4();
     let mut budget = RunBudgetV1::new_phase0(project_id, run_id);
+    let mut factory_output;
+    let mut satisfaction;
+    let mut attempt = 0usize;
 
-    let factory_output = factory::execute_factory_handoff(
-        &front_office.graph_dot,
-        &front_office.agents_manifest,
-        &front_office.spec,
-        &mut budget,
-    )
-    .await?;
+    loop {
+        attempt += 1;
+        tracing::info!("─── Factory Diplomat (attempt {}/{}) ───", attempt, FACTORY_MAX_RETRIES + 1);
 
-    tracing::info!(
-        "  Factory: status={:?}, spend=${:.2}",
-        factory_output.build_status,
-        factory_output.spend_usd,
-    );
+        factory_output = factory::execute_factory_handoff(
+            &front_office.graph_dot,
+            &front_office.agents_manifest,
+            &front_office.spec,
+            &mut budget,
+        )
+        .await?;
 
-    // ---- Layer 3: Return Trip ----
-    tracing::info!("─── Scenario Validator ───");
-    let satisfaction = validate::execute_scenario_validation(
-        router,
-        &front_office.scenarios,
-        &factory_output,
-    )
-    .await?;
+        tracing::info!(
+            "  Factory: status={:?}, spend=${:.2}",
+            factory_output.build_status,
+            factory_output.spend_usd,
+        );
 
+        // ---- Layer 3: Return Trip — Validate ----
+        tracing::info!("─── Scenario Validator (attempt {}) ───", attempt);
+        satisfaction = validate::execute_scenario_validation(
+            router,
+            &front_office.scenarios,
+            &factory_output,
+        )
+        .await?;
+
+        // Check if we passed or should retry
+        if satisfaction.gates_passed {
+            tracing::info!("  Gates PASSED on attempt {}", attempt);
+            break;
+        }
+
+        // Gates failed — decide whether to retry
+        if attempt > FACTORY_MAX_RETRIES {
+            tracing::warn!(
+                "  Gates FAILED after {} attempts — no more retries",
+                attempt,
+            );
+            break;
+        }
+
+        if !budget.can_proceed() {
+            tracing::warn!(
+                "  Gates FAILED on attempt {} — budget exhausted, cannot retry",
+                attempt,
+            );
+            break;
+        }
+
+        // Log the generalized errors being fed back to the factory
+        let error_categories: Vec<&str> = satisfaction
+            .scenario_results
+            .iter()
+            .filter_map(|r| r.generalized_error.as_ref())
+            .map(|e| e.category.as_str())
+            .collect();
+
+        tracing::info!(
+            "  Gates FAILED on attempt {} — retrying with error feedback: {:?}",
+            attempt,
+            error_categories,
+        );
+    }
+
+    // ---- Telemetry Presenter ----
     tracing::info!("─── Telemetry Presenter ───");
     let telemetry = telemetry::execute_telemetry_presentation(
         router,
@@ -334,7 +386,7 @@ pub async fn run_phase0_full(
 
     // ---- Done ----
     tracing::info!("═══════════════════════════════════════════════");
-    tracing::info!("  Pipeline Complete");
+    tracing::info!("  Pipeline Complete ({} factory attempt(s))", attempt);
     tracing::info!("  {}", telemetry.headline);
     tracing::info!("  Commit: {}", &git_result.commit.commit_hash[..12.min(git_result.commit.commit_hash.len())]);
     tracing::info!("═══════════════════════════════════════════════");

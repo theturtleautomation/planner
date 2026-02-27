@@ -1,4 +1,4 @@
-//! # End-to-End Integration Test — Full Phase 0 Pipeline
+//! # End-to-End Integration Test — Full Pipeline
 //!
 //! Exercises the complete pipeline from user description → Git commit,
 //! using a mock LLM router and Kilroy simulation mode.
@@ -11,6 +11,11 @@
 //! 5. Scenario Validator → SatisfactionResultV1
 //! 6. Telemetry Presenter → TelemetryReport
 //! 7. Git Projection → GitCommitV1
+//!
+//! Phase 1 additions:
+//! - Multi-tier gate evaluation (Critical/High/Medium thresholds)
+//! - DoD mechanical checker integration
+//! - High gate failure consequence card generation
 //!
 //! No external CLIs required — all LLM calls return canned responses.
 
@@ -569,6 +574,229 @@ async fn e2e_phase0_budget_exhaustion() {
 
     assert_eq!(budget.status, BudgetStatus::HardStop);
     assert!(!budget.can_proceed());
+}
+
+// ---------------------------------------------------------------------------
+// Phase 1: Multi-tier validation tests
+// ---------------------------------------------------------------------------
+
+/// Test that all three tiers (Critical, High, Medium) are properly evaluated
+/// with the correct gate thresholds.
+#[tokio::test]
+async fn e2e_phase1_multi_tier_gate_evaluation() {
+    let _project_id = Uuid::new_v4();
+
+    // All tiers pass
+    let all_pass = SatisfactionResultV1 {
+        kilroy_run_id: Uuid::new_v4(),
+        critical_pass_rate: 1.0,
+        high_pass_rate: 0.96,
+        medium_pass_rate: 0.92,
+        gates_passed: true,
+        scenario_results: vec![
+            ScenarioResult {
+                scenario_id: "SC-CRIT-1".into(),
+                tier: ScenarioTier::Critical,
+                runs: [0.9, 0.85, 0.92],
+                majority_pass: true,
+                score: 0.89,
+                generalized_error: None,
+            },
+            ScenarioResult {
+                scenario_id: "SC-HIGH-1".into(),
+                tier: ScenarioTier::High,
+                runs: [0.8, 0.7, 0.85],
+                majority_pass: true,
+                score: 0.78,
+                generalized_error: None,
+            },
+            ScenarioResult {
+                scenario_id: "SC-MED-1".into(),
+                tier: ScenarioTier::Medium,
+                runs: [0.6, 0.7, 0.65],
+                majority_pass: true,
+                score: 0.65,
+                generalized_error: None,
+            },
+        ],
+    };
+    assert!(all_pass.evaluate_gates());
+    assert_eq!(all_pass.user_message(), "Everything works as described.");
+
+    // Critical fails -> always fails
+    let crit_fail = SatisfactionResultV1 {
+        critical_pass_rate: 0.5,
+        gates_passed: false,
+        ..all_pass.clone()
+    };
+    assert!(!crit_fail.evaluate_gates());
+    assert!(crit_fail.user_message().contains("critical"));
+
+    // High at exactly 0.95 -> passes
+    let high_boundary = SatisfactionResultV1 {
+        high_pass_rate: 0.95,
+        ..all_pass.clone()
+    };
+    assert!(high_boundary.evaluate_gates());
+
+    // High at 0.94 -> fails
+    let high_fail = SatisfactionResultV1 {
+        high_pass_rate: 0.94,
+        gates_passed: false,
+        ..all_pass.clone()
+    };
+    assert!(!high_fail.evaluate_gates());
+
+    // Medium at exactly 0.90 -> passes
+    let med_boundary = SatisfactionResultV1 {
+        medium_pass_rate: 0.90,
+        ..all_pass.clone()
+    };
+    assert!(med_boundary.evaluate_gates());
+
+    // Medium at 0.89 -> fails
+    let med_fail = SatisfactionResultV1 {
+        medium_pass_rate: 0.89,
+        gates_passed: false,
+        ..all_pass.clone()
+    };
+    assert!(!med_fail.evaluate_gates());
+}
+
+/// Test DoD mechanical checker integration with factory output.
+#[tokio::test]
+async fn e2e_phase1_dod_checker_integration() {
+    use planner_core::pipeline::steps::validate;
+
+    let project_id = Uuid::new_v4();
+    let spec = build_test_spec(project_id);
+
+    // Successful build with all gates passing
+    let factory_output = FactoryOutputV1 {
+        kilroy_run_id: Uuid::new_v4(),
+        nlspec_version: "1.0".into(),
+        attempt: 1,
+        build_status: BuildStatus::Success,
+        spend_usd: 0.50,
+        checkpoint_path: "/tmp/cp.json".into(),
+        dod_results: vec![],
+        node_results: vec![
+            NodeResult {
+                node_name: "implement".into(),
+                success: true,
+                attempts: 1,
+                spend_usd: 0.30,
+                duration_secs: 20.0,
+                error: None,
+            },
+        ],
+        output_path: "/tmp/output".into(),
+    };
+
+    let satisfaction = SatisfactionResultV1 {
+        kilroy_run_id: factory_output.kilroy_run_id,
+        critical_pass_rate: 1.0,
+        high_pass_rate: 1.0,
+        medium_pass_rate: 1.0,
+        gates_passed: true,
+        scenario_results: vec![],
+    };
+
+    let dod_results = validate::check_definition_of_done(
+        &spec,
+        &factory_output,
+        &satisfaction,
+    );
+
+    // The test spec has 3 DoD items, all mechanically checkable
+    assert_eq!(dod_results.len(), 3);
+    assert!(dod_results.iter().all(|r| r.passed));
+    assert!(dod_results.iter().all(|r| r.check_method == "mechanical"));
+
+    // Now test with a failed build
+    let failed_factory = FactoryOutputV1 {
+        build_status: BuildStatus::Failed,
+        ..factory_output.clone()
+    };
+    let failed_satisfaction = SatisfactionResultV1 {
+        critical_pass_rate: 0.0,
+        high_pass_rate: 0.0,
+        medium_pass_rate: 0.0,
+        gates_passed: false,
+        ..satisfaction.clone()
+    };
+
+    let dod_fail_results = validate::check_definition_of_done(
+        &spec,
+        &failed_factory,
+        &failed_satisfaction,
+    );
+
+    // Build-related DoD items should fail
+    assert!(dod_fail_results.iter().any(|r| !r.passed));
+}
+
+/// Test that High gate failure generates a consequence card with error categories.
+#[tokio::test]
+async fn e2e_phase1_high_gate_failure_consequence_card() {
+    use planner_core::pipeline::steps::telemetry;
+
+    let project_id = Uuid::new_v4();
+
+    let factory_output = FactoryOutputV1 {
+        kilroy_run_id: Uuid::new_v4(),
+        nlspec_version: "1.0".into(),
+        attempt: 1,
+        build_status: BuildStatus::Success,
+        spend_usd: 0.75,
+        checkpoint_path: "/tmp/cp.json".into(),
+        dod_results: vec![],
+        node_results: vec![
+            NodeResult {
+                node_name: "implement".into(),
+                success: true,
+                attempts: 1,
+                spend_usd: 0.75,
+                duration_secs: 30.0,
+                error: None,
+            },
+        ],
+        output_path: "/tmp/out".into(),
+    };
+
+    // Critical passes, High fails at 80%
+    let satisfaction = SatisfactionResultV1 {
+        kilroy_run_id: factory_output.kilroy_run_id,
+        critical_pass_rate: 1.0,
+        high_pass_rate: 0.80,
+        medium_pass_rate: 0.95,
+        gates_passed: false,
+        scenario_results: vec![
+            ScenarioResult {
+                scenario_id: "SC-HIGH-1".into(),
+                tier: ScenarioTier::High,
+                runs: [0.3, 0.4, 0.2],
+                majority_pass: false,
+                score: 0.3,
+                generalized_error: Some(GeneralizedError {
+                    category: "state-management".into(),
+                    severity: Severity::High,
+                }),
+            },
+        ],
+    };
+
+    let budget = RunBudgetV1::new_phase0(project_id, Uuid::new_v4());
+
+    let report = telemetry::build_telemetry_report_deterministic(
+        &factory_output,
+        &satisfaction,
+        &budget,
+        project_id,
+    );
+
+    assert!(report.needs_user_action);
+    assert!(report.headline.contains("mostly right") || report.headline.contains("important"));
 }
 
 /// Test that the linter correctly validates spec structure.

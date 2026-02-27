@@ -4,7 +4,7 @@
 //! different model family than the coding agent (Gemini evaluates
 //! Claude's code — never the same model family).
 //!
-//! Phase 0: Critical tier only. Each scenario runs 3x, majority pass (2/3).
+//! Phase 1: All tiers evaluated. Each scenario runs 3x, majority pass (2/3).
 //! The factory receives only generalized errors (category + severity),
 //! never the scenario text.
 //!
@@ -67,7 +67,7 @@ Respond with ONLY a JSON object (no markdown fences):
 
 /// Evaluate all scenarios against the factory output.
 ///
-/// Phase 0: Critical tier only. Each scenario runs 3 times.
+/// All tiers (Critical, High, Medium). Each scenario runs 3 times.
 /// Returns a SatisfactionResultV1 with tiered pass rates.
 pub async fn execute_scenario_validation(
     router: &LlmRouter,
@@ -236,7 +236,11 @@ struct SingleEvalResult {
     error_severity: Option<Severity>,
 }
 
+/// Maximum retries for a single evaluation LLM call.
+const EVAL_MAX_RETRIES: usize = 2;
+
 /// Run one evaluation of a scenario against the factory output.
+/// Retries up to EVAL_MAX_RETRIES times on LLM or parse failures.
 async fn evaluate_scenario_once(
     router: &LlmRouter,
     scenario: &Scenario,
@@ -261,22 +265,49 @@ async fn evaluate_scenario_once(
         "run_number": run_number,
     });
 
-    let request = CompletionRequest {
-        system: Some(EVALUATOR_SYSTEM_PROMPT.to_string()),
-        messages: vec![Message {
-            role: Role::User,
-            content: format!(
-                "Evaluate this scenario against the factory output:\n\n{}",
-                serde_json::to_string_pretty(&context).unwrap_or_default()
-            ),
-        }],
-        max_tokens: 1024,
-        temperature: 0.3, // Some variation across runs is desired
-        model: DefaultModels::SCENARIO_VALIDATOR.to_string(),
-    };
+    let mut last_error = None;
 
-    let response = router.complete(request).await?;
-    parse_eval_response(&response.content)
+    for attempt in 0..=EVAL_MAX_RETRIES {
+        if attempt > 0 {
+            tracing::warn!(
+                "    Retrying evaluation for {} (attempt {}/{})",
+                scenario.id, attempt + 1, EVAL_MAX_RETRIES + 1,
+            );
+        }
+
+        let request = CompletionRequest {
+            system: Some(EVALUATOR_SYSTEM_PROMPT.to_string()),
+            messages: vec![Message {
+                role: Role::User,
+                content: format!(
+                    "Evaluate this scenario against the factory output:\n\n{}",
+                    serde_json::to_string_pretty(&context).unwrap_or_default()
+                ),
+            }],
+            max_tokens: 1024,
+            temperature: 0.3, // Some variation across runs is desired
+            model: DefaultModels::SCENARIO_VALIDATOR.to_string(),
+        };
+
+        match router.complete(request).await {
+            Ok(response) => {
+                match parse_eval_response(&response.content) {
+                    Ok(result) => return Ok(result),
+                    Err(e) => {
+                        tracing::warn!("    Parse error on attempt {}: {}", attempt + 1, e);
+                        last_error = Some(e);
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::warn!("    LLM error on attempt {}: {}", attempt + 1, e);
+                last_error = Some(StepError::LlmError(e.to_string()));
+            }
+        }
+    }
+
+    // All retries exhausted — return the last error
+    Err(last_error.unwrap_or_else(|| StepError::Other("Evaluation failed after retries".into())))
 }
 
 // ---------------------------------------------------------------------------
@@ -357,6 +388,116 @@ fn build_all_failed_result(
         gates_passed: false,
         scenario_results,
     }
+}
+
+// ---------------------------------------------------------------------------
+// DoD Mechanical Checker
+// ---------------------------------------------------------------------------
+
+/// Result of checking a single Definition of Done item.
+#[derive(Debug, Clone)]
+pub struct DoDCheckResult {
+    /// The DoD criterion text.
+    pub criterion: String,
+    /// Whether this item passed verification.
+    pub passed: bool,
+    /// How it was checked: "mechanical" (code-verified) or "manual" (assumed pass).
+    pub check_method: String,
+    /// Details about the check.
+    pub detail: String,
+}
+
+/// Mechanically check DoD items against the factory output.
+///
+/// Items marked `mechanically_checkable: true` are checked against the
+/// build results. Items marked `mechanically_checkable: false` are
+/// marked as needing manual review (assumed pass for now).
+pub fn check_definition_of_done(
+    spec: &NLSpecV1,
+    factory_output: &FactoryOutputV1,
+    satisfaction: &SatisfactionResultV1,
+) -> Vec<DoDCheckResult> {
+    spec.definition_of_done.iter().map(|dod| {
+        if !dod.mechanically_checkable {
+            return DoDCheckResult {
+                criterion: dod.criterion.clone(),
+                passed: true, // Assume pass for non-mechanical items
+                check_method: "manual".into(),
+                detail: "Requires manual review — assumed pass.".into(),
+            };
+        }
+
+        // Mechanical checks based on factory output state
+        let criterion_lower = dod.criterion.to_lowercase();
+
+        // Check: Build succeeds
+        if criterion_lower.contains("build") || criterion_lower.contains("compile") {
+            let passed = factory_output.build_status == BuildStatus::Success
+                || factory_output.build_status == BuildStatus::PartialSuccess;
+            return DoDCheckResult {
+                criterion: dod.criterion.clone(),
+                passed,
+                check_method: "mechanical".into(),
+                detail: format!("Build status: {:?}", factory_output.build_status),
+            };
+        }
+
+        // Check: Tests/scenarios pass
+        if criterion_lower.contains("test") || criterion_lower.contains("scenario")
+            || criterion_lower.contains("pass")
+        {
+            return DoDCheckResult {
+                criterion: dod.criterion.clone(),
+                passed: satisfaction.gates_passed,
+                check_method: "mechanical".into(),
+                detail: format!(
+                    "Gates: critical={:.0}%, high={:.0}%, medium={:.0}%",
+                    satisfaction.critical_pass_rate * 100.0,
+                    satisfaction.high_pass_rate * 100.0,
+                    satisfaction.medium_pass_rate * 100.0,
+                ),
+            };
+        }
+
+        // Check: Persist/save/store keywords → look at scenario results
+        if criterion_lower.contains("persist") || criterion_lower.contains("save")
+            || criterion_lower.contains("store") || criterion_lower.contains("data")
+        {
+            // Check if any scenario about data persistence passed
+            let data_scenarios_pass = satisfaction.scenario_results.iter()
+                .filter(|r| {
+                    let id_lower = r.scenario_id.to_lowercase();
+                    id_lower.contains("persist") || id_lower.contains("data")
+                        || id_lower.contains("save")
+                })
+                .all(|r| r.majority_pass);
+
+            // If no specific scenarios found, fall back to critical pass rate
+            let passed = if satisfaction.scenario_results.iter()
+                .any(|r| r.scenario_id.to_lowercase().contains("persist")
+                    || r.scenario_id.to_lowercase().contains("data"))
+            {
+                data_scenarios_pass
+            } else {
+                satisfaction.critical_pass_rate >= 1.0
+            };
+
+            return DoDCheckResult {
+                criterion: dod.criterion.clone(),
+                passed,
+                check_method: "mechanical".into(),
+                detail: "Checked via data-related scenario results.".into(),
+            };
+        }
+
+        // Default: use overall gate result for mechanically-checkable items
+        DoDCheckResult {
+            criterion: dod.criterion.clone(),
+            passed: satisfaction.gates_passed,
+            check_method: "mechanical".into(),
+            detail: "Checked via overall gate result.".into(),
+        }
+    }).collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -482,5 +623,231 @@ mod tests {
             ..all_pass.clone()
         };
         assert!(critical_fail.user_message().contains("critical"));
+    }
+
+    #[test]
+    fn dod_checker_mechanical_build_pass() {
+        let spec = NLSpecV1 {
+            project_id: Uuid::new_v4(),
+            version: "1.0".into(),
+            chunk: ChunkType::Root,
+            status: NLSpecStatus::Draft,
+            line_count: 50,
+            created_from: "test".into(),
+            intent_summary: None,
+            sacred_anchors: None,
+            requirements: vec![],
+            architectural_constraints: vec![],
+            phase1_contracts: None,
+            external_dependencies: vec![],
+            definition_of_done: vec![
+                DoDItem {
+                    criterion: "Build compiles without errors".into(),
+                    mechanically_checkable: true,
+                },
+            ],
+            satisfaction_criteria: vec![],
+            open_questions: vec![],
+            out_of_scope: vec![],
+            amendment_log: vec![],
+        };
+
+        let factory_output = FactoryOutputV1 {
+            kilroy_run_id: Uuid::new_v4(),
+            nlspec_version: "1.0".into(),
+            attempt: 1,
+            build_status: BuildStatus::Success,
+            spend_usd: 0.5,
+            checkpoint_path: "/tmp/cp.json".into(),
+            dod_results: vec![],
+            node_results: vec![],
+            output_path: "/tmp/out".into(),
+        };
+
+        let satisfaction = SatisfactionResultV1 {
+            kilroy_run_id: factory_output.kilroy_run_id,
+            critical_pass_rate: 1.0,
+            high_pass_rate: 1.0,
+            medium_pass_rate: 1.0,
+            gates_passed: true,
+            scenario_results: vec![],
+        };
+
+        let results = check_definition_of_done(&spec, &factory_output, &satisfaction);
+        assert_eq!(results.len(), 1);
+        assert!(results[0].passed);
+        assert_eq!(results[0].check_method, "mechanical");
+    }
+
+    #[test]
+    fn dod_checker_mechanical_build_fail() {
+        let spec = NLSpecV1 {
+            project_id: Uuid::new_v4(),
+            version: "1.0".into(),
+            chunk: ChunkType::Root,
+            status: NLSpecStatus::Draft,
+            line_count: 50,
+            created_from: "test".into(),
+            intent_summary: None,
+            sacred_anchors: None,
+            requirements: vec![],
+            architectural_constraints: vec![],
+            phase1_contracts: None,
+            external_dependencies: vec![],
+            definition_of_done: vec![
+                DoDItem {
+                    criterion: "Build compiles without errors".into(),
+                    mechanically_checkable: true,
+                },
+            ],
+            satisfaction_criteria: vec![],
+            open_questions: vec![],
+            out_of_scope: vec![],
+            amendment_log: vec![],
+        };
+
+        let factory_output = FactoryOutputV1 {
+            kilroy_run_id: Uuid::new_v4(),
+            nlspec_version: "1.0".into(),
+            attempt: 1,
+            build_status: BuildStatus::Failed,
+            spend_usd: 0.5,
+            checkpoint_path: "/tmp/cp.json".into(),
+            dod_results: vec![],
+            node_results: vec![],
+            output_path: "/tmp/out".into(),
+        };
+
+        let satisfaction = SatisfactionResultV1 {
+            kilroy_run_id: factory_output.kilroy_run_id,
+            critical_pass_rate: 0.0,
+            high_pass_rate: 0.0,
+            medium_pass_rate: 0.0,
+            gates_passed: false,
+            scenario_results: vec![],
+        };
+
+        let results = check_definition_of_done(&spec, &factory_output, &satisfaction);
+        assert_eq!(results.len(), 1);
+        assert!(!results[0].passed);
+        assert_eq!(results[0].check_method, "mechanical");
+    }
+
+    #[test]
+    fn dod_checker_manual_item_assumed_pass() {
+        let spec = NLSpecV1 {
+            project_id: Uuid::new_v4(),
+            version: "1.0".into(),
+            chunk: ChunkType::Root,
+            status: NLSpecStatus::Draft,
+            line_count: 50,
+            created_from: "test".into(),
+            intent_summary: None,
+            sacred_anchors: None,
+            requirements: vec![],
+            architectural_constraints: vec![],
+            phase1_contracts: None,
+            external_dependencies: vec![],
+            definition_of_done: vec![
+                DoDItem {
+                    criterion: "Code is clean and readable".into(),
+                    mechanically_checkable: false,
+                },
+            ],
+            satisfaction_criteria: vec![],
+            open_questions: vec![],
+            out_of_scope: vec![],
+            amendment_log: vec![],
+        };
+
+        let factory_output = FactoryOutputV1 {
+            kilroy_run_id: Uuid::new_v4(),
+            nlspec_version: "1.0".into(),
+            attempt: 1,
+            build_status: BuildStatus::Success,
+            spend_usd: 0.5,
+            checkpoint_path: "/tmp/cp.json".into(),
+            dod_results: vec![],
+            node_results: vec![],
+            output_path: "/tmp/out".into(),
+        };
+
+        let satisfaction = SatisfactionResultV1 {
+            kilroy_run_id: factory_output.kilroy_run_id,
+            critical_pass_rate: 1.0,
+            high_pass_rate: 1.0,
+            medium_pass_rate: 1.0,
+            gates_passed: true,
+            scenario_results: vec![],
+        };
+
+        let results = check_definition_of_done(&spec, &factory_output, &satisfaction);
+        assert_eq!(results.len(), 1);
+        assert!(results[0].passed);
+        assert_eq!(results[0].check_method, "manual");
+    }
+
+    #[test]
+    fn dod_checker_test_criterion_checks_gates() {
+        let spec = NLSpecV1 {
+            project_id: Uuid::new_v4(),
+            version: "1.0".into(),
+            chunk: ChunkType::Root,
+            status: NLSpecStatus::Draft,
+            line_count: 50,
+            created_from: "test".into(),
+            intent_summary: None,
+            sacred_anchors: None,
+            requirements: vec![],
+            architectural_constraints: vec![],
+            phase1_contracts: None,
+            external_dependencies: vec![],
+            definition_of_done: vec![
+                DoDItem {
+                    criterion: "All scenarios pass their tests".into(),
+                    mechanically_checkable: true,
+                },
+            ],
+            satisfaction_criteria: vec![],
+            open_questions: vec![],
+            out_of_scope: vec![],
+            amendment_log: vec![],
+        };
+
+        let factory_output = FactoryOutputV1 {
+            kilroy_run_id: Uuid::new_v4(),
+            nlspec_version: "1.0".into(),
+            attempt: 1,
+            build_status: BuildStatus::Success,
+            spend_usd: 0.5,
+            checkpoint_path: "/tmp/cp.json".into(),
+            dod_results: vec![],
+            node_results: vec![],
+            output_path: "/tmp/out".into(),
+        };
+
+        // Gates pass
+        let satisfaction_pass = SatisfactionResultV1 {
+            kilroy_run_id: factory_output.kilroy_run_id,
+            critical_pass_rate: 1.0,
+            high_pass_rate: 0.96,
+            medium_pass_rate: 0.92,
+            gates_passed: true,
+            scenario_results: vec![],
+        };
+        let results = check_definition_of_done(&spec, &factory_output, &satisfaction_pass);
+        assert!(results[0].passed);
+
+        // Gates fail
+        let satisfaction_fail = SatisfactionResultV1 {
+            kilroy_run_id: factory_output.kilroy_run_id,
+            critical_pass_rate: 0.5,
+            high_pass_rate: 0.5,
+            medium_pass_rate: 0.5,
+            gates_passed: false,
+            scenario_results: vec![],
+        };
+        let results = check_definition_of_done(&spec, &factory_output, &satisfaction_fail);
+        assert!(!results[0].passed);
     }
 }
