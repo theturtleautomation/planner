@@ -17,6 +17,7 @@ use uuid::Uuid;
 
 use planner_schemas::*;
 use super::{StepResult, StepError};
+use super::factory_worker::{FactoryWorker, WorkerConfig, WorktreeManager, WorkerResult};
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -595,6 +596,145 @@ pub async fn execute_factory_handoff(
 }
 
 // ---------------------------------------------------------------------------
+// Factory Worker-Powered Handoff — Phase 7
+// ---------------------------------------------------------------------------
+
+/// Execute factory handoff using a pluggable FactoryWorker instead of Kilroy.
+///
+/// This is the Phase 7 replacement for the Kilroy-based execution path.
+/// Instead of invoking `kilroy attractor run`, it:
+/// 1. Prepares a worktree with spec + graph + agents context
+/// 2. Invokes the factory worker (e.g., CodexFactoryWorker via `codex exec`)
+/// 3. Builds FactoryOutputV1 from the worker result
+pub async fn execute_factory_with_worker(
+    worker: &dyn FactoryWorker,
+    graph: &GraphDotV1,
+    agents: &AgentsManifestV1,
+    spec: &NLSpecV1,
+    budget: &mut RunBudgetV1,
+) -> StepResult<FactoryOutputV1> {
+    tracing::info!("Factory Diplomat (Worker mode): starting");
+
+    // Step 1: Prepare worktree
+    let worktree_mgr = WorktreeManager::default_root();
+    let run_id = budget.run_id;
+
+    let spec_md = render_nlspec_markdown(spec);
+    let worktree_info = worktree_mgr.prepare(
+        run_id,
+        &spec_md,
+        &graph.dot_content,
+        &agents.root_agents_md,
+    )?;
+
+    // Step 2: Build prompt and config
+    let task_prompt = format!(
+        "Implement all requirements from the NLSpec. Create a working project \
+         in the current directory. The project should compile, pass tests, and \
+         satisfy all Definition of Done criteria."
+    );
+
+    let full_prompt = if worker.needs_worktree() {
+        super::factory_worker::CodexFactoryWorker::build_codex_prompt(
+            &task_prompt,
+            &worktree_info,
+        )
+    } else {
+        task_prompt.clone()
+    };
+
+    let config = WorkerConfig {
+        worktree: worktree_info.path.clone(),
+        model: crate::llm::DefaultModels::FACTORY_WORKER.to_string(),
+        timeout_secs: 600,
+        max_retries: 1,
+    };
+
+    // Step 3: Invoke worker
+    let worker_result = worker.generate(&full_prompt, &config).await;
+
+    // Step 4: Build FactoryOutputV1 from result
+    let output = match worker_result {
+        Ok(result) => {
+            // Record spend (for subscription-based, this is notional)
+            budget.record_spend(SpendEvent {
+                timestamp: chrono::Utc::now(),
+                node_name: worker.worker_name().to_string(),
+                model: result.model.clone(),
+                input_tokens: 0,
+                output_tokens: 0,
+                amount_usd: 0.0, // subscription-based
+            });
+
+            build_factory_output_from_worker(&result, budget, &worktree_info)
+        }
+        Err(e) => {
+            tracing::error!("Factory worker failed: {}", e);
+            FactoryOutputV1 {
+                kilroy_run_id: run_id,
+                nlspec_version: spec.version.clone(),
+                attempt: 1,
+                build_status: BuildStatus::Failed,
+                spend_usd: budget.current_spend_usd,
+                checkpoint_path: worktree_info.path.to_string_lossy().to_string(),
+                dod_results: vec![],
+                node_results: vec![NodeResult {
+                    node_name: worker.worker_name().to_string(),
+                    success: false,
+                    attempts: 1,
+                    spend_usd: 0.0,
+                    duration_secs: 0.0,
+                    error: Some(e.to_string()),
+                }],
+                output_path: worktree_info.path.to_string_lossy().to_string(),
+            }
+        }
+    };
+
+    // Note: we intentionally don't cleanup the worktree here so the output
+    // can be inspected. The caller or a GC pass can clean up later.
+
+    tracing::info!(
+        "Factory Diplomat (Worker mode): complete — status={:?}",
+        output.build_status,
+    );
+
+    Ok(output)
+}
+
+/// Build FactoryOutputV1 from a successful WorkerResult.
+fn build_factory_output_from_worker(
+    result: &WorkerResult,
+    budget: &RunBudgetV1,
+    worktree: &super::factory_worker::WorktreeInfo,
+) -> FactoryOutputV1 {
+    let status = if result.success {
+        BuildStatus::Success
+    } else {
+        BuildStatus::Failed
+    };
+
+    FactoryOutputV1 {
+        kilroy_run_id: result.invocation_id,
+        nlspec_version: "1.0".into(),
+        attempt: 1,
+        build_status: status,
+        spend_usd: budget.current_spend_usd,
+        checkpoint_path: worktree.path.to_string_lossy().to_string(),
+        dod_results: vec![],
+        node_results: vec![NodeResult {
+            node_name: "factory-worker".into(),
+            success: result.success,
+            attempts: 1,
+            spend_usd: 0.0, // subscription-based
+            duration_secs: result.duration_secs,
+            error: result.error.clone(),
+        }],
+        output_path: worktree.path.to_string_lossy().to_string(),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -798,5 +938,128 @@ mod tests {
 
         // Cleanup
         let _ = std::fs::remove_dir_all(&run_dir.path);
+    }
+
+    // ----- Phase 7: Factory Worker Integration Tests -----
+
+    #[tokio::test]
+    async fn execute_factory_with_mock_worker_succeeds() {
+        use crate::pipeline::steps::factory_worker::MockFactoryWorker;
+
+        let graph = sample_graph();
+        let agents = sample_agents();
+        let spec = sample_spec();
+        let mut budget = sample_budget();
+
+        std::env::set_var(
+            "PLANNER_WORKTREE_ROOT",
+            std::env::temp_dir()
+                .join("planner-test-fw-success")
+                .to_string_lossy()
+                .to_string(),
+        );
+
+        let worker = MockFactoryWorker::success(
+            "Implemented all requirements successfully",
+            vec!["src/main.rs".into(), "Cargo.toml".into()],
+        );
+
+        let result = execute_factory_with_worker(
+            &worker, &graph, &agents, &spec, &mut budget,
+        )
+        .await;
+
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert_eq!(output.build_status, BuildStatus::Success);
+        assert_eq!(output.node_results.len(), 1);
+        assert!(output.node_results[0].success);
+        assert_eq!(output.node_results[0].node_name, "factory-worker");
+    }
+
+    #[tokio::test]
+    async fn execute_factory_with_mock_worker_failure() {
+        use crate::pipeline::steps::factory_worker::MockFactoryWorker;
+
+        let graph = sample_graph();
+        let agents = sample_agents();
+        let spec = sample_spec();
+        let mut budget = sample_budget();
+
+        std::env::set_var(
+            "PLANNER_WORKTREE_ROOT",
+            std::env::temp_dir()
+                .join("planner-test-fw-fail")
+                .to_string_lossy()
+                .to_string(),
+        );
+
+        let worker = MockFactoryWorker::failure("compile error");
+
+        let result = execute_factory_with_worker(
+            &worker, &graph, &agents, &spec, &mut budget,
+        )
+        .await;
+
+        // execute_factory_with_worker catches failures gracefully
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert_eq!(output.build_status, BuildStatus::Failed);
+        assert_eq!(output.node_results.len(), 1);
+        assert!(!output.node_results[0].success);
+    }
+
+    #[test]
+    fn build_factory_output_from_worker_success() {
+        use crate::pipeline::steps::factory_worker::WorktreeInfo;
+
+        let result = WorkerResult {
+            invocation_id: Uuid::new_v4(),
+            success: true,
+            model: "gpt-5.3-codex".into(),
+            output: "Done".into(),
+            files_changed: vec!["src/main.rs".into()],
+            duration_secs: 30.0,
+            error: None,
+        };
+
+        let budget = sample_budget();
+        let info = WorktreeInfo {
+            path: PathBuf::from("/tmp/test"),
+            context_dir: PathBuf::from("/tmp/test/.planner-context"),
+            run_id: Uuid::new_v4(),
+        };
+
+        let output = build_factory_output_from_worker(&result, &budget, &info);
+        assert_eq!(output.build_status, BuildStatus::Success);
+        assert!(output.node_results[0].success);
+        assert_eq!(output.node_results[0].duration_secs, 30.0);
+    }
+
+    #[test]
+    fn build_factory_output_from_worker_failure() {
+        use crate::pipeline::steps::factory_worker::WorktreeInfo;
+
+        let result = WorkerResult {
+            invocation_id: Uuid::new_v4(),
+            success: false,
+            model: "gpt-5.3-codex".into(),
+            output: String::new(),
+            files_changed: vec![],
+            duration_secs: 5.0,
+            error: Some("build failed".into()),
+        };
+
+        let budget = sample_budget();
+        let info = WorktreeInfo {
+            path: PathBuf::from("/tmp/test"),
+            context_dir: PathBuf::from("/tmp/test/.planner-context"),
+            run_id: Uuid::new_v4(),
+        };
+
+        let output = build_factory_output_from_worker(&result, &budget, &info);
+        assert_eq!(output.build_status, BuildStatus::Failed);
+        assert!(!output.node_results[0].success);
+        assert!(output.node_results[0].error.is_some());
     }
 }

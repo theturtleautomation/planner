@@ -62,7 +62,7 @@ fn build_prompt(request: &CompletionRequest) -> String {
 }
 
 /// Run a CLI command with timeout and return (stdout, stderr).
-async fn run_cli(
+pub async fn run_cli(
     binary: &str,
     args: &[&str],
     stdin_input: Option<&str>,

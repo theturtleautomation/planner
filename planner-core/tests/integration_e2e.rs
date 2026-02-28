@@ -2036,3 +2036,195 @@ fn e2e_phase6_pipeline_config_persist() {
 
     let _ = std::fs::remove_dir_all(engine.root_path());
 }
+
+// ===========================================================================
+// Phase 7: Factory Worker Integration Tests
+// ===========================================================================
+
+/// Phase 7.1: MockFactoryWorker produces valid FactoryOutputV1 via the
+/// execute_factory_with_worker path.
+#[tokio::test]
+async fn e2e_phase7_mock_worker_produces_factory_output() {
+    use planner_core::pipeline::steps::factory;
+    use planner_core::pipeline::steps::factory_worker::MockFactoryWorker;
+
+    let project_id = Uuid::new_v4();
+    let graph = build_test_graph_dot(project_id);
+    let agents = build_test_agents_manifest(project_id);
+    let spec = build_test_spec(project_id);
+    let mut budget = RunBudgetV1::new_phase0(project_id, Uuid::new_v4());
+
+    std::env::set_var(
+        "PLANNER_WORKTREE_ROOT",
+        std::env::temp_dir()
+            .join(format!("planner-e2e-fw-{}", Uuid::new_v4()))
+            .to_string_lossy()
+            .to_string(),
+    );
+
+    let worker = MockFactoryWorker::success(
+        "Generated: src/main.rs, src/lib.rs, Cargo.toml",
+        vec!["src/main.rs".into(), "src/lib.rs".into(), "Cargo.toml".into()],
+    );
+
+    let output = factory::execute_factory_with_worker(
+        &worker, &graph, &agents, &spec, &mut budget,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(output.build_status, BuildStatus::Success);
+    assert_eq!(output.node_results.len(), 1);
+    assert!(output.node_results[0].success);
+    assert_eq!(output.node_results[0].node_name, "factory-worker");
+}
+
+/// Phase 7.2: WorktreeManager creates proper directory structure with context files.
+#[test]
+fn e2e_phase7_worktree_manager_lifecycle() {
+    use planner_core::pipeline::steps::factory_worker::WorktreeManager;
+
+    let root = std::env::temp_dir().join(format!("planner-e2e-wt-{}", Uuid::new_v4()));
+    let mgr = WorktreeManager::new(&root);
+    let run_id = Uuid::new_v4();
+
+    let info = mgr.prepare(
+        run_id,
+        "# Spec\n## Requirements\n- FR-1: Build a widget",
+        "digraph { start -> build -> test -> exit; }",
+        "# AGENTS\n- implementer\n- reviewer",
+    ).unwrap();
+
+    // Verify structure
+    assert!(info.path.exists());
+    assert!(info.context_dir.join("SPEC.md").exists());
+    assert!(info.context_dir.join("graph.dot").exists());
+    assert!(info.context_dir.join("AGENTS.md").exists());
+    assert!(info.path.join("src").exists());
+
+    // Verify content
+    let spec = std::fs::read_to_string(info.context_dir.join("SPEC.md")).unwrap();
+    assert!(spec.contains("FR-1: Build a widget"));
+
+    // List active
+    let active = mgr.list_active();
+    assert_eq!(active.len(), 1);
+
+    // Cleanup
+    mgr.cleanup(&info).unwrap();
+    assert!(!info.path.exists());
+    assert_eq!(mgr.list_active().len(), 0);
+
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// Phase 7.3: FactoryWorker trait is object-safe and can be used as dyn dispatch.
+#[tokio::test]
+async fn e2e_phase7_factory_worker_dyn_dispatch() {
+    use planner_core::pipeline::steps::factory_worker::{FactoryWorker, MockFactoryWorker, WorkerConfig};
+
+    let workers: Vec<Box<dyn FactoryWorker>> = vec![
+        Box::new(MockFactoryWorker::success("output1", vec!["a.rs".into()])),
+        Box::new(MockFactoryWorker::success("output2", vec!["b.rs".into()])),
+    ];
+
+    let config = WorkerConfig::default();
+
+    for worker in &workers {
+        let result = worker.generate("test prompt", &config).await.unwrap();
+        assert!(result.success);
+        assert_eq!(result.model, "gpt-5.3-codex");
+    }
+}
+
+/// Phase 7.4: WorkerResult serializes/deserializes correctly.
+#[test]
+fn e2e_phase7_worker_result_serde() {
+    use planner_core::pipeline::steps::factory_worker::WorkerResult;
+
+    let result = WorkerResult {
+        invocation_id: Uuid::new_v4(),
+        success: true,
+        model: "gpt-5.3-codex".into(),
+        output: "Created 5 files".into(),
+        files_changed: vec!["src/main.rs".into(), "Cargo.toml".into()],
+        duration_secs: 45.7,
+        error: None,
+    };
+
+    let json = serde_json::to_string(&result).unwrap();
+    let deserialized: WorkerResult = serde_json::from_str(&json).unwrap();
+
+    assert_eq!(deserialized.model, "gpt-5.3-codex");
+    assert_eq!(deserialized.files_changed.len(), 2);
+    assert!(deserialized.success);
+    assert_eq!(deserialized.duration_secs, 45.7);
+}
+
+/// Phase 7.5: Factory worker failure is caught gracefully — returns Failed status.
+#[tokio::test]
+async fn e2e_phase7_worker_failure_graceful() {
+    use planner_core::pipeline::steps::factory;
+    use planner_core::pipeline::steps::factory_worker::MockFactoryWorker;
+
+    let project_id = Uuid::new_v4();
+    let graph = build_test_graph_dot(project_id);
+    let agents = build_test_agents_manifest(project_id);
+    let spec = build_test_spec(project_id);
+    let mut budget = RunBudgetV1::new_phase0(project_id, Uuid::new_v4());
+
+    std::env::set_var(
+        "PLANNER_WORKTREE_ROOT",
+        std::env::temp_dir()
+            .join(format!("planner-e2e-fw-fail-{}", Uuid::new_v4()))
+            .to_string_lossy()
+            .to_string(),
+    );
+
+    let worker = MockFactoryWorker::failure("codex binary crashed");
+
+    let output = factory::execute_factory_with_worker(
+        &worker, &graph, &agents, &spec, &mut budget,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(output.build_status, BuildStatus::Failed);
+    assert!(!output.node_results[0].success);
+}
+
+/// Phase 7.6: DefaultModels::FACTORY_WORKER is gpt-5.3-codex.
+#[test]
+fn e2e_phase7_default_factory_model() {
+    use planner_core::llm::DefaultModels;
+    assert_eq!(DefaultModels::FACTORY_WORKER, "gpt-5.3-codex");
+}
+
+/// Phase 7.7: CodexFactoryWorker build_codex_prompt includes all context.
+#[test]
+fn e2e_phase7_codex_prompt_assembly() {
+    use planner_core::pipeline::steps::factory_worker::{CodexFactoryWorker, WorktreeInfo};
+
+    let tmp = std::env::temp_dir().join(format!("planner-e2e-prompt-{}", Uuid::new_v4()));
+    let ctx = tmp.join(".planner-context");
+    std::fs::create_dir_all(&ctx).unwrap();
+    std::fs::write(ctx.join("SPEC.md"), "## Requirements\n- FR-1: Widget").unwrap();
+    std::fs::write(ctx.join("graph.dot"), "digraph { a -> b; }").unwrap();
+    std::fs::write(ctx.join("AGENTS.md"), "# Agents\n- coder").unwrap();
+
+    let info = WorktreeInfo {
+        path: tmp.clone(),
+        context_dir: ctx,
+        run_id: Uuid::new_v4(),
+    };
+
+    let prompt = CodexFactoryWorker::build_codex_prompt("Build the widget", &info);
+
+    assert!(prompt.contains("FR-1: Widget"));
+    assert!(prompt.contains("digraph { a -> b; }"));
+    assert!(prompt.contains("# Agents"));
+    assert!(prompt.contains("Build the widget"));
+    assert!(prompt.contains("factory worker code generation agent"));
+
+    let _ = std::fs::remove_dir_all(&tmp);
+}

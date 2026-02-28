@@ -14,6 +14,7 @@
 //! - `ar_refinement`   — AR findings → spec amendments → re-lint loop
 //! - `ralph`           — Scenario Augmentation + Gene Transfusion advisory
 //! - `factory`         — Artifact handoff + Kilroy CLI invocation + checkpoint polling
+//! - `factory_worker`  — Pluggable code-generation backend (codex exec, mock)
 //! - `validate`        — Cross-model scenario evaluation (Gemini judges Claude)
 //! - `telemetry`       — Factory output → plain English + Consequence Cards
 //! - `git`             — Behavioral approval → standard Git commit
@@ -27,6 +28,7 @@ pub mod ar;
 pub mod ar_refinement;
 pub mod ralph;
 pub mod factory;
+pub mod factory_worker;
 pub mod validate;
 pub mod telemetry;
 pub mod git;

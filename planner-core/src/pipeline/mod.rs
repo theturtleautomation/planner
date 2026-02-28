@@ -36,6 +36,7 @@ use steps::ar;
 use steps::ar_refinement;
 use steps::ralph;
 use steps::factory;
+use steps::factory_worker;
 use steps::validate;
 use steps::telemetry;
 use steps::git;
@@ -655,4 +656,110 @@ pub async fn run_phase0_full(
 ) -> StepResult<Phase0FullOutput> {
     let config = PipelineConfig::<crate::cxdb::CxdbEngine>::minimal(router);
     run_phase0_full_with_config(&config, project_id, user_description).await
+}
+
+/// Phase 7: Run the complete pipeline using a pluggable FactoryWorker
+/// instead of the Kilroy CLI.
+///
+/// This replaces simulation mode with real code generation via
+/// codex exec (or a mock worker for testing).
+pub async fn run_phase0_full_with_worker<S: TurnStore>(
+    config: &PipelineConfig<'_, S>,
+    worker: &dyn factory_worker::FactoryWorker,
+    project_id: Uuid,
+    user_description: &str,
+) -> StepResult<Phase0FullOutput> {
+    let router = config.router;
+    tracing::info!("═══════════════════════════════════════════════");
+    tracing::info!("  Planner v2 — Phase 7 Full Pipeline (Worker mode)");
+    tracing::info!("  Worker: {}", worker.worker_name());
+    tracing::info!("═══════════════════════════════════════════════");
+
+    // ---- Layer 1: Front Office ----
+    let front_office = run_phase0_front_office_with_config(config, project_id, user_description).await?;
+
+    // ---- Layer 1→2: Factory Worker + Validation Loop ----
+    let run_id = Uuid::new_v4();
+    let mut budget = RunBudgetV1::new_phase0(project_id, run_id);
+    let mut factory_output;
+    let mut satisfaction;
+    let mut attempt = 0usize;
+    let root_spec = &front_office.specs[0];
+
+    loop {
+        attempt += 1;
+        tracing::info!("─── Factory Worker (attempt {}/{}) ───", attempt, FACTORY_MAX_RETRIES + 1);
+
+        factory_output = factory::execute_factory_with_worker(
+            worker,
+            &front_office.graph_dot,
+            &front_office.agents_manifest,
+            root_spec,
+            &mut budget,
+        )
+        .await?;
+
+        tracing::info!(
+            "  Factory: status={:?}",
+            factory_output.build_status,
+        );
+
+        // Reset DTU clones between attempts
+        if let Some(dtu_reg) = config.dtu_registry {
+            dtu_reg.reset_all();
+        }
+
+        // ---- Layer 3: Return Trip — Validate ----
+        tracing::info!("─── Scenario Validator (attempt {}) ───", attempt);
+        satisfaction = validate::execute_scenario_validation(
+            router,
+            &front_office.scenarios,
+            &factory_output,
+        )
+        .await?;
+
+        if satisfaction.gates_passed {
+            tracing::info!("  Gates PASSED on attempt {}", attempt);
+            break;
+        }
+
+        if attempt > FACTORY_MAX_RETRIES || !budget.can_proceed() {
+            tracing::warn!("  Gates FAILED — no more retries");
+            break;
+        }
+    }
+
+    // ---- Telemetry Presenter ----
+    tracing::info!("─── Telemetry Presenter ───");
+    let telemetry = telemetry::execute_telemetry_presentation(
+        router,
+        &factory_output,
+        &satisfaction,
+        &budget,
+        project_id,
+    )
+    .await?;
+
+    // ---- Git Projection ----
+    tracing::info!("─── Git Projection ───");
+    let git_result = git::execute_git_projection(
+        &factory_output,
+        project_id,
+        &front_office.intake.project_name,
+        &front_office.intake.feature_slug,
+    )
+    .await?;
+
+    tracing::info!("═══════════════════════════════════════════════");
+    tracing::info!("  Pipeline Complete ({} factory attempt(s))", attempt);
+    tracing::info!("═══════════════════════════════════════════════");
+
+    Ok(Phase0FullOutput {
+        front_office,
+        factory_output,
+        satisfaction,
+        telemetry,
+        git_result,
+        budget,
+    })
 }
