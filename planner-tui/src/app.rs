@@ -6,6 +6,8 @@ use chrono::Utc;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use uuid::Uuid;
 
+use crate::pipeline::{PipelineEvent, PipelineReceiver};
+
 // ---------------------------------------------------------------------------
 // Chat Message
 // ---------------------------------------------------------------------------
@@ -98,6 +100,14 @@ pub struct App {
     pub pipeline_running: bool,
     /// Status message for the bottom bar.
     pub status_message: String,
+
+    /// Pending pipeline description — set by `submit_input()` on the first
+    /// message, consumed by the main loop to spawn the background task.
+    pub pending_pipeline_description: Option<String>,
+
+    /// Channel receiver for pipeline events from the background task.
+    /// `None` until the first pipeline is spawned.
+    pub pipeline_rx: Option<PipelineReceiver>,
 }
 
 impl App {
@@ -131,6 +141,8 @@ impl App {
             session_start: now.format("%Y-%m-%d %H:%M UTC").to_string(),
             pipeline_running: false,
             status_message: "Ready — describe what you want to build".into(),
+            pending_pipeline_description: None,
+            pipeline_rx: None,
         };
 
         // Welcome message
@@ -263,6 +275,15 @@ impl App {
     }
 
     /// Submit the current input.
+    ///
+    /// On the first submission (pipeline not running), sets `pipeline_running`,
+    /// updates stage state, posts a planner ack message, and stores the
+    /// description in `pending_pipeline_description` for the main loop to pick
+    /// up and spawn the real background task.
+    ///
+    /// On subsequent submissions while the pipeline is running, adds an
+    /// informational message (full Socratic back-and-forth is deferred until
+    /// the pipeline has an interactive callback mode).
     fn submit_input(&mut self) {
         let text = self.input.trim().to_string();
         if text.is_empty() {
@@ -274,35 +295,34 @@ impl App {
         self.cursor_position = 0;
         self.scroll_offset = 0;
 
-        // Process the user's input
         if !self.pipeline_running {
-            // First message starts the pipeline
+            // First message — kick off the real pipeline
             self.pipeline_running = true;
             self.stages[0].status = StageStatus::Running;
-            self.status_message = "Pipeline starting — Intake Gateway...".into();
+            self.status_message = "Pipeline starting...".into();
 
             self.add_planner_message(&format!(
-                "Starting Socratic planning for: \"{}\"\n\n\
-                 Let me analyze your request and ask some clarifying questions.\n\
-                 The pipeline will run through {} stages.\n\n\
-                 [Pipeline execution would happen here in a real run.\n\
-                  LLM calls require claude/gemini/codex CLI tools installed.]",
+                "Starting pipeline for: \"{}\". Running the full pipeline — this may take several minutes.",
                 text,
-                self.stages.len()
             ));
 
-            // Simulate stage progression for demo
-            self.stages[0].status = StageStatus::Complete;
-            self.stages[1].status = StageStatus::Running;
+            // Signal the main loop to spawn the background task
+            self.pending_pipeline_description = Some(text);
         } else {
-            // Subsequent messages are part of the Socratic dialogue
+            // Pipeline already running — user follow-up
             self.add_planner_message(
-                "Thank you for that clarification. Let me incorporate that into \
-                 the specification.\n\n\
-                 [In a live session, this would trigger the Compiler to update \
-                  the NLSpec with your additional context.]"
+                "Pipeline is currently running. \
+                 Interactive follow-up during execution will be available in a future version.",
             );
         }
+    }
+
+    /// Take the pending pipeline description (consumes it).
+    ///
+    /// Returns `Some(description)` exactly once — the main loop calls this
+    /// after every `tick()` and spawns the pipeline task when it gets a value.
+    pub fn take_pending_pipeline(&mut self) -> Option<String> {
+        self.pending_pipeline_description.take()
     }
 
     /// Update a pipeline stage status.
@@ -314,9 +334,55 @@ impl App {
         }
     }
 
-    /// Periodic tick handler (for async operations, animations, etc.)
+    /// Periodic tick handler — drains the pipeline event channel.
+    ///
+    /// We collect events into a local Vec first so the mutable borrow of
+    /// `self.pipeline_rx` is released before we call other `&mut self` methods.
     pub fn tick(&mut self) {
-        // Future: check for async pipeline results here
+        // Drain the channel into a local buffer (releases the borrow on `self`)
+        let events: Vec<PipelineEvent> = {
+            if let Some(ref mut rx) = self.pipeline_rx {
+                let mut buf = Vec::new();
+                while let Ok(ev) = rx.try_recv() {
+                    buf.push(ev);
+                }
+                buf
+            } else {
+                return;
+            }
+        };
+
+        for event in events {
+            match event {
+                PipelineEvent::Started => {
+                    self.status_message = "Pipeline running...".into();
+                }
+                PipelineEvent::Completed(summary) => {
+                    self.pipeline_running = false;
+                    for stage in &mut self.stages {
+                        stage.status = StageStatus::Complete;
+                    }
+                    self.add_planner_message(&format!(
+                        "Pipeline complete!\n\n{}",
+                        summary
+                    ));
+                    self.status_message =
+                        "Pipeline complete — ready for next session".into();
+                }
+                PipelineEvent::Failed(err) => {
+                    self.pipeline_running = false;
+                    self.add_planner_message(&format!("Pipeline failed: {}", err));
+                    self.status_message = format!("Pipeline failed: {}", err);
+                    // Mark the first Running stage as Failed
+                    for stage in &mut self.stages {
+                        if stage.status == StageStatus::Running {
+                            stage.status = StageStatus::Failed;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -327,6 +393,8 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pipeline::PipelineEvent;
+    use tokio::sync::mpsc;
 
     #[test]
     fn app_starts_with_welcome_message() {
@@ -381,6 +449,9 @@ mod tests {
         assert_eq!(app.messages.len(), 3);
         assert_eq!(app.messages[1].role, MessageRole::User);
         assert_eq!(app.messages[2].role, MessageRole::Planner);
+        // The planner message should mention the pipeline and the description
+        assert!(app.messages[2].content.contains("pipeline"));
+        assert!(app.messages[2].content.contains("Build me a widget"));
     }
 
     #[test]
@@ -466,5 +537,71 @@ mod tests {
         app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
         assert!(app.pipeline_running);
+    }
+
+    #[test]
+    fn pending_pipeline_description_is_set_and_taken() {
+        let mut app = App::new();
+
+        for c in "My great project".chars() {
+            app.handle_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
+        }
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+        // Should have stored the description
+        let desc = app.take_pending_pipeline();
+        assert_eq!(desc, Some("My great project".to_string()));
+
+        // Second take returns None (consumed)
+        assert_eq!(app.take_pending_pipeline(), None);
+    }
+
+    #[tokio::test]
+    async fn tick_processes_pipeline_events() {
+        let mut app = App::new();
+
+        // Manually simulate a pipeline being running
+        app.pipeline_running = true;
+        app.stages[0].status = StageStatus::Running;
+
+        // Create a channel and send events directly (bypass spawn_pipeline)
+        let (tx, rx) = mpsc::unbounded_channel::<PipelineEvent>();
+        app.pipeline_rx = Some(rx);
+
+        // Send Started
+        tx.send(PipelineEvent::Started).unwrap();
+        app.tick();
+        assert_eq!(app.status_message, "Pipeline running...");
+
+        // Send Completed
+        tx.send(PipelineEvent::Completed("Project: Test\nSpecs: 1 chunk(s)".into())).unwrap();
+        app.tick();
+
+        assert!(!app.pipeline_running);
+        assert!(app.stages.iter().all(|s| s.status == StageStatus::Complete));
+        let last_msg = app.messages.last().unwrap();
+        assert_eq!(last_msg.role, MessageRole::Planner);
+        assert!(last_msg.content.contains("Pipeline complete!"));
+        assert!(last_msg.content.contains("Project: Test"));
+    }
+
+    #[tokio::test]
+    async fn tick_handles_pipeline_failure() {
+        let mut app = App::new();
+        app.pipeline_running = true;
+        app.stages[0].status = StageStatus::Running;
+
+        let (tx, rx) = mpsc::unbounded_channel::<PipelineEvent>();
+        app.pipeline_rx = Some(rx);
+
+        tx.send(PipelineEvent::Failed("LLM CLI not found".into())).unwrap();
+        app.tick();
+
+        assert!(!app.pipeline_running);
+        // The running stage should now be Failed
+        assert_eq!(app.stages[0].status, StageStatus::Failed);
+        let last_msg = app.messages.last().unwrap();
+        assert!(last_msg.content.contains("Pipeline failed"));
+        assert!(last_msg.content.contains("LLM CLI not found"));
     }
 }

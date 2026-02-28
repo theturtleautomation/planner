@@ -10,14 +10,18 @@
 //! - Server → Client: { "type": "pipeline_complete", "success": true }
 //! - Client → Server: { "type": "user_message", "content": "..." }
 
+use std::sync::Arc;
+use axum::extract::ws::{Message, WebSocket};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+use crate::AppState;
 
 // ---------------------------------------------------------------------------
 // WebSocket Message Types
 // ---------------------------------------------------------------------------
 
 /// Server-to-client WebSocket message.
-#[allow(dead_code)] // Phase G: used when WebSocket handler is wired to live sessions
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum ServerMessage {
@@ -49,7 +53,6 @@ pub enum ServerMessage {
 }
 
 /// Client-to-server WebSocket message.
-#[allow(dead_code)] // Phase G: used when WebSocket handler is wired to live sessions
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum ClientMessage {
@@ -63,6 +66,118 @@ pub enum ClientMessage {
     StartPipeline {
         description: String,
     },
+}
+
+// ---------------------------------------------------------------------------
+// WebSocket connection handler
+// ---------------------------------------------------------------------------
+
+/// Drive a live WebSocket connection for `session_id`.
+///
+/// - Every 500 ms: sends any new chat messages and current stage statuses.
+/// - Listens for incoming client messages (user text / pipeline start).
+/// - Closes automatically once the pipeline finishes (or immediately if the
+///   session does not exist).
+pub async fn handle_ws(mut socket: WebSocket, state: Arc<AppState>, session_id: Uuid) {
+    // Verify the session exists before entering the loop
+    if state.sessions.get(session_id).is_none() {
+        let err = ServerMessage::Error {
+            message: format!("Session {} not found", session_id),
+        };
+        if let Ok(json) = serde_json::to_string(&err) {
+            let _ = socket.send(Message::Text(json.into())).await;
+        }
+        return;
+    }
+
+    let mut last_msg_count = 0usize;
+    let mut interval = tokio::time::interval(std::time::Duration::from_millis(500));
+
+    loop {
+        tokio::select! {
+            _ = interval.tick() => {
+                let session = match state.sessions.get(session_id) {
+                    Some(s) => s,
+                    None => {
+                        let err = ServerMessage::Error {
+                            message: format!("Session {} not found", session_id),
+                        };
+                        if let Ok(json) = serde_json::to_string(&err) {
+                            let _ = socket.send(Message::Text(json.into())).await;
+                        }
+                        return;
+                    }
+                };
+
+                // Forward any new chat messages
+                let current_count = session.messages.len();
+                for msg in session.messages.iter().skip(last_msg_count) {
+                    let server_msg = ServerMessage::ChatMessage {
+                        id: msg.id.to_string(),
+                        role: msg.role.clone(),
+                        content: msg.content.clone(),
+                        timestamp: msg.timestamp.clone(),
+                    };
+                    if let Ok(json) = serde_json::to_string(&server_msg) {
+                        if socket.send(Message::Text(json.into())).await.is_err() {
+                            return; // client disconnected
+                        }
+                    }
+                }
+                last_msg_count = current_count;
+
+                // Send current stage statuses
+                for stage in &session.stages {
+                    let server_msg = ServerMessage::StageUpdate {
+                        stage: stage.name.clone(),
+                        status: stage.status.clone(),
+                    };
+                    if let Ok(json) = serde_json::to_string(&server_msg) {
+                        if socket.send(Message::Text(json.into())).await.is_err() {
+                            return;
+                        }
+                    }
+                }
+
+                // If pipeline finished, send completion event and close
+                if !session.pipeline_running && session.project_description.is_some() {
+                    let success = session.stages.iter().all(|s| s.status == "complete");
+                    let server_msg = ServerMessage::PipelineComplete {
+                        success,
+                        summary: "Pipeline finished".into(),
+                    };
+                    if let Ok(json) = serde_json::to_string(&server_msg) {
+                        let _ = socket.send(Message::Text(json.into())).await;
+                    }
+                    return; // close the WebSocket after completion
+                }
+            }
+
+            msg = socket.recv() => {
+                match msg {
+                    Some(Ok(Message::Text(text))) => {
+                        if let Ok(client_msg) = serde_json::from_str::<ClientMessage>(&text) {
+                            match client_msg {
+                                ClientMessage::UserMessage { content } => {
+                                    state.sessions.update(session_id, |s| {
+                                        s.add_message("user", &content);
+                                    });
+                                }
+                                ClientMessage::StartPipeline { description } => {
+                                    // Accept a pipeline start via WebSocket too
+                                    state.sessions.update(session_id, |s| {
+                                        s.add_message("user", &description);
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    Some(Ok(Message::Close(_))) | None => return,
+                    _ => {}
+                }
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

@@ -4,9 +4,9 @@
 
 use std::sync::Arc;
 use axum::{
-    extract::{Path, State},
+    extract::{Path, State, WebSocketUpgrade},
     http::StatusCode,
-    response::Json,
+    response::{IntoResponse, Json},
     routing::{get, post},
     Router,
 };
@@ -15,6 +15,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::session::Session;
+use crate::ws;
 
 // ---------------------------------------------------------------------------
 // Request/Response types
@@ -73,6 +74,7 @@ pub fn routes(state: Arc<AppState>) -> Router {
         .route("/sessions", post(create_session))
         .route("/sessions/{id}", get(get_session))
         .route("/sessions/{id}/message", post(send_message))
+        .route("/sessions/{id}/ws", get(ws_handler))
         .with_state(state)
 }
 
@@ -176,12 +178,12 @@ async fn send_message(
         ));
     }
 
-    // Add user message and generate planner response
+    // Add user message and generate the initial planner acknowledgement.
+    // The actual pipeline runs in a background task — clients poll
+    // GET /api/sessions/:id or connect to the WebSocket for live updates.
     let result = state.sessions.update(id, |session| {
         session.add_message("user", &content);
 
-        // Generate planner response
-        // In a real implementation, this would call the pipeline
         if !session.pipeline_running {
             session.pipeline_running = true;
             session.project_description = Some(content.clone());
@@ -190,28 +192,37 @@ async fn send_message(
             session.add_message(
                 "planner",
                 &format!(
-                    "Starting Socratic planning for: \"{}\"\n\n\
-                     Let me analyze your request and prepare some clarifying questions.\n\
-                     The pipeline will run through {} stages.\n\n\
-                     [Pipeline execution requires claude/gemini/codex CLI tools.]",
-                    content,
-                    session.stages.len()
+                    "Starting pipeline for: \"{}\". Running the full Dark Factory pipeline — \
+                     this may take several minutes.\n\n\
+                     Poll GET /api/sessions/{} to check progress, or connect to the WebSocket \
+                     at /api/sessions/{}/ws.",
+                    content, session.id, session.id
                 ),
             );
-
-            session.stages[0].status = "complete".into();
-            session.stages[1].status = "running".into();
         } else {
             session.add_message(
                 "planner",
-                "Thank you for that clarification. I've incorporated your \
-                 feedback into the specification.",
+                "Pipeline is currently running. Interactive follow-up during execution \
+                 will be available in a future version.",
             );
         }
     });
 
     match result {
         Some(session) => {
+            // Spawn the pipeline task only on the first message
+            // (pipeline_running was false before the update above set it true,
+            //  so we check project_description being freshly set).
+            if session.pipeline_running && session.project_description.as_deref() == Some(&content) {
+                let state_clone = state.clone();
+                let session_id = id;
+                let description = content.clone();
+
+                tokio::spawn(async move {
+                    run_pipeline_for_session(state_clone, session_id, description).await;
+                });
+            }
+
             let msgs = &session.messages;
             let user_msg = msgs[msgs.len() - 2].clone();
             let planner_msg = msgs[msgs.len() - 1].clone();
@@ -232,11 +243,91 @@ async fn send_message(
 }
 
 // ---------------------------------------------------------------------------
-// WebSocket stub
+// Pipeline background task
 // ---------------------------------------------------------------------------
 
-// WebSocket handler will be implemented when we wire real-time pipeline updates.
-// For now, the REST API provides the core functionality.
+/// Background task: runs the full pipeline and writes results back to the
+/// session store. Clients observe progress via REST polling or WebSocket.
+async fn run_pipeline_for_session(state: Arc<AppState>, session_id: Uuid, description: String) {
+    tracing::info!("Session {}: pipeline task started", session_id);
+
+    let router = planner_core::llm::providers::LlmRouter::from_env();
+
+    let worker =
+        match planner_core::pipeline::steps::factory_worker::CodexFactoryWorker::new() {
+            Ok(w) => w,
+            Err(e) => {
+                state.sessions.update(session_id, |s| {
+                    s.add_message(
+                        "planner",
+                        &format!("Pipeline setup failed: {}", e),
+                    );
+                    s.pipeline_running = false;
+                });
+                return;
+            }
+        };
+
+    let config =
+        planner_core::pipeline::PipelineConfig::<planner_core::cxdb::CxdbEngine>::minimal(
+            &router,
+        );
+    let project_id = Uuid::new_v4();
+
+    match planner_core::pipeline::run_full_pipeline(
+        &config,
+        &worker,
+        project_id,
+        &description,
+    )
+    .await
+    {
+        Ok(output) => {
+            state.sessions.update(session_id, |s| {
+                for stage in &mut s.stages {
+                    stage.status = "complete".into();
+                }
+                s.add_message(
+                    "planner",
+                    &format!(
+                        "Pipeline complete!\n\nProject: {}\nSpecs: {} chunk(s)\nFactory: {:?}",
+                        output.front_office.intake.project_name,
+                        output.front_office.specs.len(),
+                        output.factory_output.build_status,
+                    ),
+                );
+                s.pipeline_running = false;
+            });
+            tracing::info!("Session {}: pipeline complete", session_id);
+        }
+        Err(e) => {
+            state.sessions.update(session_id, |s| {
+                s.add_message("planner", &format!("Pipeline failed: {}", e));
+                // Mark the first running stage as failed
+                for stage in &mut s.stages {
+                    if stage.status == "running" {
+                        stage.status = "failed".into();
+                        break;
+                    }
+                }
+                s.pipeline_running = false;
+            });
+            tracing::warn!("Session {}: pipeline failed: {}", session_id, e);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// WebSocket handler
+// ---------------------------------------------------------------------------
+
+async fn ws_handler(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<Uuid>,
+    ws: WebSocketUpgrade,
+) -> impl IntoResponse {
+    ws.on_upgrade(move |socket| ws::handle_ws(socket, state, id))
+}
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -377,6 +468,8 @@ mod tests {
         assert_eq!(response.user_message.role, "user");
         assert_eq!(response.planner_message.role, "planner");
         assert!(response.session.pipeline_running);
+        // The planner message should mention the pipeline start
+        assert!(response.planner_message.content.contains("pipeline"));
         // system + user + planner = 3
         assert_eq!(response.session.messages.len(), 3);
     }

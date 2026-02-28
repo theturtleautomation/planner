@@ -21,6 +21,7 @@
 mod app;
 mod ui;
 mod events;
+mod pipeline;
 
 use std::io;
 use crossterm::{
@@ -100,6 +101,14 @@ async fn run_app<B: Backend>(
                 app.handle_key(key);
             }
             events::Event::Resize(_, _) => {}
+        }
+
+        // Check if App has queued a pipeline to start.
+        // We do this AFTER handling events so the planner ack message is visible
+        // before the background task kicks off.
+        if let Some(description) = app.take_pending_pipeline() {
+            let rx = pipeline::spawn_pipeline(description);
+            app.pipeline_rx = Some(rx);
         }
 
         if app.should_quit {
