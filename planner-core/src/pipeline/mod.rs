@@ -268,7 +268,7 @@ pub struct Phase0FrontOfficeOutput {
     pub graph_dot: GraphDotV1,
     pub scenarios: ScenarioSetV1,
     pub agents_manifest: AgentsManifestV1,
-    /// Lean4 formal verification stubs (Phase 6 wiring).
+    /// Lean4 formal verification propositions (Phase 6 wiring).
     pub propositions: Vec<verification::Lean4Proposition>,
     /// Anti-lock-in audit report (Phase 6 wiring).
     pub audit_report: audit::LockInAuditReport,
@@ -445,8 +445,8 @@ pub async fn run_phase0_front_office_with_config<S: TurnStore>(
     let agents_manifest = compile::compile_agents_manifest(router, root_spec).await?;
     tracing::info!("  → AgentsManifestV1 produced: {} bytes", agents_manifest.root_agents_md.len());
 
-    // Step 10 (Phase 6): Formal Verification — generate Lean4 proposition stubs
-    tracing::info!("Step 10: Formal Verification stubs");
+    // Step 10 (Phase 6): Formal Verification — generate Lean4 proposition templates
+    tracing::info!("Step 10: Formal Verification propositions");
     let propositions = verification::generate_propositions(root_spec);
     tracing::info!(
         "  → {} Lean4 propositions generated across {} categories",

@@ -76,6 +76,8 @@ fn should_multi_chunk(intake: &IntakeV1) -> bool {
     // MicroTools are always single-chunk
     match &intake.output_domain {
         OutputDomain::MicroTool { .. } => return false,
+        // FullApp with multiple estimated domains warrants multi-chunk
+        OutputDomain::FullApp { estimated_domains } if *estimated_domains >= 2 => return true,
         _ => {}
     }
 
@@ -326,6 +328,13 @@ mod tests {
     fn should_multi_chunk_false_for_micro_tool() {
         let intake = build_micro_tool_intake();
         assert!(!should_multi_chunk(&intake));
+    }
+
+    #[test]
+    fn should_multi_chunk_true_for_fullapp_multi_domain() {
+        let intake = build_complex_intake();
+        // FullApp with estimated_domains=3 should trigger multi-chunk
+        assert!(should_multi_chunk(&intake));
     }
 
     #[test]

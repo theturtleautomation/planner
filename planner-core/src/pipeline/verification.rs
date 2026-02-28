@@ -1,8 +1,9 @@
-//! # Formal Verification Stubs — Lean4 Proposition Generation
+//! # Formal Verification — Lean4 Proposition Generation
 //!
 //! Generates Lean4 propositions for critical invariants identified in the NLSpec.
-//! These stubs can be filled in with actual proofs by a formal methods team
-//! or verified interactively in the Lean4 prover.
+//! These propositions are templates with `sorry` placeholders that can be filled in
+//! with actual proofs by a formal methods team or verified interactively in the
+//! Lean4 prover.
 //!
 //! ## Focus Areas
 //! 1. **State machine invariants**: Payment state transitions are valid
@@ -19,7 +20,7 @@ use planner_schemas::*;
 // Lean4 Proposition Types
 // ---------------------------------------------------------------------------
 
-/// A generated Lean4 proposition stub.
+/// A generated Lean4 proposition template.
 #[derive(Debug, Clone)]
 pub struct Lean4Proposition {
     /// Unique proposition ID (e.g. "PROP-SA-TRACE-1").
@@ -57,7 +58,7 @@ pub enum PropositionCategory {
 // Proposition Generation
 // ---------------------------------------------------------------------------
 
-/// Generate Lean4 proposition stubs from an NLSpec.
+/// Generate Lean4 proposition templates from an NLSpec.
 pub fn generate_propositions(spec: &NLSpecV1) -> Vec<Lean4Proposition> {
     let mut props = Vec::new();
     let mut idx = 0u32;

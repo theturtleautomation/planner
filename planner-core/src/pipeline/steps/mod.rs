@@ -13,7 +13,7 @@
 //! - `ar`              — Adversarial Review: 3-model parallel NLSpec review
 //! - `ar_refinement`   — AR findings → spec amendments → re-lint loop
 //! - `ralph`           — Scenario Augmentation + Gene Transfusion advisory
-//! - `factory`         — Artifact handoff + Kilroy CLI invocation + checkpoint polling
+//! - `factory`         — Artifact handoff + factory execution + checkpoint polling
 //! - `factory_worker`  — Pluggable code-generation backend (codex exec, mock)
 //! - `validate`        — Cross-model scenario evaluation (Gemini judges Claude)
 //! - `telemetry`       — Factory output → plain English + Consequence Cards
@@ -33,7 +33,7 @@ pub mod validate;
 pub mod telemetry;
 pub mod git;
 
-/// Placeholder result type for step execution.
+/// Result type for pipeline step execution.
 pub type StepResult<T> = Result<T, StepError>;
 
 /// Step execution error.
