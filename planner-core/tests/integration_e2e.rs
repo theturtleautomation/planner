@@ -1774,3 +1774,265 @@ async fn e2e_storage_turn_lifecycle() {
     assert_eq!(retrieved.metadata.run_id, run_id);
     assert!(retrieved.verify_integrity());
 }
+
+// ===========================================================================
+// Phase 6: Wiring + Persistence + Durable CXDB Integration Tests
+// ===========================================================================
+
+/// Phase 6.3: Durable CXDB — filesystem-backed store roundtrip through TurnStore trait.
+#[test]
+fn e2e_phase6_durable_cxdb_roundtrip() {
+    use planner_core::cxdb::durable::DurableCxdbEngine;
+    use planner_core::storage::TurnStore;
+    use planner_schemas::Turn;
+
+    let dir = std::env::temp_dir().join(format!("cxdb-e2e-rt-{}", Uuid::new_v4()));
+    let engine = DurableCxdbEngine::open(&dir).unwrap();
+    let project_id = Uuid::new_v4();
+    let run_id = Uuid::new_v4();
+
+    // Store an IntakeV1 via the TurnStore trait
+    let intake = build_test_intake(project_id);
+    let turn: Turn<IntakeV1> = Turn::new(intake, None, run_id, "durable-e2e", "exec-1");
+    let turn_id = turn.turn_id;
+
+    engine.store_turn(&turn).unwrap();
+
+    // Retrieve by ID
+    let retrieved: Turn<IntakeV1> = engine.get_turn(turn_id).unwrap();
+    assert_eq!(retrieved.payload.project_name, "Countdown Timer");
+    assert!(retrieved.verify_integrity());
+
+    // Retrieve by type
+    let all: Vec<Turn<IntakeV1>> = engine
+        .get_turns_by_type(run_id, IntakeV1::TYPE_ID)
+        .unwrap();
+    assert_eq!(all.len(), 1);
+
+    // Retrieve latest
+    let latest: Option<Turn<IntakeV1>> = engine
+        .get_latest_turn(run_id, IntakeV1::TYPE_ID)
+        .unwrap();
+    assert!(latest.is_some());
+    assert_eq!(latest.unwrap().turn_id, turn_id);
+
+    // Cleanup
+    let _ = std::fs::remove_dir_all(engine.root_path());
+}
+
+/// Phase 6.3: Durable CXDB persists across engine re-opens (simulates process restart).
+#[test]
+fn e2e_phase6_durable_cxdb_persistence() {
+    use planner_core::cxdb::durable::DurableCxdbEngine;
+    use planner_core::storage::TurnStore;
+    use planner_schemas::Turn;
+
+    let dir = std::env::temp_dir().join(format!("cxdb-e2e-persist-{}", Uuid::new_v4()));
+    let project_id = Uuid::new_v4();
+    let run_id = Uuid::new_v4();
+    let turn_id;
+
+    // Write with first engine instance
+    {
+        let engine = DurableCxdbEngine::open(&dir).unwrap();
+        let intake = build_test_intake(project_id);
+        let turn: Turn<IntakeV1> = Turn::new(intake, None, run_id, "persist-e2e", "exec-1");
+        turn_id = turn.turn_id;
+        engine.store_turn(&turn).unwrap();
+    }
+
+    // Read with second engine instance (simulating process restart)
+    {
+        let engine = DurableCxdbEngine::open(&dir).unwrap();
+        let retrieved: Turn<IntakeV1> = engine.get_turn(turn_id).unwrap();
+        assert_eq!(retrieved.payload.project_name, "Countdown Timer");
+        assert!(retrieved.verify_integrity());
+
+        let stats = engine.stats();
+        assert_eq!(stats.total_turns, 1);
+        assert_eq!(stats.total_blobs, 1);
+    }
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Phase 6.3: Durable CXDB content-addressed deduplication works on disk.
+#[test]
+fn e2e_phase6_durable_cxdb_dedup() {
+    use planner_core::cxdb::durable::DurableCxdbEngine;
+    use planner_core::storage::TurnStore;
+    use planner_schemas::Turn;
+
+    let dir = std::env::temp_dir().join(format!("cxdb-e2e-dedup-{}", Uuid::new_v4()));
+    let engine = DurableCxdbEngine::open(&dir).unwrap();
+    let project_id = Uuid::new_v4();
+    let run_id = Uuid::new_v4();
+
+    let intake = build_test_intake(project_id);
+    let turn1: Turn<IntakeV1> = Turn::new(intake.clone(), None, run_id, "dedup-e2e", "exec-1");
+    let turn2: Turn<IntakeV1> = Turn::new(intake, None, run_id, "dedup-e2e", "exec-2");
+
+    // Same payload → same blob hash
+    assert_eq!(turn1.blob_hash, turn2.blob_hash);
+
+    engine.store_turn(&turn1).unwrap();
+    engine.store_turn(&turn2).unwrap();
+
+    let stats = engine.stats();
+    assert_eq!(stats.total_turns, 2);
+    assert_eq!(stats.total_blobs, 1); // Deduped on disk
+
+    let _ = std::fs::remove_dir_all(engine.root_path());
+}
+
+/// Phase 6.1: Model catalog has factory worker mapping.
+#[test]
+fn e2e_phase6_model_catalog_factory_worker() {
+    use planner_core::llm::DefaultModels;
+
+    // Factory worker should map to GPT-5.3-Codex
+    assert_eq!(DefaultModels::FACTORY_WORKER, "gpt-5.3-codex");
+
+    // Existing models should still be present
+    assert!(!DefaultModels::INTAKE_GATEWAY.is_empty());
+    assert!(!DefaultModels::COMPILER_SPEC.is_empty());
+    assert!(!DefaultModels::SCENARIO_VALIDATOR.is_empty());
+}
+
+/// Phase 6.4: DTU registry has all 5 Phase 5 providers.
+#[test]
+fn e2e_phase6_dtu_registry_wired() {
+    use planner_core::dtu::DtuRegistry;
+
+    let registry = DtuRegistry::with_phase5_defaults();
+    let providers = registry.list_providers();
+    assert_eq!(providers.len(), 5);
+
+    // Verify all providers are present
+    assert!(registry.get("stripe").is_some());
+    assert!(registry.get("auth0").is_some());
+    assert!(registry.get("sendgrid").is_some());
+    assert!(registry.get("supabase").is_some());
+    assert!(registry.get("twilio").is_some());
+
+    // Verify reset_all doesn't panic
+    registry.reset_all();
+}
+
+/// Phase 6.6: Project registry tracks projects.
+#[test]
+fn e2e_phase6_project_registry() {
+    use planner_core::pipeline::project::{ProjectRegistry, ProjectStatus};
+
+    let mut registry = ProjectRegistry::new();
+    assert_eq!(registry.count(), 0);
+
+    let project = registry.register(
+        "Test Project".to_string(),
+        "test-project".to_string(),
+        vec!["e2e".to_string()],
+    ).unwrap();
+
+    assert_eq!(registry.count(), 1);
+    assert!(registry.get(project.project_id).is_some());
+    assert!(registry.get_by_slug("test-project").is_some());
+
+    // Verify duplicate slug is rejected
+    let dup = registry.register(
+        "Another".to_string(),
+        "test-project".to_string(),
+        vec![],
+    );
+    assert!(dup.is_err());
+
+    // Verify status update
+    registry.update_status(project.project_id, ProjectStatus::Completed).unwrap();
+    assert_eq!(registry.get(project.project_id).unwrap().status, ProjectStatus::Completed);
+}
+
+/// Phase 6.7: Verification generates Lean4 propositions from spec.
+#[test]
+fn e2e_phase6_verification_propositions() {
+    use planner_core::pipeline::verification;
+
+    let project_id = Uuid::new_v4();
+    let spec = build_test_spec(project_id);
+
+    let propositions = verification::generate_propositions(&spec);
+
+    // Should have at least: anchor traceability + requirement uniqueness + coverage
+    assert!(!propositions.is_empty(), "Should generate at least some propositions");
+
+    // Check anchor traceability propositions exist
+    let anchor_props: Vec<_> = propositions.iter()
+        .filter(|p| p.category == verification::PropositionCategory::AnchorTraceability)
+        .collect();
+    assert!(!anchor_props.is_empty(), "Should have anchor traceability propositions");
+
+    // Check uniqueness propositions exist
+    let unique_props: Vec<_> = propositions.iter()
+        .filter(|p| p.category == verification::PropositionCategory::Uniqueness)
+        .collect();
+    assert!(!unique_props.is_empty(), "Should have uniqueness propositions");
+
+    // All propositions should have non-empty Lean4 source
+    for prop in &propositions {
+        assert!(!prop.lean4_source.is_empty(), "Proposition {} should have Lean4 source", prop.id);
+    }
+}
+
+/// Phase 6.7: Anti-lock-in audit produces findings for external dependencies.
+#[test]
+fn e2e_phase6_audit_lock_in() {
+    use planner_core::pipeline::audit;
+
+    let project_id = Uuid::new_v4();
+    let spec = build_test_spec(project_id);
+
+    let report = audit::audit_lock_in(&spec);
+
+    // Report should have basic structure
+    assert_eq!(report.project_id, project_id);
+    // Risk score should be between 0 and 1
+    assert!(report.risk_score >= 0.0 && report.risk_score <= 1.0,
+        "Risk score should be 0-1, got {}", report.risk_score);
+    // Should have some recommendations (our test spec has external deps)
+    // Even if no deps, the audit should run without panicking
+}
+
+/// Phase 6.2+6.3: Pipeline Config wires storage — verify the persist method works
+/// through PipelineConfig.
+#[test]
+fn e2e_phase6_pipeline_config_persist() {
+    use planner_core::cxdb::durable::DurableCxdbEngine;
+    use planner_core::storage::TurnStore;
+    use planner_core::pipeline::PipelineConfig;
+    use planner_core::llm::providers::LlmRouter;
+    use planner_schemas::Turn;
+
+    let dir = std::env::temp_dir().join(format!("cxdb-e2e-config-{}", Uuid::new_v4()));
+    let engine = DurableCxdbEngine::open(&dir).unwrap();
+    let router = LlmRouter::from_env();
+
+    let config = PipelineConfig {
+        router: &router,
+        store: Some(&engine),
+        dtu_registry: None,
+    };
+
+    let project_id = Uuid::new_v4();
+    let run_id = Uuid::new_v4();
+
+    let intake = build_test_intake(project_id);
+    let turn: Turn<IntakeV1> = Turn::new(intake, None, run_id, "config-e2e", "exec-1");
+    let turn_id = turn.turn_id;
+
+    // persist via config (should not panic even if store has issues)
+    config.persist(&turn);
+
+    // Verify it was actually stored
+    let retrieved: Turn<IntakeV1> = engine.get_turn(turn_id).unwrap();
+    assert_eq!(retrieved.payload.project_name, "Countdown Timer");
+
+    let _ = std::fs::remove_dir_all(engine.root_path());
+}

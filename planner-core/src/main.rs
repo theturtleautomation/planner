@@ -17,6 +17,8 @@
 mod llm;
 mod pipeline;
 mod storage;
+mod cxdb;
+mod dtu;
 
 use uuid::Uuid;
 

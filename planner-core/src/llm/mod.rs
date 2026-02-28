@@ -13,17 +13,21 @@
 //! The user must have these CLIs installed and authenticated via their
 //! own subscriptions (Max, Pro, etc.).
 //!
-//! ## Model Routing (from plan.md)
+//! ## Model Routing (from models.md — Feb 2026)
 //!
-//! | Component              | Default Model | Provider   |
-//! |------------------------|---------------|------------|
-//! | Intake Gateway         | Opus          | Anthropic  |
-//! | Compiler (NLSpec)      | Opus          | Anthropic  |
-//! | Compiler (graph.dot)   | Opus          | Anthropic  |
-//! | Kilroy coding nodes    | Sonnet        | Anthropic  |
-//! | Scenario Validator     | Gemini        | Google     |
-//! | Telemetry Presenter    | Haiku         | Anthropic  |
-//! | Ralph Loops            | Sonnet        | Anthropic  |
+//! | Component              | Default Model         | Provider   | Rationale (models.md)                    |
+//! |------------------------|-----------------------|------------|------------------------------------------|
+//! | Intake Gateway         | Claude Opus 4.6       | Anthropic  | Structured "Principal Engineer" planning |
+//! | Compiler (NLSpec)      | Claude Opus 4.6       | Anthropic  | Architectural reasoning, edge cases      |
+//! | Compiler (graph.dot)   | Claude Opus 4.6       | Anthropic  | Long-horizon plan mapping                |
+//! | Factory Worker (code)  | GPT-5.3-Codex         | OpenAI     | SotA agentic software engineering        |
+//! | Scenario Validator     | Gemini 3.1 Pro        | Google     | 1M context, cross-ref PRDs + code        |
+//! | Telemetry Presenter    | Claude Haiku 4.5      | Anthropic  | Fast, low-cost summarization             |
+//! | Ralph Loops            | Claude Sonnet 4.6     | Anthropic  | Near-Opus intelligence, lower latency    |
+//! | AR Reviewer (Opus)     | Claude Opus 4.6       | Anthropic  | Intent completeness, anchor coverage     |
+//! | AR Reviewer (GPT)      | GPT-5.2               | OpenAI     | Mathematical proofs, contradiction detect|
+//! | AR Reviewer (Gemini)   | Gemini 3.1 Pro        | Google     | Scope integrity, massive context window  |
+//! | AR Refiner             | Claude Opus 4.6       | Anthropic  | High-precision spec amendments           |
 
 pub mod providers;
 
@@ -129,20 +133,21 @@ pub struct ModelInfo {
     pub cli_binary: &'static str,
 }
 
-/// Known models catalog.
-/// Model IDs use dots (Anthropic convention): claude-opus-4.6, not claude-opus-4-6.
-/// Note: the plan.md uses hyphens (claude-opus-4-6) for Rust identifiers;
-/// the actual CLI model flag needs dots.
+/// Known models catalog — aligned with models.md (Feb 2026).
+///
+/// Model IDs use hyphens for Rust identifiers. The CLI providers
+/// translate to the correct model flag format when invoking the binary.
 pub const MODELS: &[ModelInfo] = &[
     // Anthropic — uses `claude` CLI
     ModelInfo { id: "claude-opus-4-6",   provider: "anthropic", cli_binary: "claude" },
     ModelInfo { id: "claude-sonnet-4-6", provider: "anthropic", cli_binary: "claude" },
     ModelInfo { id: "claude-haiku-4-5",  provider: "anthropic", cli_binary: "claude" },
     // Google — uses `gemini` CLI
-    ModelInfo { id: "gemini-2.5-pro",    provider: "google",    cli_binary: "gemini" },
-    ModelInfo { id: "gemini-2.5-flash",  provider: "google",    cli_binary: "gemini" },
+    ModelInfo { id: "gemini-3.1-pro",    provider: "google",    cli_binary: "gemini" },
+    ModelInfo { id: "gemini-3.1-flash",  provider: "google",    cli_binary: "gemini" },
     // OpenAI — uses `codex` CLI
-    ModelInfo { id: "gpt-4.1",           provider: "openai",    cli_binary: "codex"  },
+    ModelInfo { id: "gpt-5.3-codex",     provider: "openai",    cli_binary: "codex"  },
+    ModelInfo { id: "gpt-5.2",           provider: "openai",    cli_binary: "codex"  },
 ];
 
 /// Look up a model by ID.
@@ -154,16 +159,28 @@ pub fn find_model(id: &str) -> Option<&'static ModelInfo> {
 pub struct DefaultModels;
 
 impl DefaultModels {
+    // -- Front Office: Socratic Planning (Claude Opus — "Principal Engineer") --
     pub const INTAKE_GATEWAY: &'static str = "claude-opus-4-6";
     pub const COMPILER_SPEC: &'static str = "claude-opus-4-6";
     pub const COMPILER_GRAPH_DOT: &'static str = "claude-opus-4-6";
-    pub const SCENARIO_VALIDATOR: &'static str = "gemini-2.5-pro";
+
+    // -- Factory: Code Generation (GPT-5.3-Codex — SotA agentic SWE) --
+    pub const FACTORY_WORKER: &'static str = "gpt-5.3-codex";
+
+    // -- Return Trip: Validation (Gemini 3.1 Pro — 1M context, cross-ref) --
+    pub const SCENARIO_VALIDATOR: &'static str = "gemini-3.1-pro";
+
+    // -- Telemetry: Summarization (Haiku — fast, low cost) --
     pub const TELEMETRY_PRESENTER: &'static str = "claude-haiku-4-5";
+
+    // -- Ralph Loops: Advisory (Sonnet — near-Opus, lower latency) --
     pub const RALPH_LOOPS: &'static str = "claude-sonnet-4-6";
-    // Adversarial Review — three different model families for diverse perspectives
+
+    // -- Adversarial Review: Three model families for diverse perspectives --
     pub const AR_REVIEWER_OPUS: &'static str = "claude-opus-4-6";
-    pub const AR_REVIEWER_GPT: &'static str = "gpt-4.1";
-    pub const AR_REVIEWER_GEMINI: &'static str = "gemini-2.5-pro";
-    // AR refinement uses Opus for high-precision spec amendments
+    pub const AR_REVIEWER_GPT: &'static str = "gpt-5.2";
+    pub const AR_REVIEWER_GEMINI: &'static str = "gemini-3.1-pro";
+
+    // -- AR Refinement: High-precision spec amendments --
     pub const AR_REFINER: &'static str = "claude-opus-4-6";
 }

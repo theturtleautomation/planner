@@ -23,6 +23,8 @@ pub mod audit;
 use uuid::Uuid;
 
 use crate::llm::providers::LlmRouter;
+use crate::storage::TurnStore;
+use crate::dtu::DtuRegistry;
 use planner_schemas::*;
 
 use steps::StepResult;
@@ -37,6 +39,39 @@ use steps::factory;
 use steps::validate;
 use steps::telemetry;
 use steps::git;
+
+/// Pipeline configuration bundle — carries storage, DTU, and project
+/// registry references through the pipeline.
+pub struct PipelineConfig<'a, S: TurnStore> {
+    /// The LLM router for model resolution.
+    pub router: &'a LlmRouter,
+    /// Optional durable storage — if Some, each artifact is persisted.
+    pub store: Option<&'a S>,
+    /// Optional DTU registry — if Some, scenario validation uses DTU clones.
+    pub dtu_registry: Option<&'a DtuRegistry>,
+}
+
+impl<'a, S: TurnStore> PipelineConfig<'a, S> {
+    /// Create a minimal config (router only, no storage or DTU).
+    pub fn minimal(router: &'a LlmRouter) -> Self {
+        PipelineConfig {
+            router,
+            store: None,
+            dtu_registry: None,
+        }
+    }
+
+    /// Persist a Turn if storage is configured.
+    pub fn persist<T: ArtifactPayload>(&self, turn: &Turn<T>) {
+        if let Some(store) = self.store {
+            if let Err(e) = store.store_turn(turn) {
+                tracing::warn!("Storage: failed to persist turn {}: {}", turn.turn_id, e);
+            } else {
+                tracing::debug!("Storage: persisted {} (type={})", turn.turn_id, turn.type_id);
+            }
+        }
+    }
+}
 
 /// The recipe — a versioned DAG of steps defining the complete workflow.
 /// Phase 0 uses a linear sequence; Phase 3+ introduces parallel branches.
@@ -232,25 +267,41 @@ pub struct Phase0FrontOfficeOutput {
     pub graph_dot: GraphDotV1,
     pub scenarios: ScenarioSetV1,
     pub agents_manifest: AgentsManifestV1,
+    /// Lean4 formal verification stubs (Phase 6 wiring).
+    pub propositions: Vec<verification::Lean4Proposition>,
+    /// Anti-lock-in audit report (Phase 6 wiring).
+    pub audit_report: audit::LockInAuditReport,
 }
 
 /// Run the Phase 0 Front Office pipeline: user description → all compilation
 /// artifacts ready for Kilroy handoff.
 ///
 /// Phase 3: Now supports multi-chunk compilation via ChunkPlan.
+/// Phase 6: Accepts PipelineConfig for storage persistence, DTU, and
+///          project registry wiring. Also runs verification + audit.
+///
 /// Steps: Intake → ChunkPlan → Compile Spec(s) → Lint → AR Review →
-///        AR Refinement → (GraphDot + Scenarios + AGENTS.md)
-pub async fn run_phase0_front_office(
-    router: &LlmRouter,
+///        AR Refinement → (GraphDot + Scenarios + AGENTS.md) →
+///        Verification → Audit
+pub async fn run_phase0_front_office_with_config<S: TurnStore>(
+    config: &PipelineConfig<'_, S>,
     project_id: Uuid,
     user_description: &str,
 ) -> StepResult<Phase0FrontOfficeOutput> {
-    tracing::info!("Phase 3 Front Office: starting pipeline");
+    let router = config.router;
+    tracing::info!("Phase 6 Front Office: starting pipeline");
 
     // Step 1: Intake Gateway
     tracing::info!("Step 1: Intake Gateway");
     let intake_result = intake::execute_intake(router, project_id, user_description).await?;
     tracing::info!("  → IntakeV1 produced: {}", intake_result.project_name);
+
+    // Persist intake as a Turn
+    {
+        let run_id = Uuid::new_v4();
+        let turn = Turn::new(intake_result.clone(), None, run_id, "front-office", "intake");
+        config.persist(&turn);
+    }
 
     // Step 2: Chunk Planning
     tracing::info!("Step 2: Chunk Planner");
@@ -287,7 +338,6 @@ pub async fn run_phase0_front_office(
     tracing::info!("Step 5: Adversarial Review");
     let mut ar_reports = if specs.len() > 1 {
         let mut reports = ar::execute_adversarial_review_set(router, &specs, project_id).await?;
-        // Also run cross-chunk coherence review
         let coherence = ar::execute_cross_chunk_coherence_review(router, &specs, project_id).await?;
         reports.push(coherence);
         reports
@@ -305,8 +355,6 @@ pub async fn run_phase0_front_office(
     // Step 6: AR Refinement — handle blocking findings
     if total_blocking > 0 {
         tracing::info!("Step 6: AR Refinement (blocking findings detected)");
-        // Refine each chunk that has blocking findings
-        // Process in reverse order to avoid index shifting issues
         let report_count = ar_reports.len().min(specs.len());
         for i in 0..report_count {
             if !ar_reports[i].has_blocking {
@@ -330,14 +378,12 @@ pub async fn run_phase0_front_office(
             }
         }
 
-        // Re-lint after refinement
         if specs.len() > 1 {
             linter::lint_spec_set(&specs)?;
         } else {
             linter::lint_spec(&specs[0])?;
         }
 
-        // Re-run AR to verify
         tracing::info!("  Re-running AR on refined specs...");
         ar_reports = if specs.len() > 1 {
             let mut reports = ar::execute_adversarial_review_set(router, &specs, project_id).await?;
@@ -371,16 +417,13 @@ pub async fn run_phase0_front_office(
     );
 
     tracing::info!("Step 8: Generate Scenarios");
-    // Generate scenarios from root spec (which has sacred anchors + satisfaction criteria)
-    // Domain chunks' satisfaction criteria are also included
     let mut scenarios = compile::generate_scenarios(router, root_spec).await?;
     tracing::info!("  → ScenarioSetV1 produced: {} scenarios", scenarios.scenarios.len());
 
-    // Step 8b: Ralph Loop — adversarial scenario augmentation + gene transfusion
+    // Step 8b: Ralph Loop
     tracing::info!("Step 8b: Ralph Loop");
     let ralph_output = ralph::execute_ralph(router, root_spec, &scenarios, project_id).await?;
 
-    // Merge augmented scenarios into the scenario set
     if !ralph_output.augmented_scenarios.is_empty() {
         tracing::info!(
             "  → Ralph added {} edge-case scenarios",
@@ -401,7 +444,31 @@ pub async fn run_phase0_front_office(
     let agents_manifest = compile::compile_agents_manifest(router, root_spec).await?;
     tracing::info!("  → AgentsManifestV1 produced: {} bytes", agents_manifest.root_agents_md.len());
 
-    tracing::info!("Phase 3 Front Office: pipeline complete — ready for Kilroy handoff");
+    // Step 10 (Phase 6): Formal Verification — generate Lean4 proposition stubs
+    tracing::info!("Step 10: Formal Verification stubs");
+    let propositions = verification::generate_propositions(root_spec);
+    tracing::info!(
+        "  → {} Lean4 propositions generated across {} categories",
+        propositions.len(),
+        {
+            let mut cats: Vec<&verification::PropositionCategory> =
+                propositions.iter().map(|p| &p.category).collect();
+            cats.sort_by_key(|c| format!("{:?}", c));
+            cats.dedup();
+            cats.len()
+        },
+    );
+
+    // Step 11 (Phase 6): Anti-Lock-In Audit
+    tracing::info!("Step 11: Anti-Lock-In Audit");
+    let audit_report = audit::audit_lock_in(root_spec);
+    tracing::info!(
+        "  → Audit: {:?} risk (score={:.2}), {} findings, {} recommendations",
+        audit_report.overall_risk, audit_report.risk_score,
+        audit_report.findings.len(), audit_report.recommendations.len(),
+    );
+
+    tracing::info!("Phase 6 Front Office: pipeline complete — ready for Kilroy handoff");
 
     Ok(Phase0FrontOfficeOutput {
         intake: intake_result,
@@ -410,7 +477,19 @@ pub async fn run_phase0_front_office(
         graph_dot,
         scenarios,
         agents_manifest,
+        propositions,
+        audit_report,
     })
+}
+
+/// Backward-compatible entry point (no storage / DTU wiring).
+pub async fn run_phase0_front_office(
+    router: &LlmRouter,
+    project_id: Uuid,
+    user_description: &str,
+) -> StepResult<Phase0FrontOfficeOutput> {
+    let config = PipelineConfig::<crate::cxdb::CxdbEngine>::minimal(router);
+    run_phase0_front_office_with_config(&config, project_id, user_description).await
 }
 
 // ---------------------------------------------------------------------------
@@ -439,25 +518,20 @@ const FACTORY_MAX_RETRIES: usize = 2;
 
 /// Run the complete Phase 0 pipeline: user description → approved Git commit.
 ///
-/// This is the full loop:
-/// Front Office → Factory Diplomat → Scenario Validator →
-///   (retry Factory if gates fail and budget allows) →
-///   Telemetry Presenter → Git Projection
-///
-/// Phase 1: Factory retry loop re-invokes Kilroy with generalized errors
-/// when validation gates fail, up to FACTORY_MAX_RETRIES additional attempts
-/// within the budget cap.
-pub async fn run_phase0_full(
-    router: &LlmRouter,
+/// Phase 6: Accepts PipelineConfig for storage persistence and DTU wiring.
+/// DTU clones are reset between scenario validation attempts.
+pub async fn run_phase0_full_with_config<S: TurnStore>(
+    config: &PipelineConfig<'_, S>,
     project_id: Uuid,
     user_description: &str,
 ) -> StepResult<Phase0FullOutput> {
+    let router = config.router;
     tracing::info!("═══════════════════════════════════════════════");
-    tracing::info!("  Planner v2 — Phase 2 Full Pipeline");
+    tracing::info!("  Planner v2 — Phase 6 Full Pipeline");
     tracing::info!("═══════════════════════════════════════════════");
 
     // ---- Layer 1: Front Office ----
-    let front_office = run_phase0_front_office(router, project_id, user_description).await?;
+    let front_office = run_phase0_front_office_with_config(config, project_id, user_description).await?;
 
     // ---- Layer 1→2: Factory Diplomat + Validation Loop ----
     let run_id = Uuid::new_v4();
@@ -485,6 +559,12 @@ pub async fn run_phase0_full(
             factory_output.spend_usd,
         );
 
+        // Reset DTU clones between attempts
+        if let Some(dtu_reg) = config.dtu_registry {
+            dtu_reg.reset_all();
+            tracing::debug!("  DTU clones reset for validation attempt {}", attempt);
+        }
+
         // ---- Layer 3: Return Trip — Validate ----
         tracing::info!("─── Scenario Validator (attempt {}) ───", attempt);
         satisfaction = validate::execute_scenario_validation(
@@ -494,13 +574,11 @@ pub async fn run_phase0_full(
         )
         .await?;
 
-        // Check if we passed or should retry
         if satisfaction.gates_passed {
             tracing::info!("  Gates PASSED on attempt {}", attempt);
             break;
         }
 
-        // Gates failed — decide whether to retry
         if attempt > FACTORY_MAX_RETRIES {
             tracing::warn!(
                 "  Gates FAILED after {} attempts — no more retries",
@@ -517,7 +595,6 @@ pub async fn run_phase0_full(
             break;
         }
 
-        // Log the generalized errors being fed back to the factory
         let error_categories: Vec<&str> = satisfaction
             .scenario_results
             .iter()
@@ -544,7 +621,6 @@ pub async fn run_phase0_full(
     .await?;
 
     // ---- Git Projection ----
-    // Phase 0: Auto-approve (no behavioral approval gate)
     tracing::info!("─── Git Projection ───");
     let git_result = git::execute_git_projection(
         &factory_output,
@@ -569,4 +645,14 @@ pub async fn run_phase0_full(
         git_result,
         budget,
     })
+}
+
+/// Backward-compatible entry point (no storage / DTU wiring).
+pub async fn run_phase0_full(
+    router: &LlmRouter,
+    project_id: Uuid,
+    user_description: &str,
+) -> StepResult<Phase0FullOutput> {
+    let config = PipelineConfig::<crate::cxdb::CxdbEngine>::minimal(router);
+    run_phase0_full_with_config(&config, project_id, user_description).await
 }

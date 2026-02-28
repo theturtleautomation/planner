@@ -57,7 +57,7 @@ pub struct NodeModelAssignment {
     /// The DOT node class (e.g. "implementation", "review").
     pub node_class: String,
 
-    /// The LLM model assigned (e.g. "claude-sonnet-4-6", "gemini-2.5-pro").
+    /// The LLM model assigned (e.g. "claude-sonnet-4-6", "gemini-3.1-pro").
     pub model: String,
 
     /// Fidelity mode (e.g. "truncate", "summary:low").

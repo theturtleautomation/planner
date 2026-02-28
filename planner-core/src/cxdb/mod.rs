@@ -40,6 +40,7 @@ use crate::storage::{TurnStore, StorageError};
 
 pub mod protocol;
 pub mod query;
+pub mod durable;
 
 // ---------------------------------------------------------------------------
 // CXDB Engine — the core storage engine
