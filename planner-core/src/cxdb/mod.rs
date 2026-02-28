@@ -80,7 +80,7 @@ struct StoredTurn {
     created_at: DateTime<Utc>,
     note: Option<String>,
     /// Project ID extracted from the payload for multi-project indexing.
-    project_id: Option<Uuid>,
+    _project_id: Option<Uuid>,
 }
 
 /// CXDB server configuration.
@@ -230,7 +230,7 @@ impl CxdbEngine {
             produced_by: produced_by.to_string(),
             created_at,
             note,
-            project_id,
+            _project_id: project_id,
         };
 
         {

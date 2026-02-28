@@ -46,6 +46,8 @@ pub enum StageStatus {
     Pending,
     Running,
     Complete,
+    /// Used when pipeline wiring is complete (Phase F).
+    #[allow(dead_code)]
     Failed,
 }
 
@@ -304,7 +306,9 @@ impl App {
     }
 
     /// Update a pipeline stage status.
-    pub fn set_stage_status(&mut self, index: usize, status: StageStatus) {
+    /// Internal API for Phase F pipeline wiring.
+    #[allow(dead_code)] // Called from ui.rs tests and Phase F pipeline wiring
+    pub(crate) fn set_stage_status(&mut self, index: usize, status: StageStatus) {
         if index < self.stages.len() {
             self.stages[index].status = status;
         }

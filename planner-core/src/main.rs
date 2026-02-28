@@ -10,17 +10,11 @@
 //!   planner-core "Build me a task tracker widget"
 //!   planner-core --front-office-only "Build me a countdown timer"
 //!   planner-core --full "Build me a task tracker widget"
-//!
-//! Phase 0: Many types are built for future phases but not yet used in CLI paths.
-#![allow(dead_code)]
-
-mod llm;
-mod pipeline;
-mod storage;
-mod cxdb;
-mod dtu;
 
 use uuid::Uuid;
+
+use planner_core::llm;
+use planner_core::pipeline;
 
 #[tokio::main]
 async fn main() {
@@ -192,6 +186,6 @@ fn print_usage() {
     eprintln!("  planner-core --full \"Build me a countdown timer\"");
     eprintln!("  planner-core --fo \"Build me a pomodoro timer\"");
     eprintln!();
-    eprintln!("planner-core v0.1.0 — Phase 0");
-    eprintln!("Pipeline: Intake → Compile → Lint → Factory → Validate → Present → Git");
+    eprintln!("planner-core v0.1.0");
+    eprintln!("Pipeline: Intake → Compile → Lint → AR Review → Refine → Ralph → Factory → Validate → Present → Git");
 }

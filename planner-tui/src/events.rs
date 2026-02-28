@@ -12,6 +12,8 @@ pub enum Event {
     /// Periodic tick (for async operations).
     Tick,
     /// Terminal resize.
+    /// Width and height used when resize handling is implemented.
+    #[allow(dead_code)]
     Resize(u16, u16),
 }
 

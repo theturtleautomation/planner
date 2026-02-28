@@ -18,8 +18,6 @@
 //!   │  > Type your response...                    │ ← Input
 //!   └─────────────────────────────────────────────┘
 
-#![allow(dead_code)]
-
 mod app;
 mod ui;
 mod events;

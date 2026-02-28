@@ -167,6 +167,7 @@ impl AnthropicCliClient {
 }
 
 /// A single event from Claude's stream-json output.
+#[allow(dead_code)] // Constructed via serde deserialization of Claude CLI stream-json output
 #[derive(Debug, Deserialize)]
 struct ClaudeStreamEvent {
     #[serde(rename = "type")]
@@ -296,6 +297,7 @@ impl GoogleCliClient {
 }
 
 /// A parsed Gemini stream-json event.
+#[allow(dead_code)] // Constructed via serde deserialization of Gemini CLI stream-json output
 #[derive(Debug, Deserialize)]
 struct GeminiStreamEvent {
     #[serde(rename = "type")]

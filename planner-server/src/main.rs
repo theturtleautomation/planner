@@ -14,8 +14,6 @@
 //! - GET  /api/models          — List available LLM models
 //! - GET  /*                   — Static file serving (React frontend)
 
-#![allow(dead_code)]
-
 mod api;
 mod session;
 mod ws;
@@ -29,7 +27,6 @@ use tower_http::cors::{Any, CorsLayer};
 use session::SessionStore;
 
 /// Shared application state.
-#[allow(dead_code)]
 pub struct AppState {
     /// Active planning sessions.
     pub sessions: SessionStore,

@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 // ---------------------------------------------------------------------------
 
 /// Server-to-client WebSocket message.
+#[allow(dead_code)] // Phase G: used when WebSocket handler is wired to live sessions
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum ServerMessage {
@@ -48,6 +49,7 @@ pub enum ServerMessage {
 }
 
 /// Client-to-server WebSocket message.
+#[allow(dead_code)] // Phase G: used when WebSocket handler is wired to live sessions
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum ClientMessage {

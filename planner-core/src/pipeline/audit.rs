@@ -152,6 +152,7 @@ const VENDOR_ANALYSIS: &[VendorPattern] = &[
 struct VendorPattern {
     name_pattern: &'static str,
     category: &'static str,
+    #[allow(dead_code)] // Part of lock-in audit report data model — used in future audit report generation
     has_standard_alternative: bool,
     migration_complexity: &'static str,
     data_export: bool,

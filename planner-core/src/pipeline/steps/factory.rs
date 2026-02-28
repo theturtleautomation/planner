@@ -402,6 +402,7 @@ struct KilroyCheckpoint {
     #[serde(default)]
     total_spend_usd: f32,
     #[serde(default)]
+    #[allow(dead_code)] // Part of Kilroy checkpoint deserialization — captured for future telemetry
     elapsed_secs: f64,
 }
 

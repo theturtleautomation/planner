@@ -50,6 +50,7 @@ struct Auth0State {
     token_counter: u64,
 }
 
+#[allow(dead_code)] // Deserialized from DTU JSON response — fields model Auth0 token format
 #[derive(Debug, Clone)]
 struct TokenInfo {
     user_id: String,

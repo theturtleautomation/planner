@@ -275,6 +275,7 @@ struct ParsedRefinement {
 
 #[derive(Debug)]
 struct ParsedAmendment {
+    #[allow(dead_code)] // Part of AR finding traceability — read by downstream consumers
     finding_id: String,
     section: String,
     action: String,
