@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::AppState;
+use crate::auth::{auth_middleware, Claims};
 use crate::session::Session;
 use crate::ws;
 
@@ -31,6 +32,11 @@ pub struct HealthResponse {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CreateSessionResponse {
     pub session: Session,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ListSessionsResponse {
+    pub sessions: Vec<Session>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -68,14 +74,23 @@ pub struct ErrorResponse {
 // ---------------------------------------------------------------------------
 
 pub fn routes(state: Arc<AppState>) -> Router {
-    Router::new()
+    let public = Router::new()
         .route("/health", get(health))
+        .with_state(state.clone());
+
+    let protected = Router::new()
         .route("/models", get(models))
-        .route("/sessions", post(create_session))
+        .route("/sessions", get(list_sessions).post(create_session))
         .route("/sessions/{id}", get(get_session))
         .route("/sessions/{id}/message", post(send_message))
         .route("/sessions/{id}/ws", get(ws_handler))
-        .with_state(state)
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            auth_middleware,
+        ))
+        .with_state(state);
+
+    public.merge(protected)
 }
 
 // ---------------------------------------------------------------------------
@@ -133,11 +148,20 @@ async fn models() -> Json<ModelsResponse> {
     Json(ModelsResponse { models })
 }
 
+async fn list_sessions(
+    State(state): State<Arc<AppState>>,
+    claims: Claims,
+) -> Json<ListSessionsResponse> {
+    let sessions = state.sessions.list_for_user(&claims.sub);
+    Json(ListSessionsResponse { sessions })
+}
+
 async fn create_session(
     State(state): State<Arc<AppState>>,
+    claims: Claims,
 ) -> (StatusCode, Json<CreateSessionResponse>) {
-    let session = state.sessions.create();
-    tracing::info!("Created session: {}", session.id);
+    let session = state.sessions.create(&claims.sub);
+    tracing::info!("Created session: {} for user: {}", session.id, claims.sub);
 
     (
         StatusCode::CREATED,
@@ -147,27 +171,58 @@ async fn create_session(
 
 async fn get_session(
     State(state): State<Arc<AppState>>,
+    claims: Claims,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Session>, (StatusCode, Json<ErrorResponse>)> {
-    state
-        .sessions
-        .get(id)
-        .map(Json)
-        .ok_or_else(|| {
-            (
-                StatusCode::NOT_FOUND,
-                Json(ErrorResponse {
-                    error: format!("Session not found: {}", id),
-                }),
-            )
-        })
+    match state.sessions.get(id) {
+        Some(session) => {
+            if session.user_id != claims.sub {
+                return Err((
+                    StatusCode::FORBIDDEN,
+                    Json(ErrorResponse {
+                        error: "Access denied".into(),
+                    }),
+                ));
+            }
+            Ok(Json(session))
+        }
+        None => Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: format!("Session not found: {}", id),
+            }),
+        )),
+    }
 }
 
 async fn send_message(
     State(state): State<Arc<AppState>>,
+    claims: Claims,
     Path(id): Path<Uuid>,
     Json(req): Json<SendMessageRequest>,
 ) -> Result<Json<SendMessageResponse>, (StatusCode, Json<ErrorResponse>)> {
+    // Verify ownership before proceeding
+    match state.sessions.get(id) {
+        Some(session) => {
+            if session.user_id != claims.sub {
+                return Err((
+                    StatusCode::FORBIDDEN,
+                    Json(ErrorResponse {
+                        error: "Access denied".into(),
+                    }),
+                ));
+            }
+        }
+        None => {
+            return Err((
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: format!("Session not found: {}", id),
+                }),
+            ));
+        }
+    }
+
     let content = req.content.trim().to_string();
     if content.is_empty() {
         return Err((
@@ -323,10 +378,23 @@ async fn run_pipeline_for_session(state: Arc<AppState>, session_id: Uuid, descri
 
 async fn ws_handler(
     State(state): State<Arc<AppState>>,
+    claims: Claims,
     Path(id): Path<Uuid>,
     ws: WebSocketUpgrade,
 ) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| ws::handle_ws(socket, state, id))
+    // Verify the session exists and belongs to the user
+    match state.sessions.get(id) {
+        Some(session) if session.user_id == claims.sub => {
+            ws.on_upgrade(move |socket| ws::handle_ws(socket, state, id))
+        }
+        Some(_) => {
+            // Session exists but belongs to a different user
+            (StatusCode::FORBIDDEN, "Access denied").into_response()
+        }
+        None => {
+            (StatusCode::NOT_FOUND, "Session not found").into_response()
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -337,6 +405,7 @@ async fn ws_handler(
 mod tests {
     use super::*;
     use crate::session::SessionStore;
+    use crate::auth::AuthConfig;
     use axum::body::Body;
     use axum::http::Request;
     use tower::ServiceExt;
@@ -345,6 +414,7 @@ mod tests {
     fn test_state() -> Arc<AppState> {
         Arc::new(AppState {
             sessions: SessionStore::new(),
+            auth_config: None, // dev mode for tests
         })
     }
 
@@ -365,6 +435,28 @@ mod tests {
         let health: HealthResponse = serde_json::from_slice(&body).unwrap();
         assert_eq!(health.status, "ok");
         assert_eq!(health.sessions_active, 0);
+    }
+
+    #[tokio::test]
+    async fn test_health_no_auth_required() {
+        // Health endpoint must work with no token even when auth is configured
+        let state = Arc::new(AppState {
+            sessions: SessionStore::new(),
+            auth_config: Some(AuthConfig {
+                domain: "test.auth0.com".into(),
+                audience: "test".into(),
+                decoding_key: None,
+            }),
+        });
+        let app = routes(state);
+
+        let req = Request::builder()
+            .uri("/health")
+            .body(Body::empty())
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
     }
 
     #[tokio::test]
@@ -402,13 +494,38 @@ mod tests {
         let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
         let created: CreateSessionResponse = serde_json::from_slice(&body).unwrap();
         assert_eq!(created.session.messages.len(), 1);
+        // In dev mode, user_id is "dev|local"
+        assert_eq!(created.session.user_id, "dev|local");
         assert_eq!(state.sessions.count(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_list_sessions() {
+        let state = test_state();
+        // Pre-create two sessions in dev mode (user "dev|local")
+        state.sessions.create("dev|local");
+        state.sessions.create("dev|local");
+
+        let app = routes(state);
+
+        let req = Request::builder()
+            .method("GET")
+            .uri("/sessions")
+            .body(Body::empty())
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let listed: ListSessionsResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(listed.sessions.len(), 2);
     }
 
     #[tokio::test]
     async fn test_get_session() {
         let state = test_state();
-        let session = state.sessions.create();
+        let session = state.sessions.create("dev|local");
         let id = session.id;
 
         let app = routes(state);
@@ -424,6 +541,25 @@ mod tests {
         let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
         let retrieved: Session = serde_json::from_slice(&body).unwrap();
         assert_eq!(retrieved.id, id);
+    }
+
+    #[tokio::test]
+    async fn test_get_session_wrong_user() {
+        let state = test_state();
+        // Create a session belonging to a different user
+        let session = state.sessions.create("other_user|123");
+        let id = session.id;
+
+        let app = routes(state);
+
+        // Request is in dev mode (claims.sub = "dev|local"), but session owner is "other_user|123"
+        let req = Request::builder()
+            .uri(format!("/sessions/{}", id))
+            .body(Body::empty())
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
     }
 
     #[tokio::test]
@@ -443,7 +579,7 @@ mod tests {
     #[tokio::test]
     async fn test_send_message() {
         let state = test_state();
-        let session = state.sessions.create();
+        let session = state.sessions.create("dev|local");
         let id = session.id;
 
         let app = routes(state);
@@ -475,9 +611,34 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_send_message_wrong_user() {
+        let state = test_state();
+        // Session belongs to a different user
+        let session = state.sessions.create("other_user|456");
+        let id = session.id;
+
+        let app = routes(state);
+
+        let body = serde_json::to_string(&SendMessageRequest {
+            content: "Build me something".into(),
+        })
+        .unwrap();
+
+        let req = Request::builder()
+            .method("POST")
+            .uri(format!("/sessions/{}/message", id))
+            .header("content-type", "application/json")
+            .body(Body::from(body))
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
     async fn test_send_empty_message() {
         let state = test_state();
-        let session = state.sessions.create();
+        let session = state.sessions.create("dev|local");
         let id = session.id;
 
         let app = routes(state);
@@ -496,5 +657,28 @@ mod tests {
 
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_protected_endpoint_requires_token_when_auth_enabled() {
+        // When auth_config is set, missing token should return 401
+        let state = Arc::new(AppState {
+            sessions: SessionStore::new(),
+            auth_config: Some(AuthConfig {
+                domain: "test.auth0.com".into(),
+                audience: "test".into(),
+                decoding_key: None,
+            }),
+        });
+        let app = routes(state);
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/sessions")
+            .body(Body::empty())
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
     }
 }

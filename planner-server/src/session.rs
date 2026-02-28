@@ -33,6 +33,8 @@ pub struct PipelineStageInfo {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Session {
     pub id: Uuid,
+    /// Auth0 sub claim of the owning user (or "dev|local" in dev mode).
+    pub user_id: String,
     pub created_at: String,
     pub messages: Vec<SessionMessage>,
     pub stages: Vec<PipelineStageInfo>,
@@ -41,10 +43,11 @@ pub struct Session {
 }
 
 impl Session {
-    pub fn new() -> Self {
+    pub fn new(user_id: &str) -> Self {
         let now = Utc::now();
         Session {
             id: Uuid::new_v4(),
+            user_id: user_id.to_string(),
             created_at: now.to_rfc3339(),
             messages: vec![SessionMessage {
                 id: Uuid::new_v4(),
@@ -101,9 +104,9 @@ impl SessionStore {
         }
     }
 
-    /// Create a new session and return it.
-    pub fn create(&self) -> Session {
-        let session = Session::new();
+    /// Create a new session owned by `user_id` and return it.
+    pub fn create(&self, user_id: &str) -> Session {
+        let session = Session::new(user_id);
         let id = session.id;
         self.sessions.write().unwrap().insert(id, session.clone());
         session
@@ -128,6 +131,17 @@ impl SessionStore {
         }
     }
 
+    /// List all sessions owned by `user_id`.
+    pub fn list_for_user(&self, user_id: &str) -> Vec<Session> {
+        self.sessions
+            .read()
+            .unwrap()
+            .values()
+            .filter(|s| s.user_id == user_id)
+            .cloned()
+            .collect()
+    }
+
     /// List all session IDs.
     pub fn list_ids(&self) -> Vec<Uuid> {
         self.sessions.read().unwrap().keys().copied().collect()
@@ -149,16 +163,17 @@ mod tests {
 
     #[test]
     fn session_creation() {
-        let session = Session::new();
+        let session = Session::new("dev|local");
         assert_eq!(session.messages.len(), 1);
         assert_eq!(session.messages[0].role, "system");
         assert_eq!(session.stages.len(), 12);
         assert!(!session.pipeline_running);
+        assert_eq!(session.user_id, "dev|local");
     }
 
     #[test]
     fn session_add_message() {
-        let mut session = Session::new();
+        let mut session = Session::new("dev|local");
         let msg = session.add_message("user", "Build me a widget");
 
         assert_eq!(msg.role, "user");
@@ -171,13 +186,15 @@ mod tests {
         let store = SessionStore::new();
 
         // Create
-        let session = store.create();
+        let session = store.create("user1");
         let id = session.id;
         assert_eq!(store.count(), 1);
+        assert_eq!(session.user_id, "user1");
 
         // Get
         let retrieved = store.get(id).unwrap();
         assert_eq!(retrieved.id, id);
+        assert_eq!(retrieved.user_id, "user1");
 
         // Update
         let updated = store.update(id, |s| {
@@ -191,6 +208,24 @@ mod tests {
         let ids = store.list_ids();
         assert_eq!(ids.len(), 1);
         assert!(ids.contains(&id));
+    }
+
+    #[test]
+    fn session_store_list_for_user() {
+        let store = SessionStore::new();
+
+        store.create("user_a");
+        store.create("user_a");
+        store.create("user_b");
+
+        let user_a_sessions = store.list_for_user("user_a");
+        assert_eq!(user_a_sessions.len(), 2);
+
+        let user_b_sessions = store.list_for_user("user_b");
+        assert_eq!(user_b_sessions.len(), 1);
+
+        let user_c_sessions = store.list_for_user("user_c");
+        assert_eq!(user_c_sessions.len(), 0);
     }
 
     #[test]
@@ -208,11 +243,12 @@ mod tests {
 
     #[test]
     fn session_serialization() {
-        let session = Session::new();
+        let session = Session::new("auth0|abc123");
         let json = serde_json::to_string(&session).unwrap();
         let deserialized: Session = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.id, session.id);
         assert_eq!(deserialized.stages.len(), 12);
+        assert_eq!(deserialized.user_id, "auth0|abc123");
     }
 
     #[test]

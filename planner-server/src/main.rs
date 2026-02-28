@@ -6,15 +6,17 @@
 //! - Static file serving for the React frontend
 //!
 //! Endpoints:
-//! - GET  /api/health          — Health check
-//! - POST /api/sessions        — Create a new planning session
-//! - GET  /api/sessions/:id    — Get session state
-//! - POST /api/sessions/:id/message — Send a message to the session
-//! - GET  /api/sessions/:id/ws — WebSocket for real-time updates
-//! - GET  /api/models          — List available LLM models
+//! - GET  /api/health          — Health check (public)
+//! - GET  /api/models          — List available LLM models (protected)
+//! - GET  /api/sessions        — List sessions for current user (protected)
+//! - POST /api/sessions        — Create a new planning session (protected)
+//! - GET  /api/sessions/:id    — Get session state (protected)
+//! - POST /api/sessions/:id/message — Send a message to the session (protected)
+//! - GET  /api/sessions/:id/ws — WebSocket for real-time updates (protected)
 //! - GET  /*                   — Static file serving (React frontend)
 
 mod api;
+mod auth;
 mod session;
 mod ws;
 
@@ -24,12 +26,15 @@ use std::sync::Arc;
 use axum::Router;
 use tower_http::cors::{Any, CorsLayer};
 
+use auth::AuthConfig;
 use session::SessionStore;
 
 /// Shared application state.
 pub struct AppState {
     /// Active planning sessions.
     pub sessions: SessionStore,
+    /// Auth0 JWT config. None = dev mode (auth bypassed).
+    pub auth_config: Option<AuthConfig>,
 }
 
 #[tokio::main]
@@ -66,16 +71,37 @@ async fn main() {
         std::process::exit(0);
     }
 
+    // Load auth config from environment
+    let auth_config = AuthConfig::from_env();
+    let auth_enabled = auth_config.is_some();
+    if auth_enabled {
+        tracing::info!("Auth0 JWT validation enabled");
+    } else {
+        tracing::warn!("Auth0 not configured — running in dev mode (no auth)");
+    }
+
     // Create shared state
     let state = Arc::new(AppState {
         sessions: SessionStore::new(),
+        auth_config,
     });
 
-    // Build router
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
+    // Build CORS layer — restrict origins when auth is enabled
+    let cors = if auth_enabled {
+        CorsLayer::new()
+            .allow_origin([
+                "http://localhost:5173".parse().unwrap(),
+                "http://localhost:3100".parse().unwrap(),
+            ])
+            .allow_methods(Any)
+            .allow_headers(Any)
+            .allow_credentials(true)
+    } else {
+        CorsLayer::new()
+            .allow_origin(Any)
+            .allow_methods(Any)
+            .allow_headers(Any)
+    };
 
     let app = Router::new()
         .nest("/api", api::routes(state.clone()))
