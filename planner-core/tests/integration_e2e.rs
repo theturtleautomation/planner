@@ -304,8 +304,7 @@ This agent owns the entire countdown-timer feature.
 ///
 /// This tests:
 /// - Spec linter (12 deterministic rules)
-/// - Factory diplomat (Kilroy simulation mode)
-/// - Checkpoint polling
+/// - Factory diplomat (MockFactoryWorker)
 /// - Scenario validation (build_all_failed_result since we can't call Gemini)
 /// - Telemetry presenter (deterministic mode)
 /// - Git projection (real git commands)
@@ -314,7 +313,7 @@ This agent owns the entire countdown-timer feature.
 /// are tested via their unit tests + canned data here.
 #[tokio::test]
 async fn e2e_phase0_pipeline_simulation() {
-    use planner_core::pipeline::steps::{factory, git, linter, telemetry};
+    use planner_core::pipeline::steps::{factory, factory_worker::MockFactoryWorker, git, linter, telemetry};
 
     let project_id = Uuid::new_v4();
     let run_id = Uuid::new_v4();
@@ -334,10 +333,23 @@ async fn e2e_phase0_pipeline_simulation() {
         lint_result.err()
     );
 
-    // ---- Step 3: Factory Diplomat (simulation mode) ----
+    // ---- Step 3: Factory Worker (mock — simulates successful factory run) ----
+    std::env::set_var(
+        "PLANNER_WORKTREE_ROOT",
+        std::env::temp_dir()
+            .join(format!("planner-e2e-sim-{}", run_id))
+            .to_string_lossy()
+            .to_string(),
+    );
+
+    let worker = MockFactoryWorker::success(
+        "Implemented all requirements successfully",
+        vec!["index.html".into()],
+    );
+
     let mut budget = RunBudgetV1::new_phase0(project_id, run_id);
     let factory_output =
-        factory::execute_factory_handoff(&graph_dot, &agents_manifest, &spec, &mut budget).await;
+        factory::execute_factory_with_worker(&worker, &graph_dot, &agents_manifest, &spec, &mut budget).await;
 
     assert!(
         factory_output.is_ok(),
@@ -353,13 +365,9 @@ async fn e2e_phase0_pipeline_simulation() {
         .iter()
         .all(|n| n.success));
 
-    // Verify run directory was created with expected files
+    // Verify worktree output directory was created
     let output_path = std::path::Path::new(&factory_output.output_path);
     assert!(output_path.exists(), "Output directory should exist");
-    assert!(
-        output_path.join("index.html").exists(),
-        "Simulated output file should exist"
-    );
 
     // ---- Step 4: Scenario Validation (deterministic — build succeeded) ----
     // Since we can't call Gemini in tests, use the build_all_failed path
@@ -469,10 +477,7 @@ async fn e2e_phase0_pipeline_simulation() {
     assert!(budget.current_spend_usd >= 0.0);
 
     // Cleanup
-    let run_dir_parent = std::path::Path::new(&factory_output.checkpoint_path)
-        .parent()
-        .unwrap();
-    let _ = std::fs::remove_dir_all(run_dir_parent);
+    let _ = std::fs::remove_dir_all(&factory_output.output_path);
 }
 
 /// Test the failure path: build fails → all scenarios fail → consequence cards generated.
@@ -1740,14 +1745,13 @@ async fn e2e_phase3_token_estimation() {
     assert!(tokens < 100, "Short text should estimate < 100 tokens");
 }
 
-/// Verify Storage can persist and retrieve Turn<T> artifacts.
+/// Verify Storage can persist and retrieve Turn<T> artifacts via CxdbEngine.
 #[tokio::test]
 async fn e2e_storage_turn_lifecycle() {
-    use planner_core::storage::SqliteTurnStore;
-    use planner_core::storage::TurnStore;
+    use planner_core::cxdb::{CxdbEngine, TurnStore};
     use planner_schemas::Turn;
 
-    let store = SqliteTurnStore::in_memory().unwrap();
+    let store = CxdbEngine::new();
     let project_id = Uuid::new_v4();
     let run_id = Uuid::new_v4();
 
@@ -1782,7 +1786,7 @@ async fn e2e_storage_turn_lifecycle() {
 #[test]
 fn e2e_phase6_durable_cxdb_roundtrip() {
     use planner_core::cxdb::durable::DurableCxdbEngine;
-    use planner_core::storage::TurnStore;
+    use planner_core::cxdb::TurnStore;
     use planner_schemas::Turn;
 
     let dir = std::env::temp_dir().join(format!("cxdb-e2e-rt-{}", Uuid::new_v4()));
@@ -1823,7 +1827,7 @@ fn e2e_phase6_durable_cxdb_roundtrip() {
 #[test]
 fn e2e_phase6_durable_cxdb_persistence() {
     use planner_core::cxdb::durable::DurableCxdbEngine;
-    use planner_core::storage::TurnStore;
+    use planner_core::cxdb::TurnStore;
     use planner_schemas::Turn;
 
     let dir = std::env::temp_dir().join(format!("cxdb-e2e-persist-{}", Uuid::new_v4()));
@@ -1859,7 +1863,7 @@ fn e2e_phase6_durable_cxdb_persistence() {
 #[test]
 fn e2e_phase6_durable_cxdb_dedup() {
     use planner_core::cxdb::durable::DurableCxdbEngine;
-    use planner_core::storage::TurnStore;
+    use planner_core::cxdb::TurnStore;
     use planner_schemas::Turn;
 
     let dir = std::env::temp_dir().join(format!("cxdb-e2e-dedup-{}", Uuid::new_v4()));
@@ -2004,7 +2008,7 @@ fn e2e_phase6_audit_lock_in() {
 #[test]
 fn e2e_phase6_pipeline_config_persist() {
     use planner_core::cxdb::durable::DurableCxdbEngine;
-    use planner_core::storage::TurnStore;
+    use planner_core::cxdb::TurnStore;
     use planner_core::pipeline::PipelineConfig;
     use planner_core::llm::providers::LlmRouter;
     use planner_schemas::Turn;

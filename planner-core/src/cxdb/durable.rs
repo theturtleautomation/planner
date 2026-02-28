@@ -34,7 +34,7 @@ use serde::de::DeserializeOwned;
 use uuid::Uuid;
 
 use planner_schemas::{ArtifactPayload, Turn, TurnMetadata};
-use crate::storage::{TurnStore, StorageError};
+use super::{TurnStore, StorageError};
 
 // ---------------------------------------------------------------------------
 // On-disk metadata record (stored as MessagePack)

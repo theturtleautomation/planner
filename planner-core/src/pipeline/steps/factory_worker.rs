@@ -131,7 +131,7 @@ impl WorktreeManager {
 
         for dir in [&worktree_dir, &context_dir, &src_dir] {
             std::fs::create_dir_all(dir).map_err(|e| {
-                StepError::KilroyError(format!(
+                StepError::FactoryError(format!(
                     "Failed to create worktree dir {}: {}",
                     dir.display(),
                     e
@@ -141,15 +141,15 @@ impl WorktreeManager {
 
         // Write context files
         std::fs::write(context_dir.join("SPEC.md"), spec_markdown).map_err(|e| {
-            StepError::KilroyError(format!("Failed to write SPEC.md: {}", e))
+            StepError::FactoryError(format!("Failed to write SPEC.md: {}", e))
         })?;
 
         std::fs::write(context_dir.join("graph.dot"), graph_dot).map_err(|e| {
-            StepError::KilroyError(format!("Failed to write graph.dot: {}", e))
+            StepError::FactoryError(format!("Failed to write graph.dot: {}", e))
         })?;
 
         std::fs::write(context_dir.join("AGENTS.md"), agents_md).map_err(|e| {
-            StepError::KilroyError(format!("Failed to write AGENTS.md: {}", e))
+            StepError::FactoryError(format!("Failed to write AGENTS.md: {}", e))
         })?;
 
         tracing::info!(
@@ -168,7 +168,7 @@ impl WorktreeManager {
     pub fn cleanup(&self, info: &WorktreeInfo) -> StepResult<()> {
         if info.path.exists() {
             std::fs::remove_dir_all(&info.path).map_err(|e| {
-                StepError::KilroyError(format!(
+                StepError::FactoryError(format!(
                     "Failed to cleanup worktree {}: {}",
                     info.path.display(),
                     e
@@ -289,7 +289,7 @@ impl FactoryWorker for CodexFactoryWorker {
         let start = std::time::Instant::now();
 
         if !self.cli_available {
-            return Err(StepError::KilroyError(
+            return Err(StepError::FactoryError(
                 "codex CLI not found. Install it or check your PATH.".into(),
             ));
         }
@@ -324,7 +324,7 @@ impl FactoryWorker for CodexFactoryWorker {
             config.timeout_secs,
         )
         .await
-        .map_err(|e| StepError::KilroyError(format!("codex exec failed: {}", e)))?;
+        .map_err(|e| StepError::FactoryError(format!("codex exec failed: {}", e)))?;
 
         let duration_secs = start.elapsed().as_secs_f64();
 
@@ -451,7 +451,7 @@ impl MockFactoryWorker {
 impl FactoryWorker for MockFactoryWorker {
     async fn generate(&self, _prompt: &str, config: &WorkerConfig) -> StepResult<WorkerResult> {
         if self.should_fail {
-            return Err(StepError::KilroyError(
+            return Err(StepError::FactoryError(
                 "MockFactoryWorker: simulated failure".into(),
             ));
         }

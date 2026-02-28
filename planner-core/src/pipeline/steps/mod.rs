@@ -45,8 +45,8 @@ pub enum StepError {
     #[error("Spec linter failed: {violations:?}")]
     LintFailure { violations: Vec<String> },
 
-    #[error("Kilroy invocation failed: {0}")]
-    KilroyError(String),
+    #[error("Factory invocation failed: {0}")]
+    FactoryError(String),
 
     #[error("Scenario validation failed: {0}")]
     ValidationError(String),
@@ -68,6 +68,9 @@ pub enum StepError {
 
     #[error("Budget exhausted")]
     BudgetExhausted,
+
+    #[error("git CLI not found — install git to enable Git Projection")]
+    GitNotAvailable,
 
     #[error("{0}")]
     Other(String),

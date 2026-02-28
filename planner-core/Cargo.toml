@@ -15,6 +15,5 @@ rmp-serde = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-rusqlite = { workspace = true }
 async-trait = { workspace = true }
 thiserror = { workspace = true }

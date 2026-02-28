@@ -1,6 +1,6 @@
 //! # Pipeline — Recipe Step Loop
 //!
-//! The Phase 1 pipeline orchestrates the Dark Factory workflow:
+//! The Phase 7 pipeline orchestrates the Dark Factory workflow:
 //!
 //! 1. **Intake** — Socratic interview → IntakeV1
 //! 2. **Chunk Plan** — IntakeV1 → ChunkPlan (single vs multi-chunk decision)
@@ -8,7 +8,7 @@
 //! 4. **Lint** — 12-rule NLSpec validation + cross-chunk rules
 //! 5. **Adversarial Review** — 3-model parallel NLSpec review + coherence → ArReportV1
 //! 6. **AR Refinement** — Blocking findings → spec amendments → re-lint loop
-//! 7. **Handoff** — Factory Diplomat → Kilroy CLI invocation
+//! 7. **Factory Worker** — Pluggable code-generation backend (codex exec, mock)
 //! 8. **Validate** — Scenario Validator → SatisfactionResultV1
 //! 9. **Retry** — If gates fail and budget allows, re-run Factory (up to 2 retries)
 //! 10. **Present** — Telemetry Presenter → Plain English + Consequence Cards
@@ -23,7 +23,7 @@ pub mod audit;
 use uuid::Uuid;
 
 use crate::llm::providers::LlmRouter;
-use crate::storage::TurnStore;
+use crate::cxdb::TurnStore;
 use crate::dtu::DtuRegistry;
 use planner_schemas::*;
 
@@ -517,153 +517,13 @@ pub struct Phase0FullOutput {
 /// Maximum factory retry attempts when validation gates fail.
 const FACTORY_MAX_RETRIES: usize = 2;
 
-/// Run the complete Phase 0 pipeline: user description → approved Git commit.
+/// Run the complete Phase 0 pipeline using a pluggable FactoryWorker:
+/// user description → approved Git commit.
 ///
+/// Phase 7: Uses FactoryWorker trait (codex exec or mock) instead of Kilroy CLI.
 /// Phase 6: Accepts PipelineConfig for storage persistence and DTU wiring.
 /// DTU clones are reset between scenario validation attempts.
-pub async fn run_phase0_full_with_config<S: TurnStore>(
-    config: &PipelineConfig<'_, S>,
-    project_id: Uuid,
-    user_description: &str,
-) -> StepResult<Phase0FullOutput> {
-    let router = config.router;
-    tracing::info!("═══════════════════════════════════════════════");
-    tracing::info!("  Planner v2 — Phase 6 Full Pipeline");
-    tracing::info!("═══════════════════════════════════════════════");
-
-    // ---- Layer 1: Front Office ----
-    let front_office = run_phase0_front_office_with_config(config, project_id, user_description).await?;
-
-    // ---- Layer 1→2: Factory Diplomat + Validation Loop ----
-    let run_id = Uuid::new_v4();
-    let mut budget = RunBudgetV1::new_phase0(project_id, run_id);
-    let mut factory_output;
-    let mut satisfaction;
-    let mut attempt = 0usize;
-    let root_spec = &front_office.specs[0];
-
-    loop {
-        attempt += 1;
-        tracing::info!("─── Factory Diplomat (attempt {}/{}) ───", attempt, FACTORY_MAX_RETRIES + 1);
-
-        factory_output = factory::execute_factory_handoff(
-            &front_office.graph_dot,
-            &front_office.agents_manifest,
-            root_spec,
-            &mut budget,
-        )
-        .await?;
-
-        tracing::info!(
-            "  Factory: status={:?}, spend=${:.2}",
-            factory_output.build_status,
-            factory_output.spend_usd,
-        );
-
-        // Reset DTU clones between attempts
-        if let Some(dtu_reg) = config.dtu_registry {
-            dtu_reg.reset_all();
-            tracing::debug!("  DTU clones reset for validation attempt {}", attempt);
-        }
-
-        // ---- Layer 3: Return Trip — Validate ----
-        tracing::info!("─── Scenario Validator (attempt {}) ───", attempt);
-        satisfaction = validate::execute_scenario_validation(
-            router,
-            &front_office.scenarios,
-            &factory_output,
-        )
-        .await?;
-
-        if satisfaction.gates_passed {
-            tracing::info!("  Gates PASSED on attempt {}", attempt);
-            break;
-        }
-
-        if attempt > FACTORY_MAX_RETRIES {
-            tracing::warn!(
-                "  Gates FAILED after {} attempts — no more retries",
-                attempt,
-            );
-            break;
-        }
-
-        if !budget.can_proceed() {
-            tracing::warn!(
-                "  Gates FAILED on attempt {} — budget exhausted, cannot retry",
-                attempt,
-            );
-            break;
-        }
-
-        let error_categories: Vec<&str> = satisfaction
-            .scenario_results
-            .iter()
-            .filter_map(|r| r.generalized_error.as_ref())
-            .map(|e| e.category.as_str())
-            .collect();
-
-        tracing::info!(
-            "  Gates FAILED on attempt {} — retrying with error feedback: {:?}",
-            attempt,
-            error_categories,
-        );
-    }
-
-    // ---- Telemetry Presenter ----
-    tracing::info!("─── Telemetry Presenter ───");
-    let telemetry = telemetry::execute_telemetry_presentation(
-        router,
-        &factory_output,
-        &satisfaction,
-        &budget,
-        project_id,
-    )
-    .await?;
-
-    // ---- Git Projection ----
-    tracing::info!("─── Git Projection ───");
-    let git_result = git::execute_git_projection(
-        &factory_output,
-        project_id,
-        &front_office.intake.project_name,
-        &front_office.intake.feature_slug,
-    )
-    .await?;
-
-    // ---- Done ----
-    tracing::info!("═══════════════════════════════════════════════");
-    tracing::info!("  Pipeline Complete ({} factory attempt(s))", attempt);
-    tracing::info!("  {}", telemetry.headline);
-    tracing::info!("  Commit: {}", &git_result.commit.commit_hash[..12.min(git_result.commit.commit_hash.len())]);
-    tracing::info!("═══════════════════════════════════════════════");
-
-    Ok(Phase0FullOutput {
-        front_office,
-        factory_output,
-        satisfaction,
-        telemetry,
-        git_result,
-        budget,
-    })
-}
-
-/// Backward-compatible entry point (no storage / DTU wiring).
-pub async fn run_phase0_full(
-    router: &LlmRouter,
-    project_id: Uuid,
-    user_description: &str,
-) -> StepResult<Phase0FullOutput> {
-    let config = PipelineConfig::<crate::cxdb::CxdbEngine>::minimal(router);
-    run_phase0_full_with_config(&config, project_id, user_description).await
-}
-
-/// Phase 7: Run the complete pipeline using a pluggable FactoryWorker
-/// instead of the Kilroy CLI.
-///
-/// This replaces simulation mode with real code generation via
-/// codex exec (or a mock worker for testing).
-pub async fn run_phase0_full_with_worker<S: TurnStore>(
+pub async fn run_full_pipeline<S: TurnStore>(
     config: &PipelineConfig<'_, S>,
     worker: &dyn factory_worker::FactoryWorker,
     project_id: Uuid,

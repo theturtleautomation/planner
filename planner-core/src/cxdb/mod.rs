@@ -36,7 +36,50 @@ use serde::de::DeserializeOwned;
 use uuid::Uuid;
 
 use planner_schemas::{ArtifactPayload, Turn, TurnMetadata};
-use crate::storage::{TurnStore, StorageError};
+
+// ---------------------------------------------------------------------------
+// TurnStore trait and StorageError — authoritative definitions (moved from storage)
+// ---------------------------------------------------------------------------
+
+/// The storage interface that both in-memory CXDB and durable CXDB implement.
+/// All engine code talks to this trait, never to a concrete store.
+pub trait TurnStore {
+    /// Persist a turn and its blob.
+    fn store_turn<T: ArtifactPayload>(&self, turn: &Turn<T>) -> Result<(), StorageError>;
+
+    /// Retrieve a turn by ID.
+    fn get_turn<T: ArtifactPayload + DeserializeOwned>(
+        &self,
+        turn_id: Uuid,
+    ) -> Result<Turn<T>, StorageError>;
+
+    /// Retrieve all turns of a given type for a run.
+    fn get_turns_by_type<T: ArtifactPayload + DeserializeOwned>(
+        &self,
+        run_id: Uuid,
+        type_id: &str,
+    ) -> Result<Vec<Turn<T>>, StorageError>;
+
+    /// Get the latest turn of a given type for a run.
+    fn get_latest_turn<T: ArtifactPayload + DeserializeOwned>(
+        &self,
+        run_id: Uuid,
+        type_id: &str,
+    ) -> Result<Option<Turn<T>>, StorageError>;
+}
+
+/// Storage errors.
+#[derive(Debug, thiserror::Error)]
+pub enum StorageError {
+    #[error("Serialization error: {0}")]
+    Serialization(String),
+
+    #[error("Turn not found: {0}")]
+    NotFound(Uuid),
+
+    #[error("Integrity check failed for turn {0}")]
+    IntegrityFailure(Uuid),
+}
 
 pub mod protocol;
 pub mod query;

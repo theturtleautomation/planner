@@ -2,8 +2,8 @@
 //!
 //! The Dark Factory engine for Planner v2.
 //!
-//! This binary crate implements the Phase 0 pipeline:
-//! Intake Gateway → Compiler → Factory Diplomat → Scenario Validator →
+//! This binary crate implements the Phase 7 pipeline:
+//! Intake Gateway → Compiler → Factory Worker → Scenario Validator →
 //! Telemetry Presenter → Live Preview → Git Projection.
 //!
 //! Usage:
@@ -15,6 +15,7 @@ use uuid::Uuid;
 
 use planner_core::llm;
 use planner_core::pipeline;
+use planner_core::pipeline::steps::factory_worker::CodexFactoryWorker;
 
 #[tokio::main]
 async fn main() {
@@ -74,10 +75,20 @@ async fn main() {
     tracing::info!("User request: {}", user_description);
 
     if full_mode && !front_office_only {
-        // Full pipeline: Front Office → Factory → Validator → Telemetry → Git
-        match pipeline::run_phase0_full(&router, project_id, &user_description).await {
+        // Full pipeline: Front Office → Factory Worker → Validator → Telemetry → Git
+        let worker = match CodexFactoryWorker::new() {
+            Ok(w) => w,
+            Err(e) => {
+                eprintln!("ERROR: Failed to initialize factory worker: {}", e);
+                std::process::exit(1);
+            }
+        };
+
+        let config = pipeline::PipelineConfig::<planner_core::cxdb::CxdbEngine>::minimal(&router);
+
+        match pipeline::run_full_pipeline(&config, &worker, project_id, &user_description).await {
             Ok(output) => {
-                println!("\n=== Phase 0 Pipeline Complete ===\n");
+                println!("\n=== Phase 7 Pipeline Complete ===\n");
                 println!("Project: {} ({})",
                     output.front_office.intake.project_name,
                     output.front_office.intake.feature_slug);
@@ -187,5 +198,5 @@ fn print_usage() {
     eprintln!("  planner-core --fo \"Build me a pomodoro timer\"");
     eprintln!();
     eprintln!("planner-core v0.1.0");
-    eprintln!("Pipeline: Intake → Compile → Lint → AR Review → Refine → Ralph → Factory → Validate → Present → Git");
+    eprintln!("Pipeline: Intake → Compile → Lint → AR Review → Refine → Ralph → Factory Worker → Validate → Present → Git");
 }

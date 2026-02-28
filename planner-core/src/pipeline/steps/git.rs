@@ -65,13 +65,7 @@ pub async fn execute_git_projection(
         .unwrap_or(false);
 
     if !git_available {
-        tracing::warn!("Git not available — creating simulated projection");
-        return Ok(simulate_git_projection(
-            factory_output,
-            project_id,
-            project_name,
-            feature_slug,
-        ));
+        return Err(StepError::GitNotAvailable);
     }
 
     // Initialize repo if needed
@@ -202,37 +196,6 @@ async fn get_committed_files(cwd: &Path) -> StepResult<Vec<String>> {
     }
 }
 
-/// Simulated Git projection when git is not available.
-fn simulate_git_projection(
-    factory_output: &FactoryOutputV1,
-    project_id: Uuid,
-    project_name: &str,
-    feature_slug: &str,
-) -> GitProjectionResult {
-    let hash = format!("{:040x}", Uuid::new_v4().as_u128());
-
-    let commit = GitCommitV1 {
-        project_id,
-        commit_hash: hash,
-        branch: "main".into(),
-        message: format!(
-            "feat({}): {} (simulated)",
-            feature_slug, project_name,
-        ),
-        files: vec![CommittedFile {
-            path: "(simulated — git not available)".into(),
-            change_type: FileChangeType::Added,
-        }],
-        kilroy_run_id: factory_output.kilroy_run_id,
-        approved_preview_id: Uuid::new_v4(),
-    };
-
-    GitProjectionResult {
-        repo_path: factory_output.output_path.clone(),
-        commit,
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -286,31 +249,5 @@ mod tests {
 
         // Cleanup
         let _ = std::fs::remove_dir_all(&factory_output.output_path);
-    }
-
-    #[test]
-    fn simulated_projection_produces_valid_result() {
-        let factory_output = FactoryOutputV1 {
-            kilroy_run_id: Uuid::new_v4(),
-            nlspec_version: "1.0".into(),
-            attempt: 1,
-            build_status: BuildStatus::Success,
-            spend_usd: 0.0,
-            checkpoint_path: String::new(),
-            dod_results: vec![],
-            node_results: vec![],
-            output_path: "/tmp/test-output".into(),
-        };
-
-        let result = simulate_git_projection(
-            &factory_output,
-            Uuid::new_v4(),
-            "Test Project",
-            "test-project",
-        );
-
-        assert_eq!(result.commit.branch, "main");
-        assert!(result.commit.commit_hash.len() == 40);
-        assert!(result.commit.message.contains("simulated"));
     }
 }
