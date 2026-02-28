@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Planner v2 — Socratic Lobby</title>
+  <style>
+    :root {
+      --bg-primary: #0a0a0f;
+      --bg-secondary: #12121a;
+      --bg-tertiary: #1a1a2e;
+      --text-primary: #e0e0e8;
+      --text-secondary: #8888a0;
+      --accent-cyan: #00d4ff;
+      --accent-green: #00ff88;
+      --accent-yellow: #ffd700;
+      --accent-red: #ff4444;
+      --border: #2a2a3e;
+    }
+    
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    body {
+      font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', monospace;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Header */
+    .header {
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    
+    .header-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--accent-cyan);
+    }
+    
+    .header-meta {
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+    
+    .header-meta span {
+      margin-left: 16px;
+    }
+
+    /* Main content area */
+    .main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* Chat area */
+    .chat {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px 24px;
+    }
+    
+    .message {
+      margin-bottom: 16px;
+      line-height: 1.6;
+    }
+    
+    .message-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+    
+    .message-role {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    
+    .message-role.system { color: var(--text-secondary); }
+    .message-role.user { color: var(--accent-green); }
+    .message-role.planner { color: var(--accent-cyan); }
+    
+    .message-time {
+      font-size: 10px;
+      color: var(--text-secondary);
+    }
+    
+    .message-content {
+      font-size: 13px;
+      padding-left: 0;
+      white-space: pre-wrap;
+      color: var(--text-primary);
+    }
+    
+    .message.system .message-content {
+      color: var(--text-secondary);
+      font-style: italic;
+    }
+
+    /* Pipeline status bar */
+    .pipeline-bar {
+      background: var(--bg-secondary);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      padding: 8px 24px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      overflow-x: auto;
+      font-size: 11px;
+    }
+    
+    .pipeline-label {
+      color: var(--text-secondary);
+      margin-right: 8px;
+      white-space: nowrap;
+    }
+    
+    .stage {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      white-space: nowrap;
+    }
+    
+    .stage-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+    
+    .stage-dot.pending { background: var(--text-secondary); opacity: 0.3; }
+    .stage-dot.running { background: var(--accent-yellow); animation: pulse 1.5s infinite; }
+    .stage-dot.complete { background: var(--accent-green); }
+    .stage-dot.failed { background: var(--accent-red); }
+    
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+    
+    .stage-name {
+      color: var(--text-secondary);
+    }
+    
+    .stage-name.running { color: var(--accent-yellow); }
+    .stage-name.complete { color: var(--accent-green); }
+    .stage-name.failed { color: var(--accent-red); }
+    
+    .stage-arrow {
+      color: var(--text-secondary);
+      opacity: 0.3;
+      margin: 0 2px;
+    }
+
+    /* Input area */
+    .input-area {
+      background: var(--bg-secondary);
+      border-top: 1px solid var(--border);
+      padding: 12px 24px;
+      display: flex;
+      gap: 12px;
+    }
+    
+    .input-field {
+      flex: 1;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 14px;
+      color: var(--text-primary);
+      font-family: inherit;
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    
+    .input-field:focus {
+      border-color: var(--accent-cyan);
+    }
+    
+    .input-field::placeholder {
+      color: var(--text-secondary);
+    }
+    
+    .send-btn {
+      background: var(--accent-cyan);
+      color: var(--bg-primary);
+      border: none;
+      border-radius: 6px;
+      padding: 10px 20px;
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      transition: opacity 0.2s;
+    }
+    
+    .send-btn:hover { opacity: 0.85; }
+    .send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* Status bar */
+    .status-bar {
+      background: var(--bg-primary);
+      border-top: 1px solid var(--border);
+      padding: 4px 24px;
+      font-size: 10px;
+      color: var(--text-secondary);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    /* Models panel (hidden by default) */
+    .models-panel {
+      display: none;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      position: absolute;
+      right: 24px;
+      top: 50px;
+      width: 400px;
+      z-index: 100;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    }
+    
+    .models-panel.visible { display: block; }
+    
+    .model-card {
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    
+    .model-card:last-child { border-bottom: none; }
+    
+    .model-id {
+      font-weight: 600;
+      color: var(--accent-cyan);
+      font-size: 12px;
+    }
+    
+    .model-role {
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-title">Planner v2 — Socratic Lobby</div>
+    <div class="header-meta">
+      <span id="session-id">No session</span>
+      <span id="connection-status">Disconnected</span>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="chat" id="chat"></div>
+
+    <div class="pipeline-bar" id="pipeline-bar">
+      <span class="pipeline-label">Pipeline:</span>
+    </div>
+  </div>
+
+  <div class="input-area">
+    <input 
+      type="text" 
+      class="input-field" 
+      id="input" 
+      placeholder="Describe what you want to build..."
+      autofocus
+    />
+    <button class="send-btn" id="send-btn" onclick="sendMessage()">Send</button>
+  </div>
+
+  <div class="status-bar">
+    <span id="status-text">Ready — describe what you want to build</span>
+    <span>planner-server: <span id="server-status">checking...</span></span>
+  </div>
+
+  <script>
+    // ==============================================================
+    // Planner v2 — Socratic Lobby Frontend
+    // ==============================================================
+
+    const API_BASE = window.location.origin + '/api';
+    let sessionId = null;
+
+    const stages = [
+      'Intake', 'Chunk', 'Compile', 'Lint', 'AR Review', 'Refine',
+      'Scenarios', 'Ralph', 'Graph', 'Factory', 'Validate', 'Git'
+    ];
+
+    // ------ Initialization ------
+
+    async function init() {
+      renderPipeline(stages.map(s => ({ name: s, status: 'pending' })));
+      await checkHealth();
+      await createSession();
+    }
+
+    async function checkHealth() {
+      try {
+        const resp = await fetch(`${API_BASE}/health`);
+        const data = await resp.json();
+        document.getElementById('server-status').textContent = data.status;
+        document.getElementById('connection-status').textContent = 'Connected';
+      } catch (e) {
+        document.getElementById('server-status').textContent = 'offline';
+        document.getElementById('connection-status').textContent = 'Disconnected';
+      }
+    }
+
+    async function createSession() {
+      try {
+        const resp = await fetch(`${API_BASE}/sessions`, { method: 'POST' });
+        const data = await resp.json();
+        sessionId = data.session.id;
+        document.getElementById('session-id').textContent = `Session: ${sessionId.substring(0, 8)}`;
+
+        // Render initial messages
+        data.session.messages.forEach(msg => addMessage(msg.role, msg.content, msg.timestamp));
+
+        // Render pipeline stages
+        renderPipeline(data.session.stages);
+
+        document.getElementById('status-text').textContent = 'Session active — describe what you want to build';
+      } catch (e) {
+        addMessage('system', 'Failed to connect to planner-server. Start it with: planner-server', new Date().toISOString());
+      }
+    }
+
+    // ------ Message Handling ------
+
+    async function sendMessage() {
+      const input = document.getElementById('input');
+      const content = input.value.trim();
+      if (!content || !sessionId) return;
+
+      input.value = '';
+      input.focus();
+
+      // Disable button while sending
+      const btn = document.getElementById('send-btn');
+      btn.disabled = true;
+
+      try {
+        const resp = await fetch(`${API_BASE}/sessions/${sessionId}/message`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content }),
+        });
+
+        const data = await resp.json();
+
+        if (resp.ok) {
+          addMessage(data.user_message.role, data.user_message.content, data.user_message.timestamp);
+          addMessage(data.planner_message.role, data.planner_message.content, data.planner_message.timestamp);
+          renderPipeline(data.session.stages);
+
+          if (data.session.pipeline_running) {
+            document.getElementById('status-text').textContent = 'Pipeline running...';
+          }
+        } else {
+          addMessage('system', `Error: ${data.error}`, new Date().toISOString());
+        }
+      } catch (e) {
+        addMessage('system', `Connection error: ${e.message}`, new Date().toISOString());
+      }
+
+      btn.disabled = false;
+    }
+
+    // ------ UI Rendering ------
+
+    function addMessage(role, content, timestamp) {
+      const chat = document.getElementById('chat');
+      const time = timestamp ? new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+
+      const div = document.createElement('div');
+      div.className = `message ${role}`;
+      div.innerHTML = `
+        <div class="message-header">
+          <span class="message-role ${role}">${role}</span>
+          <span class="message-time">${time}</span>
+        </div>
+        <div class="message-content">${escapeHtml(content)}</div>
+      `;
+
+      chat.appendChild(div);
+      chat.scrollTop = chat.scrollHeight;
+    }
+
+    function renderPipeline(stageList) {
+      const bar = document.getElementById('pipeline-bar');
+      bar.innerHTML = '<span class="pipeline-label">Pipeline:</span>';
+
+      stageList.forEach((stage, i) => {
+        const stageDiv = document.createElement('span');
+        stageDiv.className = 'stage';
+        stageDiv.innerHTML = `
+          <span class="stage-dot ${stage.status}"></span>
+          <span class="stage-name ${stage.status}">${stage.name}</span>
+        `;
+        bar.appendChild(stageDiv);
+
+        if (i < stageList.length - 1) {
+          const arrow = document.createElement('span');
+          arrow.className = 'stage-arrow';
+          arrow.textContent = '→';
+          bar.appendChild(arrow);
+        }
+      });
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // ------ Event Listeners ------
+
+    document.getElementById('input').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+      }
+    });
+
+    // ------ Start ------
+    init();
+  </script>
+</body>
+</html>

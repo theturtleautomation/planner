@@ -1,0 +1,22 @@
+[package]
+name = "planner-tui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "planner-tui"
+path = "src/main.rs"
+
+[dependencies]
+planner-core = { path = "../planner-core" }
+planner-schemas = { path = "../planner-schemas" }
+ratatui = { workspace = true }
+crossterm = { workspace = true }
+tokio = { workspace = true }
+uuid = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
