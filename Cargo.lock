@@ -935,6 +935,7 @@ dependencies = [
  "axum",
  "chrono",
  "jsonwebtoken",
+ "parking_lot",
  "planner-core",
  "planner-schemas",
  "serde",

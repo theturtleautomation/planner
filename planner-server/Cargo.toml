@@ -22,3 +22,4 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 chrono = { workspace = true }
 jsonwebtoken = { workspace = true }
+parking_lot = "0.12"

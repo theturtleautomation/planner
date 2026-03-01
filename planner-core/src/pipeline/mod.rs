@@ -41,6 +41,8 @@ use steps::validate;
 use steps::telemetry;
 use steps::git;
 
+use project::{ProjectRegistry, ProjectStatus};
+
 /// Pipeline configuration bundle — carries storage, DTU, and project
 /// registry references through the pipeline.
 pub struct PipelineConfig<'a, S: TurnStore> {
@@ -133,6 +135,20 @@ pub enum StepType {
 
 impl Recipe {
     /// Create the Phase 0 linear recipe.
+    ///
+    /// # Phase 3+ Feature — DAG Interpreter
+    ///
+    /// This DAG definition is **not yet used for execution**. The pipeline
+    /// currently executes steps imperatively in `run_full_pipeline` and
+    /// `run_phase0_front_office_with_config`. The recipe's `steps` field
+    /// captures the intended execution order and dependency graph as a
+    /// structured document, and will drive actual execution once the recipe
+    /// interpreter (planned for Phase 3+) is implemented.
+    ///
+    /// Until then, this serves two purposes:
+    /// 1. Regression value — tests assert step ordering and dependency correctness.
+    /// 2. Design contract — the DAG is the authoritative description of what the
+    ///    pipeline is supposed to do, kept in sync with the imperative code.
     pub fn phase0() -> Self {
         let steps = vec![
             PipelineStep {
@@ -290,6 +306,7 @@ pub async fn run_phase0_front_office_with_config<S: TurnStore>(
     user_description: &str,
 ) -> StepResult<Phase0FrontOfficeOutput> {
     let router = config.router;
+    let run_id = Uuid::new_v4();
     tracing::info!("Phase 6 Front Office: starting pipeline");
 
     // Step 1: Intake Gateway
@@ -299,7 +316,6 @@ pub async fn run_phase0_front_office_with_config<S: TurnStore>(
 
     // Persist intake as a Turn
     {
-        let run_id = Uuid::new_v4();
         let turn = Turn::new(intake_result.clone(), None, run_id, "front-office", "intake");
         config.persist(&turn);
     }
@@ -324,6 +340,27 @@ pub async fn run_phase0_front_office_with_config<S: TurnStore>(
         "  → {} NLSpecV1 chunk(s) produced",
         specs.len(),
     );
+
+    // Persist each NLSpecV1
+    for spec in &specs {
+        let turn = Turn::new(spec.clone(), None, run_id, "front-office", "compile-spec");
+        config.persist(&turn);
+    }
+
+    // Build and log context pack for the root spec (Change 2).
+    // ContextPackV1 is a local struct (not from planner-schemas), so we
+    // cannot persist it as a Turn — we log it to show it is wired.
+    {
+        let pack = steps::context_pack::build_spec_context_pack(
+            &specs[0],
+            steps::context_pack::ContextTarget::SpecCompiler,
+            8000,
+        );
+        tracing::info!(
+            "  → ContextPack: {} sections, ~{} tokens, truncated={}",
+            pack.sections.len(), pack.estimated_tokens, pack.was_truncated,
+        );
+    }
 
     // Step 4: Lint
     tracing::info!("Step 4: Spec Linter");
@@ -352,6 +389,12 @@ pub async fn run_phase0_front_office_with_config<S: TurnStore>(
         "  → AR: {} total blocking, {} total advisory across {} report(s)",
         total_blocking, total_advisory, ar_reports.len(),
     );
+
+    // Persist each ArReportV1
+    for report in &ar_reports {
+        let turn = Turn::new(report.clone(), None, run_id, "front-office", "ar-review");
+        config.persist(&turn);
+    }
 
     // Step 6: AR Refinement — handle blocking findings
     if total_blocking > 0 {
@@ -417,9 +460,21 @@ pub async fn run_phase0_front_office_with_config<S: TurnStore>(
         graph_dot.node_count, graph_dot.estimated_cost_usd,
     );
 
+    // Persist GraphDotV1
+    {
+        let turn = Turn::new(graph_dot.clone(), None, run_id, "front-office", "graph-dot");
+        config.persist(&turn);
+    }
+
     tracing::info!("Step 8: Generate Scenarios");
     let mut scenarios = compile::generate_scenarios(router, root_spec).await?;
     tracing::info!("  → ScenarioSetV1 produced: {} scenarios", scenarios.scenarios.len());
+
+    // Persist ScenarioSetV1
+    {
+        let turn = Turn::new(scenarios.clone(), None, run_id, "front-office", "scenarios");
+        config.persist(&turn);
+    }
 
     // Step 8b: Ralph Loop
     tracing::info!("Step 8b: Ralph Loop");
@@ -439,11 +494,23 @@ pub async fn run_phase0_front_office_with_config<S: TurnStore>(
             "  → Ralph surfaced {} ConsequenceCard(s) to Impact Inbox",
             ralph_output.consequence_cards.len(),
         );
+        // Persist each ConsequenceCard as a Turn so it can be queried
+        // via the CXDB read API and surfaced in the Impact Inbox.
+        for card in &ralph_output.consequence_cards {
+            let turn = Turn::new(card.clone(), None, run_id, "ralph", "consequence-card");
+            config.persist(&turn);
+        }
     }
 
     tracing::info!("Step 9: Generate AGENTS.md");
     let agents_manifest = compile::compile_agents_manifest(router, root_spec).await?;
     tracing::info!("  → AgentsManifestV1 produced: {} bytes", agents_manifest.root_agents_md.len());
+
+    // Persist AgentsManifestV1
+    {
+        let turn = Turn::new(agents_manifest.clone(), None, run_id, "front-office", "agents-manifest");
+        config.persist(&turn);
+    }
 
     // Step 10 (Phase 6): Formal Verification — generate Lean4 proposition templates
     tracing::info!("Step 10: Formal Verification propositions");
@@ -538,6 +605,25 @@ pub async fn run_full_pipeline<S: TurnStore>(
     // ---- Layer 1: Front Office ----
     let front_office = run_phase0_front_office_with_config(config, project_id, user_description).await?;
 
+    // ---- Project Registry: register this project ----
+    // Wire in the ProjectRegistry so runs are tracked from pipeline start.
+    let mut project_registry = ProjectRegistry::new();
+    let project_name = front_office.intake.project_name.clone();
+    let feature_slug = front_office.intake.feature_slug.clone();
+    // register() rejects duplicate slugs; ignore if it fails (e.g., same slug in same run).
+    let _reg_result = project_registry.register(
+        project_name.clone(),
+        feature_slug.clone(),
+        vec![],
+    );
+    let registry_project_id = project_registry
+        .get_by_slug(&feature_slug)
+        .map(|p| p.project_id);
+    tracing::info!(
+        "ProjectRegistry: registered '{}' (slug='{}')",
+        project_name, feature_slug,
+    );
+
     // ---- Layer 1→2: Factory Worker + Validation Loop ----
     let run_id = Uuid::new_v4();
     let mut budget = RunBudgetV1::new_phase0(project_id, run_id);
@@ -564,6 +650,12 @@ pub async fn run_full_pipeline<S: TurnStore>(
             factory_output.build_status,
         );
 
+        // Persist FactoryOutputV1
+        {
+            let turn = Turn::new(factory_output.clone(), None, run_id, "factory", "factory-output");
+            config.persist(&turn);
+        }
+
         // Reset DTU clones between attempts
         if let Some(dtu_reg) = config.dtu_registry {
             dtu_reg.reset_all();
@@ -575,12 +667,26 @@ pub async fn run_full_pipeline<S: TurnStore>(
             router,
             &front_office.scenarios,
             &factory_output,
+            config.dtu_registry,
         )
         .await?;
 
         if satisfaction.gates_passed {
             tracing::info!("  Gates PASSED on attempt {}", attempt);
+
+            // Persist SatisfactionResultV1
+            {
+                let turn = Turn::new(satisfaction.clone(), None, run_id, "validation", "satisfaction");
+                config.persist(&turn);
+            }
+
             break;
+        }
+
+        // Persist failed SatisfactionResultV1
+        {
+            let turn = Turn::new(satisfaction.clone(), None, run_id, "validation", "satisfaction");
+            config.persist(&turn);
         }
 
         if attempt > FACTORY_MAX_RETRIES || !budget.can_proceed() {
@@ -600,6 +706,31 @@ pub async fn run_full_pipeline<S: TurnStore>(
     )
     .await?;
 
+    // ---- Pyramid Summarization ----
+    // Build a lightweight Pyramid tree from the pipeline's key artifacts so
+    // the DCC can navigate context efficiently in future runs.
+    tracing::info!("─── Pyramid Summarization ───");
+    {
+        // Collect turn texts from pipeline artifacts to feed as "turns".
+        let turn_texts: Vec<(Uuid, String)> = vec![
+            (Uuid::new_v4(), front_office.intake.intent_summary.clone()),
+            (Uuid::new_v4(), telemetry.headline.clone()),
+        ];
+        let turn_refs: Vec<(Uuid, &str)> = turn_texts
+            .iter()
+            .map(|(id, text)| (*id, text.as_str()))
+            .collect();
+        let pyramid_builder = pyramid::PyramidBuilder::with_defaults();
+        let pyramid_tree = pyramid_builder.build_pyramid(project_id, &turn_refs);
+        tracing::info!(
+            "  Pyramid: {} node(s) (root={}, branches={}, leaves={})",
+            pyramid_tree.node_count(),
+            pyramid_tree.root.is_some(),
+            pyramid_tree.branches.len(),
+            pyramid_tree.leaves.len(),
+        );
+    }
+
     // ---- Git Projection ----
     tracing::info!("─── Git Projection ───");
     let git_result = git::execute_git_projection(
@@ -610,9 +741,27 @@ pub async fn run_full_pipeline<S: TurnStore>(
     )
     .await?;
 
+    // Persist GitCommitV1
+    {
+        let turn = Turn::new(git_result.commit.clone(), None, run_id, "git", "git-commit");
+        config.persist(&turn);
+    }
+
+    // Persist RunBudgetV1
+    {
+        let turn = Turn::new(budget.clone(), None, run_id, "budget", "run-budget");
+        config.persist(&turn);
+    }
+
     tracing::info!("═══════════════════════════════════════════════");
     tracing::info!("  Pipeline Complete ({} factory attempt(s))", attempt);
     tracing::info!("═══════════════════════════════════════════════");
+
+    // ---- Project Registry: update status to Completed ----
+    if let Some(reg_pid) = registry_project_id {
+        let _ = project_registry.update_status(reg_pid, ProjectStatus::Completed);
+        tracing::info!("ProjectRegistry: project '{}' marked Completed", feature_slug);
+    }
 
     Ok(Phase0FullOutput {
         front_office,

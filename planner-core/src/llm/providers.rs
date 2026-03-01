@@ -418,6 +418,8 @@ impl LlmClient for OpenAiCliClient {
         let prompt = build_prompt(&request);
 
         let model_arg = request.model.clone();
+        // Deliver prompt via stdin (matching Anthropic/Google pattern).
+        // Avoids shell escaping issues with long prompts as positional args.
         let args = vec![
             "exec",
             "--json",
@@ -425,10 +427,9 @@ impl LlmClient for OpenAiCliClient {
             "workspace-write",
             "-m",
             &model_arg,
-            &prompt,
         ];
 
-        let (stdout, _stderr) = run_cli("codex", &args, None, self.timeout_secs).await?;
+        let (stdout, _stderr) = run_cli("codex", &args, Some(&prompt), self.timeout_secs).await?;
 
         // Try to parse structured JSON response
         let content = if let Ok(resp) = serde_json::from_str::<CodexExecResponse>(&stdout) {

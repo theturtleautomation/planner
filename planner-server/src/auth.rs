@@ -53,6 +53,10 @@ pub struct AuthConfig {
 
 impl AuthConfig {
     /// Create from environment variables. Returns None if AUTH0_DOMAIN is unset.
+    ///
+    /// SECURITY: If AUTH0_DOMAIN is set but AUTH0_SECRET is not, this logs a
+    /// CRITICAL warning. Token validation will fail closed (refuse all tokens)
+    /// in that configuration.
     pub fn from_env() -> Option<Self> {
         let domain = std::env::var("AUTH0_DOMAIN").ok()?;
         let audience = std::env::var("AUTH0_AUDIENCE").unwrap_or_default();
@@ -61,12 +65,20 @@ impl AuthConfig {
             return None;
         }
 
-        // For production Auth0, you'd fetch JWKS from https://{domain}/.well-known/jwks.json
-        // For now, we accept and decode-without-signature-verify in dev mode,
-        // or use the AUTH0_SECRET env var if provided.
+        // If AUTH0_DOMAIN is set, we REQUIRE AUTH0_SECRET for HS256 validation.
+        // Without it, we refuse to validate tokens (fail closed).
         let decoding_key = std::env::var("AUTH0_SECRET")
             .ok()
             .map(|s| DecodingKey::from_secret(s.as_bytes()));
+
+        if decoding_key.is_none() {
+            tracing::error!(
+                "CRITICAL: AUTH0_DOMAIN is set to '{}' but AUTH0_SECRET is not configured. \
+                 Token validation will FAIL CLOSED — all authenticated requests will be rejected. \
+                 Set AUTH0_SECRET to fix this.",
+                domain
+            );
+        }
 
         Some(AuthConfig {
             domain,
@@ -171,13 +183,14 @@ fn validate_token(token: &str, config: &AuthConfig) -> Result<Claims, String> {
                 .map_err(|e| e.to_string())
         }
         None => {
-            // Without a decoding key, do insecure decode (dev/testing only).
-            // In production, you'd fetch JWKS.
-            validation.insecure_disable_signature_validation();
-            validation.validate_exp = false;
-            decode::<Claims>(token, &DecodingKey::from_secret(b""), &validation)
-                .map(|data| data.claims)
-                .map_err(|e| e.to_string())
+            // AUTH0_DOMAIN is set but no AUTH0_SECRET — fail closed.
+            // Refusing to validate tokens without a signing key is intentional:
+            // an insecure bypass would allow forged tokens in production.
+            Err(
+                "Server misconfigured: AUTH0_SECRET is required when AUTH0_DOMAIN is set. \
+                 Set AUTH0_SECRET or fetch JWKS (not yet implemented)."
+                    .to_string(),
+            )
         }
     }
 }
@@ -206,6 +219,29 @@ impl<S: Send + Sync> axum::extract::FromRequestParts<S> for Claims {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_validate_token_fails_without_secret() {
+        // When AUTH0_DOMAIN is set but decoding_key is None, validate_token
+        // must return Err (fail closed — not insecurely bypass).
+        let config = AuthConfig {
+            domain: "example.auth0.com".into(),
+            audience: "https://api.example.com".into(),
+            decoding_key: None,
+        };
+        // Any token should be rejected — the server is misconfigured.
+        let result = validate_token("any.token.here", &config);
+        assert!(
+            result.is_err(),
+            "validate_token must fail when decoding_key is None"
+        );
+        let err_msg = result.unwrap_err();
+        assert!(
+            err_msg.contains("misconfigured"),
+            "Error should mention misconfiguration, got: {}",
+            err_msg
+        );
+    }
 
     #[test]
     fn auth_config_from_env_none_when_unset() {

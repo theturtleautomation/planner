@@ -32,6 +32,7 @@ function UserInfoAuth0() {
       <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{displayName}</span>
       <button
         onClick={handleLogout}
+        aria-label="Log out"
         style={{
           background: 'transparent', border: '1px solid var(--border)',
           color: 'var(--text-secondary)', padding: '3px 10px', fontSize: '11px',
@@ -79,13 +80,17 @@ export default function Layout({ children, sessionId, isConnected }: LayoutProps
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--bg-primary)' }}>
       {/* ── Header ── */}
-      <header style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '0 20px', height: '52px',
-        borderBottom: '1px solid var(--border)',
-        background: 'var(--bg-secondary)',
-        flexShrink: 0,
-      }}>
+      <header
+        role="banner"
+        style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '0 20px', height: '52px',
+          borderBottom: '1px solid var(--border)',
+          background: 'var(--bg-secondary)',
+          flexShrink: 0,
+          flexWrap: 'wrap',
+        }}
+      >
         {/* Left */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           <span style={{ color: 'var(--accent-cyan)', fontWeight: 600, fontSize: '13px', letterSpacing: '0.05em' }}>
@@ -107,7 +112,11 @@ export default function Layout({ children, sessionId, isConnected }: LayoutProps
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           {/* Connection indicator */}
           {sessionId !== undefined && (
-            <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-secondary)' }}>
+            <span
+              aria-label="Connection status"
+              role="status"
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-secondary)' }}
+            >
               <span style={{
                 width: '8px', height: '8px', borderRadius: '50%', display: 'inline-block',
                 background: isConnected ? 'var(--accent-green)' : 'var(--accent-red)',

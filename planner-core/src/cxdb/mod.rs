@@ -321,6 +321,7 @@ impl CxdbEngine {
                 run_id: stored.run_id,
                 execution_id: stored.execution_id.clone(),
                 note: stored.note.clone(),
+                project_id: stored._project_id,
             },
         })
     }
@@ -356,7 +357,7 @@ impl TurnStore for CxdbEngine {
             &turn.metadata.produced_by,
             turn.metadata.created_at,
             turn.metadata.note.clone(),
-            None, // project_id extracted at a higher level
+            turn.metadata.project_id, // propagate from TurnMetadata
         )
     }
 
@@ -453,6 +454,28 @@ mod tests {
             out_of_scope: vec![],
             conversation_log: vec![],
         }
+    }
+
+    #[test]
+    fn cxdb_project_id_roundtrip() {
+        let engine = CxdbEngine::new();
+        let project_id = Uuid::new_v4();
+        let run_id = Uuid::new_v4();
+
+        // Store a turn that carries a project_id via new_with_project
+        let intake = make_test_intake("Project ID Roundtrip");
+        let turn = Turn::new_with_project(
+            intake, None, run_id, "test", "exec-1", project_id,
+        );
+        let turn_id = turn.turn_id;
+        engine.store_turn(&turn).unwrap();
+
+        // project_id should be preserved on retrieval
+        let retrieved: Turn<IntakeV1> = engine.get_turn(turn_id).unwrap();
+        assert_eq!(retrieved.metadata.project_id, Some(project_id));
+
+        // CXDB should have automatically indexed the run under the project
+        assert!(engine.list_runs(project_id).contains(&run_id));
     }
 
     #[test]

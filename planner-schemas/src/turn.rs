@@ -71,6 +71,10 @@ pub struct TurnMetadata {
 
     /// Optional human-readable note.
     pub note: Option<String>,
+
+    /// Project this turn belongs to, used by CXDB for multi-project indexing.
+    /// `None` for turns created outside a project context (e.g. unit tests).
+    pub project_id: Option<Uuid>,
 }
 
 // ---------------------------------------------------------------------------
@@ -103,8 +107,27 @@ impl<T: ArtifactPayload> Turn<T> {
                 run_id,
                 execution_id: execution_id.into(),
                 note: None,
+                project_id: None,
             },
         }
+    }
+
+    /// Create a new turn with an explicit project ID.
+    ///
+    /// Identical to [`Turn::new`] but sets `metadata.project_id` so that
+    /// `CxdbEngine::store_turn` can index this turn under the correct project
+    /// without any caller-side post-processing.
+    pub fn new_with_project(
+        payload: T,
+        parent_id: Option<Uuid>,
+        run_id: Uuid,
+        produced_by: impl Into<String>,
+        execution_id: impl Into<String>,
+        project_id: Uuid,
+    ) -> Self {
+        let mut turn = Self::new(payload, parent_id, run_id, produced_by, execution_id);
+        turn.metadata.project_id = Some(project_id);
+        turn
     }
 
     /// Recompute and verify the blob hash. Returns `true` if the payload
@@ -146,6 +169,29 @@ mod tests {
 
         assert_eq!(turn.type_id, "test.payload.v1");
         assert!(turn.verify_integrity());
+    }
+
+    #[test]
+    fn turn_new_with_project_sets_project_id() {
+        let pid = Uuid::new_v4();
+        let payload = TestPayload { value: "proj".into() };
+        let turn = Turn::new_with_project(
+            payload,
+            None,
+            Uuid::new_v4(),
+            "test",
+            "step-0",
+            pid,
+        );
+        assert_eq!(turn.metadata.project_id, Some(pid));
+        assert!(turn.verify_integrity());
+    }
+
+    #[test]
+    fn turn_new_without_project_has_none() {
+        let payload = TestPayload { value: "no-proj".into() };
+        let turn = Turn::new(payload, None, Uuid::new_v4(), "test", "step-0");
+        assert_eq!(turn.metadata.project_id, None);
     }
 
     #[test]

@@ -86,3 +86,22 @@ input, textarea {
   0%, 100% { opacity: 1; }
   50% { opacity: 0; }
 }
+
+/* ─── Responsive ────────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  :root {
+    --header-height: 44px;
+    --pipeline-height: auto;
+  }
+
+  body {
+    font-size: 13px;
+  }
+}
+
+@media (max-width: 768px) {
+  .pipeline-bar {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+}

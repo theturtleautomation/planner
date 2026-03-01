@@ -121,8 +121,9 @@ pub async fn execute_ar_refinement(
 
     let mut all_open_questions = Vec::new();
     let mut all_amendment_entries = Vec::new();
-    let mut blocking_findings: Vec<&ArFinding> = ar_report.findings.iter()
+    let mut blocking_findings: Vec<ArFinding> = ar_report.findings.iter()
         .filter(|f| f.severity == ArSeverity::Blocking)
+        .cloned()
         .collect();
 
     for iteration in 1..=MAX_REFINEMENT_ITERATIONS {
@@ -187,13 +188,19 @@ pub async fn execute_ar_refinement(
                 });
             }
             Err(StepError::LintFailure { violations }) => {
-                tracing::warn!("    Re-lint failed with {} violations — will retry",
+                tracing::warn!("    Re-lint failed with {} violations — converting to blocking findings for next iteration",
                     violations.len());
-                // Convert lint violations to pseudo-blocking findings for next iteration
-                blocking_findings = Vec::new(); // Clear old findings
-                // The loop will continue with the same spec
-                // (In a full implementation, we'd convert violations to findings,
-                // but for Phase 2 the refinement prompt handles this via context)
+                // Convert lint violations into pseudo-blocking ArFinding objects
+                // so the next refinement iteration has concrete findings to address.
+                blocking_findings = violations.iter().enumerate().map(|(i, msg)| ArFinding {
+                    id: format!("LINT-{:02}", i + 1),
+                    severity: ArSeverity::Blocking,
+                    reviewer: ArReviewer::Opus,
+                    description: msg.clone(),
+                    affected_section: "spec".into(),
+                    affected_requirements: vec![],
+                    suggested_resolution: Some(format!("Fix lint violation: {}", msg)),
+                }).collect();
             }
             Err(e) => return Err(e),
         }
@@ -251,7 +258,7 @@ pub fn generate_oq_consequence_cards(
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-fn render_blocking_findings(findings: &[&ArFinding]) -> String {
+fn render_blocking_findings(findings: &[ArFinding]) -> String {
     findings.iter().enumerate().map(|(i, f)| {
         format!(
             "{}. [{}] {}: {}\n   Section: {}\n   Affected: {:?}\n   Suggested fix: {}",
@@ -311,7 +318,8 @@ struct AmendmentJson {
 }
 
 fn parse_refinement_response(content: &str) -> StepResult<ParsedRefinement> {
-    let cleaned = super::intake::strip_code_fences(content);
+    let cleaned = crate::llm::json_repair::try_repair_json(content)
+        .unwrap_or_else(|| super::intake::strip_code_fences(content));
 
     let json: RefinementJson = serde_json::from_str(&cleaned).map_err(|e| {
         StepError::JsonError(format!(

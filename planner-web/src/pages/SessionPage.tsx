@@ -1,10 +1,11 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout.tsx';
 import ChatPanel from '../components/ChatPanel.tsx';
 import PipelineBar from '../components/PipelineBar.tsx';
 import MessageInput from '../components/MessageInput.tsx';
 import { createApiClient } from '../api/client.ts';
+import { ApiError } from '../api/client.ts';
 import { useGetAccessToken } from '../auth/useAuthenticatedFetch.ts';
 import { useSessionWebSocket } from '../hooks/useSessionWebSocket.ts';
 import type { ChatMessage, Session } from '../types.ts';
@@ -23,17 +24,23 @@ export default function SessionPage() {
   );
   const [initError, setInitError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
 
   // WebSocket
   const { stages, messages: wsMessages, isConnected, pipelineComplete } =
     useSessionWebSocket({ sessionId, getToken });
 
-  // Merge REST messages from session load + WebSocket messages
+  // Merge REST messages from session load + WebSocket messages (deduped by ID)
   const [restMessages, setRestMessages] = useState<ChatMessage[]>([]);
-  const allMessages = useMemo(
-    () => [...restMessages, ...wsMessages],
-    [restMessages, wsMessages],
-  );
+  const allMessages = useMemo(() => {
+    const merged = [...restMessages, ...wsMessages];
+    const seen = new Set<string>();
+    return merged.filter(msg => {
+      if (seen.has(msg.id)) return false;
+      seen.add(msg.id);
+      return true;
+    });
+  }, [restMessages, wsMessages]);
 
   // ── Init: create or load session ──
   useEffect(() => {
@@ -70,10 +77,16 @@ export default function SessionPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeId]);
 
-  // Keep session pipeline_running in sync with pipelineComplete
+  // Keep session pipeline_running in sync with pipelineComplete.
+  // Use a ref to avoid re-render loop when pipelineComplete stays true.
+  const pipelineCompletedHandled = useRef(false);
   useEffect(() => {
-    if (pipelineComplete && session) {
+    if (pipelineComplete && session && !pipelineCompletedHandled.current) {
+      pipelineCompletedHandled.current = true;
       setSession((prev) => prev ? { ...prev, pipeline_running: false } : prev);
+    }
+    if (!pipelineComplete) {
+      pipelineCompletedHandled.current = false;
     }
   }, [pipelineComplete, session]);
 
@@ -81,12 +94,15 @@ export default function SessionPage() {
   const handleSend = useCallback(async (content: string): Promise<void> => {
     if (!sessionId) return;
     setIsLoading(true);
+    setSendError(null);
     try {
       const resp = await api.sendMessage(sessionId, content);
       setRestMessages((prev) => [...prev, resp.user_message, resp.planner_message]);
       setSession(resp.session);
     } catch (err) {
       console.error('[SessionPage] sendMessage error:', err);
+      setSendError('Failed to send message. Please try again.');
+      setTimeout(() => setSendError(null), 5000);
     } finally {
       setIsLoading(false);
     }
@@ -96,6 +112,7 @@ export default function SessionPage() {
 
   // ── Error state ──
   if (initError) {
+    const is404 = initError.includes('404');
     return (
       <Layout>
         <div style={{
@@ -109,7 +126,7 @@ export default function SessionPage() {
         }}>
           <span style={{ color: 'var(--accent-red)', fontSize: '14px' }}>[ ERROR ]</span>
           <span style={{ color: 'var(--text-secondary)', fontSize: '13px', textAlign: 'center', maxWidth: '500px' }}>
-            {initError}
+            {is404 ? 'Session not found.' : initError}
           </span>
           <button
             onClick={() => void navigate('/')}
@@ -163,6 +180,21 @@ export default function SessionPage() {
 
         {/* Pipeline bar */}
         <PipelineBar stages={stages} />
+
+        {/* Send error banner */}
+        {sendError && (
+          <div style={{
+            padding: '8px 16px',
+            background: 'rgba(255,68,68,0.10)',
+            borderTop: '1px solid var(--accent-red)',
+            color: 'var(--accent-red)',
+            fontSize: '12px',
+            textAlign: 'center',
+            flexShrink: 0,
+          }}>
+            {sendError}
+          </div>
+        )}
 
         {/* Input */}
         <MessageInput

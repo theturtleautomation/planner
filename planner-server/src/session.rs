@@ -4,7 +4,7 @@
 //! and pipeline state.
 
 use std::collections::HashMap;
-use std::sync::RwLock;
+use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use chrono::Utc;
@@ -36,6 +36,8 @@ pub struct Session {
     /// Auth0 sub claim of the owning user (or "dev|local" in dev mode).
     pub user_id: String,
     pub created_at: String,
+    /// RFC3339 timestamp of the last get() or update() access.
+    pub last_accessed: String,
     pub messages: Vec<SessionMessage>,
     pub stages: Vec<PipelineStageInfo>,
     pub pipeline_running: bool,
@@ -49,6 +51,7 @@ impl Session {
             id: Uuid::new_v4(),
             user_id: user_id.to_string(),
             created_at: now.to_rfc3339(),
+            last_accessed: now.to_rfc3339(),
             messages: vec![SessionMessage {
                 id: Uuid::new_v4(),
                 role: "system".into(),
@@ -94,7 +97,7 @@ impl Session {
 
 /// Thread-safe in-memory store for planning sessions.
 pub struct SessionStore {
-    sessions: RwLock<HashMap<Uuid, Session>>,
+    pub(crate) sessions: RwLock<HashMap<Uuid, Session>>,
 }
 
 impl SessionStore {
@@ -108,23 +111,30 @@ impl SessionStore {
     pub fn create(&self, user_id: &str) -> Session {
         let session = Session::new(user_id);
         let id = session.id;
-        self.sessions.write().unwrap().insert(id, session.clone());
+        self.sessions.write().insert(id, session.clone());
         session
     }
 
-    /// Get a session by ID.
+    /// Get a session by ID. Updates `last_accessed`.
     pub fn get(&self, id: Uuid) -> Option<Session> {
-        self.sessions.read().unwrap().get(&id).cloned()
+        let mut sessions = self.sessions.write();
+        if let Some(session) = sessions.get_mut(&id) {
+            session.last_accessed = Utc::now().to_rfc3339();
+            Some(session.clone())
+        } else {
+            None
+        }
     }
 
-    /// Update a session.
+    /// Update a session. Updates `last_accessed`.
     pub fn update<F>(&self, id: Uuid, f: F) -> Option<Session>
     where
         F: FnOnce(&mut Session),
     {
-        let mut sessions = self.sessions.write().unwrap();
+        let mut sessions = self.sessions.write();
         if let Some(session) = sessions.get_mut(&id) {
             f(session);
+            session.last_accessed = Utc::now().to_rfc3339();
             Some(session.clone())
         } else {
             None
@@ -135,7 +145,6 @@ impl SessionStore {
     pub fn list_for_user(&self, user_id: &str) -> Vec<Session> {
         self.sessions
             .read()
-            .unwrap()
             .values()
             .filter(|s| s.user_id == user_id)
             .cloned()
@@ -144,14 +153,35 @@ impl SessionStore {
 
     /// List all session IDs.
     pub fn list_ids(&self) -> Vec<Uuid> {
-        self.sessions.read().unwrap().keys().copied().collect()
+        self.sessions.read().keys().copied().collect()
     }
 
     /// Count active sessions.
     pub fn count(&self) -> usize {
-        self.sessions.read().unwrap().len()
+        self.sessions.read().len()
     }
-}
+
+    /// Remove sessions that have not been accessed within `max_age_secs` seconds.
+    pub fn cleanup_expired(&self, max_age_secs: u64) {
+        let now = Utc::now();
+        let mut sessions = self.sessions.write();
+        let before = sessions.len();
+        sessions.retain(|_id, session| {
+            // Parse last_accessed; if unparseable, keep the session.
+            if let Ok(last) = chrono::DateTime::parse_from_rfc3339(&session.last_accessed) {
+                let age = now.signed_duration_since(last).num_seconds();
+                age < max_age_secs as i64
+            } else {
+                true
+            }
+        });
+        let removed = before - sessions.len();
+        if removed > 0 {
+            tracing::info!("Session cleanup: removed {} expired session(s)", removed);
+        }
+    }
+
+} // impl SessionStore
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -260,5 +290,32 @@ mod tests {
         let json = serde_json::to_string(&stage).unwrap();
         assert!(json.contains("Intake"));
         assert!(json.contains("running"));
+    }
+
+    #[test]
+    fn cleanup_expired_removes_old_sessions() {
+        let store = SessionStore::new();
+
+        // Create two sessions
+        let s1 = store.create("user_cleanup_1");
+        let s2 = store.create("user_cleanup_2");
+
+        // Manually back-date s1's last_accessed to over 1 hour ago
+        {
+            let old_time = (chrono::Utc::now() - chrono::Duration::seconds(7200)).to_rfc3339();
+            let mut sessions = store.sessions.write();
+            sessions.get_mut(&s1.id).unwrap().last_accessed = old_time;
+        }
+
+        assert_eq!(store.count(), 2);
+
+        // Cleanup sessions older than 3600 seconds (1 hour)
+        store.cleanup_expired(3600);
+
+        // s1 should be removed, s2 should remain
+        // (Note: count() acquires a write lock via get(), so we use read count)
+        assert_eq!(store.sessions.read().len(), 1);
+        assert!(store.sessions.read().get(&s1.id).is_none());
+        assert!(store.sessions.read().get(&s2.id).is_some());
     }
 }

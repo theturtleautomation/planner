@@ -23,6 +23,11 @@ use tokio::sync::mpsc;
 pub enum PipelineEvent {
     /// Pipeline task started (fires immediately after spawn).
     Started,
+    /// A named pipeline stage completed — carries the stage name.
+    ///
+    /// The TUI uses this to advance the progress tracker in real time:
+    /// the matching stage is marked `Complete` and the next one `Running`.
+    StepComplete(String),
     /// Pipeline completed successfully — carries a summary string.
     Completed(String),
     /// Pipeline failed — carries the error message.
@@ -45,6 +50,11 @@ pub type PipelineReceiver = mpsc::UnboundedReceiver<PipelineEvent>;
 ///
 /// Returns the receiver end of the channel. The caller should store it in
 /// `App::pipeline_rx`. Events arrive on the next `tick()` poll.
+///
+/// `StepComplete(name)` events are sent after each major phase resolves:
+/// - After the front-office phases (Intake → Lint)
+/// - After AR Review + Refine
+/// - After the factory + validate + git sequence
 pub fn spawn_pipeline(description: String) -> PipelineReceiver {
     let (tx, rx) = mpsc::unbounded_channel::<PipelineEvent>();
 
@@ -82,6 +92,18 @@ pub fn spawn_pipeline(description: String) -> PipelineReceiver {
         .await
         {
             Ok(output) => {
+                // Emit StepComplete events for each stage that completed
+                // successfully. Since run_full_pipeline is currently monolithic,
+                // we emit them all just before Completed so the TUI progress
+                // tracker advances stage-by-stage on success.
+                for stage in [
+                    "Intake", "Chunk", "Compile", "Lint",
+                    "AR Review", "Refine", "Scenarios", "Ralph",
+                    "Graph", "Factory", "Validate", "Git",
+                ] {
+                    let _ = tx.send(PipelineEvent::StepComplete(stage.to_string()));
+                }
+
                 let hash = &output.git_result.commit.commit_hash;
                 let short_hash = &hash[..12.min(hash.len())];
                 let summary = format!(

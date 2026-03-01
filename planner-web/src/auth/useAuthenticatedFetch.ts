@@ -4,6 +4,15 @@ import { AUTH0_ENABLED, AUTH0_AUDIENCE } from '../config.ts';
 
 type GetTokenFn = () => Promise<string>;
 
+// ─── Module-level token error tracking ───────────────────────────────────────
+
+let lastTokenError: Error | null = null;
+
+/** Returns the last error encountered when fetching an access token, if any. */
+export function getLastTokenError(): Error | null {
+  return lastTokenError;
+}
+
 /**
  * Hook that returns a function to get the Auth0 access token.
  *
@@ -24,14 +33,18 @@ export const useGetAccessToken: () => GetTokenFn = AUTH0_ENABLED
       // eslint-disable-next-line react-hooks/rules-of-hooks
       return useCallback(async (): Promise<string> => {
         try {
-          return await getAccessTokenSilently({
+          const token = await getAccessTokenSilently({
             authorizationParams: {
               audience: AUTH0_AUDIENCE || undefined,
               scope: 'openid profile email',
             },
           });
+          lastTokenError = null;
+          return token;
         } catch (err) {
-          console.warn('[useGetAccessToken] token error', err);
+          const error = err instanceof Error ? err : new Error(String(err));
+          console.warn('[useGetAccessToken] token error', error);
+          lastTokenError = error;
           return '';
         }
       }, [getAccessTokenSilently]);

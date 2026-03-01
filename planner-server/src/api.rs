@@ -70,6 +70,33 @@ pub struct ErrorResponse {
 }
 
 // ---------------------------------------------------------------------------
+// CXDB Read API types (Change 4)
+// ---------------------------------------------------------------------------
+
+/// Metadata-only view of a single Turn for the list endpoint.
+/// Full payload retrieval is deferred to when durable storage is wired.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TurnResponse {
+    pub turn_id: String,
+    pub type_id: String,
+    pub timestamp: String,
+    pub produced_by: String,
+}
+
+/// Response for `GET /sessions/{id}/turns`.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ListTurnsResponse {
+    pub turns: Vec<TurnResponse>,
+    pub count: usize,
+}
+
+/// Response for `GET /sessions/{id}/runs`.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RunListResponse {
+    pub runs: Vec<String>,
+}
+
+// ---------------------------------------------------------------------------
 // Routes
 // ---------------------------------------------------------------------------
 
@@ -84,6 +111,10 @@ pub fn routes(state: Arc<AppState>) -> Router {
         .route("/sessions/{id}", get(get_session))
         .route("/sessions/{id}/message", post(send_message))
         .route("/sessions/{id}/ws", get(ws_handler))
+        // CXDB read API — Phase 6 wiring (Change 4)
+        // TODO: populate from durable store when wired into pipeline runner
+        .route("/sessions/{id}/turns", get(list_turns))
+        .route("/sessions/{id}/runs", get(list_runs))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             auth_middleware,
@@ -233,6 +264,11 @@ async fn send_message(
         ));
     }
 
+    // Check if pipeline was already running before the update
+    let was_running = state.sessions.get(id)
+        .map(|s| s.pipeline_running)
+        .unwrap_or(false);
+
     // Add user message and generate the initial planner acknowledgement.
     // The actual pipeline runs in a background task — clients poll
     // GET /api/sessions/:id or connect to the WebSocket for live updates.
@@ -265,10 +301,9 @@ async fn send_message(
 
     match result {
         Some(session) => {
-            // Spawn the pipeline task only on the first message
-            // (pipeline_running was false before the update above set it true,
-            //  so we check project_description being freshly set).
-            if session.pipeline_running && session.project_description.as_deref() == Some(&content) {
+            // Spawn the pipeline task only if it wasn't already running before
+            // this request set it to running.
+            if !was_running && session.pipeline_running {
                 let state_clone = state.clone();
                 let session_id = id;
                 let description = content.clone();
@@ -278,9 +313,20 @@ async fn send_message(
                 });
             }
 
+            // Use safe index access for the response messages
             let msgs = &session.messages;
-            let user_msg = msgs[msgs.len() - 2].clone();
-            let planner_msg = msgs[msgs.len() - 1].clone();
+            let planner_msg = msgs.last().cloned().unwrap_or_else(|| crate::session::SessionMessage {
+                id: uuid::Uuid::new_v4(),
+                role: "planner".into(),
+                content: "(no response)".into(),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            });
+            let user_msg = msgs.iter().rev().nth(1).cloned().unwrap_or_else(|| crate::session::SessionMessage {
+                id: uuid::Uuid::new_v4(),
+                role: "user".into(),
+                content: content.clone(),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            });
 
             Ok(Json(SendMessageResponse {
                 user_message: user_msg,
@@ -303,7 +349,7 @@ async fn send_message(
 
 /// Background task: runs the full pipeline and writes results back to the
 /// session store. Clients observe progress via REST polling or WebSocket.
-async fn run_pipeline_for_session(state: Arc<AppState>, session_id: Uuid, description: String) {
+pub async fn run_pipeline_for_session(state: Arc<AppState>, session_id: Uuid, description: String) {
     tracing::info!("Session {}: pipeline task started", session_id);
 
     let router = planner_core::llm::providers::LlmRouter::from_env();
@@ -370,6 +416,73 @@ async fn run_pipeline_for_session(state: Arc<AppState>, session_id: Uuid, descri
             tracing::warn!("Session {}: pipeline failed: {}", session_id, e);
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// CXDB Read API handlers (Change 4)
+// ---------------------------------------------------------------------------
+
+/// List all Turns for a session (metadata only).
+///
+/// Currently returns an empty list because the server uses
+/// `PipelineConfig::minimal` (no durable storage attached).
+///
+/// TODO: wire in `CxdbEngine` storage when the pipeline runner is updated
+/// to accept a persistent store, then query `store.list_turns_for_session`.
+async fn list_turns(
+    State(state): State<Arc<AppState>>,
+    claims: Claims,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ListTurnsResponse>, (StatusCode, Json<ErrorResponse>)> {
+    // Verify session exists and belongs to the requesting user.
+    match state.sessions.get(id) {
+        Some(session) if session.user_id == claims.sub => {}
+        Some(_) => {
+            return Err((
+                StatusCode::FORBIDDEN,
+                Json(ErrorResponse { error: "Access denied".into() }),
+            ));
+        }
+        None => {
+            return Err((
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse { error: format!("Session not found: {}", id) }),
+            ));
+        }
+    }
+
+    // TODO: query durable CXDB store for turns once storage is wired.
+    Ok(Json(ListTurnsResponse { turns: vec![], count: 0 }))
+}
+
+/// List all pipeline run IDs for a session.
+///
+/// Currently returns an empty list — same durable-storage caveat as
+/// `list_turns`. Populated once storage is wired into the pipeline runner.
+async fn list_runs(
+    State(state): State<Arc<AppState>>,
+    claims: Claims,
+    Path(id): Path<Uuid>,
+) -> Result<Json<RunListResponse>, (StatusCode, Json<ErrorResponse>)> {
+    // Verify session exists and belongs to the requesting user.
+    match state.sessions.get(id) {
+        Some(session) if session.user_id == claims.sub => {}
+        Some(_) => {
+            return Err((
+                StatusCode::FORBIDDEN,
+                Json(ErrorResponse { error: "Access denied".into() }),
+            ));
+        }
+        None => {
+            return Err((
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse { error: format!("Session not found: {}", id) }),
+            ));
+        }
+    }
+
+    // TODO: query durable CXDB store for run IDs once storage is wired.
+    Ok(Json(RunListResponse { runs: vec![] }))
 }
 
 // ---------------------------------------------------------------------------
@@ -680,5 +793,111 @@ mod tests {
 
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    // -----------------------------------------------------------------------
+    // CXDB Read API tests (Change 4)
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_list_turns_empty() {
+        let state = test_state();
+        let session = state.sessions.create("dev|local");
+        let id = session.id;
+        let app = routes(state);
+
+        let req = Request::builder()
+            .uri(format!("/sessions/{}/turns", id))
+            .body(Body::empty())
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let listed: ListTurnsResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(listed.turns.len(), 0);
+        assert_eq!(listed.count, 0);
+    }
+
+    #[tokio::test]
+    async fn test_list_turns_not_found() {
+        let state = test_state();
+        let app = routes(state);
+
+        let req = Request::builder()
+            .uri(format!("/sessions/{}/turns", Uuid::new_v4()))
+            .body(Body::empty())
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_list_turns_wrong_user() {
+        let state = test_state();
+        // Session owned by a different user
+        let session = state.sessions.create("other_user|789");
+        let id = session.id;
+        let app = routes(state);
+
+        let req = Request::builder()
+            .uri(format!("/sessions/{}/turns", id))
+            .body(Body::empty())
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn test_list_runs_empty() {
+        let state = test_state();
+        let session = state.sessions.create("dev|local");
+        let id = session.id;
+        let app = routes(state);
+
+        let req = Request::builder()
+            .uri(format!("/sessions/{}/runs", id))
+            .body(Body::empty())
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let run_list: RunListResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(run_list.runs.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_list_runs_not_found() {
+        let state = test_state();
+        let app = routes(state);
+
+        let req = Request::builder()
+            .uri(format!("/sessions/{}/runs", Uuid::new_v4()))
+            .body(Body::empty())
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_list_runs_wrong_user() {
+        let state = test_state();
+        let session = state.sessions.create("other_user|runs");
+        let id = session.id;
+        let app = routes(state);
+
+        let req = Request::builder()
+            .uri(format!("/sessions/{}/runs", id))
+            .body(Body::empty())
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
     }
 }

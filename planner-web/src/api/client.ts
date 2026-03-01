@@ -1,11 +1,21 @@
 import { API_BASE } from '../config.ts';
+import { ApiError } from '../types.ts';
 import type {
   HealthResponse,
   CreateSessionResponse,
   GetSessionResponse,
   SendMessageResponse,
   ListModelsResponse,
+  Session,
 } from '../types.ts';
+
+export { ApiError };
+
+export function isAuthError(e: Error): boolean {
+  return e instanceof ApiError
+    ? e.status === 401 || e.status === 403
+    : e.message.includes('401') || e.message.includes('403');
+}
 
 type GetTokenFn = () => Promise<string>;
 
@@ -24,13 +34,20 @@ async function apiFetch<T>(
 
   if (!response.ok) {
     const text = await response.text().catch(() => response.statusText);
-    throw new Error(`API ${init.method ?? 'GET'} ${path} → ${response.status}: ${text}`);
+    throw new ApiError(
+      `API ${init.method ?? 'GET'} ${path} → ${response.status}: ${text}`,
+      response.status,
+    );
   }
 
   return response.json() as Promise<T>;
 }
 
 // ─── Factory ─────────────────────────────────────────────────────────────────
+
+export interface ListSessionsResponse {
+  sessions: Session[];
+}
 
 export function createApiClient(getToken: GetTokenFn) {
   return {
@@ -47,6 +64,10 @@ export function createApiClient(getToken: GetTokenFn) {
 
     getSession(id: string): Promise<GetSessionResponse> {
       return apiFetch<GetSessionResponse>(getToken, `/sessions/${id}`);
+    },
+
+    listSessions(): Promise<ListSessionsResponse> {
+      return apiFetch<ListSessionsResponse>(getToken, '/sessions');
     },
 
     sendMessage(id: string, content: string): Promise<SendMessageResponse> {

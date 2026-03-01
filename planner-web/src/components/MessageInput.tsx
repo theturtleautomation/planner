@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import type { KeyboardEvent, ChangeEvent } from 'react';
 
 interface MessageInputProps {
@@ -15,12 +15,27 @@ export default function MessageInput({
   isLoading = false,
 }: MessageInputProps) {
   const [value, setValue] = useState('');
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Auto-grow textarea height based on content
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (el) {
+      el.style.height = 'auto';
+      el.style.height = Math.min(el.scrollHeight, 200) + 'px';
+    }
+  }, [value]);
 
   const send = useCallback((): void => {
     const trimmed = value.trim();
     if (!trimmed) return;
     onSend(trimmed);
     setValue('');
+    // Reset height after clearing
+    const el = textareaRef.current;
+    if (el) {
+      el.style.height = 'auto';
+    }
   }, [value, onSend]);
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
@@ -60,12 +75,14 @@ export default function MessageInput({
         transition: 'border-color 0.18s',
       }}>
         <textarea
+          ref={textareaRef}
           value={value}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
           disabled={isBlocked}
           placeholder={placeholder}
           rows={1}
+          aria-label="Message input"
           style={{
             flex: 1,
             background: 'transparent',
@@ -77,13 +94,14 @@ export default function MessageInput({
             resize: 'none',
             cursor: isBlocked ? 'not-allowed' : 'text',
             minHeight: '22px',
-            maxHeight: '120px',
+            maxHeight: '200px',
             overflowY: 'auto',
           }}
         />
         <button
           onClick={send}
           disabled={isBlocked || !value.trim()}
+          aria-label="Send message"
           style={{
             background: isBlocked || !value.trim() ? 'transparent' : 'var(--accent-cyan)',
             border: `1px solid ${isBlocked || !value.trim() ? 'var(--border)' : 'var(--accent-cyan)'}`,
@@ -108,7 +126,7 @@ export default function MessageInput({
           color: 'var(--accent-yellow)',
           paddingLeft: '2px',
         }}>
-          ⚡ pipeline running — input will re-enable when complete
+          pipeline running — input will re-enable when complete
         </div>
       )}
     </div>

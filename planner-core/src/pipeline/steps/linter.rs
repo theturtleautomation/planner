@@ -79,8 +79,21 @@ pub fn lint_spec(spec: &NLSpecV1) -> StepResult<()> {
     }
 
     // Rule 7: External Dependencies have DTU priority assigned
+    // Dependencies with DtuPriority::None mean "no mock needed" — that's
+    // intentional for standard libraries. But if a dep has been added
+    // and is *not* a standard-library dep, leaving it as None may cause
+    // the DTU generator to skip cloning it, which can silently break
+    // scenario validation. Flag it as a warning so engineers make a
+    // conscious decision.
     for dep in &spec.external_dependencies {
-        let _ = &dep.dtu_priority;
+        if dep.dtu_priority == DtuPriority::None {
+            violations.push(format!(
+                "Rule 7: External dependency '{}' has dtu_priority=None — \
+                 verify this is intentional (standard-library / no-mock deps are OK, \
+                 but cloud services should be High or Medium)",
+                dep.name,
+            ));
+        }
     }
 
     // Rule 8: Each chunk ≤500 lines

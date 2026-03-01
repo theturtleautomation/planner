@@ -1,5 +1,6 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
+import rehypeSanitize from 'rehype-sanitize';
 import type { ChatMessage } from '../types.ts';
 
 interface ChatPanelProps {
@@ -13,10 +14,28 @@ function formatTime(iso: string): string {
 
 export default function ChatPanel({ messages }: ChatPanelProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const userScrolled = useRef(false);
 
+  // Auto-scroll only when user hasn't scrolled up
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (!userScrolled.current) {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [messages]);
+
+  const handleScroll = useCallback((): void => {
+    const el = containerRef.current;
+    if (!el) return;
+    const nearBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 50;
+    if (nearBottom) {
+      // User scrolled back to bottom — re-enable auto-scroll
+      userScrolled.current = false;
+    } else {
+      // User scrolled up — pause auto-scroll
+      userScrolled.current = true;
+    }
+  }, []);
 
   if (messages.length === 0) {
     return (
@@ -36,14 +55,18 @@ export default function ChatPanel({ messages }: ChatPanelProps) {
   }
 
   return (
-    <div style={{
-      flex: 1,
-      overflow: 'auto',
-      padding: '16px 20px',
-      display: 'flex',
-      flexDirection: 'column',
-      gap: '12px',
-    }}>
+    <div
+      ref={containerRef}
+      onScroll={handleScroll}
+      style={{
+        flex: 1,
+        overflow: 'auto',
+        padding: '16px 20px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '12px',
+      }}
+    >
       {messages.map((msg) => (
         <MessageItem key={msg.id} msg={msg} />
       ))}
@@ -93,6 +116,7 @@ function MessageItem({ msg }: { msg: ChatMessage }) {
           borderLeft: '2px solid var(--accent-cyan)',
         }}>
           <ReactMarkdown
+            rehypePlugins={[rehypeSanitize]}
             components={{
               p: ({ children }) => <p style={{ margin: '0 0 8px 0' }}>{children}</p>,
               code: ({ children }) => (

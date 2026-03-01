@@ -19,8 +19,83 @@ use uuid::Uuid;
 
 use crate::llm::{CompletionRequest, DefaultModels, Message, Role};
 use crate::llm::providers::LlmRouter;
+use crate::dtu::DtuRegistry;
 use planner_schemas::*;
 use super::{StepResult, StepError};
+
+// ---------------------------------------------------------------------------
+// Factory output file reader
+// ---------------------------------------------------------------------------
+
+/// Read up to 10 files from the factory output directory, concatenating
+/// their contents with file path headers. Caps total size at 50KB.
+///
+/// Returns "[Could not read output files]" if the path does not exist.
+fn read_factory_files(output_path: &str) -> String {
+    const MAX_FILES: usize = 10;
+    const MAX_TOTAL_BYTES: usize = 50 * 1024; // 50 KB
+
+    let base = std::path::Path::new(output_path);
+    if !base.exists() {
+        return "[Could not read output files: path does not exist]".into();
+    }
+
+    let mut result = String::new();
+    let mut file_count = 0usize;
+    let mut total_bytes = 0usize;
+
+    collect_files(base, base, &mut result, &mut file_count, &mut total_bytes, MAX_FILES, MAX_TOTAL_BYTES);
+
+    if result.is_empty() {
+        return "[No source files found in output directory]".into();
+    }
+    result
+}
+
+fn collect_files(
+    root: &std::path::Path,
+    dir: &std::path::Path,
+    result: &mut String,
+    file_count: &mut usize,
+    total_bytes: &mut usize,
+    max_files: usize,
+    max_bytes: usize,
+) {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+
+    for entry in entries.flatten() {
+        if *file_count >= max_files || *total_bytes >= max_bytes {
+            break;
+        }
+        let path = entry.path();
+        if path.is_dir() {
+            collect_files(root, &path, result, file_count, total_bytes, max_files, max_bytes);
+        } else {
+            match std::fs::read_to_string(&path) {
+                Ok(content) => {
+                    let rel = path.strip_prefix(root)
+                        .map(|p| p.to_string_lossy().to_string())
+                        .unwrap_or_else(|_| path.to_string_lossy().to_string());
+                    let header = format!("\n=== {} ===\n", rel);
+                    let available = max_bytes.saturating_sub(*total_bytes);
+                    let truncated = if content.len() > available {
+                        &content[..available]
+                    } else {
+                        &content
+                    };
+                    result.push_str(&header);
+                    result.push_str(truncated);
+                    *total_bytes += header.len() + truncated.len();
+                    *file_count += 1;
+                }
+                Err(_) => {} // Skip unreadable files
+            }
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Evaluation prompt
@@ -69,16 +144,43 @@ Respond with ONLY a JSON object (no markdown fences):
 ///
 /// All tiers (Critical, High, Medium). Each scenario runs 3 times.
 /// Returns a SatisfactionResultV1 with tiered pass rates.
+///
+/// `dtu_registry` — if `Some`, DTU clone context is included in the
+/// evaluation prompt so the validator knows which providers are
+/// available for request routing during sandbox evaluation.
 pub async fn execute_scenario_validation(
     router: &LlmRouter,
     scenarios: &ScenarioSetV1,
     factory_output: &FactoryOutputV1,
+    dtu_registry: Option<&DtuRegistry>,
 ) -> StepResult<SatisfactionResultV1> {
     tracing::info!(
         "Scenario Validator: evaluating {} scenarios against {}",
         scenarios.scenarios.len(),
         factory_output.output_path,
     );
+
+    // If DTU clones are available, log them so evaluators can reference
+    // provider state during scenario evaluation.
+    if let Some(dtu_reg) = dtu_registry {
+        let providers = dtu_reg.list_providers();
+        if !providers.is_empty() {
+            let dtu_context: Vec<String> = providers
+                .iter()
+                .map(|p| {
+                    format!(
+                        "  - {} ({}): endpoints={:?}",
+                        p.name, p.id, p.supported_endpoints
+                    )
+                })
+                .collect();
+            tracing::info!(
+                "Scenario Validator: {} DTU clone(s) available:\n{}",
+                providers.len(),
+                dtu_context.join("\n"),
+            );
+        }
+    }
 
     // If the build failed entirely, short-circuit with all failures
     if factory_output.build_status == BuildStatus::Failed {
@@ -247,6 +349,8 @@ async fn evaluate_scenario_once(
     factory_output: &FactoryOutputV1,
     run_number: usize,
 ) -> StepResult<SingleEvalResult> {
+    let source_files = read_factory_files(&factory_output.output_path);
+
     let context = serde_json::json!({
         "scenario": {
             "id": scenario.id,
@@ -262,6 +366,7 @@ async fn evaluate_scenario_once(
                 .map(|n| &n.node_name)
                 .collect::<Vec<_>>(),
         },
+        "source_files": source_files,
         "run_number": run_number,
     });
 
@@ -327,7 +432,8 @@ struct EvalJson {
 }
 
 fn parse_eval_response(content: &str) -> StepResult<SingleEvalResult> {
-    let cleaned = super::intake::strip_code_fences(content);
+    let cleaned = crate::llm::json_repair::try_repair_json(content)
+        .unwrap_or_else(|| super::intake::strip_code_fences(content));
 
     let json: EvalJson = serde_json::from_str(&cleaned).map_err(|e| {
         StepError::JsonError(format!(

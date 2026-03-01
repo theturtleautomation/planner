@@ -210,18 +210,35 @@ impl App {
                 self.submit_input();
             }
             KeyCode::Char(c) => {
-                self.input.insert(self.cursor_position, c);
+                // cursor_position is a CHARACTER index, not a byte index.
+                // Convert to byte position before calling String::insert.
+                let byte_pos = self.input.char_indices()
+                    .nth(self.cursor_position)
+                    .map(|(i, _)| i)
+                    .unwrap_or(self.input.len());
+                self.input.insert(byte_pos, c);
                 self.cursor_position += 1;
             }
             KeyCode::Backspace => {
                 if self.cursor_position > 0 {
-                    self.input.remove(self.cursor_position - 1);
                     self.cursor_position -= 1;
+                    // Convert the new (decremented) char position to a byte offset.
+                    let byte_pos = self.input.char_indices()
+                        .nth(self.cursor_position)
+                        .map(|(i, _)| i)
+                        .unwrap_or(0);
+                    self.input.remove(byte_pos);
                 }
             }
             KeyCode::Delete => {
-                if self.cursor_position < self.input.len() {
-                    self.input.remove(self.cursor_position);
+                // Delete the character AT the current char position.
+                let char_count = self.input.chars().count();
+                if self.cursor_position < char_count {
+                    let byte_pos = self.input.char_indices()
+                        .nth(self.cursor_position)
+                        .map(|(i, _)| i)
+                        .unwrap_or(self.input.len());
+                    self.input.remove(byte_pos);
                 }
             }
             KeyCode::Left => {
@@ -230,7 +247,8 @@ impl App {
                 }
             }
             KeyCode::Right => {
-                if self.cursor_position < self.input.len() {
+                // Advance only if there are more characters to the right.
+                if self.cursor_position < self.input.chars().count() {
                     self.cursor_position += 1;
                 }
             }
@@ -238,7 +256,8 @@ impl App {
                 self.cursor_position = 0;
             }
             KeyCode::End => {
-                self.cursor_position = self.input.len();
+                // Set to total number of characters (char index past the last char).
+                self.cursor_position = self.input.chars().count();
             }
             KeyCode::Up => {
                 self.focus = FocusMode::ChatScroll;
@@ -356,6 +375,29 @@ impl App {
             match event {
                 PipelineEvent::Started => {
                     self.status_message = "Pipeline running...".into();
+                }
+                PipelineEvent::StepComplete(name) => {
+                    // Find the stage by name, mark it Complete, and advance
+                    // the next Pending stage to Running.
+                    let mut found_idx: Option<usize> = None;
+                    for (i, stage) in self.stages.iter_mut().enumerate() {
+                        if stage.name == name {
+                            stage.status = StageStatus::Complete;
+                            found_idx = Some(i);
+                            break;
+                        }
+                    }
+                    // Mark the stage immediately after as Running (if it's still Pending)
+                    if let Some(idx) = found_idx {
+                        let next = idx + 1;
+                        if next < self.stages.len()
+                            && self.stages[next].status == StageStatus::Pending
+                        {
+                            self.stages[next].status = StageStatus::Running;
+                        }
+                        // Update status bar with the just-completed stage name
+                        self.status_message = format!("Completed: {}", name);
+                    }
                 }
                 PipelineEvent::Completed(summary) => {
                     self.pipeline_running = false;
@@ -519,6 +561,61 @@ mod tests {
     }
 
     #[test]
+    fn app_utf8_multibyte_cursor() {
+        let mut app = App::new();
+
+        // Type multi-byte characters: '©' is 2 bytes, '中' is 3 bytes
+        for c in "a©中b".chars() {
+            app.handle_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
+        }
+        // 4 characters typed → cursor at char position 4
+        assert_eq!(app.cursor_position, 4);
+        // Byte length: 'a'=1, '©'=2, '中'=3, 'b'=1 → 7 bytes
+        assert_eq!(app.input.len(), 7);
+        assert_eq!(app.input, "a©中b");
+
+        // Backspace: remove 'b' (1 byte)
+        app.handle_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
+        assert_eq!(app.cursor_position, 3);
+        assert_eq!(app.input, "a©中");
+
+        // Backspace: remove '中' (3 bytes)
+        app.handle_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
+        assert_eq!(app.cursor_position, 2);
+        assert_eq!(app.input, "a©");
+        assert_eq!(app.input.len(), 3); // 'a'=1, '©'=2
+
+        // Left: move before '©'
+        app.handle_key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
+        assert_eq!(app.cursor_position, 1);
+
+        // Home
+        app.handle_key(KeyEvent::new(KeyCode::Home, KeyModifiers::NONE));
+        assert_eq!(app.cursor_position, 0);
+
+        // End
+        app.handle_key(KeyEvent::new(KeyCode::End, KeyModifiers::NONE));
+        assert_eq!(app.cursor_position, 2); // 2 chars: 'a' and '©'
+
+        // Insert '€' (3 bytes) at end
+        app.handle_key(KeyEvent::new(KeyCode::Char('€'), KeyModifiers::NONE));
+        assert_eq!(app.cursor_position, 3);
+        assert_eq!(app.input, "a©€");
+
+        // Delete from cursor position 3 (end of string) — should be a no-op
+        app.handle_key(KeyEvent::new(KeyCode::Delete, KeyModifiers::NONE));
+        assert_eq!(app.input, "a©€");
+        assert_eq!(app.cursor_position, 3);
+
+        // Move left one step then delete '€'
+        app.handle_key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
+        assert_eq!(app.cursor_position, 2);
+        app.handle_key(KeyEvent::new(KeyCode::Delete, KeyModifiers::NONE));
+        assert_eq!(app.input, "a©");
+        assert_eq!(app.cursor_position, 2);
+    }
+
+    #[test]
     fn message_role_labels() {
         assert_eq!(MessageRole::System.label(), "System");
         assert_eq!(MessageRole::User.label(), "You");
@@ -554,6 +651,49 @@ mod tests {
 
         // Second take returns None (consumed)
         assert_eq!(app.take_pending_pipeline(), None);
+    }
+
+    #[tokio::test]
+    async fn tick_step_complete_advances_stages() {
+        let mut app = App::new();
+        app.pipeline_running = true;
+        app.stages[0].status = StageStatus::Running;
+
+        let (tx, rx) = mpsc::unbounded_channel::<PipelineEvent>();
+        app.pipeline_rx = Some(rx);
+
+        // Complete the first stage "Intake"
+        tx.send(PipelineEvent::StepComplete("Intake".to_string())).unwrap();
+        app.tick();
+
+        assert_eq!(app.stages[0].status, StageStatus::Complete);
+        // Stage 1 ("Chunk") should now be Running
+        assert_eq!(app.stages[1].status, StageStatus::Running);
+        // Status bar should reflect the completed stage
+        assert!(app.status_message.contains("Intake"));
+
+        // Complete "Chunk"
+        tx.send(PipelineEvent::StepComplete("Chunk".to_string())).unwrap();
+        app.tick();
+
+        assert_eq!(app.stages[1].status, StageStatus::Complete);
+        assert_eq!(app.stages[2].status, StageStatus::Running);
+    }
+
+    #[tokio::test]
+    async fn tick_step_complete_unknown_name_is_noop() {
+        let mut app = App::new();
+        app.pipeline_running = true;
+
+        let (tx, rx) = mpsc::unbounded_channel::<PipelineEvent>();
+        app.pipeline_rx = Some(rx);
+
+        // Send a stage name that doesn't exist
+        tx.send(PipelineEvent::StepComplete("NonExistentStage".to_string())).unwrap();
+        app.tick();
+
+        // All stages should still be Pending
+        assert!(app.stages.iter().all(|s| s.status == StageStatus::Pending));
     }
 
     #[tokio::test]

@@ -347,6 +347,7 @@ impl DurableCxdbEngine {
                 run_id,
                 execution_id: record.execution_id.clone(),
                 note: record.note.clone(),
+                project_id: None,
             },
         })
     }

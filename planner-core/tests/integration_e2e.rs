@@ -1075,67 +1075,204 @@ async fn e2e_phase2_spec_rendering_for_review() {
     assert!(rendered.contains("Sound alerts"), "Missing OOS item");
 }
 
-/// Test AR severity classification: unknown severities default to informational.
+/// Test AR severity classification: an ArReportV1 with mixed findings correctly
+/// reports `has_blocking` and counts after `recalculate()`.
 #[tokio::test]
 async fn e2e_phase2_ar_severity_classification() {
-    // Test the ArSeverity enum properties
-    let blocking = ArSeverity::Blocking;
-    let advisory = ArSeverity::Advisory;
-    let info = ArSeverity::Informational;
+    let project_id = Uuid::new_v4();
 
-    assert_eq!(blocking, ArSeverity::Blocking);
-    assert_ne!(blocking, advisory);
-    assert_ne!(advisory, info);
+    // Build a report with mixed severities across different reviewers.
+    let mut report = ArReportV1 {
+        project_id,
+        chunk_name: "root".into(),
+        nlspec_version: "1.0".into(),
+        findings: vec![
+            ArFinding {
+                id: String::new(),
+                reviewer: ArReviewer::Opus,
+                severity: ArSeverity::Blocking,
+                affected_section: "Requirements".into(),
+                affected_requirements: vec!["FR-1".into()],
+                description: "Ambiguous error handling".into(),
+                suggested_resolution: Some("Specify error behavior".into()),
+            },
+            ArFinding {
+                id: String::new(),
+                reviewer: ArReviewer::Gpt,
+                severity: ArSeverity::Advisory,
+                affected_section: "DoD".into(),
+                affected_requirements: vec![],
+                description: "DoD item not mechanically checkable".into(),
+                suggested_resolution: None,
+            },
+            ArFinding {
+                id: String::new(),
+                reviewer: ArReviewer::Gemini,
+                severity: ArSeverity::Informational,
+                affected_section: "Out of Scope".into(),
+                affected_requirements: vec![],
+                description: "Consider adding persistence to OOS".into(),
+                suggested_resolution: None,
+            },
+            ArFinding {
+                id: String::new(),
+                reviewer: ArReviewer::Gemini,
+                severity: ArSeverity::Blocking,
+                affected_section: "Sacred Anchors".into(),
+                affected_requirements: vec!["SA-1".into()],
+                description: "SA-1 not covered by any FR".into(),
+                suggested_resolution: Some("Add FR that traces to SA-1".into()),
+            },
+        ],
+        reviewer_summaries: vec![],
+        has_blocking: false,
+        blocking_count: 0,
+        advisory_count: 0,
+        informational_count: 0,
+    };
+    report.recalculate();
 
-    // Test reviewer types
-    assert_ne!(ArReviewer::Opus, ArReviewer::Gpt);
-    assert_ne!(ArReviewer::Gpt, ArReviewer::Gemini);
-    assert_ne!(ArReviewer::Opus, ArReviewer::Gemini);
+    // Verify `has_blocking` is set correctly
+    assert!(report.has_blocking, "Report with Blocking findings must set has_blocking=true");
+
+    // Verify each severity bucket is counted correctly
+    assert_eq!(report.blocking_count, 2, "Expected 2 blocking findings");
+    assert_eq!(report.advisory_count, 1, "Expected 1 advisory finding");
+    assert_eq!(report.informational_count, 1, "Expected 1 informational finding");
+
+    // A report with only advisory/informational should NOT set has_blocking
+    let mut clean_report = ArReportV1 {
+        project_id,
+        chunk_name: "root".into(),
+        nlspec_version: "1.0".into(),
+        findings: vec![
+            ArFinding {
+                id: String::new(),
+                reviewer: ArReviewer::Gpt,
+                severity: ArSeverity::Advisory,
+                affected_section: "DoD".into(),
+                affected_requirements: vec![],
+                description: "Minor suggestion".into(),
+                suggested_resolution: None,
+            },
+        ],
+        reviewer_summaries: vec![],
+        has_blocking: false,
+        blocking_count: 0,
+        advisory_count: 0,
+        informational_count: 0,
+    };
+    clean_report.recalculate();
+    assert!(!clean_report.has_blocking, "Report with only advisory findings must NOT set has_blocking");
+    assert_eq!(clean_report.blocking_count, 0);
+    assert_eq!(clean_report.advisory_count, 1);
 }
 
-/// Test that AR integrates correctly with the pipeline recipe.
+/// Test that AR integrates correctly with the pipeline recipe AND verify the
+/// complete Phase 0 recipe has the expected number of steps in the correct order.
+///
+/// This replaces the two former recipe tests (`e2e_phase2_recipe_includes_ar_steps`
+/// and `e2e_phase3_recipe_includes_new_steps`) with a single test that gives full
+/// regression coverage of the DAG definition.
 #[tokio::test]
 async fn e2e_phase2_recipe_includes_ar_steps() {
     use planner_core::pipeline::{Recipe, StepType};
 
     let recipe = Recipe::phase0();
 
-    // Verify AR steps exist in the recipe
+    // ---- 1. Total step count ----
+    // The Phase 0 recipe has 17 steps (intake through git-projection).
+    assert_eq!(
+        recipe.steps.len(), 17,
+        "Phase 0 recipe should have exactly 17 steps; found {}: {:?}",
+        recipe.steps.len(),
+        recipe.steps.iter().map(|s| s.step_id.as_str()).collect::<Vec<_>>(),
+    );
+
+    // ---- 2. Required step IDs are present ----
     let step_ids: Vec<&str> = recipe.steps.iter().map(|s| s.step_id.as_str()).collect();
-    assert!(step_ids.contains(&"lint-spec"), "Missing lint-spec step");
-    assert!(step_ids.contains(&"adversarial-review"), "Missing adversarial-review step");
-    assert!(step_ids.contains(&"ar-refinement"), "Missing ar-refinement step");
-    assert!(step_ids.contains(&"compile-graph-dot"), "Missing compile-graph-dot step");
+    for expected in &[
+        "intake", "chunk-plan", "compile-spec", "lint-spec",
+        "adversarial-review", "ar-refinement", "generate-scenarios",
+        "ralph-loop", "compile-graph-dot", "compile-agents-manifest",
+        "factory-handoff", "factory-poll", "validate-scenarios",
+        "deploy-sandbox", "present-telemetry", "await-approval", "git-projection",
+    ] {
+        assert!(
+            step_ids.contains(expected),
+            "Phase 0 recipe missing step: '{}'",
+            expected,
+        );
+    }
 
-    // Verify AR step comes after lint and before graph-dot
-    let lint_idx = step_ids.iter().position(|&s| s == "lint-spec").unwrap();
-    let ar_idx = step_ids.iter().position(|&s| s == "adversarial-review").unwrap();
-    let refine_idx = step_ids.iter().position(|&s| s == "ar-refinement").unwrap();
-    let graph_idx = step_ids.iter().position(|&s| s == "compile-graph-dot").unwrap();
+    // ---- 3. Ordering constraints ----
+    let pos = |id: &str| step_ids.iter().position(|&s| s == id).unwrap();
 
-    assert!(lint_idx < ar_idx, "AR should come after lint");
-    assert!(ar_idx < refine_idx, "Refinement should come after AR");
-    assert!(refine_idx < graph_idx, "Graph-dot should come after refinement");
+    // intake → chunk-plan → compile-spec → lint-spec → adversarial-review → ar-refinement
+    assert!(pos("intake")              < pos("chunk-plan"),         "intake before chunk-plan");
+    assert!(pos("chunk-plan")          < pos("compile-spec"),       "chunk-plan before compile-spec");
+    assert!(pos("compile-spec")        < pos("lint-spec"),          "compile-spec before lint-spec");
+    assert!(pos("lint-spec")           < pos("adversarial-review"), "lint-spec before adversarial-review");
+    assert!(pos("adversarial-review")  < pos("ar-refinement"),      "AR before refinement");
 
-    // Verify dependencies
+    // ar-refinement → generate-scenarios → ralph-loop → compile-graph-dot
+    assert!(pos("ar-refinement")       < pos("generate-scenarios"), "refinement before scenarios");
+    assert!(pos("generate-scenarios")  < pos("ralph-loop"),         "scenarios before ralph");
+    assert!(pos("ralph-loop")          < pos("compile-graph-dot"),  "ralph before graph-dot");
+
+    // factory-handoff → factory-poll → validate-scenarios → present-telemetry → git-projection
+    assert!(pos("factory-handoff")     < pos("factory-poll"),       "handoff before poll");
+    assert!(pos("factory-poll")        < pos("validate-scenarios"), "poll before validate");
+    assert!(pos("validate-scenarios")  < pos("present-telemetry"),  "validate before telemetry");
+    assert!(pos("present-telemetry")   < pos("await-approval"),     "telemetry before approval");
+    assert!(pos("await-approval")      < pos("git-projection"),     "approval before git");
+
+    // ---- 4. Dependency checks (spot-check key wires) ----
     let ar_step = recipe.steps.iter().find(|s| s.step_id == "adversarial-review").unwrap();
-    assert!(ar_step.depends_on.contains(&"lint-spec".to_string()));
+    assert!(ar_step.depends_on.contains(&"lint-spec".to_string()),
+        "adversarial-review should depend on lint-spec");
 
     let refine_step = recipe.steps.iter().find(|s| s.step_id == "ar-refinement").unwrap();
-    assert!(refine_step.depends_on.contains(&"adversarial-review".to_string()));
+    assert!(refine_step.depends_on.contains(&"adversarial-review".to_string()),
+        "ar-refinement should depend on adversarial-review");
 
     let graph_step = recipe.steps.iter().find(|s| s.step_id == "compile-graph-dot").unwrap();
-    assert!(graph_step.depends_on.contains(&"ralph-loop".to_string()));
+    assert!(graph_step.depends_on.contains(&"ralph-loop".to_string()),
+        "compile-graph-dot should depend on ralph-loop");
 
-    // Verify step types
+    let handoff_step = recipe.steps.iter().find(|s| s.step_id == "factory-handoff").unwrap();
+    assert!(handoff_step.depends_on.contains(&"compile-graph-dot".to_string()),
+        "factory-handoff should depend on compile-graph-dot");
+    assert!(handoff_step.depends_on.contains(&"generate-scenarios".to_string()),
+        "factory-handoff should depend on generate-scenarios");
+    assert!(handoff_step.depends_on.contains(&"compile-agents-manifest".to_string()),
+        "factory-handoff should depend on compile-agents-manifest");
+
+    // ---- 5. Step types ----
     assert!(matches!(ar_step.step_type, StepType::AdversarialReview));
     assert!(matches!(refine_step.step_type, StepType::ArRefinement));
+    assert!(matches!(
+        recipe.steps.iter().find(|s| s.step_id == "chunk-plan").unwrap().step_type,
+        StepType::ChunkPlan
+    ));
+    assert!(matches!(
+        recipe.steps.iter().find(|s| s.step_id == "ralph-loop").unwrap().step_type,
+        StepType::RalphLoop
+    ));
+    assert!(matches!(
+        recipe.steps.iter().find(|s| s.step_id == "git-projection").unwrap().step_type,
+        StepType::GitProjection
+    ));
 }
 
-/// Test the AR refinement result structure when no blocking findings exist.
+/// Test that `execute_ar_refinement` with a non-blocking report returns
+/// immediately (iterations=0) without calling the LLM.
 #[tokio::test]
 async fn e2e_phase2_refinement_no_blocking_passthrough() {
+    use planner_core::pipeline::steps::ar_refinement;
+
     let project_id = Uuid::new_v4();
+    let spec = build_test_spec(project_id);
 
     // A clean report with no blocking findings
     let report = ArReportV1 {
@@ -1160,10 +1297,30 @@ async fn e2e_phase2_refinement_no_blocking_passthrough() {
         informational_count: 0,
     };
 
-    // has_blocking is false, so execute_ar_refinement would return immediately
-    // with resolved=true, iterations=0
-    assert!(!report.has_blocking);
-    assert_eq!(report.blocking_count, 0);
+    // has_blocking=false → execute_ar_refinement should short-circuit immediately.
+    // We use a no-op router since no LLM call should be made.
+    let router = planner_core::llm::providers::LlmRouter::from_env();
+    let result = ar_refinement::execute_ar_refinement(
+        &router,
+        spec.clone(),
+        &report,
+        project_id,
+    ).await;
+
+    assert!(result.is_ok(), "Non-blocking report refinement should not fail: {:?}", result.err());
+    let refinement = result.unwrap();
+
+    // Short-circuit path: 0 iterations (no LLM call needed)
+    assert_eq!(refinement.iterations, 0, "Non-blocking report should return with 0 iterations");
+    // The spec comes back untouched
+    assert!(refinement.resolved, "Non-blocking report should be marked resolved");
+    // No open questions should be generated
+    assert!(refinement.open_questions.is_empty(), "Non-blocking report should have no OQs");
+    // No amendment log entries
+    assert!(refinement.amendment_entries.is_empty(), "Non-blocking report should have no amendments");
+    // The returned spec should match the input
+    assert_eq!(refinement.spec.project_id, spec.project_id);
+    assert_eq!(refinement.spec.requirements.len(), spec.requirements.len());
 }
 
 // ---------------------------------------------------------------------------
@@ -1647,33 +1804,6 @@ async fn e2e_phase3_ralph_consequence_cards() {
     assert_eq!(cards[0].project_id, project_id);
     assert!(cards[0].resolution.is_none());
     assert_eq!(cards[0].actions.len(), 3); // Add Requirement, Add to DoD, Dismiss
-}
-
-/// Test the recipe includes Phase 3 step types (ChunkPlan, RalphLoop).
-#[tokio::test]
-async fn e2e_phase3_recipe_includes_new_steps() {
-    use planner_core::pipeline::Recipe;
-
-    let recipe = Recipe::phase0();
-    let step_ids: Vec<&str> = recipe.steps.iter().map(|s| s.step_id.as_str()).collect();
-
-    // Phase 3 step types should be present
-    assert!(step_ids.contains(&"chunk-plan"), "Missing chunk-plan step");
-    assert!(step_ids.contains(&"ralph-loop"), "Missing ralph-loop step");
-
-    // Verify ordering: chunk-plan → compile → lint → AR → scenarios → ralph → graph-dot
-    let chunk_idx = step_ids.iter().position(|&s| s == "chunk-plan");
-    let compile_idx = step_ids.iter().position(|&s| s == "compile-spec");
-    let ralph_idx = step_ids.iter().position(|&s| s == "ralph-loop");
-
-    assert!(chunk_idx.is_some(), "chunk-plan step not found");
-    assert!(compile_idx.is_some(), "compile-spec step not found");
-    assert!(ralph_idx.is_some(), "ralph-loop step not found");
-
-    assert!(
-        chunk_idx.unwrap() < compile_idx.unwrap(),
-        "Chunk plan should come before compile"
-    );
 }
 
 /// Test that the multi-chunk AR report structure is correctly constructed.

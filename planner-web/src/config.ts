@@ -5,3 +5,5 @@ export const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 
 export const AUTH0_ENABLED =
   AUTH0_DOMAIN !== '' && AUTH0_CLIENT_ID !== '';
+
+export const WS_PROTOCOL = window.location.protocol === 'https:' ? 'wss:' : 'ws:';

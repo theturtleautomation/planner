@@ -144,9 +144,10 @@ const AR_REVIEW_MAX_RETRIES: usize = 1;
 
 /// Run the full Adversarial Review pipeline on an NLSpec.
 ///
-/// Three reviewers run in sequence (Phase 0/1/2 — sequential for simplicity;
-/// Phase 3 can parallelize with tokio::join!). Each produces findings that
-/// are merged into a single ArReportV1.
+/// Three reviewers run in parallel via `tokio::join!` — each holds only a
+/// shared `&LlmRouter` reference so there is no mutable state contention.
+/// Parallel execution cuts wall-clock latency to roughly the slowest single
+/// reviewer (typically ~2–4 s) rather than the sequential sum (~6–12 s).
 pub async fn execute_adversarial_review(
     router: &LlmRouter,
     spec: &NLSpecV1,
@@ -156,30 +157,34 @@ pub async fn execute_adversarial_review(
 
     let spec_text = render_spec_for_review(spec);
 
-    // Run all three reviewers
-    let opus_result = run_single_reviewer(
-        router,
-        &spec_text,
-        ArReviewer::Opus,
-        OPUS_REVIEW_PROMPT,
-        DefaultModels::AR_REVIEWER_OPUS,
-    ).await?;
-
-    let gpt_result = run_single_reviewer(
-        router,
-        &spec_text,
-        ArReviewer::Gpt,
-        GPT_REVIEW_PROMPT,
-        DefaultModels::AR_REVIEWER_GPT,
-    ).await?;
-
-    let gemini_result = run_single_reviewer(
-        router,
-        &spec_text,
-        ArReviewer::Gemini,
-        GEMINI_REVIEW_PROMPT,
-        DefaultModels::AR_REVIEWER_GEMINI,
-    ).await?;
+    // Run all three reviewers in parallel — each only borrows `router` as &LlmRouter.
+    let (opus_result, gpt_result, gemini_result) = tokio::join!(
+        run_single_reviewer(
+            router,
+            &spec_text,
+            ArReviewer::Opus,
+            OPUS_REVIEW_PROMPT,
+            DefaultModels::AR_REVIEWER_OPUS,
+        ),
+        run_single_reviewer(
+            router,
+            &spec_text,
+            ArReviewer::Gpt,
+            GPT_REVIEW_PROMPT,
+            DefaultModels::AR_REVIEWER_GPT,
+        ),
+        run_single_reviewer(
+            router,
+            &spec_text,
+            ArReviewer::Gemini,
+            GEMINI_REVIEW_PROMPT,
+            DefaultModels::AR_REVIEWER_GEMINI,
+        ),
+    );
+    // Propagate any reviewer error (fail-fast: first error wins)
+    let opus_result = opus_result?;
+    let gpt_result = gpt_result?;
+    let gemini_result = gemini_result?;
 
     // Merge findings and build report
     let mut all_findings = Vec::new();
@@ -562,7 +567,8 @@ struct ReviewFindingJson {
 }
 
 fn parse_review_response(content: &str, reviewer: &ArReviewer) -> StepResult<SingleReviewResult> {
-    let cleaned = super::intake::strip_code_fences(content);
+    let cleaned = crate::llm::json_repair::try_repair_json(content)
+        .unwrap_or_else(|| super::intake::strip_code_fences(content));
 
     let json: ReviewJson = serde_json::from_str(&cleaned).map_err(|e| {
         StepError::JsonError(format!(

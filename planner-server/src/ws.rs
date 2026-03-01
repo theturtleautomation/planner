@@ -92,6 +92,8 @@ pub async fn handle_ws(mut socket: WebSocket, state: Arc<AppState>, session_id: 
 
     let mut last_msg_count = 0usize;
     let mut interval = tokio::time::interval(std::time::Duration::from_millis(500));
+    // Track the last-sent stage statuses to avoid sending duplicate stage_update messages.
+    let mut last_sent_stages: Vec<(String, String)> = Vec::new();
 
     loop {
         tokio::select! {
@@ -126,18 +128,33 @@ pub async fn handle_ws(mut socket: WebSocket, state: Arc<AppState>, session_id: 
                 }
                 last_msg_count = current_count;
 
-                // Send current stage statuses
+                // Send stage statuses — only when changed since the last send
+                let current_stages: Vec<(String, String)> = session
+                    .stages
+                    .iter()
+                    .map(|s| (s.name.clone(), s.status.clone()))
+                    .collect();
+
                 for stage in &session.stages {
-                    let server_msg = ServerMessage::StageUpdate {
-                        stage: stage.name.clone(),
-                        status: stage.status.clone(),
-                    };
-                    if let Ok(json) = serde_json::to_string(&server_msg) {
-                        if socket.send(Message::Text(json.into())).await.is_err() {
-                            return;
+                    let last_status = last_sent_stages
+                        .iter()
+                        .find(|(name, _)| name == &stage.name)
+                        .map(|(_, status)| status.as_str());
+                    let has_changed = last_status != Some(stage.status.as_str());
+
+                    if has_changed {
+                        let server_msg = ServerMessage::StageUpdate {
+                            stage: stage.name.clone(),
+                            status: stage.status.clone(),
+                        };
+                        if let Ok(json) = serde_json::to_string(&server_msg) {
+                            if socket.send(Message::Text(json.into())).await.is_err() {
+                                return;
+                            }
                         }
                     }
                 }
+                last_sent_stages = current_stages;
 
                 // If pipeline finished, send completion event and close
                 if !session.pipeline_running && session.project_description.is_some() {
@@ -164,10 +181,34 @@ pub async fn handle_ws(mut socket: WebSocket, state: Arc<AppState>, session_id: 
                                     });
                                 }
                                 ClientMessage::StartPipeline { description } => {
-                                    // Accept a pipeline start via WebSocket too
+                                    // Set pipeline state and spawn the pipeline task
+                                    let was_running = state.sessions.get(session_id)
+                                        .map(|s| s.pipeline_running)
+                                        .unwrap_or(false);
+
                                     state.sessions.update(session_id, |s| {
                                         s.add_message("user", &description);
+                                        if !s.pipeline_running {
+                                            s.pipeline_running = true;
+                                            s.project_description = Some(description.clone());
+                                            if let Some(stage) = s.stages.first_mut() {
+                                                stage.status = "running".into();
+                                            }
+                                        }
                                     });
+
+                                    if !was_running {
+                                        let state_clone = state.clone();
+                                        let desc = description.clone();
+                                        tokio::spawn(async move {
+                                            crate::api::run_pipeline_for_session(
+                                                state_clone,
+                                                session_id,
+                                                desc,
+                                            )
+                                            .await;
+                                        });
+                                    }
                                 }
                             }
                         }

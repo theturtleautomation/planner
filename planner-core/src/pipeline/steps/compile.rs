@@ -163,7 +163,8 @@ fn parse_spec_response(
     project_id: Uuid,
     response: &CompletionResponse,
 ) -> StepResult<NLSpecV1> {
-    let content = super::intake::strip_code_fences(&response.content);
+    let content = crate::llm::json_repair::try_repair_json(&response.content)
+        .unwrap_or_else(|| super::intake::strip_code_fences(&response.content));
 
     let json: SpecJson = serde_json::from_str(&content)
         .map_err(|e| StepError::JsonError(format!(
@@ -440,7 +441,8 @@ fn parse_domain_chunk_response(
     domain_name: &str,
     response: &CompletionResponse,
 ) -> StepResult<NLSpecV1> {
-    let content = super::intake::strip_code_fences(&response.content);
+    let content = crate::llm::json_repair::try_repair_json(&response.content)
+        .unwrap_or_else(|| super::intake::strip_code_fences(&response.content));
 
     let json: DomainSpecJson = serde_json::from_str(&content)
         .map_err(|e| StepError::JsonError(format!(
@@ -731,7 +733,8 @@ fn parse_graph_dot_response(
     nlspec_version: &str,
     response: &CompletionResponse,
 ) -> StepResult<GraphDotV1> {
-    let content = super::intake::strip_code_fences(&response.content);
+    let content = crate::llm::json_repair::try_repair_json(&response.content)
+        .unwrap_or_else(|| super::intake::strip_code_fences(&response.content));
 
     let json: GraphDotJson = serde_json::from_str(&content)
         .map_err(|e| StepError::JsonError(format!(
@@ -853,7 +856,8 @@ fn parse_scenario_response(
     nlspec_version: &str,
     response: &CompletionResponse,
 ) -> StepResult<ScenarioSetV1> {
-    let content = super::intake::strip_code_fences(&response.content);
+    let content = crate::llm::json_repair::try_repair_json(&response.content)
+        .unwrap_or_else(|| super::intake::strip_code_fences(&response.content));
 
     let json: ScenarioSetJson = serde_json::from_str(&content)
         .map_err(|e| StepError::JsonError(format!(
@@ -958,7 +962,8 @@ fn parse_agents_response(
     nlspec_version: &str,
     response: &CompletionResponse,
 ) -> StepResult<AgentsManifestV1> {
-    let content = super::intake::strip_code_fences(&response.content);
+    let content = crate::llm::json_repair::try_repair_json(&response.content)
+        .unwrap_or_else(|| super::intake::strip_code_fences(&response.content));
 
     let json: AgentsJson = serde_json::from_str(&content)
         .map_err(|e| StepError::JsonError(format!(

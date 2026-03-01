@@ -30,6 +30,7 @@
 //! | AR Refiner             | Claude Opus 4.6       | Anthropic  | High-precision spec amendments           |
 
 pub mod providers;
+pub mod json_repair;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};

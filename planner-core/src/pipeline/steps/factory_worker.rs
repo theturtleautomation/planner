@@ -344,20 +344,30 @@ impl FactoryWorker for CodexFactoryWorker {
             tracing::debug!("codex stderr: {}", stderr);
         }
 
+        // Compilation check: try cargo check or tsc depending on what's in the worktree
+        let (success, compile_error) = run_compilation_check(&config.worktree, config.timeout_secs).await;
+        if !success {
+            tracing::warn!(
+                "CodexFactoryWorker: compilation check failed: {:?}",
+                compile_error
+            );
+        }
+
         tracing::info!(
-            "CodexFactoryWorker: complete in {:.1}s, {} files changed",
+            "CodexFactoryWorker: complete in {:.1}s, {} files changed, compilation={}",
             duration_secs,
-            files_changed.len()
+            files_changed.len(),
+            if success { "ok" } else { "failed" }
         );
 
         Ok(WorkerResult {
             invocation_id,
-            success: true,
+            success,
             model: config.model.clone(),
             output,
             files_changed,
             duration_secs,
-            error: None,
+            error: compile_error,
         })
     }
 
@@ -377,6 +387,110 @@ struct CodexExecOutput {
     output: Option<String>,
     #[serde(default)]
     result: Option<String>,
+}
+
+/// Run a compilation check in the given worktree.
+///
+/// - If `Cargo.toml` exists, runs `cargo check --manifest-path <path>` (60s timeout).
+/// - Else if `package.json` exists, tries `npx tsc --noEmit`.
+/// - Otherwise, warns and returns success.
+///
+/// Returns `(success, error_message)`.
+async fn run_compilation_check(
+    worktree: &std::path::Path,
+    max_timeout_secs: u64,
+) -> (bool, Option<String>) {
+    let timeout_secs = max_timeout_secs.min(60);
+
+    // Check for Cargo.toml
+    let cargo_toml = worktree.join("Cargo.toml");
+    if cargo_toml.exists() {
+        let manifest_path = cargo_toml.to_string_lossy().to_string();
+        tracing::info!("Running cargo check on {}", manifest_path);
+
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(timeout_secs),
+            tokio::process::Command::new("cargo")
+                .arg("check")
+                .arg("--manifest-path")
+                .arg(&manifest_path)
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .output(),
+        )
+        .await;
+
+        return match result {
+            Ok(Ok(output)) => {
+                if output.status.success() {
+                    (true, None)
+                } else {
+                    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+                    (false, Some(format!("cargo check failed: {}", stderr)))
+                }
+            }
+            Ok(Err(e)) => {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    tracing::warn!("cargo binary not found — skipping compilation check");
+                    (true, None)
+                } else {
+                    (false, Some(format!("cargo check error: {}", e)))
+                }
+            }
+            Err(_) => {
+                tracing::warn!("cargo check timed out after {}s", timeout_secs);
+                (false, Some(format!("cargo check timed out after {}s", timeout_secs)))
+            }
+        };
+    }
+
+    // Check for package.json → try npx tsc --noEmit
+    let package_json = worktree.join("package.json");
+    if package_json.exists() {
+        tracing::info!("Running npx tsc --noEmit in {}", worktree.display());
+
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(timeout_secs),
+            tokio::process::Command::new("npx")
+                .arg("tsc")
+                .arg("--noEmit")
+                .current_dir(worktree)
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .output(),
+        )
+        .await;
+
+        return match result {
+            Ok(Ok(output)) => {
+                if output.status.success() {
+                    (true, None)
+                } else {
+                    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+                    (false, Some(format!("tsc failed: {}", stderr)))
+                }
+            }
+            Ok(Err(e)) => {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    tracing::warn!("npx not found — skipping TypeScript compilation check");
+                    (true, None)
+                } else {
+                    (false, Some(format!("tsc error: {}", e)))
+                }
+            }
+            Err(_) => {
+                tracing::warn!("npx tsc timed out after {}s", timeout_secs);
+                (false, Some(format!("tsc timed out after {}s", timeout_secs)))
+            }
+        };
+    }
+
+    // Neither Cargo.toml nor package.json found
+    tracing::warn!(
+        "No Cargo.toml or package.json found in {} — skipping compilation check",
+        worktree.display()
+    );
+    (true, None)
 }
 
 /// Scan a worktree directory and return relative paths of all files

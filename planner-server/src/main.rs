@@ -17,6 +17,8 @@
 
 mod api;
 mod auth;
+mod rate_limit;
+mod rbac;
 mod session;
 mod ws;
 
@@ -86,6 +88,11 @@ async fn main() {
         auth_config,
     });
 
+    // Build in-memory rate limiter and start background eviction task.
+    let rate_limiter = Arc::new(rate_limit::RateLimiter::new());
+    rate_limit::spawn_eviction_task(rate_limiter.clone());
+    tracing::info!("Rate limiter: 100 req/min per IP, eviction every 5 min");
+
     // Build CORS layer — restrict origins when auth is enabled
     let cors = if auth_enabled {
         CorsLayer::new()
@@ -104,8 +111,26 @@ async fn main() {
     };
 
     let app = Router::new()
+        .nest("/api/v1", api::routes(state.clone()))
         .nest("/api", api::routes(state.clone()))
+        // Apply rate limiting across all API routes.
+        .layer(axum::middleware::from_fn_with_state(
+            rate_limiter,
+            rate_limit::rate_limit_middleware,
+        ))
         .layer(cors);
+
+    // Start background session cleanup task (runs every 5 minutes)
+    {
+        let cleanup_state = state.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(300));
+            loop {
+                interval.tick().await;
+                cleanup_state.sessions.cleanup_expired(3600);
+            }
+        });
+    }
 
     // Add static file serving if directory exists
     let app = if std::path::Path::new(&static_dir).exists() {

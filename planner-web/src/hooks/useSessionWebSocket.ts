@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { WS_PROTOCOL } from '../config.ts';
 import type {
   ChatMessage,
   ClientWsMessage,
@@ -30,6 +31,7 @@ interface UseSessionWebSocketResult {
   isConnected: boolean;
   pipelineComplete: boolean;
   pipelineSummary: string | null;
+  reconnectFailed: boolean;
   sendWsMessage: (msg: ClientWsMessage) => void;
 }
 
@@ -45,6 +47,7 @@ export function useSessionWebSocket({
   const [isConnected, setIsConnected] = useState(false);
   const [pipelineComplete, setPipelineComplete] = useState(false);
   const [pipelineSummary, setPipelineSummary] = useState<string | null>(null);
+  const [reconnectFailed, setReconnectFailed] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const retryCountRef = useRef(0);
@@ -75,9 +78,9 @@ export function useSessionWebSocket({
 
     const token = await getToken();
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host;
-    const url = `${protocol}//${host}/api/sessions/${id}/ws${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+    // Keep query-string token for backward compat; first-message auth added in onopen
+    const url = `${WS_PROTOCOL}//${host}/api/sessions/${id}/ws${token ? `?token=${encodeURIComponent(token)}` : ''}`;
 
     let ws: WebSocket;
     try {
@@ -93,6 +96,11 @@ export function useSessionWebSocket({
       if (!mountedRef.current) return;
       setIsConnected(true);
       retryCountRef.current = 0;
+      // Send auth token as first message (new protocol) for servers that
+      // no longer accept the query-string approach.
+      if (token) {
+        ws.send(JSON.stringify({ type: 'auth', token }));
+      }
     };
 
     ws.onmessage = (event: MessageEvent): void => {
@@ -154,6 +162,7 @@ export function useSessionWebSocket({
         }, delay);
       } else {
         console.warn('[WS] max retries reached, giving up');
+        setReconnectFailed(true);
       }
     };
   }, [getToken]);
@@ -163,8 +172,10 @@ export function useSessionWebSocket({
     mountedRef.current = true;
     retryCountRef.current = 0;
     setStages(buildInitialStages());
+    setMessages([]);
     setPipelineComplete(false);
     setPipelineSummary(null);
+    setReconnectFailed(false);
 
     if (sessionId) {
       void connect();
@@ -190,5 +201,5 @@ export function useSessionWebSocket({
     }
   }, []);
 
-  return { stages, messages, isConnected, pipelineComplete, pipelineSummary, sendWsMessage };
+  return { stages, messages, isConnected, pipelineComplete, pipelineSummary, reconnectFailed, sendWsMessage };
 }

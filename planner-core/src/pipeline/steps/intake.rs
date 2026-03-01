@@ -149,8 +149,9 @@ fn parse_intake_response(
     user_description: &str,
     response: &CompletionResponse,
 ) -> StepResult<IntakeV1> {
-    // Strip markdown code fences if present
-    let content = strip_code_fences(&response.content);
+    // Strip markdown code fences if present, then try JSON repair
+    let content = crate::llm::json_repair::try_repair_json(&response.content)
+        .unwrap_or_else(|| strip_code_fences(&response.content));
 
     let json: IntakeJson = serde_json::from_str(&content)
         .map_err(|e| StepError::JsonError(format!(
