@@ -4,7 +4,7 @@
 //! Mirrors Kilroy's backend CLI patterns exactly:
 //!
 //! - **Anthropic** → `claude -p --dangerously-skip-permissions --output-format stream-json --verbose --model <model> "<prompt)"`
-//! - **Google**    → `gemini -p --output-format stream-json --yolo --model <model> "<prompt>"`
+//! - **Google**    → `gemini --prompt "<prompt>" --output-format json --yolo --model <model>`
 //! - **OpenAI**    → `codex exec --json --sandbox workspace-write -m <model> "<prompt>"`
 
 use async_trait::async_trait;
@@ -270,9 +270,11 @@ impl LlmClient for AnthropicCliClient {
 // ===========================================================================
 //
 // Kilroy pattern:
-//   gemini -p --output-format stream-json --yolo --model <model> "<prompt>"
+//   gemini --prompt "<prompt>" --output-format json --yolo --model <model>
 //
-// Similar stream-json format to Claude CLI.
+// --output-format json returns a single JSON object.
+// NOTE: Gemini CLI's -p/--prompt requires the prompt as its VALUE
+// (it does NOT read from stdin like Claude's -p).
 
 pub struct GoogleCliClient {
     timeout_secs: u64,
@@ -296,14 +298,22 @@ impl GoogleCliClient {
     }
 }
 
-/// A parsed Gemini stream-json event.
-#[allow(dead_code)] // Constructed via serde deserialization of Gemini CLI stream-json output
+/// Gemini CLI `--output-format json` response.
+///
+/// Shape: `{ "response": "<model text>", ... }` — a single JSON object.
+/// May also include token counts depending on the Gemini CLI version.
+#[allow(dead_code)] // Constructed via serde deserialization of Gemini CLI json output
 #[derive(Debug, Deserialize)]
-struct GeminiStreamEvent {
-    #[serde(rename = "type")]
-    event_type: Option<String>,
+struct GeminiJsonResponse {
+    /// The model's text output.
+    #[serde(default)]
+    response: Option<String>,
+    /// Alternative field name used by some Gemini CLI versions.
+    #[serde(default)]
     result: Option<String>,
+    #[serde(default)]
     input_tokens: Option<u64>,
+    #[serde(default)]
     output_tokens: Option<u64>,
 }
 
@@ -312,44 +322,35 @@ impl LlmClient for GoogleCliClient {
     async fn complete(&self, request: CompletionRequest) -> Result<CompletionResponse, LlmError> {
         let prompt = build_prompt(&request);
 
+        // Gemini CLI requires the prompt as the VALUE to --prompt / -p.
+        // Unlike Claude, it does NOT read from stdin when -p is bare.
+        // Error without this: "Not enough arguments following: p"
         let model_arg = request.model.clone();
         let args = vec![
-            "-p",
+            "--prompt",
+            &prompt,
             "--output-format",
-            "stream-json",
+            "json",
             "--yolo",
             "--model",
             &model_arg,
         ];
 
-        let (stdout, _stderr) = run_cli("gemini", &args, Some(&prompt), self.timeout_secs).await?;
+        let (stdout, _stderr) = run_cli("gemini", &args, None, self.timeout_secs).await?;
 
-        let mut content = String::new();
-        let mut input_tokens: u64 = 0;
-        let mut output_tokens: u64 = 0;
-
-        for line in stdout.lines() {
-            let trimmed = line.trim();
-            if trimmed.is_empty() {
-                continue;
-            }
-
-            if let Ok(evt) = serde_json::from_str::<GeminiStreamEvent>(trimmed) {
-                if let Some(text) = evt.result {
-                    content = text;
-                }
-                if let Some(t) = evt.input_tokens {
-                    input_tokens = t;
-                }
-                if let Some(t) = evt.output_tokens {
-                    output_tokens = t;
-                }
-            }
-        }
-
-        if content.is_empty() {
-            content = stdout.trim().to_string();
-        }
+        // Gemini --output-format json emits a single JSON object.
+        // Try structured parse first, fall back to raw stdout.
+        let (content, input_tokens, output_tokens) =
+            if let Ok(resp) = serde_json::from_str::<GeminiJsonResponse>(stdout.trim()) {
+                let text = resp
+                    .response
+                    .or(resp.result)
+                    .unwrap_or_else(|| stdout.trim().to_string());
+                (text, resp.input_tokens.unwrap_or(0), resp.output_tokens.unwrap_or(0))
+            } else {
+                // Fallback: entire stdout is the response text
+                (stdout.trim().to_string(), 0u64, 0u64)
+            };
 
         Ok(CompletionResponse {
             content,
