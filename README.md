@@ -7,7 +7,7 @@ Planner v2 is a Rust workspace that takes a plain-English feature description an
 ---
 
 ![Build](https://img.shields.io/badge/build-passing-brightgreen)
-![Tests](https://img.shields.io/badge/tests-323%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-474%20passing-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 ---
@@ -16,15 +16,22 @@ Planner v2 is a Rust workspace that takes a plain-English feature description an
 
 - **CLI-native LLM routing** — shells out to `claude`, `gemini`, and `codex` binaries; uses your own Max/Pro/ChatGPT Pro subscriptions, not HTTP API keys
 - **Full Dark Factory pipeline** — 12 sequential stages from natural-language intake through Git commit
-- **Three-model Adversarial Review panel** — Claude Opus 4.6, GPT-5.2, and Gemini 3.1 Pro review every spec in parallel
+- **Three-model Adversarial Review panel** — Claude Opus 4.6, GPT-5.2, and Gemini 3.1 Pro review every spec in parallel (parallelized via `tokio::join!`)
 - **Ralph anti-lock-in audit** — static analysis of generated specs for third-party dependency risk
 - **Lean4 formal verification stubs** — generates proposition stubs from NLSpec for downstream proof workflows
-- **DTU Registry** — behavioral test clones for Stripe, Auth0, SendGrid, Supabase, and Twilio
-- **Durable event-sourcing storage** — filesystem MessagePack blob store (CXDB) with content-addressed keys
+- **DTU Registry** — behavioral test clones for Stripe, Auth0, SendGrid, Supabase, and Twilio; clones wired into validation pipeline
+- **Durable event-sourcing storage** — filesystem MessagePack blob store (CXDB) with content-addressed keys; all 12 artifact types persisted
 - **Isolated code-gen worktrees** — `WorktreeManager` gives the Factory Worker a clean directory per run
+- **Factory compilation check** — post-generation `cargo check` validates produced code before acceptance
+- **JSON repair utility** — 4-strategy malformed-JSON recovery for resilient LLM output parsing
 - **Ratatui terminal UI** — full Socratic planning session in the terminal (`planner-tui`)
-- **Axum HTTP + WebSocket server** — serves the Socratic Lobby web frontend (`planner-server`)
-- **323 tests, 0 warnings** — 241 unit · 45 integration · 2 schema · 19 TUI · 16 server
+- **Axum HTTP + WebSocket server** — serves the React frontend and exposes a versioned REST + WebSocket API (`planner-server`)
+- **React SPA frontend** — Auth0-integrated dashboard with WebSocket chat, pipeline visualization, and XSS prevention (`planner-web`)
+- **Fail-closed JWT authentication** — no auth bypass; `parking_lot::RwLock` (no poisoning); session TTL cleanup (1 hr TTL, 5-min sweep)
+- **Rate limiting** — 100 requests/min per IP; returns `429 Too Many Requests`
+- **RBAC type system** — 4 roles, 9 permissions; enforced at the handler level
+- **API versioning** — all endpoints under `/api/v1`
+- **474 tests, 0 failures** — 377 Rust (245 unit · 45 integration · 4 schema · 61 server · 22 TUI) + 97 frontend (Vitest + React Testing Library)
 
 ---
 
@@ -82,6 +89,15 @@ brew install git
 
 # Debian/Ubuntu
 apt install git
+```
+
+### Node.js (optional — for the React frontend)
+
+Required only if you want to run or build the `planner-web` React app:
+
+```bash
+# Node.js 18+ required
+node --version
 ```
 
 ### Build
@@ -206,7 +222,7 @@ Key bindings: `Enter` to send, `Ctrl+C` / `q` to quit.
 
 ### `planner-server` — HTTP + WebSocket Backend
 
-Serves the Socratic Lobby web frontend and exposes a REST + WebSocket API for browser-based planning sessions.
+Serves the React frontend and exposes a versioned REST + WebSocket API for browser-based planning sessions. All routes are prefixed with `/api/v1`. JWT authentication is fail-closed — requests without a valid token are rejected with `401`.
 
 ```bash
 # Default port 3100, serves ./planner-web/dist
@@ -226,23 +242,51 @@ Then open `http://localhost:3100` in your browser.
 
 **API Endpoints:**
 
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/api/health` | Health check |
-| `POST` | `/api/sessions` | Create a new planning session |
-| `GET` | `/api/sessions/:id` | Get session state |
-| `POST` | `/api/sessions/:id/message` | Send a message to the session |
-| `GET` | `/api/sessions/:id/ws` | WebSocket for real-time updates |
-| `GET` | `/api/models` | List available LLM models |
-| `GET` | `/*` | Static file serving (Socratic Lobby frontend) |
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `GET` | `/api/health` | None | Health check |
+| `POST` | `/api/v1/sessions` | Required | Create a new planning session |
+| `GET` | `/api/v1/sessions/:id` | Required | Get session state |
+| `POST` | `/api/v1/sessions/:id/message` | Required | Send a message to the session |
+| `GET` | `/api/v1/sessions/:id/turns` | Required | List all turns for a session |
+| `GET` | `/api/v1/sessions/:id/runs` | Required | List all pipeline runs for a session |
+| `GET` | `/api/v1/sessions/:id/ws` | Required | WebSocket for real-time updates |
+| `GET` | `/api/v1/models` | Required | List available LLM models |
+| `GET` | `/*` | None | Static file serving (React frontend) |
+
+Rate limiting applies to all `/api/v1` routes: 100 requests/minute per IP. Excess requests receive `429 Too Many Requests`.
 
 If `--static-dir` does not exist, the server starts in API-only mode.
 
 ---
 
+### `planner-web` — React Frontend
+
+A full React + TypeScript + Vite single-page application. Communicates with `planner-server` via REST and WebSocket. Auth0 is optional — omitting Auth0 environment variables activates dev mode (no login required).
+
+```bash
+cd planner-web
+
+# Install dependencies
+npm install
+
+# Run the development server (http://localhost:5173)
+npm run dev
+
+# Build for production (output to dist/)
+npm run build
+
+# Run the test suite
+npm test
+```
+
+See [planner-web/README.md](./planner-web/README.md) for full frontend documentation and [AUTH0_SETUP.md](./AUTH0_SETUP.md) for authentication configuration.
+
+---
+
 ## Architecture Overview
 
-Planner v2 is a four-crate Rust workspace built around an event-sourced pipeline engine.
+Planner v2 is a four-crate Rust workspace with a React frontend, built around an event-sourced pipeline engine.
 
 ```
 User prompt
@@ -259,6 +303,17 @@ Pipeline (12 stages, linear DAG)
     ├── Artifacts → DurableCxdbEngine (MessagePack blob store)
     ├── Events    → TurnStore (event sourcing)
     └── Code      → WorktreeManager (isolated directories)
+
+Browser
+    │
+    ▼
+planner-web (React SPA, Auth0, WebSocket)
+    │
+    ▼
+planner-server (Axum, JWT auth, rate limiting, RBAC)
+    │
+    ▼
+planner-core (pipeline engine)
 ```
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md) for the full design document, including the CXDB content-addressed storage protocol, DTU behavioral clone design, and Lean4 verification integration.
@@ -267,21 +322,21 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) for the full design document, including
 
 ## Pipeline Stages
 
-Each stage produces one or more typed artifacts (defined in `planner-schemas`) and persists them to CXDB as immutable `Turn` events.
+Each stage produces one or more typed artifacts (defined in `planner-schemas`) and persists them to CXDB as immutable `Turn` events. `ConsequenceCards` are also persisted as Turns.
 
 | # | Stage | Description | Model |
 |---|---|---|---|
 | 1 | **Intake** | Socratic interview → `IntakeV1` (sacred anchors, satisfaction seeds) | Claude Opus 4.6 |
 | 2 | **ChunkPlan** | Decides single vs. multi-chunk compilation strategy | Claude Opus 4.6 |
-| 3 | **Compile** | `IntakeV1` → `NLSpecV1` (requirements, DoD, constraints) | Claude Opus 4.6 |
+| 3 | **Compile** | `IntakeV1` → `NLSpecV1` (requirements, DoD, constraints); `ContextPack` wired in | Claude Opus 4.6 |
 | 4 | **Lint** | 12-rule NLSpec validation + cross-chunk consistency checks | *(static)* |
-| 5 | **AR Review** | Three-model parallel adversarial review → `ArReportV1` | Opus 4.6 · GPT-5.2 · Gemini 3.1 Pro |
+| 5 | **AR Review** | Three-model **parallel** adversarial review via `tokio::join!` → `ArReportV1` | Opus 4.6 · GPT-5.2 · Gemini 3.1 Pro |
 | 6 | **Refinement** | Blocking AR findings → spec amendments → re-lint loop | Claude Sonnet 4.6 |
 | 7 | **Ralph** | Anti-lock-in dependency audit → `RalphFindingV1` | Claude Sonnet 4.6 |
-| 8 | **GraphDot** | `NLSpecV1` → `GraphDotV1` (dependency DAG, run budget) | Claude Opus 4.6 |
-| 9 | **Factory** | Node-by-node code generation → `FactoryOutputV1` | GPT-5.3-Codex |
-| 10 | **Validate** | `ScenarioSetV1` + generated code → `SatisfactionResultV1` | Gemini 3.1 Pro |
-| 11 | **Telemetry** | Plain-English summary + `ConsequenceCardV1` items | Claude Haiku 4.5 |
+| 8 | **GraphDot** | `NLSpecV1` → `GraphDotV1` (dependency DAG, run budget); `PyramidBuilder` wired | Claude Opus 4.6 |
+| 9 | **Factory** | Node-by-node code generation → `FactoryOutputV1`; post-generation compile check | GPT-5.3-Codex |
+| 10 | **Validate** | `ScenarioSetV1` + generated code + DTU clones → `SatisfactionResultV1` | Gemini 3.1 Pro |
+| 11 | **Telemetry** | Plain-English summary + `ConsequenceCardV1` items (persisted as Turns) | Claude Haiku 4.5 |
 | 12 | **Git** | Commits generated files to an isolated worktree branch → `GitCommitV1` | *(shell)* |
 
 The `--front-office-only` flag runs stages 1–4 (Intake through Lint) and stops before code generation.
@@ -294,7 +349,10 @@ The `--front-office-only` flag runs stages 1–4 (Intake through Lint) and stops
 planner/
 ├── Cargo.toml                      # Workspace manifest
 ├── Cargo.lock
-├── .gitignore
+├── AUTH0_SETUP.md                  # Auth0 configuration guide
+├── ARCHITECTURE.md                 # Full design document
+├── CONTRIBUTING.md
+├── DEPLOYMENT.md
 │
 ├── planner-schemas/                # Artifact types & event sourcing
 │   └── src/
@@ -323,7 +381,8 @@ planner/
 │   │   ├── main.rs                 # CLI entrypoint
 │   │   ├── llm/
 │   │   │   ├── mod.rs              # LlmClient trait, CompletionRequest/Response
-│   │   │   └── providers.rs        # AnthropicCliClient, GoogleCliClient, OpenAiCliClient, LlmRouter
+│   │   │   ├── providers.rs        # AnthropicCliClient, GoogleCliClient, OpenAiCliClient, LlmRouter
+│   │   │   └── json_repair.rs      # 4-strategy malformed-JSON recovery
 │   │   ├── pipeline/
 │   │   │   ├── mod.rs              # PipelineConfig, Recipe, run_phase0_*
 │   │   │   ├── steps/              # One module per pipeline stage
@@ -331,7 +390,7 @@ planner/
 │   │   │   │   ├── chunk_planner.rs
 │   │   │   │   ├── compile.rs
 │   │   │   │   ├── linter.rs
-│   │   │   │   ├── ar.rs
+│   │   │   │   ├── ar.rs           # Parallelized via tokio::join!
 │   │   │   │   ├── ar_refinement.rs
 │   │   │   │   ├── ralph.rs
 │   │   │   │   ├── factory.rs
@@ -371,13 +430,49 @@ planner/
 ├── planner-server/                 # Axum HTTP + WebSocket server (CLI binary)
 │   └── src/
 │       ├── main.rs
-│       ├── api.rs                  # REST route handlers
-│       ├── session.rs              # SessionStore
+│       ├── api.rs                  # REST route handlers (/api/v1)
+│       ├── auth.rs                 # Fail-closed JWT middleware
+│       ├── rate_limit.rs           # Token-bucket rate limiter (100 req/min per IP)
+│       ├── rbac.rs                 # RBAC type system (4 roles, 9 permissions)
+│       ├── session.rs              # SessionStore (parking_lot::RwLock, TTL cleanup)
 │       └── ws.rs                   # WebSocket upgrade + message loop
 │
-├── planner-web/
-│   └── dist/
-│       └── index.html              # Socratic Lobby static frontend
+├── planner-web/                    # React + TypeScript + Vite SPA
+│   ├── src/
+│   │   ├── main.tsx                # App entry point
+│   │   ├── App.tsx                 # Root component + routing
+│   │   ├── config.ts               # Runtime configuration
+│   │   ├── types.ts                # Shared TypeScript types
+│   │   ├── api/
+│   │   │   ├── client.ts           # ApiError class, typed fetch wrappers
+│   │   │   └── __tests__/
+│   │   │       └── client.test.ts
+│   │   ├── auth/
+│   │   │   ├── Auth0ProviderWithNavigate.tsx
+│   │   │   ├── ProtectedRoute.tsx
+│   │   │   └── useAuthenticatedFetch.ts
+│   │   ├── components/
+│   │   │   ├── ChatPanel.tsx       # Message list with scroll preservation
+│   │   │   ├── Layout.tsx          # App shell
+│   │   │   ├── MessageInput.tsx    # Auto-grow textarea
+│   │   │   ├── PipelineBar.tsx     # Stage visualization bar
+│   │   │   └── __tests__/
+│   │   │       ├── ChatPanel.test.tsx
+│   │   │       ├── Layout.test.tsx
+│   │   │       ├── MessageInput.test.tsx
+│   │   │       └── PipelineBar.test.tsx
+│   │   ├── hooks/
+│   │   │   └── useSessionWebSocket.ts  # WebSocket with reconnection logic
+│   │   ├── pages/
+│   │   │   ├── Dashboard.tsx       # Session listing dashboard
+│   │   │   ├── LoginPage.tsx       # Auth0 login / dev-mode bypass
+│   │   │   ├── SessionPage.tsx     # Chat + pipeline view
+│   │   │   └── __tests__/
+│   │   │       └── LoginPage.test.tsx
+│   │   └── test/
+│   │       └── setup.ts            # Vitest setup + Auth0 mock
+│   ├── dist/                       # Production build output
+│   └── README.md
 │
 └── reference/
     ├── kilroy_preferences.yaml     # Model routing preferences
@@ -388,8 +483,10 @@ planner/
 
 ## Testing
 
+### Rust Tests
+
 ```bash
-# Run the full test suite
+# Run the full Rust test suite
 cargo test
 
 # Run only unit tests
@@ -411,16 +508,36 @@ cargo test -- --nocapture
 RUST_LOG=planner_core=debug cargo test
 ```
 
+### Frontend Tests
+
+```bash
+cd planner-web
+
+# Run the Vitest test suite (watch mode)
+npm test
+
+# Run once (CI mode)
+npm run test -- --run
+```
+
 **Test breakdown:**
 
 | Suite | Count | Location |
 |---|---|---|
-| Unit tests | 241 | `src/**/*.rs` (`#[cfg(test)]` blocks) |
+| planner-core unit tests | 245 | `src/**/*.rs` (`#[cfg(test)]` blocks) |
 | Integration tests | 45 | `planner-core/tests/integration_e2e.rs` |
-| Schema tests | 2 | `planner-schemas/src/**` |
-| TUI tests | 19 | `planner-tui/src/**` |
-| Server tests | 16 | `planner-server/src/**` |
-| **Total** | **323** | |
+| Schema tests | 4 | `planner-schemas/src/**` |
+| Server tests | 61 | `planner-server/src/**` |
+| TUI tests | 22 | `planner-tui/src/**` |
+| **Rust subtotal** | **377** | |
+| Frontend — API client | — | `src/api/__tests__/client.test.ts` |
+| Frontend — ChatPanel | — | `src/components/__tests__/ChatPanel.test.tsx` |
+| Frontend — Layout | — | `src/components/__tests__/Layout.test.tsx` |
+| Frontend — MessageInput | — | `src/components/__tests__/MessageInput.test.tsx` |
+| Frontend — PipelineBar | — | `src/components/__tests__/PipelineBar.test.tsx` |
+| Frontend — LoginPage | — | `src/pages/__tests__/LoginPage.test.tsx` |
+| **Frontend subtotal** | **97** | `planner-web/src/**/__tests__/` |
+| **Total** | **474** | |
 
 The integration tests use `MockFactoryWorker` — they do not shell out to `claude`, `gemini`, or `codex`, so no subscriptions are needed to run the full test suite.
 
@@ -463,6 +580,14 @@ Model IDs are resolved by prefix: `claude-*` → Anthropic CLI, `gemini-*` → G
 
 Each LLM CLI invocation has a default 5-minute timeout (`DEFAULT_TIMEOUT_SECS = 300`). This covers the Factory Worker's agentic code-generation loops. The timeout is not currently configurable via environment variable; change it in `planner-core/src/llm/providers.rs` and rebuild if needed.
 
+### Rate Limiting
+
+The server enforces 100 requests/minute per IP address on all `/api/v1` routes using a token-bucket algorithm. Requests that exceed the limit receive a `429 Too Many Requests` response with a `Retry-After` header. The rate limit is currently set at compile time in `planner-server/src/rate_limit.rs`.
+
+### Session TTL
+
+Server-side sessions expire after **1 hour** of inactivity. A background task sweeps for expired sessions every **5 minutes** and removes them from memory. Active WebSocket connections are closed at expiry.
+
 ### Server Port
 
 ```bash
@@ -483,16 +608,9 @@ planner-server
 planner-server --static-dir /var/www/planner
 ```
 
----
+### Auth0
 
-## .gitignore
-
-```
-/target/
-*.swp
-*.swo
-.DS_Store
-```
+Auth0 environment variables are optional. When omitted, the server injects a synthetic `dev|local` user and the frontend skips the login screen. See [AUTH0_SETUP.md](./AUTH0_SETUP.md) for full configuration instructions.
 
 ---
 

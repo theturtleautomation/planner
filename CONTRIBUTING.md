@@ -10,6 +10,7 @@ Thank you for your interest in contributing to Planner v2! This document covers 
 ## Table of Contents
 
 - [Development Setup](#development-setup)
+- [Frontend Development](#frontend-development)
 - [Code Style](#code-style)
 - [Testing Guidelines](#testing-guidelines)
 - [Workspace Crate Guidelines](#workspace-crate-guidelines)
@@ -37,6 +38,12 @@ Ensure your toolchain is up to date:
 rustup update stable
 ```
 
+For frontend work, Node.js 18 or later is also required:
+
+```bash
+node --version   # must be 18+
+```
+
 ### Clone the Repository
 
 ```bash
@@ -46,7 +53,7 @@ cd planner
 
 ### Build
 
-Build all crates in the workspace:
+Build all Rust crates in the workspace:
 
 ```bash
 cargo build --workspace
@@ -54,13 +61,19 @@ cargo build --workspace
 
 ### Run Tests
 
-Run the full test suite across all workspace crates:
+Run the full Rust test suite across all workspace crates:
 
 ```bash
 cargo test --workspace
 ```
 
-The project currently has **323 tests**. All tests must pass and produce **0 warnings** before a PR can be merged.
+Run the frontend test suite:
+
+```bash
+cd planner-web && npm test -- --run
+```
+
+The project currently has **474 tests** (377 Rust + 97 frontend). All tests must pass before a PR can be merged.
 
 ### Run with Logging
 
@@ -70,13 +83,84 @@ RUST_LOG=info cargo run -p planner-core -- "your description"
 
 ---
 
+## Frontend Development
+
+The `planner-web/` directory is a full React + TypeScript + Vite single-page application. It communicates with `planner-server` via REST and WebSocket.
+
+### Running the Dev Server
+
+```bash
+cd planner-web
+npm install
+npm run dev
+```
+
+This starts the Vite dev server at `http://localhost:5173`. Hot module replacement is enabled.
+
+The dev server proxies API requests to `http://localhost:3100` by default. Start `planner-server` separately to get a working backend:
+
+```bash
+# In another terminal
+cargo run --bin planner-server
+```
+
+### Auth0 in Development
+
+Auth0 is **optional for local development**. When the `VITE_AUTH0_DOMAIN` environment variable is not set, the frontend skips authentication and the server injects a synthetic `dev|local` user. No Auth0 account is required to work on the frontend.
+
+For testing Auth0-gated flows, see [AUTH0_SETUP.md](./AUTH0_SETUP.md).
+
+### Running Frontend Tests
+
+```bash
+cd planner-web
+
+# Watch mode (re-runs on file changes)
+npm test
+
+# Single run (CI)
+npm run test -- --run
+
+# With coverage
+npm run test -- --run --coverage
+```
+
+Tests use [Vitest](https://vitest.dev/) and [React Testing Library](https://testing-library.com/docs/react-testing-library/intro/). The test runner is configured in `vite.config.ts`.
+
+### Mocking Conventions
+
+Auth0 is mocked globally in `src/test/setup.ts`. The mock provides a default unauthenticated state and exposes helpers to simulate logged-in users:
+
+```ts
+// In any test file — Auth0 is already mocked via setup.ts
+import { mockAuth0 } from '../test/setup'
+
+// Simulate authenticated user
+mockAuth0({ isAuthenticated: true, user: { sub: 'user|123' } })
+```
+
+WebSocket connections are mocked using the `vi.stubGlobal('WebSocket', ...)` pattern. See existing tests in `src/components/__tests__/ChatPanel.test.tsx` for examples.
+
+When adding a new component that uses `useAuthenticatedFetch` or any Auth0 hook, wrap your test's rendered component in the `Auth0ProviderWithNavigate` mock rather than the real provider.
+
+### Building for Production
+
+```bash
+cd planner-web
+npm run build
+```
+
+Output is written to `planner-web/dist/`. Point `planner-server --static-dir ./planner-web/dist` at this directory to serve the built app.
+
+---
+
 ## Code Style
 
 All contributions must follow the conventions below. These are not optional — they ensure consistency across the codebase and keep the project maintainable.
 
 ### Edition
 
-All crates use **Rust 2021 edition**.
+All Rust crates use **Rust 2021 edition**.
 
 ### Derives
 
@@ -91,7 +175,7 @@ pub struct MyType {
 
 ### Test Modules
 
-Every module must include a `#[cfg(test)]` block, even if it starts empty:
+Every Rust module must include a `#[cfg(test)]` block, even if it starts empty:
 
 ```rust
 #[cfg(test)]
@@ -145,7 +229,9 @@ pub trait MyTrait {
 
 ## Testing Guidelines
 
-The project maintains a comprehensive test suite. When adding or modifying code, follow these conventions:
+The project maintains a comprehensive test suite across Rust and TypeScript. When adding or modifying code, follow these conventions:
+
+### Rust
 
 | Test Type | Location | Purpose |
 |---|---|---|
@@ -155,27 +241,36 @@ The project maintains a comprehensive test suite. When adding or modifying code,
 | TUI tests | Within `planner-tui` | Test `App` state transitions |
 | Server tests | Within `planner-server` | Test API endpoints using Axum test infrastructure |
 
+### Frontend
+
+| Test Type | Location | Purpose |
+|---|---|---|
+| Component tests | `src/components/__tests__/` | Render and interaction tests with React Testing Library |
+| Page tests | `src/pages/__tests__/` | Route-level rendering and auth flow tests |
+| API client tests | `src/api/__tests__/` | Typed fetch wrapper and error handling tests |
+
 ### Test Helpers
 
-- Use `MockFactoryWorker` for factory-related tests.
+- Use `MockFactoryWorker` for factory-related Rust tests.
 - Use `InMemoryCxdbEngine` for storage-layer tests.
+- Use the Auth0 mock in `src/test/setup.ts` for all frontend tests that touch auth.
 
 ### Quality Bar
 
-- **0 compiler warnings** — treat all warnings as errors.
-- **All 323+ tests pass** — no regressions.
+- **0 compiler warnings** — treat all warnings as errors (`RUSTFLAGS="-D warnings"`).
+- **All 474 tests pass** — 377 Rust + 97 frontend. No regressions.
 - New code must be covered by tests. PRs that reduce coverage will not be merged.
 
 ---
 
 ## Workspace Crate Guidelines
 
-The workspace is divided into four crates with clear separation of concerns. Put new code in the right place.
+The workspace is divided into four Rust crates and one Node.js package, each with clear separation of concerns. Put new code in the right place.
 
 ### `planner-schemas`
 
 - **Types only.** No business logic, no I/O, no async.
-- This is the right place for new artifact definitions, shared enums, and serialization types.
+- The right place for new artifact definitions, shared enums, and serialization types.
 - All types must derive `Debug`, `Clone`, `Serialize`, `Deserialize`.
 
 ### `planner-core`
@@ -195,7 +290,15 @@ The workspace is divided into four crates with clear separation of concerns. Put
 
 - **HTTP/WebSocket server only.** No business logic.
 - Interacts with the pipeline exclusively through `planner-core`'s public API.
+- Security-sensitive code (auth, rate limiting, RBAC) lives here and must not leak into other crates.
 - Do not add pipeline logic here — wire it into `planner-core` and call it from here.
+
+### `planner-web`
+
+- **React SPA only.** No server-side logic.
+- All API calls go through `src/api/client.ts` — do not use raw `fetch` directly in components.
+- Authentication state is managed via Auth0 hooks — do not store tokens manually.
+- All new components must have corresponding tests in a sibling `__tests__/` directory.
 
 ---
 
@@ -255,7 +358,9 @@ The workspace is divided into four crates with clear separation of concerns. Put
 
 3. Register your DTU in `DtuRegistry`.
 
-4. Add tests covering your DTU's deterministic behavior.
+4. Wire the DTU clone into the validation stage in `pipeline/steps/validate.rs`.
+
+5. Add tests covering your DTU's deterministic behavior.
 
 ---
 
@@ -286,7 +391,8 @@ This project uses [Conventional Commits](https://www.conventionalcommits.org/).
 feat(pipeline): add lean4 verification step
 fix(schemas): correct serde tag for FunctionArtifact
 test(core): add integration test for e2e planning run
-docs(contributing): add DTU registration instructions
+feat(web): add session listing dashboard
+docs(contributing): add frontend development section
 ```
 
 ### Rules
@@ -303,11 +409,11 @@ These are active gaps where contributions are especially welcome:
 | Area | Status | Notes |
 |---|---|---|
 | TUI pipeline wiring | Incomplete | TUI currently uses canned responses; needs to call the real `planner-core` pipeline |
-| Server WebSocket handler | Stub only | Needs real-time pipeline event streaming implementation |
 | LLM pipeline steps | Fallback mode | Steps fall back to simulation when CLI tools are not installed |
 | Lean4 verification | Stubs only | Generates "sorry" proofs — real Lean4 proofs are very welcome |
-| CI/CD | Missing | No GitHub Actions configuration yet; a working workflow for `cargo test --workspace` would be a great first contribution |
-| Web frontend | Minimal | Currently a single static HTML file at `planner-web/dist/index.html`; could be upgraded to a proper React/Vite app |
+| CI/CD | Missing | No GitHub Actions configuration yet; a working workflow for `cargo test --workspace && cd planner-web && npm test -- --run` would be a great first contribution |
+| Docker | Planned | A Dockerfile that builds the Rust binaries and React app in a multi-stage build is planned but not yet written |
+| Rate limit configuration | Hardcoded | Rate limit thresholds are compile-time constants; runtime configuration via env vars is desirable |
 
 If you are picking up one of these, please open an issue first to coordinate with maintainers and avoid duplicated effort.
 
