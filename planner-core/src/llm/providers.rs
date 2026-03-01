@@ -373,9 +373,10 @@ impl LlmClient for GoogleCliClient {
 // Kilroy pattern:
 //   codex exec --json --sandbox workspace-write -m <model> -C <worktree> "<prompt>"
 //
-// `codex exec` returns a JSON object with the result.
-// For our purposes (non-coding LLM calls), we use a simpler invocation
-// without the -C worktree flag.
+// `codex exec --json` returns JSONL (newline-delimited JSON events).
+// Event types: thread.started, turn.started, item.completed, turn.completed.
+// The assistant's text is in item.completed events where item.type == "message".
+// We also use --output-last-message for reliable final text extraction.
 
 pub struct OpenAiCliClient {
     timeout_secs: u64,
@@ -399,18 +400,44 @@ impl OpenAiCliClient {
     }
 }
 
-/// Codex exec JSON response.
+/// A single event from Codex's `--json` JSONL stream.
+///
+/// `codex exec --json` emits newline-delimited JSON events:
+/// - `{"type": "thread.started", ...}`
+/// - `{"type": "turn.started"}`
+/// - `{"type": "item.completed", "item": {"type": "reasoning", "text": "..."}}`
+/// - `{"type": "item.completed", "item": {"type": "message", "content": [{"type": "output_text", "text": "..."}]}}`
+/// - `{"type": "turn.completed"}`
+///
+/// We extract text from `item.completed` events where `item.type == "message"`.
 #[derive(Debug, Deserialize)]
-struct CodexExecResponse {
-    /// The output text from codex.
+struct CodexEvent {
+    #[serde(rename = "type")]
+    event_type: String,
     #[serde(default)]
-    output: Option<String>,
-    /// Alternative field name.
+    item: Option<CodexItem>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CodexItem {
+    #[serde(rename = "type")]
+    item_type: String,
+    /// Present on message items — array of content blocks.
     #[serde(default)]
-    result: Option<String>,
-    /// Alternative: response text.
+    content: Option<Vec<CodexContentBlock>>,
+    /// Present on reasoning items — raw text (not extracted for pipeline use).
     #[serde(default)]
-    response: Option<String>,
+    #[allow(dead_code)]
+    text: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CodexContentBlock {
+    #[serde(rename = "type")]
+    #[allow(dead_code)]
+    block_type: String,
+    #[serde(default)]
+    text: Option<String>,
 }
 
 #[async_trait]
@@ -419,8 +446,13 @@ impl LlmClient for OpenAiCliClient {
         let prompt = build_prompt(&request);
 
         let model_arg = request.model.clone();
-        // Deliver prompt via stdin (matching Anthropic/Google pattern).
-        // Avoids shell escaping issues with long prompts as positional args.
+
+        // Use --output-last-message to a temp file for reliable extraction,
+        // plus --json so we still get structured events on stdout.
+        // The prompt goes via stdin (use "-" as the PROMPT arg).
+        let output_file = std::env::temp_dir().join(format!("codex-out-{}.txt", uuid::Uuid::new_v4()));
+        let output_path = output_file.to_string_lossy().to_string();
+
         let args = vec![
             "exec",
             "--json",
@@ -428,19 +460,25 @@ impl LlmClient for OpenAiCliClient {
             "workspace-write",
             "-m",
             &model_arg,
+            "--output-last-message",
+            &output_path,
+            "-",  // read prompt from stdin
         ];
 
         let (stdout, _stderr) = run_cli("codex", &args, Some(&prompt), self.timeout_secs).await?;
 
-        // Try to parse structured JSON response
-        let content = if let Ok(resp) = serde_json::from_str::<CodexExecResponse>(&stdout) {
-            resp.output
-                .or(resp.result)
-                .or(resp.response)
-                .unwrap_or_else(|| stdout.trim().to_string())
+        // Strategy 1: Read from --output-last-message file (most reliable)
+        let content = if output_file.exists() {
+            let file_content = std::fs::read_to_string(&output_file).unwrap_or_default();
+            let _ = std::fs::remove_file(&output_file);
+            if !file_content.trim().is_empty() {
+                file_content.trim().to_string()
+            } else {
+                extract_codex_message_from_jsonl(&stdout)
+            }
         } else {
-            // Fallback: entire stdout is the response
-            stdout.trim().to_string()
+            // Strategy 2: Parse JSONL events from stdout
+            extract_codex_message_from_jsonl(&stdout)
         };
 
         Ok(CompletionResponse {
@@ -454,6 +492,45 @@ impl LlmClient for OpenAiCliClient {
 
     fn provider_name(&self) -> &str {
         "openai"
+    }
+}
+
+/// Parse Codex JSONL stream and extract the assistant's message text.
+///
+/// Looks for `item.completed` events where `item.type == "message"`,
+/// then concatenates all `output_text` content blocks.
+fn extract_codex_message_from_jsonl(jsonl: &str) -> String {
+    let mut messages = Vec::new();
+
+    for line in jsonl.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        if let Ok(evt) = serde_json::from_str::<CodexEvent>(trimmed) {
+            if evt.event_type == "item.completed" {
+                if let Some(item) = &evt.item {
+                    if item.item_type == "message" {
+                        // Extract text from content blocks
+                        if let Some(blocks) = &item.content {
+                            for block in blocks {
+                                if let Some(text) = &block.text {
+                                    messages.push(text.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if messages.is_empty() {
+        // Last resort: return all stdout (maybe not JSON mode)
+        jsonl.trim().to_string()
+    } else {
+        messages.join("\n")
     }
 }
 
