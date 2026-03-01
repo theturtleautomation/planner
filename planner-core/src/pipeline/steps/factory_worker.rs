@@ -152,6 +152,26 @@ impl WorktreeManager {
             StepError::FactoryError(format!("Failed to write AGENTS.md: {}", e))
         })?;
 
+        // Initialize a git repo so codex treats it as a trusted directory.
+        // Without this, codex exec refuses with "Not inside a trusted directory".
+        let git_init = std::process::Command::new("git")
+            .arg("init")
+            .current_dir(&worktree_dir)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+        match git_init {
+            Ok(s) if s.success() => {
+                tracing::debug!("git init succeeded in worktree {}", worktree_dir.display());
+            }
+            Ok(s) => {
+                tracing::warn!("git init exited with {} in {}", s, worktree_dir.display());
+            }
+            Err(e) => {
+                tracing::warn!("git init failed in {}: {} — codex may refuse to run", worktree_dir.display(), e);
+            }
+        }
+
         tracing::info!(
             "Worktree prepared at: {} (context files: SPEC.md, graph.dot, AGENTS.md)",
             worktree_dir.display()
@@ -217,8 +237,8 @@ pub struct WorktreeInfo {
 /// The user must have the `codex` CLI installed and authenticated.
 ///
 /// Invocation pattern:
-///   codex exec --json --sandbox workspace-write -m gpt-5.3-codex \
-///     -C <worktree> "<prompt>"
+///   codex exec --json --sandbox workspace-write --full-auto --skip-git-repo-check \
+///     -m gpt-5.3-codex -C <worktree> --output-last-message <path> -
 pub struct CodexFactoryWorker {
     /// Whether the codex CLI is available.
     cli_available: bool,
@@ -297,17 +317,29 @@ impl FactoryWorker for CodexFactoryWorker {
         let worktree_str = config.worktree.to_string_lossy().to_string();
         let model_str = config.model.clone();
 
-        // Build args: codex exec --json --sandbox workspace-write -m <model> -C <worktree> "<prompt>"
+        // Use --output-last-message for reliable extraction of final text,
+        // --skip-git-repo-check so codex doesn't refuse temp worktrees,
+        // --full-auto so codex doesn't prompt for approval interactively.
+        let output_file = std::env::temp_dir().join(format!(
+            "codex-factory-{}.txt",
+            invocation_id
+        ));
+        let output_path = output_file.to_string_lossy().to_string();
+
         let args = vec![
             "exec",
             "--json",
             "--sandbox",
             "workspace-write",
+            "--full-auto",
+            "--skip-git-repo-check",
             "-m",
             &model_str,
             "-C",
             &worktree_str,
-            prompt,
+            "--output-last-message",
+            &output_path,
+            "-",  // read prompt from stdin
         ];
 
         tracing::info!(
@@ -320,7 +352,7 @@ impl FactoryWorker for CodexFactoryWorker {
         let (stdout, stderr) = crate::llm::providers::run_cli(
             "codex",
             &args,
-            None,
+            Some(prompt),
             config.timeout_secs,
         )
         .await
@@ -328,13 +360,18 @@ impl FactoryWorker for CodexFactoryWorker {
 
         let duration_secs = start.elapsed().as_secs_f64();
 
-        // Parse the JSON response
-        let output = if let Ok(resp) = serde_json::from_str::<CodexExecOutput>(&stdout) {
-            resp.output
-                .or(resp.result)
-                .unwrap_or_else(|| stdout.trim().to_string())
+        // Strategy 1: Read from --output-last-message file (most reliable)
+        let output = if output_file.exists() {
+            let file_content = std::fs::read_to_string(&output_file).unwrap_or_default();
+            let _ = std::fs::remove_file(&output_file);
+            if !file_content.trim().is_empty() {
+                file_content.trim().to_string()
+            } else {
+                crate::llm::providers::extract_codex_message_from_jsonl(&stdout)
+            }
         } else {
-            stdout.trim().to_string()
+            // Strategy 2: Parse JSONL events from stdout
+            crate::llm::providers::extract_codex_message_from_jsonl(&stdout)
         };
 
         // Scan worktree for created/modified files
@@ -378,15 +415,6 @@ impl FactoryWorker for CodexFactoryWorker {
     fn needs_worktree(&self) -> bool {
         true
     }
-}
-
-/// Codex exec JSON output structure.
-#[derive(Debug, Deserialize)]
-struct CodexExecOutput {
-    #[serde(default)]
-    output: Option<String>,
-    #[serde(default)]
-    result: Option<String>,
 }
 
 /// Run a compilation check in the given worktree.

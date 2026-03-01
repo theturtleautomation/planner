@@ -499,7 +499,7 @@ impl LlmClient for OpenAiCliClient {
 ///
 /// Looks for `item.completed` events where `item.type == "message"`,
 /// then concatenates all `output_text` content blocks.
-fn extract_codex_message_from_jsonl(jsonl: &str) -> String {
+pub fn extract_codex_message_from_jsonl(jsonl: &str) -> String {
     let mut messages = Vec::new();
 
     for line in jsonl.lines() {
