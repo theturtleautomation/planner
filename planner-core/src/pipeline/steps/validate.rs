@@ -1,8 +1,12 @@
-//! # Scenario Validator — Cross-Model Evaluation
+//! # Scenario Validator — Cross-Model Code Review
 //!
-//! Evaluates Kilroy's output against the hidden scenario set using a
-//! different model family than the coding agent (Gemini evaluates
-//! Claude's code — never the same model family).
+//! Evaluates the factory worker's generated code against the hidden scenario
+//! set using a different model family than the coding agent (Gemini evaluates
+//! Codex's code — never the same model family).
+//!
+//! This is STATIC CODE ANALYSIS, not runtime testing. The evaluator reads
+//! source files and judges whether the implementation correctly addresses
+//! each BDD scenario based on code structure, logic, and patterns.
 //!
 //! Phase 1: All tiers evaluated. Each scenario runs 3x, majority pass (2/3).
 //! The factory receives only generalized errors (category + severity),
@@ -10,8 +14,8 @@
 //!
 //! Flow:
 //! 1. For each scenario in the ScenarioSetV1
-//! 2. Gemini reads the BDD text and plans evaluation
-//! 3. Gemini scores 0.0–1.0 per run
+//! 2. Gemini reads the source code files + BDD text
+//! 3. Gemini scores 0.0–1.0 per run based on code evidence
 //! 4. Majority pass required (2/3 runs with score ≥ 0.5)
 //! 5. Tiered gates applied: 100% Critical → 95% High → 90% Medium
 
@@ -27,13 +31,14 @@ use super::{StepResult, StepError};
 // Factory output file reader
 // ---------------------------------------------------------------------------
 
-/// Read up to 10 files from the factory output directory, concatenating
-/// their contents with file path headers. Caps total size at 50KB.
+/// Read up to 30 files from the factory output directory, concatenating
+/// their contents with file path headers. Caps total size at 100KB.
+/// Skips hidden directories (.git, .planner-context, etc.).
 ///
 /// Returns "[Could not read output files]" if the path does not exist.
 fn read_factory_files(output_path: &str) -> String {
-    const MAX_FILES: usize = 10;
-    const MAX_TOTAL_BYTES: usize = 50 * 1024; // 50 KB
+    const MAX_FILES: usize = 30;
+    const MAX_TOTAL_BYTES: usize = 100 * 1024; // 100 KB
 
     let base = std::path::Path::new(output_path);
     if !base.exists() {
@@ -71,7 +76,14 @@ fn collect_files(
             break;
         }
         let path = entry.path();
+
+        // Skip hidden directories (.git, .planner-context, etc.)
         if path.is_dir() {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if name.starts_with('.') {
+                    continue;
+                }
+            }
             collect_files(root, &path, result, file_count, total_bytes, max_files, max_bytes);
         } else {
             match std::fs::read_to_string(&path) {
@@ -101,16 +113,30 @@ fn collect_files(
 // Evaluation prompt
 // ---------------------------------------------------------------------------
 
-const EVALUATOR_SYSTEM_PROMPT: &str = r#"You are the Scenario Validator for Planner v2. You evaluate whether a built application satisfies BDD scenarios.
+const EVALUATOR_SYSTEM_PROMPT: &str = r#"You are the Scenario Validator for Planner v2. You evaluate whether source code correctly implements BDD scenarios through static code analysis.
 
 ## Your Role
-You are a DIFFERENT model family from the coding agent. You judge the code's output objectively, preventing shared blind spots.
+You are a DIFFERENT model family from the coding agent. You judge the code objectively through code review, preventing shared blind spots.
 
-## Input
-You receive:
-1. A BDD scenario (Given/When/Then)
-2. The application's output path (where the code lives)
-3. The build status from the factory
+## Important: Static Analysis, Not Runtime Testing
+You are reviewing SOURCE CODE, not running the application. You CANNOT test runtime behavior.
+Instead, you evaluate:
+1. Does the code contain the logic/components needed for this scenario?
+2. Are event handlers, state management, and rendering paths present?
+3. Does the implementation approach match what the scenario requires?
+4. Are there obvious bugs that would prevent the scenario from working?
+
+## Scoring Guidelines
+- 1.0 = Code clearly implements everything the scenario needs. Logic is correct.
+- 0.7-0.9 = Code has the right structure and most logic, minor gaps or edge cases uncertain.
+- 0.5-0.6 = Partial implementation exists but key pieces are missing or questionable.
+- 0.2-0.4 = Some relevant code exists but the scenario's core behavior is not properly implemented.
+- 0.0-0.1 = No relevant code found, or build failed entirely, or the code is fundamentally broken.
+
+## Common Mistake to Avoid
+Do NOT score 0.0 just because you "cannot run the code." You CAN read it. If a scenario says
+"clicking Add creates a task" and you see an onClick handler that pushes to a task array and
+re-renders, that's a 0.8-1.0, not a 0.0.
 
 ## Output Format
 Respond with ONLY a JSON object (no markdown fences):
@@ -118,23 +144,17 @@ Respond with ONLY a JSON object (no markdown fences):
 {
   "score": 0.0 to 1.0,
   "passed": true|false,
-  "reasoning": "Brief explanation of the evaluation",
+  "reasoning": "Brief explanation citing specific code evidence",
   "error_category": "category-name" or null,
   "error_severity": "Critical"|"High"|"Medium"|"Low" or null
 }
 
-## Scoring Rules
-- 1.0 = scenario fully satisfied
-- 0.7-0.9 = mostly satisfied, minor gaps
-- 0.3-0.6 = partially satisfied
-- 0.0-0.2 = not satisfied
-- Score >= 0.5 counts as a "pass" for majority voting
-
 ## Rules
-1. If the build failed entirely, score 0.0 for all scenarios
-2. Be objective — evaluate what was actually built, not intent
-3. error_category should be a kebab-case domain label (e.g., "data-persistence", "ui-rendering")
-4. Only set error fields if the scenario did NOT pass"#;
+1. If the build failed entirely, score 0.0 for all scenarios.
+2. Score >= 0.5 counts as a "pass" for majority voting.
+3. Cite specific files, functions, or code patterns in your reasoning.
+4. error_category should be kebab-case (e.g., "missing-handler", "state-management").
+5. Only set error fields if the scenario did NOT pass."#;
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -347,28 +367,9 @@ async fn evaluate_scenario_once(
     router: &LlmRouter,
     scenario: &Scenario,
     factory_output: &FactoryOutputV1,
-    run_number: usize,
+    _run_number: usize,
 ) -> StepResult<SingleEvalResult> {
     let source_files = read_factory_files(&factory_output.output_path);
-
-    let context = serde_json::json!({
-        "scenario": {
-            "id": scenario.id,
-            "tier": format!("{:?}", scenario.tier),
-            "title": scenario.title,
-            "bdd_text": scenario.bdd_text,
-        },
-        "factory_output": {
-            "build_status": format!("{:?}", factory_output.build_status),
-            "output_path": factory_output.output_path,
-            "nodes_completed": factory_output.node_results.iter()
-                .filter(|n| n.success)
-                .map(|n| &n.node_name)
-                .collect::<Vec<_>>(),
-        },
-        "source_files": source_files,
-        "run_number": run_number,
-    });
 
     let mut last_error = None;
 
@@ -385,8 +386,12 @@ async fn evaluate_scenario_once(
             messages: vec![Message {
                 role: Role::User,
                 content: format!(
-                    "Evaluate this scenario against the factory output:\n\n{}",
-                    serde_json::to_string_pretty(&context).unwrap_or_default()
+                    "Review the source code below and evaluate whether it correctly implements this BDD scenario.\n\nScenario: {} [{}]\n{}\n\nBuild status: {}\n\n## Source Code\n\n{}",
+                    scenario.title,
+                    format!("{:?}", scenario.tier),
+                    scenario.bdd_text,
+                    format!("{:?}", factory_output.build_status),
+                    source_files,
                 ),
             }],
             max_tokens: 1024,
