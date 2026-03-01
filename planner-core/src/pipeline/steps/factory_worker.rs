@@ -237,9 +237,18 @@ pub struct WorktreeInfo {
 /// The user must have the `codex` CLI installed and authenticated.
 ///
 /// Invocation pattern:
-///   codex exec --json --dangerously-bypass-approvals-and-sandbox \
-///     --skip-git-repo-check -m gpt-5.3-codex -C <worktree> \
+///   codex exec --json -a never --sandbox workspace-write \
+///     -m gpt-5.3-codex -C <worktree> \
 ///     --output-last-message <path> -
+///
+/// Uses `-a never` (skip approval prompts) + `--sandbox workspace-write`
+/// (OS-level Landlock/Bubblewrap sandbox, writable within CWD).
+/// The worktree is set via `-C` so workspace-write grants write access
+/// to the worktree directory and `/tmp`/`$TMPDIR`.
+///
+/// The `--skip-git-repo-check` flag is NOT used because
+/// `WorktreeManager::prepare` already runs `git init` in the worktree,
+/// making it a trusted git directory.
 pub struct CodexFactoryWorker {
     /// Whether the codex CLI is available.
     cli_available: bool,
@@ -318,13 +327,15 @@ impl FactoryWorker for CodexFactoryWorker {
         let worktree_str = config.worktree.to_string_lossy().to_string();
         let model_str = config.model.clone();
 
-        // Use --output-last-message for reliable extraction of final text,
-        // --skip-git-repo-check so codex doesn't refuse temp worktrees,
-        // --dangerously-bypass-approvals-and-sandbox so codex can write files
-        //   to the isolated worktree without Landlock sandbox restrictions.
-        //   (workspace-write sandbox may block writes to /tmp subdirectories
-        //   depending on Landlock policy; the worktree is ephemeral so full
-        //   access is safe.)
+        // Use `-a never` to skip approval prompts + `--sandbox workspace-write`
+        // for OS-level isolation (Landlock on Linux, Seatbelt on macOS).
+        // The workspace-write sandbox makes the CWD (set via -C) writable
+        // plus /tmp and $TMPDIR. This is the proper sandboxed approach:
+        // codex can write files in the worktree without bypassing the sandbox.
+        //
+        // NOTE: --sandbox must come AFTER `exec` subcommand to take effect.
+        // git init is already done in WorktreeManager::prepare, so no need
+        // for --skip-git-repo-check.
         let output_file = std::env::temp_dir().join(format!(
             "codex-factory-{}.txt",
             invocation_id
@@ -334,8 +345,10 @@ impl FactoryWorker for CodexFactoryWorker {
         let args = vec![
             "exec",
             "--json",
-            "--dangerously-bypass-approvals-and-sandbox",
-            "--skip-git-repo-check",
+            "-a",
+            "never",
+            "--sandbox",
+            "workspace-write",
             "-m",
             &model_str,
             "-C",

@@ -1,11 +1,18 @@
 //! # LLM Provider Implementations — CLI Native
 //!
 //! Shells out to native CLI tools instead of calling HTTP APIs.
-//! Mirrors Kilroy's backend CLI patterns exactly:
+//! Each CLI uses its native sandbox/permission system properly:
 //!
-//! - **Anthropic** → `claude -p --dangerously-skip-permissions --output-format stream-json --verbose --model <model> "<prompt)"`
-//! - **Google**    → `gemini --prompt "<prompt>" --output-format json --yolo --model <model>`
+//! - **Anthropic** → `claude -p --permission-mode acceptEdits --output-format stream-json --verbose --model <model>`
+//!   Uses `acceptEdits` permission mode: auto-approves file edits, still sandboxes bash commands.
+//!   In `-p` (print) mode with stdin piping, only text completion is needed — no file/shell access.
+//!
+//! - **Google**    → `gemini --prompt "<prompt>" --output-format json --sandbox --model <model>`
+//!   Uses `--sandbox` for OS-level isolation. In headless `--prompt` mode, tool calls are
+//!   disabled by default unless explicitly enabled via `coreTools` config.
+//!
 //! - **OpenAI**    → `codex exec --json --sandbox workspace-write -m <model> "<prompt>"`
+//!   Uses `workspace-write` sandbox: writable within CWD, no network access.
 
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -137,9 +144,14 @@ pub async fn run_cli(
 // Anthropic — `claude` CLI
 // ===========================================================================
 //
-// Kilroy pattern:
-//   claude -p --dangerously-skip-permissions --output-format stream-json \
-//     --verbose --model <model> "<prompt>"
+// Invocation pattern:
+//   claude -p --permission-mode acceptEdits --output-format stream-json \
+//     --verbose --model <model>
+//
+// Permission mode `acceptEdits` auto-approves file edits while still
+// requiring confirmation for bash commands. In `-p` (print) mode with
+// stdin piping, Claude only returns text completions — no file writes
+// or bash commands are executed, so this is safe and non-bypassing.
 //
 // stream-json format emits one JSON object per line. The final "result"
 // message contains the assistant's response text and token usage.
@@ -201,11 +213,14 @@ impl LlmClient for AnthropicCliClient {
     async fn complete(&self, request: CompletionRequest) -> Result<CompletionResponse, LlmError> {
         let prompt = build_prompt(&request);
 
-        // Build args matching Kilroy's Anthropic backend pattern
+        // Use acceptEdits permission mode: auto-approves file edits,
+        // still sandboxes bash commands. In -p (print) mode with stdin
+        // piping we only get text back, so no file/shell access occurs.
         let model_arg = request.model.clone();
         let args = vec![
             "-p",
-            "--dangerously-skip-permissions",
+            "--permission-mode",
+            "acceptEdits",
             "--output-format",
             "stream-json",
             "--verbose",
@@ -269,8 +284,12 @@ impl LlmClient for AnthropicCliClient {
 // Google — `gemini` CLI
 // ===========================================================================
 //
-// Kilroy pattern:
-//   gemini --prompt "<prompt>" --output-format json --yolo --model <model>
+// Invocation pattern:
+//   gemini --prompt "<prompt>" --output-format json --sandbox --model <model>
+//
+// Uses --sandbox for OS-level isolation (Docker/Podman or Bubblewrap).
+// In headless --prompt mode, tool calls are disabled by default unless
+// explicitly enabled. This replaces --yolo which bypassed all approvals.
 //
 // --output-format json returns a single JSON object.
 // NOTE: Gemini CLI's -p/--prompt requires the prompt as its VALUE
@@ -325,13 +344,17 @@ impl LlmClient for GoogleCliClient {
         // Gemini CLI requires the prompt as the VALUE to --prompt / -p.
         // Unlike Claude, it does NOT read from stdin when -p is bare.
         // Error without this: "Not enough arguments following: p"
+        //
+        // --sandbox enables OS-level isolation (Bubblewrap/Docker).
+        // In headless --prompt mode, tool calls are disabled by default,
+        // so this is safe for text-only completions.
         let model_arg = request.model.clone();
         let args = vec![
             "--prompt",
             &prompt,
             "--output-format",
             "json",
-            "--yolo",
+            "--sandbox",
             "--model",
             &model_arg,
         ];

@@ -433,7 +433,7 @@ async fn run_single_reviewer(
                     spec_text,
                 ),
             }],
-            max_tokens: 2048,
+            max_tokens: 4096,
             temperature: 0.2, // Low temperature for consistent reviews
             model: model.to_string(),
         };
@@ -569,6 +569,16 @@ struct ReviewFindingJson {
 fn parse_review_response(content: &str, reviewer: &ArReviewer) -> StepResult<SingleReviewResult> {
     let cleaned = crate::llm::json_repair::try_repair_json(content)
         .unwrap_or_else(|| super::intake::strip_code_fences(content));
+
+    // Warn if the repaired JSON differs from the stripped version
+    // (indicates truncation repair was needed)
+    let stripped = super::intake::strip_code_fences(content);
+    if cleaned != stripped && serde_json::from_str::<serde_json::Value>(&stripped).is_err() {
+        tracing::warn!(
+            "    {:?} response required truncated JSON repair (original {}b → repaired {}b)",
+            reviewer, content.len(), cleaned.len()
+        );
+    }
 
     let json: ReviewJson = serde_json::from_str(&cleaned).map_err(|e| {
         StepError::JsonError(format!(
