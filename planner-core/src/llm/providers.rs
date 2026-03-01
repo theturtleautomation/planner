@@ -623,7 +623,7 @@ mod tests {
 
         // All providers absent → should get CliBinaryNotFound
         assert!(router.resolve_provider("claude-opus-4-6").is_err());
-        assert!(router.resolve_provider("gemini-3.1-pro").is_err());
+        assert!(router.resolve_provider("gemini-3.1-pro-preview").is_err());
         assert!(router.resolve_provider("gpt-5.3-codex").is_err());
     }
 
@@ -634,7 +634,7 @@ mod tests {
         assert_eq!(m.provider, "anthropic");
         assert_eq!(m.cli_binary, "claude");
 
-        let m = find_model("gemini-3.1-pro").unwrap();
+        let m = find_model("gemini-3.1-pro-preview").unwrap();
         assert_eq!(m.provider, "google");
         assert_eq!(m.cli_binary, "gemini");
 

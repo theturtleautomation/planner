@@ -144,8 +144,10 @@ pub const MODELS: &[ModelInfo] = &[
     ModelInfo { id: "claude-sonnet-4-6", provider: "anthropic", cli_binary: "claude" },
     ModelInfo { id: "claude-haiku-4-5",  provider: "anthropic", cli_binary: "claude" },
     // Google — uses `gemini` CLI
-    ModelInfo { id: "gemini-3.1-pro",    provider: "google",    cli_binary: "gemini" },
-    ModelInfo { id: "gemini-3.1-flash",  provider: "google",    cli_binary: "gemini" },
+    ModelInfo { id: "gemini-3.1-pro-preview",  provider: "google",    cli_binary: "gemini" },
+    ModelInfo { id: "gemini-3-flash-preview",  provider: "google",    cli_binary: "gemini" },
+    ModelInfo { id: "gemini-2.5-pro",          provider: "google",    cli_binary: "gemini" },
+    ModelInfo { id: "gemini-2.5-flash",        provider: "google",    cli_binary: "gemini" },
     // OpenAI — uses `codex` CLI
     ModelInfo { id: "gpt-5.3-codex",     provider: "openai",    cli_binary: "codex"  },
     ModelInfo { id: "gpt-5.2",           provider: "openai",    cli_binary: "codex"  },
@@ -169,7 +171,7 @@ impl DefaultModels {
     pub const FACTORY_WORKER: &'static str = "gpt-5.3-codex";
 
     // -- Return Trip: Validation (Gemini 3.1 Pro — 1M context, cross-ref) --
-    pub const SCENARIO_VALIDATOR: &'static str = "gemini-3.1-pro";
+    pub const SCENARIO_VALIDATOR: &'static str = "gemini-3.1-pro-preview";
 
     // -- Telemetry: Summarization (Haiku — fast, low cost) --
     pub const TELEMETRY_PRESENTER: &'static str = "claude-haiku-4-5";
@@ -180,7 +182,7 @@ impl DefaultModels {
     // -- Adversarial Review: Three model families for diverse perspectives --
     pub const AR_REVIEWER_OPUS: &'static str = "claude-opus-4-6";
     pub const AR_REVIEWER_GPT: &'static str = "gpt-5.2";
-    pub const AR_REVIEWER_GEMINI: &'static str = "gemini-3.1-pro";
+    pub const AR_REVIEWER_GEMINI: &'static str = "gemini-3.1-pro-preview";
 
     // -- AR Refinement: High-precision spec amendments --
     pub const AR_REFINER: &'static str = "claude-opus-4-6";

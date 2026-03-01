@@ -102,7 +102,7 @@ async fn tier2_models_endpoint() {
         .collect();
     assert!(model_ids.contains(&"claude-opus-4-6"));
     assert!(model_ids.contains(&"gpt-5.3-codex"));
-    assert!(model_ids.contains(&"gemini-3.1-pro"));
+    assert!(model_ids.contains(&"gemini-3.1-pro-preview"));
 
     // Each model should have all required fields
     for model in model_list {

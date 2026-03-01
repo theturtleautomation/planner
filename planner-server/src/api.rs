@@ -169,7 +169,7 @@ async fn models() -> Json<ModelsResponse> {
             role: "AR Reviewer (GPT)".into(),
         },
         ModelInfo {
-            id: "gemini-3.1-pro".into(),
+            id: "gemini-3.1-pro-preview".into(),
             provider: "google".into(),
             cli_binary: "gemini".into(),
             role: "Scenario Validator, AR Reviewer (Gemini)".into(),
