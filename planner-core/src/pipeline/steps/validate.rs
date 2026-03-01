@@ -371,17 +371,13 @@ async fn evaluate_scenario_once(
 ) -> StepResult<SingleEvalResult> {
     let source_files = read_factory_files(&factory_output.output_path);
 
-    // Debug: log file read summary for first scenario evaluation
+    // Log source file count on first scenario for diagnostics
     if scenario.id.contains("CRIT-1") {
         let file_count = source_files.matches("=== ").count();
-        let total_len = source_files.len();
         tracing::info!(
-            "    [DEBUG] Source files for evaluation: {} files, {} bytes total",
-            file_count, total_len
+            "    Source files loaded for evaluation: {} files, {} bytes",
+            file_count, source_files.len()
         );
-        // Log first 200 chars to see if content is meaningful
-        let preview = if total_len > 200 { &source_files[..200] } else { &source_files };
-        tracing::debug!("    [DEBUG] Source preview: {}", preview);
     }
 
     let mut last_error = None;
@@ -414,15 +410,6 @@ async fn evaluate_scenario_once(
 
         match router.complete(request).await {
             Ok(response) => {
-                // Debug: log raw response for first scenario
-                if scenario.id.contains("CRIT-1") && attempt == 0 {
-                    let resp_preview = if response.content.len() > 500 {
-                        &response.content[..500]
-                    } else {
-                        &response.content
-                    };
-                    tracing::info!("    [DEBUG] LLM response for {}: {}", scenario.id, resp_preview);
-                }
                 match parse_eval_response(&response.content) {
                     Ok(result) => return Ok(result),
                     Err(e) => {

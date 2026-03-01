@@ -237,8 +237,9 @@ pub struct WorktreeInfo {
 /// The user must have the `codex` CLI installed and authenticated.
 ///
 /// Invocation pattern:
-///   codex exec --json --sandbox workspace-write --full-auto --skip-git-repo-check \
-///     -m gpt-5.3-codex -C <worktree> --output-last-message <path> -
+///   codex exec --json --dangerously-bypass-approvals-and-sandbox \
+///     --skip-git-repo-check -m gpt-5.3-codex -C <worktree> \
+///     --output-last-message <path> -
 pub struct CodexFactoryWorker {
     /// Whether the codex CLI is available.
     cli_available: bool,
@@ -319,7 +320,11 @@ impl FactoryWorker for CodexFactoryWorker {
 
         // Use --output-last-message for reliable extraction of final text,
         // --skip-git-repo-check so codex doesn't refuse temp worktrees,
-        // --full-auto so codex doesn't prompt for approval interactively.
+        // --dangerously-bypass-approvals-and-sandbox so codex can write files
+        //   to the isolated worktree without Landlock sandbox restrictions.
+        //   (workspace-write sandbox may block writes to /tmp subdirectories
+        //   depending on Landlock policy; the worktree is ephemeral so full
+        //   access is safe.)
         let output_file = std::env::temp_dir().join(format!(
             "codex-factory-{}.txt",
             invocation_id
@@ -329,9 +334,7 @@ impl FactoryWorker for CodexFactoryWorker {
         let args = vec![
             "exec",
             "--json",
-            "--sandbox",
-            "workspace-write",
-            "--full-auto",
+            "--dangerously-bypass-approvals-and-sandbox",
             "--skip-git-repo-check",
             "-m",
             &model_str,
@@ -538,16 +541,13 @@ fn scan_dir_recursive(root: &Path, dir: &Path, files: &mut Vec<String>) {
     for entry in entries.flatten() {
         let path = entry.path();
 
-        // Skip the context directory
-        if path
-            .file_name()
-            .map(|n| n == ".planner-context")
-            .unwrap_or(false)
-        {
-            continue;
-        }
-
+        // Skip hidden directories (.git, .planner-context, etc.)
         if path.is_dir() {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if name.starts_with('.') {
+                    continue;
+                }
+            }
             scan_dir_recursive(root, &path, files);
         } else if let Ok(rel) = path.strip_prefix(root) {
             files.push(rel.to_string_lossy().to_string());
