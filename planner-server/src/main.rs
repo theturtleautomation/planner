@@ -15,29 +15,17 @@
 //! - GET  /api/sessions/:id/ws — WebSocket for real-time updates (protected)
 //! - GET  /*                   — Static file serving (React frontend)
 
-mod api;
-mod auth;
-mod rate_limit;
-mod rbac;
-mod session;
-mod ws;
-
 use std::net::SocketAddr;
 use std::sync::Arc;
 
 use axum::Router;
 use tower_http::cors::{Any, CorsLayer};
 
-use auth::AuthConfig;
-use session::SessionStore;
-
-/// Shared application state.
-pub struct AppState {
-    /// Active planning sessions.
-    pub sessions: SessionStore,
-    /// Auth0 JWT config. None = dev mode (auth bypassed).
-    pub auth_config: Option<AuthConfig>,
-}
+use planner_server::AppState;
+use planner_server::api;
+use planner_server::auth::AuthConfig;
+use planner_server::rate_limit;
+use planner_server::session::SessionStore;
 
 #[tokio::main]
 async fn main() {

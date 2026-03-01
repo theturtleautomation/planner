@@ -17,3 +17,6 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 async-trait = { workspace = true }
 thiserror = { workspace = true }
+
+[features]
+live-llm = []

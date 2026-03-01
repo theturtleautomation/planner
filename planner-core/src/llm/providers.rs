@@ -465,6 +465,9 @@ pub struct LlmRouter {
     anthropic: Option<AnthropicCliClient>,
     google: Option<GoogleCliClient>,
     openai: Option<OpenAiCliClient>,
+    /// Optional mock client — when set, ALL requests are routed here
+    /// regardless of model ID.  Used by integration tests.
+    mock: Option<Box<dyn LlmClient>>,
 }
 
 impl LlmRouter {
@@ -475,6 +478,18 @@ impl LlmRouter {
             anthropic: AnthropicCliClient::new().ok(),
             google: GoogleCliClient::new().ok(),
             openai: OpenAiCliClient::new().ok(),
+            mock: None,
+        }
+    }
+
+    /// Create a router backed entirely by a mock LLM client.
+    /// Every `complete()` call is forwarded to this mock regardless of model.
+    pub fn with_mock(client: Box<dyn LlmClient>) -> Self {
+        LlmRouter {
+            anthropic: None,
+            google: None,
+            openai: None,
+            mock: Some(client),
         }
     }
 
@@ -503,6 +518,10 @@ impl LlmRouter {
     }
 
     fn resolve_provider(&self, model: &str) -> Result<&dyn LlmClient, LlmError> {
+        // If a mock is installed, always use it.
+        if let Some(ref mock) = self.mock {
+            return Ok(mock.as_ref());
+        }
         if model.starts_with("claude-") {
             self.anthropic
                 .as_ref()
@@ -598,6 +617,7 @@ mod tests {
             anthropic: None,
             google: None,
             openai: None,
+            mock: None,
         };
 
         // All providers absent → should get CliBinaryNotFound
