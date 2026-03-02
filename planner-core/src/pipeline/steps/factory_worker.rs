@@ -366,6 +366,11 @@ impl FactoryWorker for CodexFactoryWorker {
             config.timeout_secs
         );
 
+        tracing::debug!(
+            "CodexFactoryWorker: full command: codex {}",
+            args.join(" ")
+        );
+
         let (stdout, stderr) = crate::llm::providers::run_cli(
             "codex",
             &args,
@@ -377,26 +382,110 @@ impl FactoryWorker for CodexFactoryWorker {
 
         let duration_secs = start.elapsed().as_secs_f64();
 
+        // --- Diagnostic logging: raw JSONL events ---
+        {
+            let event_count = stdout.lines().count();
+            tracing::info!(
+                "CodexFactoryWorker: codex produced {} JSONL event lines, {} bytes stdout",
+                event_count,
+                stdout.len()
+            );
+            // Log first 5 event types for diagnosis
+            for (i, line) in stdout.lines().enumerate().take(10) {
+                let trimmed = line.trim();
+                if let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed) {
+                    let etype = val.get("type").and_then(|v| v.as_str()).unwrap_or("unknown");
+                    let item_type = val.get("item")
+                        .and_then(|i| i.get("type"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("-");
+                    tracing::info!(
+                        "  JSONL[{}]: type={}, item_type={}",
+                        i, etype, item_type
+                    );
+                } else {
+                    tracing::info!(
+                        "  JSONL[{}]: (not JSON) {}",
+                        i, &trimmed[..trimmed.len().min(200)]
+                    );
+                }
+            }
+            if event_count > 10 {
+                tracing::info!("  ... ({} more JSONL events)", event_count - 10);
+            }
+        }
+
+        if !stderr.is_empty() {
+            tracing::warn!(
+                "CodexFactoryWorker: stderr ({} bytes): {}",
+                stderr.len(),
+                &stderr[..stderr.len().min(2000)]
+            );
+        }
+
         // Strategy 1: Read from --output-last-message file (most reliable)
         let output = if output_file.exists() {
             let file_content = std::fs::read_to_string(&output_file).unwrap_or_default();
             let _ = std::fs::remove_file(&output_file);
+            tracing::info!(
+                "CodexFactoryWorker: --output-last-message file: {} bytes",
+                file_content.len()
+            );
             if !file_content.trim().is_empty() {
                 file_content.trim().to_string()
             } else {
                 crate::llm::providers::extract_codex_message_from_jsonl(&stdout)
             }
         } else {
+            tracing::warn!("CodexFactoryWorker: --output-last-message file not found at {}", output_path);
             // Strategy 2: Parse JSONL events from stdout
             crate::llm::providers::extract_codex_message_from_jsonl(&stdout)
         };
 
+        // --- Diagnostic: list worktree contents post-codex ---
+        {
+            let files_found = scan_worktree_files(&config.worktree);
+            if files_found.is_empty() {
+                tracing::warn!(
+                    "CodexFactoryWorker: WORKTREE EMPTY after codex exec — no files in {}",
+                    config.worktree.display()
+                );
+                // List everything including hidden dirs for diagnosis
+                if let Ok(entries) = std::fs::read_dir(&config.worktree) {
+                    let all: Vec<String> = entries
+                        .flatten()
+                        .map(|e| {
+                            let p = e.path();
+                            let name = p.file_name()
+                                .map(|n| n.to_string_lossy().to_string())
+                                .unwrap_or_default();
+                            let is_dir = p.is_dir();
+                            format!("{}{}", name, if is_dir { "/" } else { "" })
+                        })
+                        .collect();
+                    tracing::warn!(
+                        "CodexFactoryWorker: worktree top-level entries: [{}]",
+                        all.join(", ")
+                    );
+                }
+            } else {
+                tracing::info!(
+                    "CodexFactoryWorker: worktree has {} files: {:?}",
+                    files_found.len(),
+                    &files_found[..files_found.len().min(20)]
+                );
+            }
+        }
+
         // Scan worktree for created/modified files
         let files_changed = scan_worktree_files(&config.worktree);
 
-        if !stderr.is_empty() {
-            tracing::debug!("codex stderr: {}", stderr);
-        }
+        // Log extracted output summary
+        tracing::info!(
+            "CodexFactoryWorker: extracted output ({} bytes): {}",
+            output.len(),
+            &output[..output.len().min(500)]
+        );
 
         // Compilation check: try cargo check or tsc depending on what's in the worktree
         let (success, compile_error) = run_compilation_check(&config.worktree, config.timeout_secs).await;
