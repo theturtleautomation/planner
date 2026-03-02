@@ -91,6 +91,53 @@ pub trait FactoryWorker: Send + Sync {
 // Worktree Manager
 // ---------------------------------------------------------------------------
 
+/// Standard .gitignore seeded into every worktree.
+///
+/// This ensures `git ls-files` and `git diff` only report source files,
+/// not dependencies, build artifacts, or caches.  Codex also respects
+/// .gitignore for its own context window.
+const WORKTREE_GITIGNORE: &str = r#"# Dependencies
+node_modules/
+vendor/
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# Build artifacts
+dist/
+build/
+target/
+out/
+.output/
+.next/
+.nuxt/
+.svelte-kit/
+
+# Package manager locks (tracked separately, not useful for code review)
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+Cargo.lock
+Gemfile.lock
+poetry.lock
+
+# IDE / OS
+.DS_Store
+*.swp
+*.swo
+.idea/
+.vscode/
+*.iml
+
+# Coverage / caches
+coverage/
+.cache/
+.turbo/
+.vercel/
+.parcel-cache/
+"#;
+
 /// Manages worktree directories for code generation.
 ///
 /// Each factory run gets its own isolated worktree so codex can read/write
@@ -173,6 +220,18 @@ impl WorktreeManager {
             }
         }
 
+        // Write .gitignore so git-based file tracking excludes
+        // dependencies, build artifacts, and caches automatically.
+        // This also helps Codex — it respects .gitignore for context.
+        let gitignore_content = WORKTREE_GITIGNORE;
+        std::fs::write(worktree_dir.join(".gitignore"), gitignore_content).map_err(|e| {
+            StepError::FactoryError(format!("Failed to write .gitignore: {}", e))
+        })?;
+
+        // Create an initial commit with the context files + .gitignore
+        // so that post-codex `git diff` can identify what Codex changed.
+        Self::git_initial_commit(&worktree_dir);
+
         tracing::info!(
             "Worktree prepared at: {} (context files: SPEC.md, graph.dot, AGENTS.md)",
             worktree_dir.display()
@@ -215,6 +274,38 @@ impl WorktreeManager {
             })
             .unwrap_or_default()
     }
+
+    /// Create an initial git commit in the worktree so that post-codex
+    /// `git diff` cleanly shows only what Codex added/changed.
+    fn git_initial_commit(worktree_dir: &Path) {
+        let run = |args: &[&str]| -> bool {
+            std::process::Command::new("git")
+                .args(args)
+                .current_dir(worktree_dir)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false)
+        };
+
+        // Configure git user for the commit (required in fresh repos)
+        run(&["config", "user.email", "planner@localhost"]);
+        run(&["config", "user.name", "Planner"]);
+
+        // Stage all context files + .gitignore
+        if !run(&["add", "-A"]) {
+            tracing::debug!("git add -A failed in {}", worktree_dir.display());
+            return;
+        }
+
+        // Commit
+        if run(&["commit", "-m", "planner: initial worktree setup", "--allow-empty"]) {
+            tracing::debug!("git initial commit created in {}", worktree_dir.display());
+        } else {
+            tracing::debug!("git commit failed in {} (non-fatal)", worktree_dir.display());
+        }
+    }
 }
 
 /// Information about a prepared worktree.
@@ -226,6 +317,160 @@ pub struct WorktreeInfo {
     pub context_dir: PathBuf,
     /// The run ID this worktree belongs to.
     pub run_id: Uuid,
+}
+
+// ---------------------------------------------------------------------------
+// Git-based worktree file tracking
+// ---------------------------------------------------------------------------
+
+/// Get the list of files that Codex created or modified in a worktree.
+///
+/// Uses `git diff --name-only HEAD` to detect changes against the initial
+/// commit (created by `WorktreeManager::prepare`). Falls back to
+/// `git ls-files --others --exclude-standard` for untracked files,
+/// and finally to a filesystem scan if git isn't available.
+///
+/// Returns relative paths (e.g., `src/main.rs`, `package.json`).
+pub fn git_worktree_changed_files(worktree: &Path) -> Vec<String> {
+    // First, check if this is a valid git repo with at least one commit.
+    // If not, fall back to filesystem scan immediately.
+    let has_git = git_command(worktree, &["rev-parse", "HEAD"]).is_some();
+    if !has_git {
+        tracing::debug!(
+            "git_worktree_changed_files: not a git repo (or no commits) in {}, falling back to filesystem scan",
+            worktree.display()
+        );
+        return scan_worktree_files(worktree);
+    }
+
+    let mut files: Vec<String> = Vec::new();
+
+    // Strategy 1: git diff against initial commit (tracked + modified files)
+    if let Some(diff_files) = git_command(worktree, &["diff", "--name-only", "HEAD"]) {
+        for line in diff_files.lines() {
+            let trimmed = line.trim();
+            if !trimmed.is_empty() {
+                files.push(trimmed.to_string());
+            }
+        }
+    }
+
+    // Strategy 2: untracked files not covered by .gitignore
+    if let Some(untracked) = git_command(worktree, &["ls-files", "--others", "--exclude-standard"]) {
+        for line in untracked.lines() {
+            let trimmed = line.trim();
+            if !trimmed.is_empty() && !files.contains(&trimmed.to_string()) {
+                files.push(trimmed.to_string());
+            }
+        }
+    }
+
+    // Strategy 3: staged but not yet committed (Codex may stage without committing)
+    if let Some(staged) = git_command(worktree, &["diff", "--cached", "--name-only"]) {
+        for line in staged.lines() {
+            let trimmed = line.trim();
+            if !trimmed.is_empty() && !files.contains(&trimmed.to_string()) {
+                files.push(trimmed.to_string());
+            }
+        }
+    }
+
+    // Filter out .planner-context files and .gitignore (our scaffolding)
+    files.retain(|f| !f.starts_with(".planner-context/") && f != ".gitignore");
+
+    tracing::debug!(
+        "git_worktree_changed_files: {} files from git in {}",
+        files.len(),
+        worktree.display()
+    );
+    files
+}
+
+/// Run a git command in a directory and return its stdout, or None on failure.
+fn git_command(dir: &Path, args: &[&str]) -> Option<String> {
+    let output = std::process::Command::new("git")
+        .args(args)
+        .current_dir(dir)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .ok()?;
+
+    if output.status.success() {
+        Some(String::from_utf8_lossy(&output.stdout).to_string())
+    } else {
+        None
+    }
+}
+
+/// Read source file contents from a worktree for evaluation.
+///
+/// Uses `git_worktree_changed_files` to get the file list, then reads
+/// each file's contents, concatenated with path headers. Caps at 30
+/// files and 100KB total. Skips binary/minified files.
+///
+/// This is the function the Scenario Validator uses to get source code.
+pub fn read_worktree_source_files(worktree: &Path) -> String {
+    const MAX_FILES: usize = 30;
+    const MAX_TOTAL_BYTES: usize = 100 * 1024; // 100 KB
+
+    let changed_files = git_worktree_changed_files(worktree);
+    if changed_files.is_empty() {
+        return "[No source files found in output directory]".into();
+    }
+
+    let mut result = String::new();
+    let mut file_count = 0usize;
+    let mut total_bytes = 0usize;
+
+    // Prioritize src/ files first (the actual implementation)
+    let mut sorted_files = changed_files.clone();
+    sorted_files.sort_by(|a, b| {
+        let a_is_src = a.starts_with("src/");
+        let b_is_src = b.starts_with("src/");
+        match (a_is_src, b_is_src) {
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
+            _ => a.cmp(b),
+        }
+    });
+
+    for rel_path in &sorted_files {
+        if file_count >= MAX_FILES || total_bytes >= MAX_TOTAL_BYTES {
+            break;
+        }
+
+        let full_path = worktree.join(rel_path);
+
+        // Read file contents
+        let content = match std::fs::read_to_string(&full_path) {
+            Ok(c) => c,
+            Err(_) => continue, // Skip binary/unreadable files
+        };
+
+        // Skip likely-minified files: very few lines but large size
+        if content.lines().count() <= 2 && content.len() > 5000 {
+            continue;
+        }
+
+        let header = format!("\n=== {} ===\n", rel_path);
+        let available = MAX_TOTAL_BYTES.saturating_sub(total_bytes);
+        let truncated = if content.len() > available {
+            &content[..available]
+        } else {
+            &content
+        };
+
+        result.push_str(&header);
+        result.push_str(truncated);
+        total_bytes += header.len() + truncated.len();
+        file_count += 1;
+    }
+
+    if result.is_empty() {
+        return "[No source files found in output directory]".into();
+    }
+    result
 }
 
 // ---------------------------------------------------------------------------
@@ -728,8 +973,8 @@ impl CodexFactoryWorker {
             crate::llm::providers::extract_codex_message_from_jsonl(&stdout)
         };
 
-        // --- Diagnostic: list worktree contents post-codex ---
-        let files_changed = scan_worktree_files(&config.worktree);
+        // --- Detect changed files via git ---
+        let files_changed = git_worktree_changed_files(&config.worktree);
         if files_changed.is_empty() {
             tracing::warn!(
                 "CodexFactoryWorker: WORKTREE EMPTY after codex exec — no files in {}",
@@ -1132,6 +1377,7 @@ mod tests {
     #[test]
     fn worktree_manager_prepare_creates_structure() {
         let tmp = std::env::temp_dir().join("planner-test-worktree-mgr");
+        let _ = std::fs::remove_dir_all(&tmp);
         let mgr = WorktreeManager::new(&tmp);
         let run_id = Uuid::new_v4();
 
@@ -1152,6 +1398,32 @@ mod tests {
 
         let graph = std::fs::read_to_string(info.context_dir.join("graph.dot")).unwrap();
         assert_eq!(graph, "digraph { a -> b; }");
+
+        // Verify .gitignore was written with expected patterns
+        let gitignore_path = info.path.join(".gitignore");
+        assert!(gitignore_path.exists(), ".gitignore must be created in worktree");
+        let gitignore = std::fs::read_to_string(&gitignore_path).unwrap();
+        assert!(gitignore.contains("node_modules/"), ".gitignore must exclude node_modules");
+        assert!(gitignore.contains("dist/"), ".gitignore must exclude dist/");
+        assert!(gitignore.contains("target/"), ".gitignore must exclude target/");
+        assert!(gitignore.contains("__pycache__/"), ".gitignore must exclude __pycache__");
+
+        // Verify git repo was initialized with an initial commit
+        let git_dir = info.path.join(".git");
+        assert!(git_dir.exists(), "worktree must be a git repo");
+        // Verify initial commit exists — `git rev-parse HEAD` should succeed
+        let head = git_command(&info.path, &["rev-parse", "HEAD"]);
+        assert!(head.is_some(), "worktree must have an initial commit");
+        let head_sha = head.unwrap().trim().to_string();
+        assert_eq!(head_sha.len(), 40, "HEAD should be a full 40-char SHA");
+
+        // Verify the initial commit contains our scaffolding files
+        // Note: --root is required because this is the root commit (no parent to diff against)
+        let committed_files = git_command(&info.path, &["diff-tree", "--root", "--no-commit-id", "--name-only", "-r", "HEAD"]);
+        assert!(committed_files.is_some(), "should be able to list committed files");
+        let file_list = committed_files.unwrap();
+        assert!(file_list.contains(".gitignore"), "initial commit must include .gitignore");
+        assert!(file_list.contains(".planner-context/SPEC.md"), "initial commit must include SPEC.md");
 
         // Cleanup
         mgr.cleanup(&info).unwrap();
@@ -1182,6 +1454,137 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&tmp);
     }
+
+    // --- Git-based file tracking tests ---
+
+    #[test]
+    fn git_worktree_changed_files_detects_new_files() {
+        // Simulates the real workflow: prepare worktree → Codex adds files → git detects them
+        let tmp = std::env::temp_dir().join("planner-test-git-changed");
+        let _ = std::fs::remove_dir_all(&tmp);
+        let mgr = WorktreeManager::new(&tmp);
+        let run_id = Uuid::new_v4();
+
+        let info = mgr.prepare(run_id, "# Spec", "digraph {}", "# Agents").unwrap();
+
+        // Before adding any files, git should report nothing new
+        let before = git_worktree_changed_files(&info.path);
+        assert!(
+            before.is_empty(),
+            "fresh worktree should have no changed files, got: {:?}",
+            before
+        );
+
+        // Simulate Codex creating source files
+        std::fs::write(info.path.join("src/App.tsx"), "export default function App() { return <div>Hello</div>; }").unwrap();
+        std::fs::write(info.path.join("package.json"), r#"{"name":"test","version":"0.1.0"}"#).unwrap();
+
+        // These should show up as changed
+        let after = git_worktree_changed_files(&info.path);
+        assert!(after.contains(&"src/App.tsx".to_string()), "should detect src/App.tsx, got: {:?}", after);
+        assert!(after.contains(&"package.json".to_string()), "should detect package.json, got: {:?}", after);
+        // Scaffolding files must NOT appear
+        assert!(!after.iter().any(|f| f.starts_with(".planner-context/")), "must not include .planner-context/");
+        assert!(!after.contains(&".gitignore".to_string()), "must not include .gitignore");
+
+        // Simulate Codex also installing node_modules (this is the critical test)
+        std::fs::create_dir_all(info.path.join("node_modules/react")).unwrap();
+        std::fs::write(info.path.join("node_modules/react/index.js"), "module.exports = {};").unwrap();
+        std::fs::create_dir_all(info.path.join("dist")).unwrap();
+        std::fs::write(info.path.join("dist/bundle.js"), "!function(){console.log('minified')}()").unwrap();
+
+        let with_ignored = git_worktree_changed_files(&info.path);
+        assert!(
+            !with_ignored.iter().any(|f| f.starts_with("node_modules/")),
+            "node_modules/ must be excluded by .gitignore, got: {:?}",
+            with_ignored
+        );
+        assert!(
+            !with_ignored.iter().any(|f| f.starts_with("dist/")),
+            "dist/ must be excluded by .gitignore, got: {:?}",
+            with_ignored
+        );
+        // src/App.tsx and package.json should still be there
+        assert!(with_ignored.contains(&"src/App.tsx".to_string()));
+        assert!(with_ignored.contains(&"package.json".to_string()));
+
+        mgr.cleanup(&info).unwrap();
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn read_worktree_source_files_prioritizes_src_and_respects_gitignore() {
+        // End-to-end test: prepare worktree, add source + junk, verify the
+        // read function returns source content and skips ignored dirs.
+        let tmp = std::env::temp_dir().join("planner-test-read-src");
+        let _ = std::fs::remove_dir_all(&tmp);
+        let mgr = WorktreeManager::new(&tmp);
+        let run_id = Uuid::new_v4();
+
+        let info = mgr.prepare(run_id, "# Spec", "digraph {}", "# Agents").unwrap();
+
+        // Write actual source files
+        let tsx_content = "import React from 'react';\nexport function TaskTracker() { return <div>Tasks</div>; }";
+        std::fs::write(info.path.join("src/TaskTracker.tsx"), tsx_content).unwrap();
+        std::fs::write(info.path.join("src/index.ts"), "export { TaskTracker } from './TaskTracker';").unwrap();
+
+        // Write ignored junk that was previously polluting the validator
+        std::fs::create_dir_all(info.path.join("dist")).unwrap();
+        let bundle = "x".repeat(80_000); // 80KB minified bundle
+        std::fs::write(info.path.join("dist/bundle.js"), &bundle).unwrap();
+        std::fs::create_dir_all(info.path.join("node_modules/react")).unwrap();
+        std::fs::write(info.path.join("node_modules/react/index.js"), "module.exports = {};").unwrap();
+
+        let result = read_worktree_source_files(&info.path);
+
+        // Must contain our actual source
+        assert!(result.contains("TaskTracker"), "must contain TaskTracker component, got:\n{}", &result[..result.len().min(500)]);
+        assert!(result.contains("=== src/TaskTracker.tsx ==="), "must have src/TaskTracker.tsx header");
+        assert!(result.contains("=== src/index.ts ==="), "must have src/index.ts header");
+
+        // Must NOT contain ignored dirs
+        assert!(!result.contains("dist/bundle.js"), "must not contain dist/bundle.js");
+        assert!(!result.contains("node_modules"), "must not contain node_modules");
+        assert!(!result.contains("x".repeat(1000).as_str()), "must not contain minified bundle content");
+
+        // src/ files should appear before root files (priority sorting)
+        let src_pos = result.find("=== src/").unwrap_or(usize::MAX);
+        let pkg_pos = result.find("=== package").unwrap_or(0);
+        // If package.json exists it should come after src/
+        if result.contains("=== package") {
+            assert!(src_pos < pkg_pos, "src/ files must be sorted before root files");
+        }
+
+        mgr.cleanup(&info).unwrap();
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn read_worktree_source_files_skips_minified() {
+        // Verify the minification heuristic: <=2 lines but >5KB = skip
+        let tmp = std::env::temp_dir().join("planner-test-read-minified");
+        let _ = std::fs::remove_dir_all(&tmp);
+        let mgr = WorktreeManager::new(&tmp);
+        let run_id = Uuid::new_v4();
+
+        let info = mgr.prepare(run_id, "# Spec", "digraph {}", "# Agents").unwrap();
+
+        // A normal source file
+        std::fs::write(info.path.join("src/app.js"), "function app() {\n  return 'hello';\n}\n").unwrap();
+        // A minified file that sneaks past .gitignore (e.g. in src/)
+        let minified = "var a=".to_string() + &"x".repeat(6000) + ";";
+        std::fs::write(info.path.join("src/vendor.min.js"), &minified).unwrap();
+
+        let result = read_worktree_source_files(&info.path);
+
+        assert!(result.contains("=== src/app.js ==="), "must include normal source");
+        assert!(!result.contains("=== src/vendor.min.js ==="), "must skip minified file (<=2 lines, >5KB)");
+
+        mgr.cleanup(&info).unwrap();
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // --- Fallback filesystem scan tests (legacy path) ---
 
     #[test]
     fn scan_worktree_files_excludes_context() {

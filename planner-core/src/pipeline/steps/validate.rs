@@ -27,87 +27,6 @@ use crate::dtu::DtuRegistry;
 use planner_schemas::*;
 use super::{StepResult, StepError};
 
-// ---------------------------------------------------------------------------
-// Factory output file reader
-// ---------------------------------------------------------------------------
-
-/// Read up to 30 files from the factory output directory, concatenating
-/// their contents with file path headers. Caps total size at 100KB.
-/// Skips hidden directories (.git, .planner-context, etc.).
-///
-/// Returns "[Could not read output files]" if the path does not exist.
-fn read_factory_files(output_path: &str) -> String {
-    const MAX_FILES: usize = 30;
-    const MAX_TOTAL_BYTES: usize = 100 * 1024; // 100 KB
-
-    let base = std::path::Path::new(output_path);
-    if !base.exists() {
-        return "[Could not read output files: path does not exist]".into();
-    }
-
-    let mut result = String::new();
-    let mut file_count = 0usize;
-    let mut total_bytes = 0usize;
-
-    collect_files(base, base, &mut result, &mut file_count, &mut total_bytes, MAX_FILES, MAX_TOTAL_BYTES);
-
-    if result.is_empty() {
-        return "[No source files found in output directory]".into();
-    }
-    result
-}
-
-fn collect_files(
-    root: &std::path::Path,
-    dir: &std::path::Path,
-    result: &mut String,
-    file_count: &mut usize,
-    total_bytes: &mut usize,
-    max_files: usize,
-    max_bytes: usize,
-) {
-    let entries = match std::fs::read_dir(dir) {
-        Ok(e) => e,
-        Err(_) => return,
-    };
-
-    for entry in entries.flatten() {
-        if *file_count >= max_files || *total_bytes >= max_bytes {
-            break;
-        }
-        let path = entry.path();
-
-        // Skip hidden directories (.git, .planner-context, etc.)
-        if path.is_dir() {
-            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if name.starts_with('.') {
-                    continue;
-                }
-            }
-            collect_files(root, &path, result, file_count, total_bytes, max_files, max_bytes);
-        } else {
-            match std::fs::read_to_string(&path) {
-                Ok(content) => {
-                    let rel = path.strip_prefix(root)
-                        .map(|p| p.to_string_lossy().to_string())
-                        .unwrap_or_else(|_| path.to_string_lossy().to_string());
-                    let header = format!("\n=== {} ===\n", rel);
-                    let available = max_bytes.saturating_sub(*total_bytes);
-                    let truncated = if content.len() > available {
-                        &content[..available]
-                    } else {
-                        &content
-                    };
-                    result.push_str(&header);
-                    result.push_str(truncated);
-                    *total_bytes += header.len() + truncated.len();
-                    *file_count += 1;
-                }
-                Err(_) => {} // Skip unreadable files
-            }
-        }
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Evaluation prompt
@@ -377,7 +296,9 @@ async fn evaluate_scenario_once(
     factory_output: &FactoryOutputV1,
     _run_number: usize,
 ) -> StepResult<SingleEvalResult> {
-    let source_files = read_factory_files(&factory_output.output_path);
+    let source_files = super::factory_worker::read_worktree_source_files(
+        std::path::Path::new(&factory_output.output_path),
+    );
 
     // Log source file stats for every scenario
     let file_count = source_files.matches("=== ").count();
