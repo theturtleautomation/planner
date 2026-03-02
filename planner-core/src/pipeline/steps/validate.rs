@@ -45,6 +45,36 @@ Instead, you evaluate:
 3. Does the implementation approach match what the scenario requires?
 4. Are there obvious bugs that would prevent the scenario from working?
 
+## Evaluating Runtime-Behavior Scenarios via Static Analysis
+Many scenarios describe runtime behavior (user interactions, visual rendering, timing).
+You CANNOT execute these, but you CAN verify the code contains the correct DEFENSIVE PATTERNS.
+The presence of the right pattern is sufficient evidence — you do not need to prove it works at runtime.
+
+### Rapid interaction / double-click / race condition scenarios:
+Look for ANY of these defensive patterns as passing evidence:
+- Debounce or throttle logic (setTimeout, debounce utility, cooldown variable)
+- Button/element disabled state after first click (disabled attribute, state flag)
+- Guard clauses that check "already in progress" before proceeding (isSubmitting, loading flags)
+- Event listener removal or one-shot binding after first trigger
+If the scenario describes preventing duplicate actions and you find ANY of the above patterns
+in the relevant handler, score 0.8-1.0.
+
+### Layout / overflow / long text / rendering scenarios:
+Look for ANY of these defensive patterns as passing evidence:
+- CSS overflow properties (overflow: hidden, overflow: ellipsis, text-overflow: ellipsis)
+- CSS truncation classes (truncate, line-clamp, whitespace-nowrap)
+- CSS word-breaking (word-break: break-word, overflow-wrap: break-word, break-all)
+- Max-width or max-height constraints on the relevant container
+- JavaScript/framework text truncation with "..." or similar
+If the scenario describes handling long content and you find ANY of the above patterns
+applied to the relevant element, score 0.8-1.0.
+
+### Animation / transition / visual feedback scenarios:
+Look for CSS transitions, keyframes, animation classes, or framework animation directives.
+
+### Timer / delay / auto-save scenarios:
+Look for setTimeout, setInterval, requestAnimationFrame, or equivalent scheduling logic.
+
 ## Scoring Guidelines
 - 1.0 = Code clearly implements everything the scenario needs. Logic is correct.
 - 0.7-0.9 = Code has the right structure and most logic, minor gaps or edge cases uncertain.
@@ -52,10 +82,14 @@ Instead, you evaluate:
 - 0.2-0.4 = Some relevant code exists but the scenario's core behavior is not properly implemented.
 - 0.0-0.1 = No relevant code found, or build failed entirely, or the code is fundamentally broken.
 
-## Common Mistake to Avoid
-Do NOT score 0.0 just because you "cannot run the code." You CAN read it. If a scenario says
-"clicking Add creates a task" and you see an onClick handler that pushes to a task array and
-re-renders, that's a 0.8-1.0, not a 0.0.
+## Common Mistakes to Avoid
+1. Do NOT score 0.0 just because you "cannot run the code." You CAN read it. If a scenario says
+   "clicking Add creates a task" and you see an onClick handler that pushes to a task array and
+   re-renders, that's a 0.8-1.0, not a 0.0.
+2. Do NOT penalize runtime-behavior scenarios because you "cannot verify the behavior at runtime."
+   The presence of the correct defensive code pattern IS the evidence. Judge the pattern, not the execution.
+3. Be CONSISTENT. If you see a debounce pattern, it addresses double-click every time. Do not
+   score it 1.0 in one evaluation and 0.2 in another — the code has not changed between runs.
 
 ## Output Format
 Respond with ONLY a JSON object (no markdown fences):
@@ -331,7 +365,7 @@ async fn evaluate_scenario_once(
                 ),
             }],
             max_tokens: 1024,
-            temperature: 0.3, // Some variation across runs is desired
+            temperature: 0.1, // Low temperature for deterministic scoring
             model: DefaultModels::SCENARIO_VALIDATOR.to_string(),
         };
 
