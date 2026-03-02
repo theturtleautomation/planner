@@ -7,9 +7,9 @@
 //!   Uses `acceptEdits` permission mode: auto-approves file edits, still sandboxes bash commands.
 //!   In `-p` (print) mode with stdin piping, only text completion is needed — no file/shell access.
 //!
-//! - **Google**    → `gemini --prompt "<prompt>" --output-format json --sandbox --model <model>`
-//!   Uses `--sandbox` for OS-level isolation. In headless `--prompt` mode, tool calls are
-//!   disabled by default unless explicitly enabled via `coreTools` config.
+//! - **Google**    → `gemini --prompt "<prompt>" --output-format json --model <model>`
+//!   In headless `--prompt` mode, tool calls are disabled by default unless
+//!   explicitly enabled via `coreTools` config — no sandbox needed.
 //!
 //! - **OpenAI**    → `codex exec --json --sandbox workspace-write -m <model> "<prompt>"`
 //!   Uses `workspace-write` sandbox: writable within CWD, no network access.
@@ -285,11 +285,15 @@ impl LlmClient for AnthropicCliClient {
 // ===========================================================================
 //
 // Invocation pattern:
-//   gemini --prompt "<prompt>" --output-format json --sandbox --model <model>
+//   gemini --prompt "<prompt>" --output-format json --model <model>
 //
-// Uses --sandbox for OS-level isolation (Docker/Podman or Bubblewrap).
-// In headless --prompt mode, tool calls are disabled by default unless
-// explicitly enabled. This replaces --yolo which bypassed all approvals.
+// In headless --prompt mode, tool calls (shell, file writes) are disabled
+// by default unless explicitly enabled via `coreTools` config. This means
+// no sandbox is needed — the model can only return text.
+//
+// NOTE: --sandbox requires a Docker image (gemini-cli-sandbox) that may
+// not be available on all systems, and is unnecessary for text-only
+// headless completions. Only use --sandbox for interactive/agentic mode.
 //
 // --output-format json returns a single JSON object.
 // NOTE: Gemini CLI's -p/--prompt requires the prompt as its VALUE
@@ -345,16 +349,16 @@ impl LlmClient for GoogleCliClient {
         // Unlike Claude, it does NOT read from stdin when -p is bare.
         // Error without this: "Not enough arguments following: p"
         //
-        // --sandbox enables OS-level isolation (Bubblewrap/Docker).
-        // In headless --prompt mode, tool calls are disabled by default,
-        // so this is safe for text-only completions.
+        // No --sandbox needed: in headless --prompt mode, tool calls
+        // (shell, file writes) are disabled by default. The --sandbox
+        // flag requires a Docker image that may not be available, and
+        // is unnecessary for text-only completions.
         let model_arg = request.model.clone();
         let args = vec![
             "--prompt",
             &prompt,
             "--output-format",
             "json",
-            "--sandbox",
             "--model",
             &model_arg,
         ];
