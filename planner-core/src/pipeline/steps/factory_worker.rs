@@ -173,6 +173,24 @@ impl WorktreeManager {
     ) -> StepResult<WorktreeInfo> {
         let worktree_dir = self.root.join(run_id.to_string());
 
+        // Wipe any existing worktree from a previous attempt with the same
+        // run_id.  Without this, a retry re-uses the old directory and
+        // `git_initial_commit` absorbs stale Codex output into the baseline
+        // commit, making `git diff HEAD` return 0 changed files.
+        if worktree_dir.exists() {
+            tracing::debug!(
+                "WorktreeManager::prepare: removing stale worktree {}",
+                worktree_dir.display()
+            );
+            if let Err(e) = std::fs::remove_dir_all(&worktree_dir) {
+                tracing::warn!(
+                    "Failed to remove stale worktree {}: {} — continuing anyway",
+                    worktree_dir.display(),
+                    e
+                );
+            }
+        }
+
         // Create directory structure
         let context_dir = worktree_dir.join(".planner-context");
         let src_dir = worktree_dir.join("src");
@@ -1456,6 +1474,59 @@ mod tests {
     }
 
     // --- Git-based file tracking tests ---
+
+    #[test]
+    fn worktree_prepare_wipes_stale_dir_on_retry() {
+        // Simulates the retry bug: same run_id called twice.
+        // On the second call, prepare() must wipe the stale directory
+        // so the initial commit doesn't absorb Codex's output from attempt 1.
+        let tmp = std::env::temp_dir().join("planner-test-retry-wipe");
+        let _ = std::fs::remove_dir_all(&tmp);
+        let mgr = WorktreeManager::new(&tmp);
+        let run_id = Uuid::new_v4();
+
+        // Attempt 1: prepare + simulate Codex writing files
+        let info1 = mgr.prepare(run_id, "# Spec v1", "digraph {}", "# Agents").unwrap();
+        std::fs::write(info1.path.join("src/App.tsx"), "export default function App() {}").unwrap();
+        std::fs::write(info1.path.join("package.json"), "{}").unwrap();
+        std::fs::create_dir_all(info1.path.join("node_modules/react")).unwrap();
+        std::fs::write(info1.path.join("node_modules/react/index.js"), "module.exports = {};").unwrap();
+
+        // Verify attempt 1 sees files
+        let files_attempt1 = git_worktree_changed_files(&info1.path);
+        assert!(!files_attempt1.is_empty(), "attempt 1 should detect files");
+
+        // Attempt 2: prepare with SAME run_id (retry scenario)
+        let info2 = mgr.prepare(run_id, "# Spec v1", "digraph {}", "# Agents").unwrap();
+
+        // The path should be the same
+        assert_eq!(info1.path, info2.path);
+
+        // The stale Codex output should be gone
+        assert!(!info2.path.join("src/App.tsx").exists(), "stale Codex files must be wiped");
+        assert!(!info2.path.join("package.json").exists(), "stale package.json must be wiped");
+        assert!(!info2.path.join("node_modules").exists(), "stale node_modules must be wiped");
+
+        // Fresh worktree should have 0 changed files
+        let files_attempt2 = git_worktree_changed_files(&info2.path);
+        assert!(
+            files_attempt2.is_empty(),
+            "fresh retry worktree should have 0 changed files, got: {:?}",
+            files_attempt2
+        );
+
+        // Simulate Codex writing new files in attempt 2
+        std::fs::write(info2.path.join("src/App.tsx"), "export default function App() { return <div>v2</div>; }").unwrap();
+        let files_after_codex = git_worktree_changed_files(&info2.path);
+        assert!(
+            files_after_codex.contains(&"src/App.tsx".to_string()),
+            "attempt 2 should detect new Codex files, got: {:?}",
+            files_after_codex
+        );
+
+        mgr.cleanup(&info2).unwrap();
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
 
     #[test]
     fn git_worktree_changed_files_detects_new_files() {

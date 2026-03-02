@@ -294,7 +294,7 @@ async fn evaluate_scenario_once(
     router: &LlmRouter,
     scenario: &Scenario,
     factory_output: &FactoryOutputV1,
-    _run_number: usize,
+    run_number: usize,
 ) -> StepResult<SingleEvalResult> {
     let source_files = super::factory_worker::read_worktree_source_files(
         std::path::Path::new(&factory_output.output_path),
@@ -347,7 +347,7 @@ async fn evaluate_scenario_once(
                     Ok(result) => {
                         tracing::info!(
                             "    {} run {}: score={:.2}, passed={}",
-                            scenario.id, attempt + 1, result.score, result.passed
+                            scenario.id, run_number, result.score, result.passed
                         );
                         return Ok(result);
                     }
