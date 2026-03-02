@@ -11,8 +11,8 @@
 //!   In headless `--prompt` mode, tool calls are disabled by default unless
 //!   explicitly enabled via `coreTools` config — no sandbox needed.
 //!
-//! - **OpenAI**    → `codex exec --json --sandbox workspace-write -m <model> "<prompt>"`
-//!   Uses `workspace-write` sandbox: writable within CWD, no network access.
+//! - **OpenAI**    → `codex exec --json --full-auto -m <model> "<prompt>"`
+//!   Uses `--full-auto`: workspace-write sandbox + auto-approve in exec mode.
 
 use async_trait::async_trait;
 use serde::Deserialize;

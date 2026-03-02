@@ -8,7 +8,7 @@
 //! Each invocation:
 //! 1. Prepares a worktree directory
 //! 2. Writes spec + graph.dot + AGENTS.md context files
-//! 3. Invokes `codex exec` with workspace-write sandbox and the worktree as `-C`
+//! 3. Invokes `codex exec` with --full-auto (workspace-write sandbox) and the worktree as `-C`
 //! 4. Collects stdout as the code generation result
 
 use async_trait::async_trait;
@@ -237,14 +237,19 @@ pub struct WorktreeInfo {
 /// The user must have the `codex` CLI installed and authenticated.
 ///
 /// Invocation pattern:
-///   codex exec --json -a never --sandbox workspace-write \
+///   codex exec --json --full-auto \
 ///     -m gpt-5.3-codex -C <worktree> \
 ///     --output-last-message <path> -
 ///
-/// Uses `-a never` (skip approval prompts) + `--sandbox workspace-write`
-/// (OS-level Landlock/Bubblewrap sandbox, writable within CWD).
-/// The worktree is set via `-C` so workspace-write grants write access
-/// to the worktree directory and `/tmp`/`$TMPDIR`.
+/// Uses `--full-auto` which is the exec preset for:
+///   --sandbox workspace-write + --ask-for-approval on-request
+/// In non-interactive exec mode, "on-request" effectively auto-approves
+/// since there is no human to prompt. The workspace-write sandbox
+/// (Landlock on Linux, Seatbelt on macOS) restricts writes to CWD
+/// and /tmp/$TMPDIR.
+///
+/// NOTE: `-a` (--ask-for-approval) is a global flag that does NOT
+/// propagate to `exec` — use `--full-auto` instead.
 ///
 /// The `--skip-git-repo-check` flag is NOT used because
 /// `WorktreeManager::prepare` already runs `git init` in the worktree,
@@ -327,13 +332,12 @@ impl FactoryWorker for CodexFactoryWorker {
         let worktree_str = config.worktree.to_string_lossy().to_string();
         let model_str = config.model.clone();
 
-        // Use `-a never` to skip approval prompts + `--sandbox workspace-write`
-        // for OS-level isolation (Landlock on Linux, Seatbelt on macOS).
-        // The workspace-write sandbox makes the CWD (set via -C) writable
-        // plus /tmp and $TMPDIR. This is the proper sandboxed approach:
-        // codex can write files in the worktree without bypassing the sandbox.
+        // Use `--full-auto` for non-interactive exec: sets workspace-write
+        // sandbox + on-request approvals (auto-approve in exec mode since
+        // there's no human to prompt). Landlock on Linux, Seatbelt on macOS.
         //
-        // NOTE: --sandbox must come AFTER `exec` subcommand to take effect.
+        // NOTE: `-a`/`--ask-for-approval` is a global flag that does NOT
+        // work with `exec` subcommand. Use `--full-auto` instead.
         // git init is already done in WorktreeManager::prepare, so no need
         // for --skip-git-repo-check.
         let output_file = std::env::temp_dir().join(format!(
@@ -345,10 +349,7 @@ impl FactoryWorker for CodexFactoryWorker {
         let args = vec![
             "exec",
             "--json",
-            "-a",
-            "never",
-            "--sandbox",
-            "workspace-write",
+            "--full-auto",
             "-m",
             &model_str,
             "-C",
