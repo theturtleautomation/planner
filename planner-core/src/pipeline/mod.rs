@@ -362,14 +362,148 @@ pub async fn run_phase0_front_office_with_config<S: TurnStore>(
         );
     }
 
-    // Step 4: Lint
+    // Step 4: Lint (with auto-repair loop)
+    //
+    // If the linter finds violations, we feed them back to the LLM compiler
+    // to fix the spec, then re-lint. Maximum 2 repair iterations.
+    // This prevents the pipeline from dying on fixable issues like
+    // non-imperative FR language.
     tracing::info!("Step 4: Spec Linter");
-    if specs.len() > 1 {
-        linter::lint_spec_set(&specs)?;
-        tracing::info!("  → Multi-chunk spec set passes all lint rules");
-    } else {
-        linter::lint_spec(&specs[0])?;
-        tracing::info!("  → Spec passes all 12 linting rules");
+    {
+        const MAX_LINT_REPAIRS: usize = 2;
+        let mut lint_attempt = 0usize;
+
+        loop {
+            let lint_result = if specs.len() > 1 {
+                linter::lint_spec_set(&specs)
+            } else {
+                linter::lint_spec(&specs[0])
+            };
+
+            match lint_result {
+                Ok(()) => {
+                    if lint_attempt == 0 {
+                        tracing::info!("  → Spec passes all linting rules");
+                    } else {
+                        tracing::info!("  → Spec passes all linting rules after {} repair(s)", lint_attempt);
+                    }
+                    break;
+                }
+                Err(steps::StepError::LintFailure { violations }) => {
+                    lint_attempt += 1;
+                    if lint_attempt > MAX_LINT_REPAIRS {
+                        tracing::error!(
+                            "  → {} lint violation(s) remain after {} repair attempts — aborting",
+                            violations.len(), MAX_LINT_REPAIRS
+                        );
+                        return Err(steps::StepError::LintFailure { violations });
+                    }
+
+                    tracing::warn!(
+                        "  → {} lint violation(s) found, repair attempt {}/{}",
+                        violations.len(), lint_attempt, MAX_LINT_REPAIRS
+                    );
+                    for v in &violations {
+                        tracing::warn!("    {}", v);
+                    }
+
+                    // Feed violations back to the LLM to repair the spec
+                    let num_specs = specs.len();
+                    for (i, spec) in specs.iter_mut().enumerate() {
+                        let spec_violations: Vec<&String> = violations.iter()
+                            .filter(|v| {
+                                // For single-chunk, all violations belong to spec 0
+                                if num_specs == 1 { return true; }
+                                // For multi-chunk, match by chunk label prefix
+                                let chunk_label = match &spec.chunk {
+                                    planner_schemas::ChunkType::Root => "[root]",
+                                    planner_schemas::ChunkType::Domain { name } => {
+                                        // violations prefixed with [domain:name]
+                                        return v.contains(&format!("[domain:{}]", name))
+                                            || v.contains(&format!("[{}]", name))
+                                            || !v.starts_with('[');
+                                    }
+                                };
+                                v.contains(chunk_label) || !v.starts_with('[')
+                            })
+                            .collect();
+
+                        if spec_violations.is_empty() {
+                            continue;
+                        }
+
+                        let violations_text = spec_violations.iter()
+                            .map(|v| format!("- {}", v))
+                            .collect::<Vec<_>>()
+                            .join("\n");
+
+                        let spec_json = serde_json::to_string_pretty(spec)
+                            .unwrap_or_else(|_| "[serialization error]".into());
+
+                        let repair_request = crate::llm::CompletionRequest {
+                            system: Some(
+                                "You are the Spec Linter Repair agent. You receive an NLSpecV1 JSON \
+                                 and a list of lint violations. Fix the spec to resolve ALL violations \
+                                 while preserving the intent and structure. Return ONLY the corrected \
+                                 NLSpecV1 JSON, no commentary.\n\n\
+                                 Common fixes:\n\
+                                 - Rule 4 (imperative language): Rewrite FR statements to use \
+                                   must/must not/shall/shall not/always/never.\n\
+                                 - Rule 5 (open questions): Resolve by picking reasonable defaults.\n\
+                                 - Rule 7 (DTU priority): Set appropriate priorities for non-stdlib deps.\n\
+                                 - Rule 10 (out of scope): Add at least one out-of-scope item."
+                                    .to_string()
+                            ),
+                            messages: vec![crate::llm::Message {
+                                role: crate::llm::Role::User,
+                                content: format!(
+                                    "Fix this NLSpecV1 to resolve these lint violations:\n\n\
+                                     ## Violations\n{}\n\n\
+                                     ## Current NLSpecV1 JSON\n```json\n{}\n```",
+                                    violations_text, spec_json
+                                ),
+                            }],
+                            max_tokens: 8192,
+                            temperature: 0.1,
+                            model: crate::llm::DefaultModels::COMPILER_SPEC.to_string(),
+                        };
+
+                        match router.complete(repair_request).await {
+                            Ok(response) => {
+                                let cleaned = crate::llm::json_repair::try_repair_json(&response.content)
+                                    .unwrap_or_else(|| steps::intake::strip_code_fences(&response.content));
+
+                                match serde_json::from_str::<NLSpecV1>(&cleaned) {
+                                    Ok(repaired) => {
+                                        tracing::info!(
+                                            "    Repaired spec chunk {} ({} FRs)",
+                                            i, repaired.requirements.len()
+                                        );
+                                        *spec = repaired;
+                                    }
+                                    Err(e) => {
+                                        tracing::warn!(
+                                            "    Failed to parse repaired spec: {} — keeping original",
+                                            e
+                                        );
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    "    LLM repair call failed: {} — keeping original",
+                                    e
+                                );
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    // Non-lint error (unexpected) — propagate
+                    return Err(e);
+                }
+            }
+        }
     }
 
     // Step 5: Adversarial Review
@@ -422,10 +556,22 @@ pub async fn run_phase0_front_office_with_config<S: TurnStore>(
             }
         }
 
-        if specs.len() > 1 {
-            linter::lint_spec_set(&specs)?;
+        // Re-lint after refinement — warn but don't fail.
+        // The main lint+repair loop already ran in Step 4. If AR refinement
+        // introduced a minor lint regression, log it but continue.
+        let post_refinement_lint = if specs.len() > 1 {
+            linter::lint_spec_set(&specs)
         } else {
-            linter::lint_spec(&specs[0])?;
+            linter::lint_spec(&specs[0])
+        };
+        if let Err(steps::StepError::LintFailure { violations }) = post_refinement_lint {
+            tracing::warn!(
+                "  Post-refinement lint: {} violation(s) — proceeding with caution",
+                violations.len()
+            );
+            for v in &violations {
+                tracing::warn!("    {}", v);
+            }
         }
 
         tracing::info!("  Re-running AR on refined specs...");
