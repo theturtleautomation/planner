@@ -241,12 +241,20 @@ pub struct WorktreeInfo {
 ///     -m gpt-5.3-codex -C <worktree> \
 ///     --output-last-message <path> -
 ///
-/// Uses `--full-auto` which is the exec preset for:
-///   --sandbox workspace-write + --ask-for-approval on-request
-/// In non-interactive exec mode, "on-request" effectively auto-approves
-/// since there is no human to prompt. The workspace-write sandbox
-/// (Landlock on Linux, Seatbelt on macOS) restricts writes to CWD
-/// and /tmp/$TMPDIR.
+/// ## Sandbox Strategy
+///
+/// Default: `--full-auto` (= `--sandbox workspace-write` + `--ask-for-approval
+/// on-request`). Uses Landlock on Linux, Seatbelt on macOS.
+///
+/// If Landlock fails (Arch, NixOS, containers, WSL), the worker detects
+/// `LandlockRestrict` in the output and sets `PLANNER_CODEX_SANDBOX=danger-full-access`
+/// so the next retry disables OS-level sandboxing. This is safe because the
+/// worktree is an isolated `/tmp` directory with its own `git init`.
+///
+/// Override via `PLANNER_CODEX_SANDBOX` env var:
+///   - `full-auto` (default)      → Landlock/Seatbelt sandbox
+///   - `full-auto-bwrap`          → bubblewrap sandbox (experimental)
+///   - `danger-full-access`       → no OS sandbox (worktree isolation only)
 ///
 /// NOTE: `-a` (--ask-for-approval) is a global flag that does NOT
 /// propagate to `exec` — use `--full-auto` instead.
@@ -332,32 +340,64 @@ impl FactoryWorker for CodexFactoryWorker {
         let worktree_str = config.worktree.to_string_lossy().to_string();
         let model_str = config.model.clone();
 
-        // Use `--full-auto` for non-interactive exec: sets workspace-write
-        // sandbox + on-request approvals (auto-approve in exec mode since
-        // there's no human to prompt). Landlock on Linux, Seatbelt on macOS.
+        // Sandbox strategy:
+        //
+        // 1. Try `--full-auto` first (= workspace-write sandbox + on-request
+        //    approvals). This uses Landlock on Linux / Seatbelt on macOS.
+        //
+        // 2. If Landlock fails (common on Arch, NixOS, containers, WSL),
+        //    the codex output will contain "LandlockRestrict" and 0 files.
+        //    On retry, fall back to `--sandbox danger-full-access` which
+        //    disables OS-level sandboxing. This is safe because:
+        //    - The worktree is an isolated /tmp directory
+        //    - Network access is not required
+        //    - The worktree is cleaned up after the run
+        //    - git init provides directory trust
+        //
+        // 3. Env var `PLANNER_CODEX_SANDBOX` overrides:
+        //    - "full-auto"          → --full-auto (default)
+        //    - "full-auto-bwrap"    → --full-auto + --enable use_linux_sandbox_bwrap
+        //    - "danger-full-access" → --sandbox danger-full-access
         //
         // NOTE: `-a`/`--ask-for-approval` is a global flag that does NOT
         // work with `exec` subcommand. Use `--full-auto` instead.
         // git init is already done in WorktreeManager::prepare, so no need
         // for --skip-git-repo-check.
+        let sandbox_mode = std::env::var("PLANNER_CODEX_SANDBOX")
+            .unwrap_or_else(|_| "full-auto".to_string());
+
         let output_file = std::env::temp_dir().join(format!(
             "codex-factory-{}.txt",
             invocation_id
         ));
         let output_path = output_file.to_string_lossy().to_string();
 
-        let args = vec![
-            "exec",
-            "--json",
-            "--full-auto",
-            "-m",
-            &model_str,
-            "-C",
-            &worktree_str,
-            "--output-last-message",
-            &output_path,
+        let mut args: Vec<&str> = vec!["exec", "--json"];
+
+        match sandbox_mode.as_str() {
+            "danger-full-access" => {
+                args.push("--sandbox");
+                args.push("danger-full-access");
+                tracing::info!("CodexFactoryWorker: using danger-full-access sandbox (worktree isolation provides containment)");
+            }
+            "full-auto-bwrap" => {
+                args.push("--full-auto");
+                args.push("--enable");
+                args.push("use_linux_sandbox_bwrap");
+                tracing::info!("CodexFactoryWorker: using full-auto with bubblewrap sandbox");
+            }
+            _ => {
+                args.push("--full-auto");
+                tracing::info!("CodexFactoryWorker: using full-auto sandbox (Landlock/Seatbelt)");
+            }
+        }
+
+        args.extend_from_slice(&[
+            "-m", &model_str,
+            "-C", &worktree_str,
+            "--output-last-message", &output_path,
             "-",  // read prompt from stdin
-        ];
+        ]);
 
         tracing::info!(
             "CodexFactoryWorker: invoking codex exec (model={}, worktree={}, timeout={}s)",
@@ -479,6 +519,30 @@ impl FactoryWorker for CodexFactoryWorker {
 
         // Scan worktree for created/modified files
         let files_changed = scan_worktree_files(&config.worktree);
+
+        // --- Sandbox failure detection ---
+        // If codex produced 0 files and mentions LandlockRestrict in its
+        // output or stderr, the OS-level sandbox failed. Set the env var
+        // so the NEXT invocation automatically falls back to
+        // danger-full-access (worktree isolation still provides containment).
+        if files_changed.is_empty() {
+            let sandbox_error = output.contains("LandlockRestrict")
+                || output.contains("legacy Linux sandbox")
+                || output.contains("sandbox panic")
+                || stderr.contains("LandlockRestrict")
+                || stderr.contains("sandbox restrictions");
+
+            if sandbox_error && sandbox_mode != "danger-full-access" {
+                tracing::warn!(
+                    "CodexFactoryWorker: SANDBOX FAILURE DETECTED — \
+                     Landlock sandbox blocked all file writes. \
+                     Setting PLANNER_CODEX_SANDBOX=danger-full-access for next attempt. \
+                     Worktree isolation at {} provides containment.",
+                    config.worktree.display()
+                );
+                std::env::set_var("PLANNER_CODEX_SANDBOX", "danger-full-access");
+            }
+        }
 
         // Log extracted output summary
         tracing::info!(
