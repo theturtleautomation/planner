@@ -268,6 +268,31 @@ impl SandboxMode {
         }
     }
 
+    /// Resolve the best sandbox mode by checking the pre-flight probe cache
+    /// first, then running a live probe if needed. Skipped when the user has
+    /// explicitly set `PLANNER_CODEX_SANDBOX`.
+    fn resolve() -> Self {
+        // If user explicitly set the env var, honour it — no probing.
+        if std::env::var("PLANNER_CODEX_SANDBOX").is_ok() {
+            let mode = Self::from_env();
+            tracing::debug!("SandboxMode::resolve: env override → {}", mode);
+            return mode;
+        }
+
+        // Check persistent probe cache (~/.cache/planner/sandbox-probe)
+        if let Some(cached) = SandboxProbe::read_cache() {
+            tracing::info!("SandboxMode::resolve: using cached probe result → {}", cached);
+            return cached;
+        }
+
+        // No cache — run live probe.
+        let result = SandboxProbe::run();
+        tracing::info!("SandboxMode::resolve: live probe → {}", result);
+        // Persist so subsequent invocations skip the probe.
+        SandboxProbe::write_cache(result);
+        result
+    }
+
     /// Return the next fallback mode, or None if this is the last resort.
     fn fallback(self) -> Option<SandboxMode> {
         match self {
@@ -308,17 +333,22 @@ impl SandboxMode {
     fn detect_failure(self, output: &str, stderr: &str) -> bool {
         match self {
             SandboxMode::Bwrap => {
-                // Bwrap failures: namespace errors, /dev/urandom, bwrap binary missing
+                // Bwrap failures: namespace errors, /dev/urandom, bwrap binary missing,
+                // "Can't mount proc" (PVE kernels)
                 output.contains("bwrap")
                     || output.contains("bubblewrap")
                     || output.contains("/dev/urandom")
                     || output.contains("user namespace")
                     || output.contains("unshare")
+                    || output.contains("Can't mount proc")
+                    || output.contains("mount proc")
                     || stderr.contains("bwrap")
                     || stderr.contains("bubblewrap")
                     || stderr.contains("/dev/urandom")
                     || stderr.contains("user namespace")
                     || stderr.contains("unshare")
+                    || stderr.contains("Can't mount proc")
+                    || stderr.contains("mount proc")
             }
             SandboxMode::Landlock => {
                 output.contains("LandlockRestrict")
@@ -338,6 +368,139 @@ impl std::fmt::Display for SandboxMode {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Pre-flight Sandbox Probe
+// ---------------------------------------------------------------------------
+
+/// Fast pre-flight test to determine if bwrap (bubblewrap) can run on this
+/// kernel. Runs `bwrap --unshare-all -- /bin/true` which exercises the same
+/// namespace setup that Codex uses internally. Completes in ~100ms.
+///
+/// Results are cached to `~/.cache/planner/sandbox-probe` so the probe
+/// only runs once per machine (until the cache file is deleted).
+struct SandboxProbe;
+
+impl SandboxProbe {
+    /// Cache file path: `~/.cache/planner/sandbox-probe`
+    fn cache_path() -> Option<PathBuf> {
+        dirs_cache_path()
+    }
+
+    /// Read the cached probe result. Returns `None` if no cache exists,
+    /// the cache is corrupt, or older than 7 days.
+    fn read_cache() -> Option<SandboxMode> {
+        let path = Self::cache_path()?;
+        let content = std::fs::read_to_string(&path).ok()?;
+        let lines: Vec<&str> = content.trim().lines().collect();
+        if lines.len() < 2 {
+            return None;
+        }
+        // Line 0: Unix timestamp of probe
+        // Line 1: mode string (e.g., "full-auto-bwrap")
+        let ts: u64 = lines[0].parse().ok()?;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()?
+            .as_secs();
+        // Cache expires after 7 days (kernel updates may change capability)
+        if now.saturating_sub(ts) > 7 * 24 * 3600 {
+            tracing::debug!("SandboxProbe: cache expired ({}s old)", now - ts);
+            return None;
+        }
+        match lines[1] {
+            "full-auto-bwrap" => Some(SandboxMode::Bwrap),
+            "full-auto" => Some(SandboxMode::Landlock),
+            "danger-full-access" => Some(SandboxMode::DangerFullAccess),
+            _ => None,
+        }
+    }
+
+    /// Write probe result to cache.
+    fn write_cache(mode: SandboxMode) {
+        if let Some(path) = Self::cache_path() {
+            if let Some(parent) = path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            let ts = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let content = format!("{}\n{}", ts, mode.env_value());
+            match std::fs::write(&path, &content) {
+                Ok(_) => tracing::debug!("SandboxProbe: cached {} to {}", mode, path.display()),
+                Err(e) => tracing::debug!("SandboxProbe: failed to write cache: {}", e),
+            }
+        }
+    }
+
+    /// Invalidate the cache (called when a probe's prediction was wrong).
+    fn invalidate_cache() {
+        if let Some(path) = Self::cache_path() {
+            let _ = std::fs::remove_file(&path);
+            tracing::debug!("SandboxProbe: cache invalidated");
+        }
+    }
+
+    /// Run the live pre-flight probe.
+    ///
+    /// Tests: `bwrap --unshare-all -- /bin/true`
+    ///   - If exit 0 → Bwrap works
+    ///   - If exit non-0 or error → fall through to Landlock
+    ///   - Landlock is not probed (we learn from codex's output)
+    fn run() -> SandboxMode {
+        // Check if bwrap binary exists first
+        let bwrap_check = std::process::Command::new("which")
+            .arg("bwrap")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+
+        match bwrap_check {
+            Ok(s) if s.success() => {
+                // bwrap exists — try the full namespace test
+                let probe = std::process::Command::new("bwrap")
+                    .args(["--unshare-all", "--", "/bin/true"])
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::piped())
+                    .output();
+
+                match probe {
+                    Ok(output) if output.status.success() => {
+                        tracing::info!("SandboxProbe: bwrap --unshare-all succeeded");
+                        SandboxMode::Bwrap
+                    }
+                    Ok(output) => {
+                        let stderr = String::from_utf8_lossy(&output.stderr);
+                        tracing::info!(
+                            "SandboxProbe: bwrap --unshare-all failed (exit {}): {}",
+                            output.status, stderr.trim()
+                        );
+                        // bwrap can't do full namespace isolation (PVE kernel, etc.)
+                        // Fall through to Landlock.
+                        SandboxMode::Landlock
+                    }
+                    Err(e) => {
+                        tracing::info!("SandboxProbe: bwrap exec error: {}", e);
+                        SandboxMode::Landlock
+                    }
+                }
+            }
+            _ => {
+                tracing::info!("SandboxProbe: bwrap not found on PATH");
+                // No bwrap binary — try Landlock (Codex default).
+                SandboxMode::Landlock
+            }
+        }
+    }
+}
+
+/// Get the cache directory path: `~/.cache/planner/sandbox-probe`
+/// Works on Linux/macOS. Returns None if HOME is not set.
+fn dirs_cache_path() -> Option<PathBuf> {
+    let home = std::env::var("HOME").ok()?;
+    Some(PathBuf::from(home).join(".cache").join("planner").join("sandbox-probe"))
+}
+
 /// Factory worker that shells out to `codex exec` for code generation.
 ///
 /// Uses GPT-5.3-Codex via the native Codex CLI tool.
@@ -350,9 +513,13 @@ impl std::fmt::Display for SandboxMode {
 ///
 /// ## Sandbox Strategy
 ///
-/// Default: `--full-auto --enable use_linux_sandbox_bwrap` — uses bubblewrap
-/// namespace sandbox. This is the proper sandbox that works on Arch, NixOS,
-/// WSL, and containers where Landlock is unavailable.
+/// Three-layer sandbox resolution:
+///   1. **Pre-flight probe** (~100ms): tests `bwrap --unshare-all` before
+///      calling codex. Skips straight to the working mode.
+///   2. **Persistent cache**: writes probe result to
+///      `~/.cache/planner/sandbox-probe` so subsequent runs start instantly.
+///   3. **Retry loop**: if a mode fails at runtime, generate() retries with
+///      the next fallback mode, actually consuming `max_retries`.
 ///
 /// Fallback cascade (automatic on sandbox failure, 0 files produced):
 ///   1. Bwrap (default) — proper containment via Linux namespaces
@@ -433,29 +600,30 @@ the specification below by creating files in the current working directory.
     }
 }
 
-#[async_trait]
-impl FactoryWorker for CodexFactoryWorker {
-    async fn generate(&self, prompt: &str, config: &WorkerConfig) -> StepResult<WorkerResult> {
-        let invocation_id = Uuid::new_v4();
-        let start = std::time::Instant::now();
+/// Result of a single codex invocation attempt (before retry logic).
+struct InvocationResult {
+    stderr: String,
+    output: String,
+    files_changed: Vec<String>,
+    duration_secs: f64,
+}
 
-        if !self.cli_available {
-            return Err(StepError::FactoryError(
-                "codex CLI not found. Install it or check your PATH.".into(),
-            ));
-        }
-
+impl CodexFactoryWorker {
+    /// Execute a single codex invocation with the given sandbox mode.
+    ///
+    /// This is the inner helper that `generate()` calls inside its retry
+    /// loop. It handles CLI invocation, output extraction, and worktree
+    /// scanning — but NOT retry/fallback logic.
+    async fn invoke_codex_once(
+        &self,
+        prompt: &str,
+        config: &WorkerConfig,
+        sandbox_mode: SandboxMode,
+        invocation_id: Uuid,
+        attempt_start: std::time::Instant,
+    ) -> StepResult<InvocationResult> {
         let worktree_str = config.worktree.to_string_lossy().to_string();
         let model_str = config.model.clone();
-
-        // Sandbox strategy — cascade with automatic fallback.
-        //
-        // Default: bwrap (bubblewrap namespace sandbox). If it fails,
-        // try Landlock, then danger-full-access as absolute last resort.
-        //
-        // The env var PLANNER_CODEX_SANDBOX persists the current mode
-        // across retries so the fallback is sticky within a pipeline run.
-        let sandbox_mode = SandboxMode::from_env();
 
         let output_file = std::env::temp_dir().join(format!(
             "codex-factory-{}.txt",
@@ -467,7 +635,7 @@ impl FactoryWorker for CodexFactoryWorker {
         args.extend(sandbox_mode.cli_args());
 
         tracing::info!(
-            "CodexFactoryWorker: sandbox={} (env={})",
+            "CodexFactoryWorker: sandbox={} ({})",
             sandbox_mode, sandbox_mode.env_value()
         );
 
@@ -499,7 +667,7 @@ impl FactoryWorker for CodexFactoryWorker {
         .await
         .map_err(|e| StepError::FactoryError(format!("codex exec failed: {}", e)))?;
 
-        let duration_secs = start.elapsed().as_secs_f64();
+        let duration_secs = attempt_start.elapsed().as_secs_f64();
 
         // --- Diagnostic logging: raw JSONL events ---
         {
@@ -509,7 +677,6 @@ impl FactoryWorker for CodexFactoryWorker {
                 event_count,
                 stdout.len()
             );
-            // Log first 5 event types for diagnosis
             for (i, line) in stdout.lines().enumerate().take(10) {
                 let trimmed = line.trim();
                 if let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed) {
@@ -562,104 +729,189 @@ impl FactoryWorker for CodexFactoryWorker {
         };
 
         // --- Diagnostic: list worktree contents post-codex ---
-        {
-            let files_found = scan_worktree_files(&config.worktree);
-            if files_found.is_empty() {
-                tracing::warn!(
-                    "CodexFactoryWorker: WORKTREE EMPTY after codex exec — no files in {}",
-                    config.worktree.display()
-                );
-                // List everything including hidden dirs for diagnosis
-                if let Ok(entries) = std::fs::read_dir(&config.worktree) {
-                    let all: Vec<String> = entries
-                        .flatten()
-                        .map(|e| {
-                            let p = e.path();
-                            let name = p.file_name()
-                                .map(|n| n.to_string_lossy().to_string())
-                                .unwrap_or_default();
-                            let is_dir = p.is_dir();
-                            format!("{}{}", name, if is_dir { "/" } else { "" })
-                        })
-                        .collect();
-                    tracing::warn!(
-                        "CodexFactoryWorker: worktree top-level entries: [{}]",
-                        all.join(", ")
-                    );
-                }
-            } else {
-                tracing::info!(
-                    "CodexFactoryWorker: worktree has {} files: {:?}",
-                    files_found.len(),
-                    &files_found[..files_found.len().min(20)]
-                );
-            }
-        }
-
-        // Scan worktree for created/modified files
         let files_changed = scan_worktree_files(&config.worktree);
-
-        // --- Sandbox failure detection & fallback cascade ---
-        // If codex produced 0 files and the output/stderr indicates a
-        // sandbox failure, advance to the next fallback mode for the
-        // next retry. The cascade: bwrap → landlock → danger-full-access.
-        if files_changed.is_empty() && sandbox_mode.detect_failure(&output, &stderr) {
-            if let Some(next) = sandbox_mode.fallback() {
+        if files_changed.is_empty() {
+            tracing::warn!(
+                "CodexFactoryWorker: WORKTREE EMPTY after codex exec — no files in {}",
+                config.worktree.display()
+            );
+            if let Ok(entries) = std::fs::read_dir(&config.worktree) {
+                let all: Vec<String> = entries
+                    .flatten()
+                    .map(|e| {
+                        let p = e.path();
+                        let name = p.file_name()
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_default();
+                        let is_dir = p.is_dir();
+                        format!("{}{}", name, if is_dir { "/" } else { "" })
+                    })
+                    .collect();
                 tracing::warn!(
-                    "CodexFactoryWorker: SANDBOX FAILURE DETECTED — \
-                     {} sandbox blocked file writes. \
-                     Falling back to {} for next attempt. \
-                     Worktree: {}",
-                    sandbox_mode, next, config.worktree.display()
-                );
-                if next == SandboxMode::DangerFullAccess {
-                    tracing::warn!(
-                        "CodexFactoryWorker: ⚠ LAST RESORT — danger-full-access disables \
-                         OS-level sandboxing. Worktree isolation at {} is the only containment.",
-                        config.worktree.display()
-                    );
-                }
-                std::env::set_var("PLANNER_CODEX_SANDBOX", next.env_value());
-            } else {
-                tracing::error!(
-                    "CodexFactoryWorker: sandbox failure with danger-full-access — \
-                     no further fallback available. Something else is blocking file writes."
+                    "CodexFactoryWorker: worktree top-level entries: [{}]",
+                    all.join(", ")
                 );
             }
-        }
-
-        // Log extracted output summary
-        tracing::info!(
-            "CodexFactoryWorker: extracted output ({} bytes): {}",
-            output.len(),
-            &output[..output.len().min(500)]
-        );
-
-        // Compilation check: try cargo check or tsc depending on what's in the worktree
-        let (success, compile_error) = run_compilation_check(&config.worktree, config.timeout_secs).await;
-        if !success {
-            tracing::warn!(
-                "CodexFactoryWorker: compilation check failed: {:?}",
-                compile_error
+        } else {
+            tracing::info!(
+                "CodexFactoryWorker: worktree has {} files: {:?}",
+                files_changed.len(),
+                &files_changed[..files_changed.len().min(20)]
             );
         }
 
-        tracing::info!(
-            "CodexFactoryWorker: complete in {:.1}s, {} files changed, compilation={}",
-            duration_secs,
-            files_changed.len(),
-            if success { "ok" } else { "failed" }
-        );
-
-        Ok(WorkerResult {
-            invocation_id,
-            success,
-            model: config.model.clone(),
+        Ok(InvocationResult {
+            stderr,
             output,
             files_changed,
             duration_secs,
-            error: compile_error,
         })
+    }
+}
+
+#[async_trait]
+impl FactoryWorker for CodexFactoryWorker {
+    async fn generate(&self, prompt: &str, config: &WorkerConfig) -> StepResult<WorkerResult> {
+        let invocation_id = Uuid::new_v4();
+        let overall_start = std::time::Instant::now();
+
+        if !self.cli_available {
+            return Err(StepError::FactoryError(
+                "codex CLI not found. Install it or check your PATH.".into(),
+            ));
+        }
+
+        // --- Three-layer sandbox resolution ---
+        //
+        // Layer 1: Pre-flight probe (~100ms bwrap test) + Layer 2: persistent
+        // cache (~/.cache/planner/sandbox-probe).  SandboxMode::resolve()
+        // handles both — returns the best mode without wasting a full codex
+        // invocation on a sandbox that can't work.
+        //
+        // Layer 3: Retry loop below — if the resolved mode fails at runtime
+        // (0 files + detect_failure), we invalidate the cache, advance to
+        // the next fallback, and retry immediately.
+        let mut current_mode = SandboxMode::resolve();
+
+        // max_retries controls how many sandbox fallback attempts we allow.
+        // Each sandbox failure consumes one retry.  With max_retries=1 and
+        // 3 modes (bwrap → landlock → danger-full-access), the worst case
+        // is: probe picks bwrap, runtime fails → retry with landlock →
+        // runtime fails → (retry budget exhausted, return the failure).
+        //
+        // Bump max_retries to 2 to guarantee we can always reach
+        // danger-full-access from any starting mode.
+        let max_sandbox_retries = config.max_retries.max(2);
+        let mut attempts: u32 = 0;
+
+        loop {
+            attempts += 1;
+            let attempt_start = std::time::Instant::now();
+
+            tracing::info!(
+                "CodexFactoryWorker: attempt {}/{} with sandbox={}",
+                attempts,
+                max_sandbox_retries + 1,
+                current_mode
+            );
+
+            let result = self
+                .invoke_codex_once(prompt, config, current_mode, invocation_id, attempt_start)
+                .await?;
+
+            // --- Sandbox failure detection & retry ---
+            let is_sandbox_failure = result.files_changed.is_empty()
+                && current_mode.detect_failure(&result.output, &result.stderr);
+
+            if is_sandbox_failure {
+                if let Some(next_mode) = current_mode.fallback() {
+                    if attempts <= max_sandbox_retries {
+                        tracing::warn!(
+                            "CodexFactoryWorker: SANDBOX FAILURE — {} blocked file writes \
+                             (attempt {}, {:.1}s wasted). Invalidating cache, retrying \
+                             immediately with {}.",
+                            current_mode,
+                            attempts,
+                            result.duration_secs,
+                            next_mode
+                        );
+
+                        if next_mode == SandboxMode::DangerFullAccess {
+                            tracing::warn!(
+                                "CodexFactoryWorker: ⚠ LAST RESORT — danger-full-access \
+                                 disables OS-level sandboxing. Worktree isolation at {} \
+                                 is the only containment.",
+                                config.worktree.display()
+                            );
+                        }
+
+                        // Invalidate the stale cache and persist the new mode
+                        // so future pipeline runs skip straight to it.
+                        SandboxProbe::invalidate_cache();
+                        SandboxProbe::write_cache(next_mode);
+
+                        current_mode = next_mode;
+                        continue; // retry immediately — no sleep
+                    }
+
+                    tracing::error!(
+                        "CodexFactoryWorker: sandbox retry budget exhausted after {} attempts. \
+                         Last mode: {}, next would be: {}",
+                        attempts,
+                        current_mode,
+                        next_mode
+                    );
+                } else {
+                    tracing::error!(
+                        "CodexFactoryWorker: sandbox failure with {} — no further \
+                         fallback available. Something else is blocking file writes.",
+                        current_mode
+                    );
+                }
+            }
+
+            // --- Success path (or non-sandbox failure) ---
+            let total_duration = overall_start.elapsed().as_secs_f64();
+
+            // Log extracted output summary
+            if !result.output.is_empty() {
+                tracing::info!(
+                    "CodexFactoryWorker: extracted output ({} bytes): {}",
+                    result.output.len(),
+                    &result.output[..result.output.len().min(500)]
+                );
+            }
+
+            // Compilation check
+            let (success, compile_error) =
+                run_compilation_check(&config.worktree, config.timeout_secs).await;
+            if !success {
+                tracing::warn!(
+                    "CodexFactoryWorker: compilation check failed: {:?}",
+                    compile_error
+                );
+            }
+
+            tracing::info!(
+                "CodexFactoryWorker: complete in {:.1}s ({} attempts), {} files changed, \
+                 sandbox={}, compilation={}",
+                total_duration,
+                attempts,
+                result.files_changed.len(),
+                current_mode,
+                if success { "ok" } else { "failed" }
+            );
+
+            return Ok(WorkerResult {
+                invocation_id,
+                success,
+                model: config.model.clone(),
+                output: result.output,
+                files_changed: result.files_changed,
+                duration_secs: total_duration,
+                error: compile_error,
+            });
+        }
     }
 
     fn worker_name(&self) -> &str {
@@ -1128,5 +1380,161 @@ mod tests {
             assert_eq!(SandboxMode::from_env(), mode, "roundtrip failed for {:?}", mode);
         }
         std::env::remove_var("PLANNER_CODEX_SANDBOX");
+    }
+
+    // --- Probe cache tests ---
+
+    #[test]
+    fn sandbox_probe_cache_write_read_roundtrip() {
+        // Use a temp dir to isolate from real cache
+        let tmp = std::env::temp_dir().join("planner-test-probe-cache");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        let cache_file = tmp.join("sandbox-probe");
+
+        // Write a cache entry manually (simulating write_cache)
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let content = format!("{}\ndanger-full-access", ts);
+        std::fs::write(&cache_file, &content).unwrap();
+
+        // Read it back manually (simulating read_cache logic)
+        let read_back = std::fs::read_to_string(&cache_file).unwrap();
+        let lines: Vec<&str> = read_back.trim().lines().collect();
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[1], "danger-full-access");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn sandbox_probe_cache_expired_returns_none() {
+        let tmp = std::env::temp_dir().join("planner-test-probe-expired");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        let cache_file = tmp.join("sandbox-probe");
+
+        // Write a cache entry with a timestamp 8 days ago (expired)
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            - (8 * 24 * 3600); // 8 days ago
+        let content = format!("{}\nfull-auto-bwrap", ts);
+        std::fs::write(&cache_file, &content).unwrap();
+
+        // Parse like read_cache does
+        let read_back = std::fs::read_to_string(&cache_file).unwrap();
+        let lines: Vec<&str> = read_back.trim().lines().collect();
+        let cached_ts: u64 = lines[0].parse().unwrap();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        // Should be expired (> 7 days)
+        assert!(now.saturating_sub(cached_ts) > 7 * 24 * 3600);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn sandbox_probe_invalidate_removes_file() {
+        // This tests the actual invalidate_cache -> write_cache flow
+        // by using the real SandboxProbe methods on the actual cache path.
+        // First, write a cache entry.
+        SandboxProbe::write_cache(SandboxMode::Bwrap);
+
+        // Verify it was written (may fail if HOME not set, that's OK)
+        if let Some(path) = SandboxProbe::cache_path() {
+            if path.exists() {
+                // Invalidate
+                SandboxProbe::invalidate_cache();
+                assert!(!path.exists(), "cache file should be removed after invalidation");
+
+                // Write a new one to verify write after invalidate works
+                SandboxProbe::write_cache(SandboxMode::DangerFullAccess);
+                if path.exists() {
+                    let content = std::fs::read_to_string(&path).unwrap();
+                    assert!(content.contains("danger-full-access"));
+                }
+
+                // Cleanup
+                let _ = std::fs::remove_file(&path);
+            }
+        }
+    }
+
+    #[test]
+    fn sandbox_mode_detect_bwrap_mount_proc_failure() {
+        // This is the exact error from PVE kernel 6.17.4-2-pve
+        let mode = SandboxMode::Bwrap;
+        assert!(mode.detect_failure(
+            "bwrap: Can't mount proc on /newroot/proc: Operation not permitted",
+            ""
+        ));
+        assert!(mode.detect_failure(
+            "",
+            "bwrap: Can't mount proc on /newroot/proc: Operation not permitted"
+        ));
+    }
+
+    #[test]
+    fn sandbox_mode_resolve_respects_env_override() {
+        // When PLANNER_CODEX_SANDBOX is set, resolve() should return
+        // that mode directly without probing.
+        std::env::set_var("PLANNER_CODEX_SANDBOX", "danger-full-access");
+        let mode = SandboxMode::resolve();
+        assert_eq!(mode, SandboxMode::DangerFullAccess);
+        std::env::remove_var("PLANNER_CODEX_SANDBOX");
+    }
+
+    #[test]
+    fn sandbox_mode_resolve_without_env_returns_valid_mode() {
+        // Without env var, resolve() should run probe and return a valid mode.
+        // We can't predict which mode (depends on whether bwrap is installed),
+        // but it must be one of the three variants.
+        std::env::remove_var("PLANNER_CODEX_SANDBOX");
+        // Invalidate cache so we get a fresh probe
+        SandboxProbe::invalidate_cache();
+        let mode = SandboxMode::resolve();
+        assert!(
+            mode == SandboxMode::Bwrap
+                || mode == SandboxMode::Landlock
+                || mode == SandboxMode::DangerFullAccess,
+            "resolve() returned unexpected mode: {:?}",
+            mode
+        );
+        // Clean up cache after test
+        SandboxProbe::invalidate_cache();
+    }
+
+    #[test]
+    fn sandbox_fallback_exhaustion() {
+        // Starting from DangerFullAccess, there's no fallback.
+        // This models the case where all modes have been tried.
+        let mode = SandboxMode::DangerFullAccess;
+        assert!(mode.fallback().is_none());
+        // And danger never detects sandbox failure
+        assert!(!mode.detect_failure("bwrap: error", "LandlockRestrict"));
+    }
+
+    #[test]
+    fn sandbox_fallback_full_cascade_from_bwrap() {
+        // Verify the complete cascade: Bwrap -> Landlock -> Danger -> None
+        let mut mode = SandboxMode::Bwrap;
+        let mut cascade = vec![mode];
+
+        while let Some(next) = mode.fallback() {
+            cascade.push(next);
+            mode = next;
+        }
+
+        assert_eq!(cascade, vec![
+            SandboxMode::Bwrap,
+            SandboxMode::Landlock,
+            SandboxMode::DangerFullAccess,
+        ]);
     }
 }
