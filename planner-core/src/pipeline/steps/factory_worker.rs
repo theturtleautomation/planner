@@ -8,7 +8,8 @@
 //! Each invocation:
 //! 1. Prepares a worktree directory
 //! 2. Writes spec + graph.dot + AGENTS.md context files
-//! 3. Invokes `codex exec` with --full-auto (workspace-write sandbox) and the worktree as `-C`
+//! 3. Invokes `codex exec` with bubblewrap sandbox (--full-auto --enable use_linux_sandbox_bwrap)
+//!    Falls back to Landlock, then danger-full-access if sandbox fails.
 //! 4. Collects stdout as the code generation result
 
 use async_trait::async_trait;
@@ -231,30 +232,137 @@ pub struct WorktreeInfo {
 // CodexFactoryWorker — Real Implementation
 // ---------------------------------------------------------------------------
 
+/// Sandbox modes for the Codex factory worker, ordered by preference.
+///
+/// The worker tries each mode in order until one succeeds. The cascade:
+///   1. `Bwrap`  — bubblewrap namespace sandbox (preferred on Linux)
+///   2. `Landlock` — Landlock + seccomp (kernel-level, fails on Arch/NixOS/WSL)
+///   3. `DangerFullAccess` — no OS sandbox (last resort, worktree isolation only)
+///
+/// Override via `PLANNER_CODEX_SANDBOX` env var:
+///   - `full-auto-bwrap`    → start at Bwrap (default)
+///   - `full-auto`          → start at Landlock
+///   - `danger-full-access` → skip to DangerFullAccess
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SandboxMode {
+    /// `--full-auto --enable use_linux_sandbox_bwrap`
+    /// Bubblewrap namespace sandbox — proper containment without Landlock.
+    Bwrap,
+    /// `--full-auto` (default Codex behavior)
+    /// Landlock + seccomp — kernel-level sandbox. Fails on Arch, NixOS, WSL.
+    Landlock,
+    /// `--sandbox danger-full-access`
+    /// No OS-level sandbox. Only worktree isolation provides containment.
+    /// Used as absolute last resort when both bwrap and Landlock fail.
+    DangerFullAccess,
+}
+
+impl SandboxMode {
+    /// Parse from the `PLANNER_CODEX_SANDBOX` env var or return default.
+    fn from_env() -> Self {
+        match std::env::var("PLANNER_CODEX_SANDBOX").as_deref() {
+            Ok("full-auto") => SandboxMode::Landlock,
+            Ok("danger-full-access") => SandboxMode::DangerFullAccess,
+            // Default: bwrap — proper sandbox that works on Arch, NixOS, WSL, etc.
+            _ => SandboxMode::Bwrap,
+        }
+    }
+
+    /// Return the next fallback mode, or None if this is the last resort.
+    fn fallback(self) -> Option<SandboxMode> {
+        match self {
+            SandboxMode::Bwrap => Some(SandboxMode::Landlock),
+            SandboxMode::Landlock => Some(SandboxMode::DangerFullAccess),
+            SandboxMode::DangerFullAccess => None,
+        }
+    }
+
+    /// The env var value to persist for the next invocation.
+    fn env_value(self) -> &'static str {
+        match self {
+            SandboxMode::Bwrap => "full-auto-bwrap",
+            SandboxMode::Landlock => "full-auto",
+            SandboxMode::DangerFullAccess => "danger-full-access",
+        }
+    }
+
+    /// Human-readable label for logging.
+    fn label(self) -> &'static str {
+        match self {
+            SandboxMode::Bwrap => "bubblewrap (bwrap)",
+            SandboxMode::Landlock => "Landlock + seccomp",
+            SandboxMode::DangerFullAccess => "danger-full-access (NO OS sandbox)",
+        }
+    }
+
+    /// Build the CLI args specific to this sandbox mode.
+    fn cli_args(self) -> Vec<&'static str> {
+        match self {
+            SandboxMode::Bwrap => vec!["--full-auto", "--enable", "use_linux_sandbox_bwrap"],
+            SandboxMode::Landlock => vec!["--full-auto"],
+            SandboxMode::DangerFullAccess => vec!["--sandbox", "danger-full-access"],
+        }
+    }
+
+    /// Check if the given output/stderr indicates this sandbox mode failed.
+    fn detect_failure(self, output: &str, stderr: &str) -> bool {
+        match self {
+            SandboxMode::Bwrap => {
+                // Bwrap failures: namespace errors, /dev/urandom, bwrap binary missing
+                output.contains("bwrap")
+                    || output.contains("bubblewrap")
+                    || output.contains("/dev/urandom")
+                    || output.contains("user namespace")
+                    || output.contains("unshare")
+                    || stderr.contains("bwrap")
+                    || stderr.contains("bubblewrap")
+                    || stderr.contains("/dev/urandom")
+                    || stderr.contains("user namespace")
+                    || stderr.contains("unshare")
+            }
+            SandboxMode::Landlock => {
+                output.contains("LandlockRestrict")
+                    || output.contains("legacy Linux sandbox")
+                    || output.contains("sandbox panic")
+                    || stderr.contains("LandlockRestrict")
+                    || stderr.contains("sandbox restrictions")
+            }
+            SandboxMode::DangerFullAccess => false, // can't fail on sandbox
+        }
+    }
+}
+
+impl std::fmt::Display for SandboxMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.label())
+    }
+}
+
 /// Factory worker that shells out to `codex exec` for code generation.
 ///
 /// Uses GPT-5.3-Codex via the native Codex CLI tool.
 /// The user must have the `codex` CLI installed and authenticated.
 ///
 /// Invocation pattern:
-///   codex exec --json --full-auto \
+///   codex exec --json --full-auto --enable use_linux_sandbox_bwrap \
 ///     -m gpt-5.3-codex -C <worktree> \
 ///     --output-last-message <path> -
 ///
 /// ## Sandbox Strategy
 ///
-/// Default: `--full-auto` (= `--sandbox workspace-write` + `--ask-for-approval
-/// on-request`). Uses Landlock on Linux, Seatbelt on macOS.
+/// Default: `--full-auto --enable use_linux_sandbox_bwrap` — uses bubblewrap
+/// namespace sandbox. This is the proper sandbox that works on Arch, NixOS,
+/// WSL, and containers where Landlock is unavailable.
 ///
-/// If Landlock fails (Arch, NixOS, containers, WSL), the worker detects
-/// `LandlockRestrict` in the output and sets `PLANNER_CODEX_SANDBOX=danger-full-access`
-/// so the next retry disables OS-level sandboxing. This is safe because the
-/// worktree is an isolated `/tmp` directory with its own `git init`.
+/// Fallback cascade (automatic on sandbox failure, 0 files produced):
+///   1. Bwrap (default) — proper containment via Linux namespaces
+///   2. Landlock — kernel-level sandbox (fails on Arch/NixOS/WSL)
+///   3. danger-full-access — last resort only, worktree isolation only
 ///
 /// Override via `PLANNER_CODEX_SANDBOX` env var:
-///   - `full-auto` (default)      → Landlock/Seatbelt sandbox
-///   - `full-auto-bwrap`          → bubblewrap sandbox (experimental)
-///   - `danger-full-access`       → no OS sandbox (worktree isolation only)
+///   - `full-auto-bwrap` (default)  → bubblewrap sandbox
+///   - `full-auto`                  → Landlock/Seatbelt sandbox
+///   - `danger-full-access`         → no OS sandbox (worktree isolation only)
 ///
 /// NOTE: `-a` (--ask-for-approval) is a global flag that does NOT
 /// propagate to `exec` — use `--full-auto` instead.
@@ -340,31 +448,14 @@ impl FactoryWorker for CodexFactoryWorker {
         let worktree_str = config.worktree.to_string_lossy().to_string();
         let model_str = config.model.clone();
 
-        // Sandbox strategy:
+        // Sandbox strategy — cascade with automatic fallback.
         //
-        // 1. Try `--full-auto` first (= workspace-write sandbox + on-request
-        //    approvals). This uses Landlock on Linux / Seatbelt on macOS.
+        // Default: bwrap (bubblewrap namespace sandbox). If it fails,
+        // try Landlock, then danger-full-access as absolute last resort.
         //
-        // 2. If Landlock fails (common on Arch, NixOS, containers, WSL),
-        //    the codex output will contain "LandlockRestrict" and 0 files.
-        //    On retry, fall back to `--sandbox danger-full-access` which
-        //    disables OS-level sandboxing. This is safe because:
-        //    - The worktree is an isolated /tmp directory
-        //    - Network access is not required
-        //    - The worktree is cleaned up after the run
-        //    - git init provides directory trust
-        //
-        // 3. Env var `PLANNER_CODEX_SANDBOX` overrides:
-        //    - "full-auto"          → --full-auto (default)
-        //    - "full-auto-bwrap"    → --full-auto + --enable use_linux_sandbox_bwrap
-        //    - "danger-full-access" → --sandbox danger-full-access
-        //
-        // NOTE: `-a`/`--ask-for-approval` is a global flag that does NOT
-        // work with `exec` subcommand. Use `--full-auto` instead.
-        // git init is already done in WorktreeManager::prepare, so no need
-        // for --skip-git-repo-check.
-        let sandbox_mode = std::env::var("PLANNER_CODEX_SANDBOX")
-            .unwrap_or_else(|_| "full-auto".to_string());
+        // The env var PLANNER_CODEX_SANDBOX persists the current mode
+        // across retries so the fallback is sticky within a pipeline run.
+        let sandbox_mode = SandboxMode::from_env();
 
         let output_file = std::env::temp_dir().join(format!(
             "codex-factory-{}.txt",
@@ -373,24 +464,12 @@ impl FactoryWorker for CodexFactoryWorker {
         let output_path = output_file.to_string_lossy().to_string();
 
         let mut args: Vec<&str> = vec!["exec", "--json"];
+        args.extend(sandbox_mode.cli_args());
 
-        match sandbox_mode.as_str() {
-            "danger-full-access" => {
-                args.push("--sandbox");
-                args.push("danger-full-access");
-                tracing::info!("CodexFactoryWorker: using danger-full-access sandbox (worktree isolation provides containment)");
-            }
-            "full-auto-bwrap" => {
-                args.push("--full-auto");
-                args.push("--enable");
-                args.push("use_linux_sandbox_bwrap");
-                tracing::info!("CodexFactoryWorker: using full-auto with bubblewrap sandbox");
-            }
-            _ => {
-                args.push("--full-auto");
-                tracing::info!("CodexFactoryWorker: using full-auto sandbox (Landlock/Seatbelt)");
-            }
-        }
+        tracing::info!(
+            "CodexFactoryWorker: sandbox={} (env={})",
+            sandbox_mode, sandbox_mode.env_value()
+        );
 
         args.extend_from_slice(&[
             "-m", &model_str,
@@ -520,27 +599,32 @@ impl FactoryWorker for CodexFactoryWorker {
         // Scan worktree for created/modified files
         let files_changed = scan_worktree_files(&config.worktree);
 
-        // --- Sandbox failure detection ---
-        // If codex produced 0 files and mentions LandlockRestrict in its
-        // output or stderr, the OS-level sandbox failed. Set the env var
-        // so the NEXT invocation automatically falls back to
-        // danger-full-access (worktree isolation still provides containment).
-        if files_changed.is_empty() {
-            let sandbox_error = output.contains("LandlockRestrict")
-                || output.contains("legacy Linux sandbox")
-                || output.contains("sandbox panic")
-                || stderr.contains("LandlockRestrict")
-                || stderr.contains("sandbox restrictions");
-
-            if sandbox_error && sandbox_mode != "danger-full-access" {
+        // --- Sandbox failure detection & fallback cascade ---
+        // If codex produced 0 files and the output/stderr indicates a
+        // sandbox failure, advance to the next fallback mode for the
+        // next retry. The cascade: bwrap → landlock → danger-full-access.
+        if files_changed.is_empty() && sandbox_mode.detect_failure(&output, &stderr) {
+            if let Some(next) = sandbox_mode.fallback() {
                 tracing::warn!(
                     "CodexFactoryWorker: SANDBOX FAILURE DETECTED — \
-                     Landlock sandbox blocked all file writes. \
-                     Setting PLANNER_CODEX_SANDBOX=danger-full-access for next attempt. \
-                     Worktree isolation at {} provides containment.",
-                    config.worktree.display()
+                     {} sandbox blocked file writes. \
+                     Falling back to {} for next attempt. \
+                     Worktree: {}",
+                    sandbox_mode, next, config.worktree.display()
                 );
-                std::env::set_var("PLANNER_CODEX_SANDBOX", "danger-full-access");
+                if next == SandboxMode::DangerFullAccess {
+                    tracing::warn!(
+                        "CodexFactoryWorker: ⚠ LAST RESORT — danger-full-access disables \
+                         OS-level sandboxing. Worktree isolation at {} is the only containment.",
+                        config.worktree.display()
+                    );
+                }
+                std::env::set_var("PLANNER_CODEX_SANDBOX", next.env_value());
+            } else {
+                tracing::error!(
+                    "CodexFactoryWorker: sandbox failure with danger-full-access — \
+                     no further fallback available. Something else is blocking file writes."
+                );
             }
         }
 
@@ -946,5 +1030,103 @@ mod tests {
         assert_eq!(deserialized.model, "gpt-5.3-codex");
         assert_eq!(deserialized.duration_secs, 42.5);
         assert!(deserialized.success);
+    }
+
+    // --- SandboxMode tests ---
+
+    #[test]
+    fn sandbox_mode_default_is_bwrap() {
+        // Clear env to test default
+        std::env::remove_var("PLANNER_CODEX_SANDBOX");
+        let mode = SandboxMode::from_env();
+        assert_eq!(mode, SandboxMode::Bwrap);
+        assert_eq!(mode.env_value(), "full-auto-bwrap");
+    }
+
+    #[test]
+    fn sandbox_mode_from_env_full_auto() {
+        std::env::set_var("PLANNER_CODEX_SANDBOX", "full-auto");
+        assert_eq!(SandboxMode::from_env(), SandboxMode::Landlock);
+        std::env::remove_var("PLANNER_CODEX_SANDBOX");
+    }
+
+    #[test]
+    fn sandbox_mode_from_env_danger() {
+        std::env::set_var("PLANNER_CODEX_SANDBOX", "danger-full-access");
+        assert_eq!(SandboxMode::from_env(), SandboxMode::DangerFullAccess);
+        std::env::remove_var("PLANNER_CODEX_SANDBOX");
+    }
+
+    #[test]
+    fn sandbox_mode_fallback_cascade() {
+        // Bwrap -> Landlock -> DangerFullAccess -> None
+        let bwrap = SandboxMode::Bwrap;
+        assert_eq!(bwrap.fallback(), Some(SandboxMode::Landlock));
+
+        let landlock = SandboxMode::Landlock;
+        assert_eq!(landlock.fallback(), Some(SandboxMode::DangerFullAccess));
+
+        let danger = SandboxMode::DangerFullAccess;
+        assert_eq!(danger.fallback(), None);
+    }
+
+    #[test]
+    fn sandbox_mode_cli_args() {
+        assert_eq!(
+            SandboxMode::Bwrap.cli_args(),
+            vec!["--full-auto", "--enable", "use_linux_sandbox_bwrap"]
+        );
+        assert_eq!(
+            SandboxMode::Landlock.cli_args(),
+            vec!["--full-auto"]
+        );
+        assert_eq!(
+            SandboxMode::DangerFullAccess.cli_args(),
+            vec!["--sandbox", "danger-full-access"]
+        );
+    }
+
+    #[test]
+    fn sandbox_mode_detect_bwrap_failure() {
+        let mode = SandboxMode::Bwrap;
+        // Should detect bwrap-specific errors
+        assert!(mode.detect_failure("error: bwrap failed to unshare", ""));
+        assert!(mode.detect_failure("", "bubblewrap error: cannot create namespace"));
+        assert!(mode.detect_failure("cannot access /dev/urandom", ""));
+        assert!(mode.detect_failure("user namespace creation failed", ""));
+        // Should NOT detect Landlock errors
+        assert!(!mode.detect_failure("LandlockRestrict error", ""));
+        // Clean output = no failure
+        assert!(!mode.detect_failure("files written successfully", ""));
+    }
+
+    #[test]
+    fn sandbox_mode_detect_landlock_failure() {
+        let mode = SandboxMode::Landlock;
+        // Should detect Landlock-specific errors
+        assert!(mode.detect_failure("LandlockRestrict error", ""));
+        assert!(mode.detect_failure("error applying legacy Linux sandbox", ""));
+        assert!(mode.detect_failure("", "sandbox restrictions failed"));
+        // Should NOT detect bwrap errors
+        assert!(!mode.detect_failure("bwrap failed", ""));
+        // Clean output = no failure
+        assert!(!mode.detect_failure("files written successfully", ""));
+    }
+
+    #[test]
+    fn sandbox_mode_danger_never_detects_failure() {
+        let mode = SandboxMode::DangerFullAccess;
+        // danger-full-access should never report sandbox failure
+        assert!(!mode.detect_failure("any error at all", "any stderr"));
+    }
+
+    #[test]
+    fn sandbox_mode_env_roundtrip() {
+        // Setting env var then reading should preserve the mode
+        for mode in [SandboxMode::Bwrap, SandboxMode::Landlock, SandboxMode::DangerFullAccess] {
+            std::env::set_var("PLANNER_CODEX_SANDBOX", mode.env_value());
+            assert_eq!(SandboxMode::from_env(), mode, "roundtrip failed for {:?}", mode);
+        }
+        std::env::remove_var("PLANNER_CODEX_SANDBOX");
     }
 }
