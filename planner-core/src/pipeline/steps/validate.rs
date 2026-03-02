@@ -179,6 +179,11 @@ pub async fn execute_scenario_validation(
         scenarios.scenarios.len(),
         factory_output.output_path,
     );
+    tracing::info!(
+        "Scenario Validator: build_status={:?}, factory_attempt={}",
+        factory_output.build_status,
+        factory_output.attempt,
+    );
 
     // If DTU clones are available, log them so evaluators can reference
     // provider state during scenario evaluation.
@@ -229,9 +234,12 @@ pub async fn execute_scenario_validation(
         .await?;
 
         tracing::info!(
-            "    → score={:.2}, majority_pass={}",
+            "    → score={:.2}, majority_pass={}, runs=[{:.2}, {:.2}, {:.2}]",
             result.score,
             result.majority_pass,
+            result.runs[0],
+            result.runs[1],
+            result.runs[2],
         );
 
         scenario_results.push(result);
@@ -371,14 +379,12 @@ async fn evaluate_scenario_once(
 ) -> StepResult<SingleEvalResult> {
     let source_files = read_factory_files(&factory_output.output_path);
 
-    // Log source file count on first scenario for diagnostics
-    if scenario.id.contains("CRIT-1") {
-        let file_count = source_files.matches("=== ").count();
-        tracing::info!(
-            "    Source files loaded for evaluation: {} files, {} bytes",
-            file_count, source_files.len()
-        );
-    }
+    // Log source file stats for every scenario
+    let file_count = source_files.matches("=== ").count();
+    tracing::info!(
+        "    Source files for evaluation: {} files, {} bytes",
+        file_count, source_files.len()
+    );
 
     let mut last_error = None;
 
@@ -410,10 +416,26 @@ async fn evaluate_scenario_once(
 
         match router.complete(request).await {
             Ok(response) => {
+                tracing::debug!(
+                    "    Gemini response for {} (attempt {}): {}",
+                    scenario.id,
+                    attempt + 1,
+                    &response.content[..response.content.len().min(500)]
+                );
                 match parse_eval_response(&response.content) {
-                    Ok(result) => return Ok(result),
+                    Ok(result) => {
+                        tracing::info!(
+                            "    {} run {}: score={:.2}, passed={}",
+                            scenario.id, attempt + 1, result.score, result.passed
+                        );
+                        return Ok(result);
+                    }
                     Err(e) => {
-                        tracing::warn!("    Parse error on attempt {}: {}", attempt + 1, e);
+                        tracing::warn!(
+                            "    Parse error on attempt {} for {}: {}. Raw response (first 300 chars): {}",
+                            attempt + 1, scenario.id, e,
+                            &response.content[..response.content.len().min(300)]
+                        );
                         last_error = Some(e);
                     }
                 }
