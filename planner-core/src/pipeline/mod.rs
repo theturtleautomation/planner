@@ -796,10 +796,20 @@ pub async fn run_full_pipeline<S: TurnStore>(
     let mut satisfaction;
     let mut attempt = 0usize;
     let root_spec = &front_office.specs[0];
+    // Generalized error feedback from the validator — fed back to the factory
+    // on retries so it knows WHAT failed (category + severity) without
+    // revealing hidden scenario text.
+    let mut retry_feedback: Vec<GeneralizedError> = Vec::new();
 
     loop {
         attempt += 1;
         tracing::info!("─── Factory Worker (attempt {}/{}) ───", attempt, FACTORY_MAX_RETRIES + 1);
+
+        let feedback_slice: Option<&[GeneralizedError]> = if retry_feedback.is_empty() {
+            None
+        } else {
+            Some(&retry_feedback)
+        };
 
         factory_output = factory::execute_factory_with_worker(
             worker,
@@ -807,6 +817,7 @@ pub async fn run_full_pipeline<S: TurnStore>(
             &front_office.agents_manifest,
             root_spec,
             &mut budget,
+            feedback_slice,
         )
         .await?;
 
@@ -858,6 +869,18 @@ pub async fn run_full_pipeline<S: TurnStore>(
             tracing::warn!("  Gates FAILED — no more retries");
             break;
         }
+
+        // Collect generalized errors from failed scenarios to feed back
+        // to the factory on the next attempt.
+        retry_feedback = satisfaction
+            .scenario_results
+            .iter()
+            .filter_map(|r| r.generalized_error.clone())
+            .collect();
+        tracing::info!(
+            "  Retry: {} generalized error(s) will be fed back to factory",
+            retry_feedback.len(),
+        );
     }
 
     // ---- Telemetry Presenter ----

@@ -161,6 +161,7 @@ pub async fn execute_factory_with_worker(
     agents: &AgentsManifestV1,
     spec: &NLSpecV1,
     budget: &mut RunBudgetV1,
+    error_feedback: Option<&[GeneralizedError]>,
 ) -> StepResult<FactoryOutputV1> {
     tracing::info!("Factory Diplomat (Worker mode): starting");
 
@@ -177,11 +178,35 @@ pub async fn execute_factory_with_worker(
     )?;
 
     // Step 2: Build prompt and config
-    let task_prompt = format!(
+    let mut task_prompt = String::from(
         "Implement all requirements from the NLSpec. Create a working project \
          in the current directory. The project should compile, pass tests, and \
-         satisfy all Definition of Done criteria."
+         satisfy all Definition of Done criteria.",
     );
+
+    // Append generalized error feedback from a previous validation pass.
+    // This tells the factory WHAT failed (category + severity) without
+    // revealing scenario text or BDD details.
+    if let Some(errors) = error_feedback {
+        if !errors.is_empty() {
+            task_prompt.push_str("\n\n## Previous Validation Feedback\n\n");
+            task_prompt.push_str(
+                "The previous implementation failed quality gates. \
+                 Fix these issues in your new implementation:\n\n",
+            );
+            for err in errors {
+                task_prompt.push_str(&format!(
+                    "- [{}] {}: ensure defensive patterns are in place\n",
+                    format!("{:?}", err.severity),
+                    err.category,
+                ));
+            }
+            tracing::info!(
+                "Factory retry: {} generalized error(s) included in prompt",
+                errors.len(),
+            );
+        }
+    }
 
     let full_prompt = if worker.needs_worktree() {
         super::factory_worker::CodexFactoryWorker::build_codex_prompt(
@@ -394,7 +419,7 @@ mod tests {
         );
 
         let result = execute_factory_with_worker(
-            &worker, &graph, &agents, &spec, &mut budget,
+            &worker, &graph, &agents, &spec, &mut budget, None,
         )
         .await;
 
@@ -426,7 +451,7 @@ mod tests {
         let worker = MockFactoryWorker::failure("compile error");
 
         let result = execute_factory_with_worker(
-            &worker, &graph, &agents, &spec, &mut budget,
+            &worker, &graph, &agents, &spec, &mut budget, None,
         )
         .await;
 
