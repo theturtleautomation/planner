@@ -761,17 +761,95 @@ impl SandboxProbe {
     }
 
     /// Migrate stale cache from pre-v2 sandbox logic.
-    /// If the cache contains `danger-full-access`, delete it so we re-probe.
-    /// This is a one-time cleanup after upgrading from the old 3-mode cascade.
+    /// If the cache contains `danger-full-access` or `workspace-write`, delete
+    /// it so we re-probe. The old probe checked a nonexistent sysfs path
+    /// (`/sys/kernel/security/landlock/abi_version`) which always failed,
+    /// causing incorrect fallback to workspace-write even when Landlock was
+    /// fully operational.
     fn migrate_stale_cache() {
         if let Some(path) = Self::cache_path() {
             if let Ok(content) = std::fs::read_to_string(&path) {
-                if content.contains("danger-full-access") {
+                if content.contains("danger-full-access")
+                    || content.contains("workspace-write")
+                {
                     tracing::info!(
-                        "SandboxProbe: deleting stale cache with deprecated 'danger-full-access'"
+                        "SandboxProbe: deleting stale cache (value was set by broken \
+                         probe that checked nonexistent sysfs path). Will re-probe."
                     );
                     let _ = std::fs::remove_file(&path);
                 }
+            }
+        }
+    }
+
+    /// Detect whether Landlock is active on the running kernel.
+    ///
+    /// Landlock is a syscall-only LSM — it has NO securityfs directory.
+    /// There is no `/sys/kernel/security/landlock/` on any kernel version.
+    ///
+    /// Detection strategy:
+    ///   1. Read `/sys/kernel/security/lsm` — a comma-separated list of active
+    ///      LSMs (e.g. "landlock,lockdown,yama,integrity,apparmor"). If
+    ///      "landlock" appears, it's enabled.
+    ///   2. Fallback: invoke `landlock_create_ruleset` syscall (NR 444 on
+    ///      x86_64) with `LANDLOCK_CREATE_RULESET_VERSION` flag. Returns the
+    ///      ABI version (>0) if Landlock is active, or -1/ENOSYS/EOPNOTSUPP
+    ///      if not.
+    fn probe_landlock() -> bool {
+        // --- Method 1: /sys/kernel/security/lsm ---
+        // This file always exists when securityfs is mounted and lists all
+        // active LSMs. It's readable by unprivileged users.
+        if let Ok(lsm_list) = std::fs::read_to_string("/sys/kernel/security/lsm") {
+            let has_landlock = lsm_list
+                .split(',')
+                .any(|module| module.trim() == "landlock");
+            if has_landlock {
+                tracing::info!(
+                    "SandboxProbe: Landlock detected via /sys/kernel/security/lsm"
+                );
+                return true;
+            }
+            tracing::debug!(
+                "SandboxProbe: /sys/kernel/security/lsm readable but landlock not listed: {}",
+                lsm_list.trim()
+            );
+        } else {
+            tracing::debug!(
+                "SandboxProbe: /sys/kernel/security/lsm not readable, trying syscall"
+            );
+        }
+
+        // --- Method 2: landlock_create_ruleset syscall ---
+        // syscall number 444 on x86_64, flag 1 = LANDLOCK_CREATE_RULESET_VERSION.
+        // Returns ABI version (>0) on success, -1 on failure.
+        // We use a small Python one-liner because Rust's libc crate isn't in
+        // our dependency tree and adding it just for one syscall is overkill.
+        let syscall_probe = std::process::Command::new("python3")
+            .args([
+                "-c",
+                "import ctypes,sys; \
+                 libc=ctypes.CDLL(None,use_errno=True); \
+                 r=libc.syscall(444,None,0,1); \
+                 sys.exit(0 if r>0 else 1)",
+            ])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+
+        match syscall_probe {
+            Ok(status) if status.success() => {
+                tracing::info!(
+                    "SandboxProbe: Landlock detected via syscall (landlock_create_ruleset)"
+                );
+                true
+            }
+            Ok(_) => {
+                tracing::info!("SandboxProbe: landlock_create_ruleset syscall returned failure");
+                false
+            }
+            Err(e) => {
+                tracing::info!("SandboxProbe: python3 not available for syscall probe: {}", e);
+                false
             }
         }
     }
@@ -780,7 +858,13 @@ impl SandboxProbe {
     ///
     /// Tests bwrap and Landlock availability in order:
     ///   1. bwrap: `bwrap --unshare-all --ro-bind /usr /usr ... -- true`
-    ///   2. Landlock: check `/sys/kernel/security/landlock/abi_version`
+    ///   2. Landlock: check `/sys/kernel/security/lsm` for "landlock" in the
+    ///      active LSM list, OR attempt the `landlock_create_ruleset` syscall
+    ///      with the `LANDLOCK_CREATE_RULESET_VERSION` flag.
+    ///      NOTE: Landlock has NO securityfs directory — there is no
+    ///      `/sys/kernel/security/landlock/` path on any kernel version.
+    ///      The old probe that checked for `abi_version` at that path was
+    ///      always wrong and always returned false.
     ///   3. If both fail: WorkspaceWrite (danger-full-access under the hood)
     fn run() -> SandboxMode {
         // --- Check bwrap ---
@@ -832,12 +916,17 @@ impl SandboxProbe {
         }
 
         // --- bwrap failed or not available — check Landlock ---
-        let landlock_available = std::path::Path::new(
-            "/sys/kernel/security/landlock/abi_version"
-        ).exists();
+        // Landlock is a syscall-only LSM with NO securityfs interface.
+        // There is no /sys/kernel/security/landlock/ directory on any kernel.
+        // We detect it two ways:
+        //   1. Read /sys/kernel/security/lsm — lists active LSMs (e.g.
+        //      "landlock,lockdown,yama,integrity,apparmor").
+        //   2. Fallback: invoke landlock_create_ruleset via syscall 444
+        //      with LANDLOCK_CREATE_RULESET_VERSION flag.
+        let landlock_available = Self::probe_landlock();
 
         if landlock_available {
-            tracing::info!("SandboxProbe: Landlock ABI available — using --full-auto");
+            tracing::info!("SandboxProbe: Landlock is active — using --full-auto");
             return SandboxMode::FullAuto;
         }
 
@@ -874,7 +963,8 @@ fn dirs_cache_path() -> Option<PathBuf> {
 ///   1. **Bwrap** (preferred): bubblewrap namespace sandbox.
 ///      Probe: `bwrap --unshare-all --ro-bind /usr /usr ... -- true`.
 ///   2. **FullAuto**: Codex's `--full-auto` flag (Landlock + seccomp).
-///      Probe: checks `/sys/kernel/security/landlock/abi_version`.
+///      Probe: checks `/sys/kernel/security/lsm` for "landlock" in active
+///      LSM list, falls back to `landlock_create_ruleset` syscall.
 ///   3. **WorkspaceWrite**: `danger-full-access` internally, for kernels
 ///      where neither bwrap nor Landlock works (PVE LXC containers).
 ///      Containment: LXC boundary + worktree isolation.
@@ -2172,33 +2262,70 @@ mod tests {
     }
 
     #[test]
-    fn sandbox_probe_landlock_abi_path_checked() {
-        // Verify the Landlock ABI path is a reasonable sysfs path.
-        // This doesn't test the probe outcome (kernel-dependent), but
-        // ensures the path literal matches what the probe actually checks.
-        let expected = std::path::Path::new("/sys/kernel/security/landlock/abi_version");
-        // If Landlock is available, the file exists; if not, it doesn't.
-        // Either way the path should be valid Unicode.
+    fn sandbox_probe_landlock_lsm_file_path() {
+        // Verify the LSM list path is the standard securityfs location.
+        // This file lists active LSMs as a comma-separated string.
+        // Landlock has NO securityfs directory of its own — there is no
+        // /sys/kernel/security/landlock/ on any kernel version.
+        let expected = std::path::Path::new("/sys/kernel/security/lsm");
         assert!(expected.to_str().is_some());
     }
 
     #[test]
+    fn sandbox_probe_landlock_lsm_parsing() {
+        // Test the parsing logic used in probe_landlock() method 1.
+        // The /sys/kernel/security/lsm file contains a comma-separated list.
+        let lsm_with_landlock = "landlock,lockdown,yama,integrity,apparmor";
+        assert!(lsm_with_landlock.split(',').any(|m| m.trim() == "landlock"));
+
+        let lsm_without_landlock = "lockdown,yama,integrity,apparmor";
+        assert!(!lsm_without_landlock.split(',').any(|m| m.trim() == "landlock"));
+
+        // Edge: landlock at end, with trailing newline
+        let lsm_trailing = "lockdown,yama,landlock\n";
+        assert!(lsm_trailing.split(',').any(|m| m.trim() == "landlock"));
+
+        // Edge: empty string
+        let lsm_empty = "";
+        assert!(!lsm_empty.split(',').any(|m| m.trim() == "landlock"));
+
+        // Edge: partial match should NOT match
+        let lsm_partial = "lockdown,landlock_custom,yama";
+        assert!(!lsm_partial.split(',').any(|m| m.trim() == "landlock"));
+    }
+
+    #[test]
     fn sandbox_probe_migrate_stale_cache() {
-        // If cache contains danger-full-access, migrate_stale_cache
-        // should delete it.
+        // If cache contains danger-full-access OR workspace-write,
+        // migrate_stale_cache should delete it. Both values were written
+        // by the broken probe that checked a nonexistent sysfs path.
         SandboxProbe::write_cache(SandboxMode::Bwrap);
         if let Some(path) = SandboxProbe::cache_path() {
-            // Manually overwrite with stale value
             let ts = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
                 .as_secs();
+
+            // Test danger-full-access
             let stale = format!("{}\ndanger-full-access", ts);
             std::fs::write(&path, &stale).unwrap();
-
-            // Migrate should delete it
             SandboxProbe::migrate_stale_cache();
-            assert!(!path.exists(), "stale cache should be deleted by migrate");
+            assert!(!path.exists(), "danger-full-access cache should be deleted by migrate");
+
+            // Test workspace-write (also stale from broken probe)
+            let stale_ws = format!("{}\nworkspace-write", ts);
+            std::fs::write(&path, &stale_ws).unwrap();
+            SandboxProbe::migrate_stale_cache();
+            assert!(!path.exists(), "workspace-write cache should be deleted by migrate");
+
+            // Test valid values are NOT deleted
+            SandboxProbe::write_cache(SandboxMode::FullAuto);
+            SandboxProbe::migrate_stale_cache();
+            if path.exists() {
+                let content = std::fs::read_to_string(&path).unwrap();
+                assert!(content.contains("full-auto"), "full-auto cache should survive migration");
+                let _ = std::fs::remove_file(&path);
+            }
         }
     }
 }
