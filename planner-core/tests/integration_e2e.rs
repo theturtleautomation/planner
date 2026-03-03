@@ -349,7 +349,7 @@ async fn e2e_phase0_pipeline_simulation() {
 
     let mut budget = RunBudgetV1::new_phase0(project_id, run_id);
     let factory_output =
-        factory::execute_factory_with_worker(&worker, &graph_dot, &agents_manifest, &spec, &mut budget, None).await;
+        factory::execute_factory_with_worker(&worker, &graph_dot, &agents_manifest, &spec, &mut budget, None, None).await;
 
     assert!(
         factory_output.is_ok(),
@@ -2201,7 +2201,7 @@ async fn e2e_phase7_mock_worker_produces_factory_output() {
     );
 
     let output = factory::execute_factory_with_worker(
-        &worker, &graph, &agents, &spec, &mut budget, None,
+        &worker, &graph, &agents, &spec, &mut budget, None, None,
     )
     .await
     .unwrap();
@@ -2317,7 +2317,7 @@ async fn e2e_phase7_worker_failure_graceful() {
     let worker = MockFactoryWorker::failure("codex binary crashed");
 
     let output = factory::execute_factory_with_worker(
-        &worker, &graph, &agents, &spec, &mut budget, None,
+        &worker, &graph, &agents, &spec, &mut budget, None, None,
     )
     .await
     .unwrap();

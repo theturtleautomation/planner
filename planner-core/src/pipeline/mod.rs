@@ -790,16 +790,28 @@ pub async fn run_full_pipeline<S: TurnStore>(
     );
 
     // ---- Layer 1→2: Factory Worker + Validation Loop ----
+    //
+    // Best-of-N Rejection Sampling:
+    // The pipeline tracks the best result across all attempts and uses it
+    // for final reporting/commit — even if a later attempt regresses
+    // (e.g., timeout producing 0/17 after a previous attempt scored 16/17).
+    // This follows the Dark Factory's execution-based filtering principle:
+    // keep the best surviving result, discard regressions.
     let run_id = Uuid::new_v4();
     let mut budget = RunBudgetV1::new_phase0(project_id, run_id);
     let mut factory_output;
     let mut satisfaction;
+    let mut best_factory_output: Option<FactoryOutputV1> = None;
+    let mut best_satisfaction: Option<SatisfactionResultV1> = None;
     let mut attempt = 0usize;
     let root_spec = &front_office.specs[0];
     // Generalized error feedback from the validator — fed back to the factory
     // on retries so it knows WHAT failed (category + severity) without
     // revealing hidden scenario text.
     let mut retry_feedback: Vec<GeneralizedError> = Vec::new();
+    // Previous output path for incremental retry (Attractor convergence).
+    // Set after each factory attempt so retries can reuse the worktree.
+    let mut previous_output_path: Option<String> = None;
 
     loop {
         attempt += 1;
@@ -811,6 +823,8 @@ pub async fn run_full_pipeline<S: TurnStore>(
             Some(&retry_feedback)
         };
 
+        let prev_path_ref = previous_output_path.as_deref();
+
         factory_output = match factory::execute_factory_with_worker(
             worker,
             &front_office.graph_dot,
@@ -818,6 +832,7 @@ pub async fn run_full_pipeline<S: TurnStore>(
             root_spec,
             &mut budget,
             feedback_slice,
+            prev_path_ref,
         )
         .await
         {
@@ -845,6 +860,9 @@ pub async fn run_full_pipeline<S: TurnStore>(
             config.persist(&turn);
         }
 
+        // Track this output path for incremental retry on next attempt.
+        previous_output_path = Some(factory_output.output_path.clone());
+
         // Reset DTU clones between attempts
         if let Some(dtu_reg) = config.dtu_registry {
             dtu_reg.reset_all();
@@ -859,6 +877,45 @@ pub async fn run_full_pipeline<S: TurnStore>(
             config.dtu_registry,
         )
         .await?;
+
+        // --- Best-of-N tracking (rejection sampling) ---
+        // Compare this attempt's pass count against the best so far.
+        // Keep whichever produced the most passing scenarios, regardless
+        // of attempt order. This prevents a timeout/regression from
+        // overwriting a better earlier result.
+        let current_pass_count = satisfaction.scenario_results
+            .iter()
+            .filter(|r| r.majority_pass)
+            .count();
+        let best_pass_count = best_satisfaction.as_ref()
+            .map(|s| s.scenario_results.iter().filter(|r| r.majority_pass).count())
+            .unwrap_or(0);
+
+        if current_pass_count > best_pass_count || best_satisfaction.is_none() {
+            tracing::info!(
+                "  Best-of-N: attempt {} is new best ({}/{} scenarios passed, previous best: {}/{})",
+                attempt,
+                current_pass_count,
+                satisfaction.scenario_results.len(),
+                best_pass_count,
+                best_satisfaction.as_ref()
+                    .map(|s| s.scenario_results.len())
+                    .unwrap_or(0),
+            );
+            best_factory_output = Some(factory_output.clone());
+            best_satisfaction = Some(satisfaction.clone());
+        } else {
+            tracing::warn!(
+                "  Best-of-N: attempt {} regressed ({}/{} vs best {}/{}), keeping previous best",
+                attempt,
+                current_pass_count,
+                satisfaction.scenario_results.len(),
+                best_pass_count,
+                best_satisfaction.as_ref()
+                    .map(|s| s.scenario_results.len())
+                    .unwrap_or(0),
+            );
+        }
 
         if satisfaction.gates_passed {
             tracing::info!("  Gates PASSED on attempt {}", attempt);
@@ -880,6 +937,19 @@ pub async fn run_full_pipeline<S: TurnStore>(
 
         if attempt > FACTORY_MAX_RETRIES || !budget.can_proceed() {
             tracing::warn!("  Gates FAILED — no more retries");
+            // Use best result instead of the last (possibly regressed) result.
+            // This is the rejection sampling principle: keep the best survivor.
+            if let (Some(best_fo), Some(best_sat)) = (best_factory_output.take(), best_satisfaction.take()) {
+                if best_sat.scenario_results.iter().filter(|r| r.majority_pass).count()
+                    > satisfaction.scenario_results.iter().filter(|r| r.majority_pass).count()
+                {
+                    tracing::info!(
+                        "  Best-of-N: final result uses earlier attempt (better pass rate)"
+                    );
+                    factory_output = best_fo;
+                    satisfaction = best_sat;
+                }
+            }
             break;
         }
 

@@ -156,6 +156,15 @@ pub fn render_nlspec_markdown(spec: &NLSpecV1) -> String {
 /// 1. Prepares a worktree with spec + graph + agents context
 /// 2. Invokes the factory worker (e.g., CodexFactoryWorker via `codex exec`)
 /// 3. Builds FactoryOutputV1 from the worker result
+///
+/// ## Incremental Retry (Attractor Convergence)
+///
+/// When `error_feedback` AND `previous_output_path` are both present, the
+/// factory uses an incremental retry strategy instead of rebuilding from
+/// scratch. This follows the Dark Factory's Attractor pattern:
+/// - The previous attempt's code is copied into the new worktree
+/// - The prompt focuses on fixing specific issues, not re-implementing everything
+/// - This prevents 600s timeouts on trivial 1-scenario deltas
 pub async fn execute_factory_with_worker(
     worker: &dyn FactoryWorker,
     graph: &GraphDotV1,
@@ -163,6 +172,7 @@ pub async fn execute_factory_with_worker(
     spec: &NLSpecV1,
     budget: &mut RunBudgetV1,
     error_feedback: Option<&[GeneralizedError]>,
+    previous_output_path: Option<&str>,
 ) -> StepResult<FactoryOutputV1> {
     tracing::info!("Factory Diplomat (Worker mode): starting");
 
@@ -178,36 +188,105 @@ pub async fn execute_factory_with_worker(
         &agents.root_agents_md,
     )?;
 
-    // Step 2: Build prompt and config
-    let mut task_prompt = String::from(
-        "Implement all requirements from the NLSpec. Create a working project \
-         in the current directory. The project should compile, pass tests, and \
-         satisfy all Definition of Done criteria.",
-    );
+    // Step 1b: Incremental retry — copy previous worktree if available.
+    // When we have both error feedback and a previous output path, the
+    // previous attempt produced compilable code with minor issues.
+    // Copy it into the new worktree so the factory worker can iterate
+    // on it rather than rebuilding from scratch.
+    let is_incremental = if let (Some(errors), Some(prev_path)) = (error_feedback, previous_output_path) {
+        if !errors.is_empty() && std::path::Path::new(prev_path).exists() {
+            match copy_previous_worktree(prev_path, &worktree_info.path) {
+                Ok(file_count) => {
+                    tracing::info!(
+                        "Factory Diplomat: incremental retry — copied {} files from previous attempt",
+                        file_count,
+                    );
+                    true
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Factory Diplomat: failed to copy previous worktree ({}), falling back to fresh build",
+                        e,
+                    );
+                    false
+                }
+            }
+        } else {
+            false
+        }
+    } else {
+        false
+    };
 
-    // Append generalized error feedback from a previous validation pass.
-    // This tells the factory WHAT failed (category + severity) without
-    // revealing scenario text or BDD details.
-    if let Some(errors) = error_feedback {
-        if !errors.is_empty() {
-            task_prompt.push_str("\n\n## Previous Validation Feedback\n\n");
-            task_prompt.push_str(
-                "The previous implementation failed quality gates. \
-                 Fix these issues in your new implementation:\n\n",
-            );
+    // Step 2: Build prompt and config
+    let task_prompt = if is_incremental {
+        // Incremental (Attractor) prompt: focus on delta fixes.
+        let mut prompt = String::from(
+            "The current directory contains a NEARLY COMPLETE implementation from a \
+             previous attempt. It compiles and passes most quality gates, but the \
+             following issues were identified. Fix ONLY these issues — do NOT \
+             rewrite or restructure code that is already working.\n\n\
+             ## Issues to Fix\n\n",
+        );
+
+        if let Some(errors) = error_feedback {
             for err in errors {
-                task_prompt.push_str(&format!(
+                prompt.push_str(&format!(
                     "- [{}] {}: ensure proper handling is in place\n",
                     format!("{:?}", err.severity),
                     err.category,
                 ));
             }
-            tracing::info!(
-                "Factory retry: {} generalized error(s) included in prompt",
-                errors.len(),
-            );
         }
-    }
+
+        prompt.push_str(
+            "\n## Important\n\n\
+             - Do NOT delete or rewrite existing files unless necessary to fix the issues above.\n\
+             - Preserve the existing project structure, dependencies, and build configuration.\n\
+             - Focus on adding missing defensive patterns or fixing specific logic gaps.\n\
+             - The project already compiles — keep it compiling.\n",
+        );
+
+        tracing::info!(
+            "Factory retry: incremental mode with {} error(s)",
+            error_feedback.map(|e| e.len()).unwrap_or(0),
+        );
+
+        prompt
+    } else {
+        // Fresh build prompt (first attempt or fallback).
+        let mut prompt = String::from(
+            "Implement all requirements from the NLSpec. Create a working project \
+             in the current directory. The project should compile, pass tests, and \
+             satisfy all Definition of Done criteria.",
+        );
+
+        // Append generalized error feedback from a previous validation pass.
+        // This tells the factory WHAT failed (category + severity) without
+        // revealing scenario text or BDD details.
+        if let Some(errors) = error_feedback {
+            if !errors.is_empty() {
+                prompt.push_str("\n\n## Previous Validation Feedback\n\n");
+                prompt.push_str(
+                    "The previous implementation failed quality gates. \
+                     Fix these issues in your new implementation:\n\n",
+                );
+                for err in errors {
+                    prompt.push_str(&format!(
+                        "- [{}] {}: ensure proper handling is in place\n",
+                        format!("{:?}", err.severity),
+                        err.category,
+                    ));
+                }
+                tracing::info!(
+                    "Factory retry: {} generalized error(s) included in prompt",
+                    errors.len(),
+                );
+            }
+        }
+
+        prompt
+    };
 
     let full_prompt = if worker.needs_worktree() {
         super::factory_worker::CodexFactoryWorker::build_codex_prompt(
@@ -312,6 +391,95 @@ fn build_factory_output_from_worker(
         }],
         output_path: worktree.path.to_string_lossy().to_string(),
     }
+}
+
+// ---------------------------------------------------------------------------
+// Incremental Retry — Worktree Copy
+// ---------------------------------------------------------------------------
+
+/// Copy source files from a previous worktree into a new one for incremental retry.
+///
+/// Only copies files that Codex created (detected via `git_worktree_changed_files`),
+/// preserving the directory structure. Skips `.planner-context/`, `.git/`, and
+/// `node_modules/` to avoid bloating the worktree.
+///
+/// Returns the number of files copied.
+fn copy_previous_worktree(
+    prev_path: &str,
+    new_worktree: &std::path::Path,
+) -> Result<usize, String> {
+    use std::path::Path;
+
+    let prev = Path::new(prev_path);
+    if !prev.exists() {
+        return Err(format!("Previous worktree {} does not exist", prev_path));
+    }
+
+    // Get the list of files Codex created in the previous attempt
+    let changed_files = super::factory_worker::git_worktree_changed_files(prev);
+    if changed_files.is_empty() {
+        return Err("Previous worktree has no changed files".into());
+    }
+
+    let mut copied = 0usize;
+
+    for rel_path in &changed_files {
+        // Skip directories we don't want to copy
+        if rel_path.starts_with(".planner-context/")
+            || rel_path.starts_with(".git/")
+            || rel_path.starts_with("node_modules/")
+            || rel_path == ".gitignore"
+        {
+            continue;
+        }
+
+        let src = prev.join(rel_path);
+        let dst = new_worktree.join(rel_path);
+
+        if !src.exists() || !src.is_file() {
+            continue;
+        }
+
+        // Create parent directories if needed
+        if let Some(parent) = dst.parent() {
+            if !parent.exists() {
+                if let Err(e) = std::fs::create_dir_all(parent) {
+                    tracing::warn!("Failed to create dir {}: {}", parent.display(), e);
+                    continue;
+                }
+            }
+        }
+
+        match std::fs::copy(&src, &dst) {
+            Ok(_) => {
+                copied += 1;
+                tracing::debug!("  Copied: {}", rel_path);
+            }
+            Err(e) => {
+                tracing::warn!("  Failed to copy {}: {}", rel_path, e);
+            }
+        }
+    }
+
+    // Re-stage and commit the copied files so that post-codex
+    // `git diff` shows only what the retry changed, not the base.
+    let run = |args: &[&str]| -> bool {
+        std::process::Command::new("git")
+            .args(args)
+            .current_dir(new_worktree)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    };
+
+    if copied > 0 {
+        run(&["add", "-A"]);
+        run(&["commit", "-m", "planner: incremental retry base (copied from previous attempt)"]);
+    }
+
+    Ok(copied)
 }
 
 // ---------------------------------------------------------------------------
@@ -425,7 +593,7 @@ mod tests {
         );
 
         let result = execute_factory_with_worker(
-            &worker, &graph, &agents, &spec, &mut budget, None,
+            &worker, &graph, &agents, &spec, &mut budget, None, None,
         )
         .await;
 
@@ -457,7 +625,7 @@ mod tests {
         let worker = MockFactoryWorker::failure("compile error");
 
         let result = execute_factory_with_worker(
-            &worker, &graph, &agents, &spec, &mut budget, None,
+            &worker, &graph, &agents, &spec, &mut budget, None, None,
         )
         .await;
 
@@ -521,5 +689,114 @@ mod tests {
         assert_eq!(output.build_status, BuildStatus::Failed);
         assert!(!output.node_results[0].success);
         assert!(output.node_results[0].error.is_some());
+    }
+
+    #[test]
+    fn copy_previous_worktree_copies_source_files() {
+        use std::fs;
+        use std::path::Path;
+
+        // Create a fake "previous" worktree with some files and a git repo
+        let tmpdir = std::env::temp_dir().join("planner-test-incr-copy");
+        let prev_dir = tmpdir.join("prev");
+        let new_dir = tmpdir.join("new");
+
+        // Cleanup from previous test runs
+        let _ = fs::remove_dir_all(&tmpdir);
+
+        // Set up previous worktree with git
+        fs::create_dir_all(prev_dir.join("src")).unwrap();
+        fs::write(prev_dir.join("src/App.tsx"), "export default function App() {}").unwrap();
+        fs::write(prev_dir.join("package.json"), r#"{"name": "test"}"#).unwrap();
+        fs::write(prev_dir.join(".gitignore"), "node_modules/\n").unwrap();
+
+        // Initialize git in previous worktree
+        let run_git = |args: &[&str], dir: &Path| {
+            std::process::Command::new("git")
+                .args(args)
+                .current_dir(dir)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .unwrap();
+        };
+        run_git(&["init"], &prev_dir);
+        run_git(&["config", "user.email", "test@test.com"], &prev_dir);
+        run_git(&["config", "user.name", "Test"], &prev_dir);
+        // Create initial empty commit
+        run_git(&["add", ".gitignore"], &prev_dir);
+        run_git(&["commit", "-m", "initial", "--allow-empty"], &prev_dir);
+        // Stage source files (they become "changed" relative to initial commit)
+        // The source files are untracked, so git_worktree_changed_files finds them
+
+        // Set up new worktree (minimal — just needs to exist)
+        fs::create_dir_all(new_dir.join("src")).unwrap();
+        run_git(&["init"], &new_dir);
+        run_git(&["config", "user.email", "test@test.com"], &new_dir);
+        run_git(&["config", "user.name", "Test"], &new_dir);
+        run_git(&["commit", "--allow-empty", "-m", "init"], &new_dir);
+
+        // Run the copy
+        let result = copy_previous_worktree(
+            &prev_dir.to_string_lossy(),
+            &new_dir,
+        );
+
+        assert!(result.is_ok(), "copy failed: {:?}", result.err());
+        let count = result.unwrap();
+        assert!(count >= 2, "Expected at least 2 files copied, got {}", count);
+
+        // Verify files exist in new worktree
+        assert!(new_dir.join("src/App.tsx").exists());
+        assert!(new_dir.join("package.json").exists());
+
+        // Cleanup
+        let _ = fs::remove_dir_all(&tmpdir);
+    }
+
+    #[test]
+    fn copy_previous_worktree_nonexistent_path() {
+        let result = copy_previous_worktree("/tmp/planner-nonexistent-23948723", &std::path::PathBuf::from("/tmp"));
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn execute_factory_incremental_retry_with_previous_path() {
+        use crate::pipeline::steps::factory_worker::MockFactoryWorker;
+
+        let graph = sample_graph();
+        let agents = sample_agents();
+        let spec = sample_spec();
+        let mut budget = sample_budget();
+
+        std::env::set_var(
+            "PLANNER_WORKTREE_ROOT",
+            std::env::temp_dir()
+                .join("planner-test-fw-incremental")
+                .to_string_lossy()
+                .to_string(),
+        );
+
+        let worker = MockFactoryWorker::success(
+            "Fixed the issue",
+            vec!["src/main.rs".into()],
+        );
+
+        let errors = vec![GeneralizedError {
+            category: "race-condition".into(),
+            severity: Severity::Medium,
+        }];
+
+        // Pass a non-existent previous path — should gracefully fall back to fresh build
+        let result = execute_factory_with_worker(
+            &worker, &graph, &agents, &spec, &mut budget,
+            Some(&errors),
+            Some("/tmp/planner-nonexistent-prev"),
+        )
+        .await;
+
+        assert!(result.is_ok(), "Should succeed even with bad previous path");
+        let output = result.unwrap();
+        assert_eq!(output.build_status, BuildStatus::Success);
     }
 }

@@ -343,6 +343,13 @@ async fn evaluate_scenario_once(
 
     let mut last_error = None;
 
+    // Pattern pre-check: scan source code for defensive patterns
+    // relevant to this scenario's BDD text. If found, inject the
+    // evidence into the prompt so the evaluator can't miss it.
+    // Computed once outside the retry loop since source + BDD are stable.
+    let evidence_block = pattern_precheck(&scenario.bdd_text, &source_files)
+        .unwrap_or_default();
+
     for attempt in 0..=EVAL_MAX_RETRIES {
         if attempt > 0 {
             tracing::warn!(
@@ -356,12 +363,15 @@ async fn evaluate_scenario_once(
             messages: vec![Message {
                 role: Role::User,
                 content: format!(
-                    "Review the source code below and evaluate whether it correctly implements this BDD scenario.\n\nScenario: {} [{}]\n{}\n\nBuild status: {}\n\n## Source Code\n\n{}",
+                    "Review the source code below and evaluate whether it correctly \
+                     implements this BDD scenario.\n\nScenario: {} [{}]\n{}\n\n\
+                     Build status: {}\n\n## Source Code\n\n{}{}",
                     scenario.title,
                     format!("{:?}", scenario.tier),
                     scenario.bdd_text,
                     format!("{:?}", factory_output.build_status),
                     source_files,
+                    evidence_block,
                 ),
             }],
             max_tokens: 1024,
@@ -450,6 +460,239 @@ fn parse_eval_response(content: &str) -> StepResult<SingleEvalResult> {
         error_category: json.error_category,
         error_severity,
     })
+}
+
+// ---------------------------------------------------------------------------
+// Pattern-Match Pre-Check — Evidence Injection
+// ---------------------------------------------------------------------------
+
+/// Known defensive-pattern categories with their trigger keywords (in BDD text)
+/// and the code patterns that satisfy them.
+///
+/// When the evaluator encounters a runtime-behavior scenario (double-click,
+/// rapid-submit, overflow, animation, etc.), the LLM sometimes fails to
+/// search for the defensive pattern and short-circuits to "can't verify
+/// runtime behavior" — scoring 0.2 when it should score 0.8+.
+///
+/// This pre-check scans the source code for concrete evidence BEFORE the
+/// LLM runs. If evidence is found, it's injected into the evaluation prompt
+/// so the judge has explicit code snippets to evaluate against, removing
+/// the hallucination pathway entirely.
+struct DefensivePatternCategory {
+    /// Name of this pattern category (for logging).
+    name: &'static str,
+    /// Keywords in the BDD text that trigger this category.
+    /// If ANY trigger matches (case-insensitive), we search for code patterns.
+    bdd_triggers: &'static [&'static str],
+    /// Code patterns to search for in source files.
+    /// If ANY pattern is found, we include it as evidence.
+    code_patterns: &'static [&'static str],
+}
+
+/// All known defensive pattern categories.
+const DEFENSIVE_PATTERNS: &[DefensivePatternCategory] = &[
+    DefensivePatternCategory {
+        name: "rapid-interaction-guard",
+        bdd_triggers: &[
+            "double-click", "double click", "rapid", "double-submit",
+            "double submit", "duplicate", "race condition", "debounce",
+            "throttle", "spam", "repeated click", "multiple click",
+            "multiple submit",
+        ],
+        code_patterns: &[
+            "debounce", "throttle", "isSubmitting", "is_submitting",
+            "isLoading", "is_loading", "disabled", "setDisabled",
+            "submitting", "inProgress", "in_progress", "cooldown",
+            "setTimeout", "set_timeout", "once(", ".once(",
+            "e.preventDefault", "loading",
+        ],
+    },
+    DefensivePatternCategory {
+        name: "overflow-truncation",
+        bdd_triggers: &[
+            "overflow", "truncat", "long text", "long name", "long title",
+            "ellipsis", "wrap", "break-word", "max-width",
+        ],
+        code_patterns: &[
+            "text-overflow", "overflow:", "overflow-hidden", "truncate",
+            "line-clamp", "whitespace-nowrap", "text-ellipsis",
+            "word-break", "overflow-wrap", "break-word", "break-all",
+            "max-width", "max-w-", "maxWidth",
+        ],
+    },
+    DefensivePatternCategory {
+        name: "animation-transition",
+        bdd_triggers: &[
+            "animat", "transition", "fade", "slide", "visual feedback",
+            "smooth",
+        ],
+        code_patterns: &[
+            "transition", "@keyframes", "animation", "animate-",
+            "transform", "opacity", "fade", "slide",
+            "framer-motion", "react-spring", "gsap",
+        ],
+    },
+    DefensivePatternCategory {
+        name: "timer-scheduling",
+        bdd_triggers: &[
+            "timer", "delay", "auto-save", "autosave", "auto save",
+            "interval", "countdown", "timeout", "schedule",
+        ],
+        code_patterns: &[
+            "setTimeout", "setInterval", "requestAnimationFrame",
+            "set_timeout", "set_interval", "clearTimeout",
+            "clearInterval",
+        ],
+    },
+    DefensivePatternCategory {
+        name: "keyboard-accessibility",
+        bdd_triggers: &[
+            "keyboard", "key press", "keypress", "enter key",
+            "escape", "tab", "focus", "aria-",
+        ],
+        code_patterns: &[
+            "onKeyDown", "onKeyPress", "onKeyUp", "keydown",
+            "keypress", "keyup", "event.key", "e.key",
+            "aria-", "role=", "tabIndex", "tabindex",
+        ],
+    },
+    DefensivePatternCategory {
+        name: "empty-state",
+        bdd_triggers: &[
+            "empty", "no items", "no tasks", "no results",
+            "zero state", "placeholder",
+        ],
+        code_patterns: &[
+            ".length === 0", ".length == 0", ".is_empty()",
+            "length === 0", "!items", "!tasks", "no items",
+            "empty", "placeholder",
+        ],
+    },
+];
+
+/// Evidence found by the pattern pre-check.
+#[derive(Debug)]
+struct PatternEvidence {
+    /// Which pattern category matched.
+    category: &'static str,
+    /// Specific code snippets found (pattern → surrounding context).
+    matches: Vec<PatternMatch>,
+}
+
+#[derive(Debug)]
+struct PatternMatch {
+    /// The pattern string that matched.
+    pattern: String,
+    /// The source line containing the match (trimmed, max 200 chars).
+    context_line: String,
+    /// Which file the match was found in.
+    file_hint: String,
+}
+
+/// Scan source code for defensive patterns relevant to a scenario's BDD text.
+///
+/// Returns `Some(evidence_block)` — a pre-formatted string to inject into the
+/// evaluation prompt — if relevant patterns are found. Returns `None` if the
+/// scenario doesn't trigger any defensive-pattern category or no code matches.
+fn pattern_precheck(bdd_text: &str, source_files: &str) -> Option<String> {
+    let bdd_lower = bdd_text.to_lowercase();
+
+    // Find which categories are triggered by this scenario's BDD text.
+    let triggered: Vec<&DefensivePatternCategory> = DEFENSIVE_PATTERNS
+        .iter()
+        .filter(|cat| cat.bdd_triggers.iter().any(|t| bdd_lower.contains(t)))
+        .collect();
+
+    if triggered.is_empty() {
+        return None;
+    }
+
+    let mut all_evidence: Vec<PatternEvidence> = Vec::new();
+
+    for cat in &triggered {
+        let mut matches = Vec::new();
+
+        // Track current file name from "=== path ===" headers
+        let mut current_file = String::new();
+
+        for line in source_files.lines() {
+            let trimmed = line.trim();
+
+            // Detect file header
+            if trimmed.starts_with("=== ") && trimmed.ends_with(" ===") {
+                current_file = trimmed
+                    .trim_start_matches("=== ")
+                    .trim_end_matches(" ===")
+                    .to_string();
+                continue;
+            }
+
+            // Search for code patterns (case-insensitive for CSS,
+            // case-sensitive for JS identifiers — we check both).
+            let line_lower = trimmed.to_lowercase();
+            for &pattern in cat.code_patterns {
+                let pattern_lower = pattern.to_lowercase();
+                if line_lower.contains(&pattern_lower) {
+                    // Avoid duplicate matches for the same pattern in the same file
+                    let already_matched = matches.iter().any(|m: &PatternMatch| {
+                        m.pattern == pattern && m.file_hint == current_file
+                    });
+                    if !already_matched {
+                        let context = if trimmed.len() > 200 {
+                            format!("{}...", &trimmed[..200])
+                        } else {
+                            trimmed.to_string()
+                        };
+                        matches.push(PatternMatch {
+                            pattern: pattern.to_string(),
+                            context_line: context,
+                            file_hint: current_file.clone(),
+                        });
+                    }
+                }
+            }
+        }
+
+        if !matches.is_empty() {
+            all_evidence.push(PatternEvidence {
+                category: cat.name,
+                matches,
+            });
+        }
+    }
+
+    if all_evidence.is_empty() {
+        return None;
+    }
+
+    // Format evidence block for prompt injection
+    let mut block = String::from(
+        "\n\n## Pre-Check Evidence (automated pattern scan)\n\n\
+         The following defensive code patterns were found in the source code \
+         by an automated scan BEFORE your evaluation. This is factual evidence \
+         — these patterns exist in the code. Factor this evidence into your \
+         scoring.\n\n",
+    );
+
+    for evidence in &all_evidence {
+        block.push_str(&format!("### Category: {}\n\n", evidence.category));
+        for m in &evidence.matches {
+            block.push_str(&format!(
+                "- Pattern `{}` found in `{}`:\n  ```\n  {}\n  ```\n",
+                m.pattern, m.file_hint, m.context_line,
+            ));
+        }
+        block.push_str("\n");
+    }
+
+    let total_matches: usize = all_evidence.iter().map(|e| e.matches.len()).sum();
+    tracing::info!(
+        "    Pattern pre-check: {} evidence match(es) across {} category/categories",
+        total_matches,
+        all_evidence.len(),
+    );
+
+    Some(block)
 }
 
 // ---------------------------------------------------------------------------
@@ -946,5 +1189,137 @@ mod tests {
         };
         let results = check_definition_of_done(&spec, &factory_output, &satisfaction_fail);
         assert!(!results[0].passed);
+    }
+
+    // -----------------------------------------------------------------------
+    // Pattern Pre-Check Tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn pattern_precheck_rapid_submit_finds_debounce() {
+        let bdd_text = "Given the user clicks Add rapidly\n\
+                        When the button is double-clicked\n\
+                        Then only one task should be created";
+
+        let source_files = r#"
+=== src/App.tsx ===
+import { useState } from 'react';
+
+function App() {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleAdd = () => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    addTask(newTask);
+    setTimeout(() => setIsSubmitting(false), 300);
+  };
+}
+"#;
+
+        let evidence = pattern_precheck(bdd_text, source_files);
+        assert!(evidence.is_some(), "Should find rapid-interaction evidence");
+        let block = evidence.unwrap();
+        assert!(block.contains("rapid-interaction-guard"));
+        assert!(block.contains("isSubmitting"));
+        assert!(block.contains("setTimeout"));
+    }
+
+    #[test]
+    fn pattern_precheck_no_trigger_returns_none() {
+        let bdd_text = "Given the user enters a task name\n\
+                        When the user clicks Add\n\
+                        Then the task appears in the list";
+
+        let source_files = r#"
+=== src/App.tsx ===
+function App() {
+  const handleAdd = () => { tasks.push(newTask); };
+}
+"#;
+
+        let evidence = pattern_precheck(bdd_text, source_files);
+        assert!(evidence.is_none(), "No defensive pattern triggers in BDD text");
+    }
+
+    #[test]
+    fn pattern_precheck_trigger_but_no_code_match() {
+        let bdd_text = "Given the user double-clicks the Add button\n\
+                        When both clicks register\n\
+                        Then only one task should be created";
+
+        // Source code has no defensive patterns
+        let source_files = r#"
+=== src/App.tsx ===
+function App() {
+  const handleAdd = () => { tasks.push(newTask); render(); };
+}
+"#;
+
+        let evidence = pattern_precheck(bdd_text, source_files);
+        assert!(evidence.is_none(), "Trigger matched but no code patterns found");
+    }
+
+    #[test]
+    fn pattern_precheck_overflow_finds_truncate() {
+        let bdd_text = "Given a task with a very long text name\n\
+                        When it renders in the list\n\
+                        Then the text should be truncated with ellipsis";
+
+        let source_files = r#"
+=== src/TaskItem.tsx ===
+export function TaskItem({ task }) {
+  return <div className="truncate max-w-xs">{task.name}</div>;
+}
+"#;
+
+        let evidence = pattern_precheck(bdd_text, source_files);
+        assert!(evidence.is_some());
+        let block = evidence.unwrap();
+        assert!(block.contains("overflow-truncation"));
+        assert!(block.contains("truncate"));
+    }
+
+    #[test]
+    fn pattern_precheck_multiple_categories() {
+        let bdd_text = "Given the user rapidly clicks Add with a very long task name that overflows\n\
+                        When double-click registers\n\
+                        Then only one truncated task appears";
+
+        let source_files = r#"
+=== src/App.tsx ===
+const [isSubmitting, setIsSubmitting] = useState(false);
+const handleAdd = () => { if (isSubmitting) return; };
+
+=== src/TaskItem.tsx ===
+<div className="truncate overflow-hidden">{task.name}</div>
+"#;
+
+        let evidence = pattern_precheck(bdd_text, source_files);
+        assert!(evidence.is_some());
+        let block = evidence.unwrap();
+        // Both categories should be present
+        assert!(block.contains("rapid-interaction-guard"));
+        assert!(block.contains("overflow-truncation"));
+    }
+
+    #[test]
+    fn pattern_precheck_deduplicates_per_file() {
+        let bdd_text = "Given rapid double-click on submit";
+
+        // Same pattern appears on multiple lines in the same file
+        let source_files = r#"
+=== src/Form.tsx ===
+const [isSubmitting, setIsSubmitting] = useState(false);
+if (isSubmitting) return;
+setIsSubmitting(true);
+"#;
+
+        let evidence = pattern_precheck(bdd_text, source_files);
+        assert!(evidence.is_some());
+        let block = evidence.unwrap();
+        // "isSubmitting" should appear only once per file in the evidence
+        let issubmitting_count = block.matches("Pattern `isSubmitting`").count();
+        assert_eq!(issubmitting_count, 1, "Should deduplicate per file, got {}", issubmitting_count);
     }
 }
