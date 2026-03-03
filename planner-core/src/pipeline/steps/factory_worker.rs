@@ -622,9 +622,12 @@ impl SandboxMode {
             // the only way to get Codex to write files is to disable OS-level
             // enforcement entirely. Containment comes from the LXC boundary
             // and Planner's worktree isolation.
+            //
+            // NOTE: We do NOT pass -a/--ask-for-approval here. `codex exec`
+            // is non-interactive — it has no approval prompt loop. Passing
+            // `-a` to `exec` causes "error: unexpected argument '-a' found".
             SandboxMode::WorkspaceWrite => vec![
                 "--sandbox", "danger-full-access",
-                "-a", "never",
             ],
         }
     }
@@ -1953,10 +1956,10 @@ mod tests {
             SandboxMode::FullAuto.cli_args(),
             vec!["--full-auto"]
         );
-        // WorkspaceWrite uses danger-full-access + auto-approve disabled
+        // WorkspaceWrite uses danger-full-access (no -a flag — exec is non-interactive)
         assert_eq!(
             SandboxMode::WorkspaceWrite.cli_args(),
-            vec!["--sandbox", "danger-full-access", "-a", "never"]
+            vec!["--sandbox", "danger-full-access"]
         );
     }
 
