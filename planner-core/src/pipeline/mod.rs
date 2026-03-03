@@ -811,7 +811,7 @@ pub async fn run_full_pipeline<S: TurnStore>(
             Some(&retry_feedback)
         };
 
-        factory_output = factory::execute_factory_with_worker(
+        factory_output = match factory::execute_factory_with_worker(
             worker,
             &front_office.graph_dot,
             &front_office.agents_manifest,
@@ -819,7 +819,20 @@ pub async fn run_full_pipeline<S: TurnStore>(
             &mut budget,
             feedback_slice,
         )
-        .await?;
+        .await
+        {
+            Ok(output) => output,
+            Err(steps::StepError::CyberPolicyBlocked(ref msg)) => {
+                tracing::error!(
+                    "Pipeline: ABORTING — Codex cyber policy block detected \
+                     on attempt {}. No retries will be attempted. {}",
+                    attempt,
+                    msg,
+                );
+                return Err(steps::StepError::CyberPolicyBlocked(msg.clone()));
+            }
+            Err(e) => return Err(e),
+        };
 
         tracing::info!(
             "  Factory: status={:?}",

@@ -921,14 +921,33 @@ impl CodexFactoryWorker {
             args.join(" ")
         );
 
-        let (stdout, stderr) = crate::llm::providers::run_cli(
+        let (stdout, stderr) = match crate::llm::providers::run_cli(
             "codex",
             &args,
             Some(prompt),
             config.timeout_secs,
         )
         .await
-        .map_err(|e| StepError::FactoryError(format!("codex exec failed: {}", e)))?;
+        {
+            Ok(pair) => pair,
+            Err(crate::llm::LlmError::CliExecError { stderr, .. })
+                if stderr.contains("cyber_policy_violation") =>
+            {
+                return Err(StepError::CyberPolicyBlocked(
+                    "OpenAI temporarily blocked this account for suspected \
+                     cybersecurity-related activity. Retrying will not help \
+                     until the block is lifted. See: https://platform.openai.com/\
+                     docs/guides/safety-checks/cybersecurity"
+                        .into(),
+                ));
+            }
+            Err(e) => {
+                return Err(StepError::FactoryError(format!(
+                    "codex exec failed: {}",
+                    e
+                )));
+            }
+        };
 
         let duration_secs = attempt_start.elapsed().as_secs_f64();
 
@@ -970,6 +989,21 @@ impl CodexFactoryWorker {
                 stderr.len(),
                 &stderr[..stderr.len().min(2000)]
             );
+        }
+
+        // --- Early bail-out: cyber policy violation in JSONL output ---
+        // Even if codex exits 0, the JSONL may contain a response.failed
+        // with cyber_policy_violation. Detect and fail fast.
+        if stdout.contains("cyber_policy_violation")
+            || stderr.contains("cyber_policy_violation")
+        {
+            return Err(StepError::CyberPolicyBlocked(
+                "OpenAI temporarily blocked this account for suspected \
+                 cybersecurity-related activity. Retrying will not help \
+                 until the block is lifted. See: https://platform.openai.com/\
+                 docs/guides/safety-checks/cybersecurity"
+                    .into(),
+            ));
         }
 
         // Strategy 1: Read from --output-last-message file (most reliable)

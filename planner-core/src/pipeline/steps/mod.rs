@@ -60,6 +60,9 @@ pub enum StepError {
     #[error("Sandbox deployment failed: {0}")]
     SandboxError(String),
 
+    #[error("Codex cyber policy blocked: {0}")]
+    CyberPolicyBlocked(String),
+
     #[error("Storage error: {0}")]
     StorageError(String),
 

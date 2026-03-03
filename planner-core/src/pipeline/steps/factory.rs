@@ -13,6 +13,7 @@
 
 use planner_schemas::*;
 use super::StepResult;
+use super::StepError;
 use super::factory_worker::{FactoryWorker, WorkerConfig, WorktreeManager, WorkerResult};
 
 // ---------------------------------------------------------------------------
@@ -196,7 +197,7 @@ pub async fn execute_factory_with_worker(
             );
             for err in errors {
                 task_prompt.push_str(&format!(
-                    "- [{}] {}: ensure defensive patterns are in place\n",
+                    "- [{}] {}: ensure proper handling is in place\n",
                     format!("{:?}", err.severity),
                     err.category,
                 ));
@@ -243,6 +244,11 @@ pub async fn execute_factory_with_worker(
             build_factory_output_from_worker(&result, budget, &worktree_info)
         }
         Err(e) => {
+            // CyberPolicyBlocked is unrecoverable — propagate immediately
+            // so the pipeline loop can abort without wasting retries.
+            if matches!(&e, StepError::CyberPolicyBlocked(_)) {
+                return Err(e);
+            }
             tracing::error!("Factory worker failed: {}", e);
             FactoryOutputV1 {
                 kilroy_run_id: run_id,
