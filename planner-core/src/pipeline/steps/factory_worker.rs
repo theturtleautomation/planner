@@ -9,7 +9,7 @@
 //! 1. Prepares a worktree directory
 //! 2. Writes spec + graph.dot + AGENTS.md context files
 //! 3. Invokes `codex exec` with bubblewrap sandbox (--full-auto --enable use_linux_sandbox_bwrap)
-//!    Falls back to Landlock, then danger-full-access if sandbox fails.
+//!    Falls back to --full-auto (Codex default sandbox) if bwrap unavailable.
 //! 4. Collects stdout as the code generation result
 
 use async_trait::async_trait;
@@ -497,35 +497,46 @@ pub fn read_worktree_source_files(worktree: &Path) -> String {
 
 /// Sandbox modes for the Codex factory worker, ordered by preference.
 ///
-/// The worker tries each mode in order until one succeeds. The cascade:
-///   1. `Bwrap`  — bubblewrap namespace sandbox (preferred on Linux)
-///   2. `Landlock` — Landlock + seccomp (kernel-level, fails on Arch/NixOS/WSL)
-///   3. `DangerFullAccess` — no OS sandbox (last resort, worktree isolation only)
+/// Two sandbox modes — both provide proper containment:
+///
+///   1. `Bwrap`    — bubblewrap namespace sandbox (preferred on Linux)
+///   2. `FullAuto` — Codex's default `--full-auto` mode, which uses Landlock
+///                   where available and degrades gracefully on kernels
+///                   without it (Arch, NixOS, WSL, PVE).
+///
+/// There is NO `danger-full-access` mode. Codex `--full-auto` handles
+/// Landlock absence internally — it does not crash or block file writes.
+/// We never need to disable OS-level sandboxing.
 ///
 /// Override via `PLANNER_CODEX_SANDBOX` env var:
-///   - `full-auto-bwrap`    → start at Bwrap (default)
-///   - `full-auto`          → start at Landlock
-///   - `danger-full-access` → skip to DangerFullAccess
+///   - `full-auto-bwrap` → Bwrap (default)
+///   - `full-auto`       → FullAuto (Codex default sandbox)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SandboxMode {
     /// `--full-auto --enable use_linux_sandbox_bwrap`
     /// Bubblewrap namespace sandbox — proper containment without Landlock.
     Bwrap,
-    /// `--full-auto` (default Codex behavior)
-    /// Landlock + seccomp — kernel-level sandbox. Fails on Arch, NixOS, WSL.
-    Landlock,
-    /// `--sandbox danger-full-access`
-    /// No OS-level sandbox. Only worktree isolation provides containment.
-    /// Used as absolute last resort when both bwrap and Landlock fail.
-    DangerFullAccess,
+    /// `--full-auto` (Codex default behavior)
+    /// Uses Landlock + seccomp when the kernel supports it, and degrades
+    /// gracefully on kernels without Landlock. No special flags needed.
+    FullAuto,
 }
 
 impl SandboxMode {
     /// Parse from the `PLANNER_CODEX_SANDBOX` env var or return default.
     fn from_env() -> Self {
         match std::env::var("PLANNER_CODEX_SANDBOX").as_deref() {
-            Ok("full-auto") => SandboxMode::Landlock,
-            Ok("danger-full-access") => SandboxMode::DangerFullAccess,
+            Ok("full-auto") => SandboxMode::FullAuto,
+            // Legacy values — map to FullAuto (safest non-bwrap mode).
+            // danger-full-access is no longer supported; FullAuto handles
+            // Landlock absence gracefully.
+            Ok("danger-full-access") => {
+                tracing::warn!(
+                    "PLANNER_CODEX_SANDBOX=danger-full-access is deprecated. \
+                     Using --full-auto instead (Codex handles sandbox internally)."
+                );
+                SandboxMode::FullAuto
+            }
             // Default: bwrap — proper sandbox that works on Arch, NixOS, WSL, etc.
             _ => SandboxMode::Bwrap,
         }
@@ -541,6 +552,10 @@ impl SandboxMode {
             tracing::debug!("SandboxMode::resolve: env override → {}", mode);
             return mode;
         }
+
+        // Migrate stale cache: if the cached value is a now-removed mode
+        // (danger-full-access or Landlock-only), invalidate so we re-probe.
+        SandboxProbe::migrate_stale_cache();
 
         // Check persistent probe cache (~/.cache/planner/sandbox-probe)
         if let Some(cached) = SandboxProbe::read_cache() {
@@ -559,9 +574,8 @@ impl SandboxMode {
     /// Return the next fallback mode, or None if this is the last resort.
     fn fallback(self) -> Option<SandboxMode> {
         match self {
-            SandboxMode::Bwrap => Some(SandboxMode::Landlock),
-            SandboxMode::Landlock => Some(SandboxMode::DangerFullAccess),
-            SandboxMode::DangerFullAccess => None,
+            SandboxMode::Bwrap => Some(SandboxMode::FullAuto),
+            SandboxMode::FullAuto => None,
         }
     }
 
@@ -569,8 +583,7 @@ impl SandboxMode {
     fn env_value(self) -> &'static str {
         match self {
             SandboxMode::Bwrap => "full-auto-bwrap",
-            SandboxMode::Landlock => "full-auto",
-            SandboxMode::DangerFullAccess => "danger-full-access",
+            SandboxMode::FullAuto => "full-auto",
         }
     }
 
@@ -578,8 +591,7 @@ impl SandboxMode {
     fn label(self) -> &'static str {
         match self {
             SandboxMode::Bwrap => "bubblewrap (bwrap)",
-            SandboxMode::Landlock => "Landlock + seccomp",
-            SandboxMode::DangerFullAccess => "danger-full-access (NO OS sandbox)",
+            SandboxMode::FullAuto => "full-auto (Codex default sandbox)",
         }
     }
 
@@ -587,8 +599,7 @@ impl SandboxMode {
     fn cli_args(self) -> Vec<&'static str> {
         match self {
             SandboxMode::Bwrap => vec!["--full-auto", "--enable", "use_linux_sandbox_bwrap"],
-            SandboxMode::Landlock => vec!["--full-auto"],
-            SandboxMode::DangerFullAccess => vec!["--sandbox", "danger-full-access"],
+            SandboxMode::FullAuto => vec!["--full-auto"],
         }
     }
 
@@ -613,14 +624,11 @@ impl SandboxMode {
                     || stderr.contains("Can't mount proc")
                     || stderr.contains("mount proc")
             }
-            SandboxMode::Landlock => {
-                output.contains("LandlockRestrict")
-                    || output.contains("legacy Linux sandbox")
-                    || output.contains("sandbox panic")
-                    || stderr.contains("LandlockRestrict")
-                    || stderr.contains("sandbox restrictions")
-            }
-            SandboxMode::DangerFullAccess => false, // can't fail on sandbox
+            // FullAuto delegates sandbox handling to Codex itself.
+            // Codex handles Landlock absence gracefully — it won't crash
+            // or block file writes. If something truly goes wrong here,
+            // it's not a sandbox issue we can fix by mode-switching.
+            SandboxMode::FullAuto => false,
         }
     }
 }
@@ -636,8 +644,13 @@ impl std::fmt::Display for SandboxMode {
 // ---------------------------------------------------------------------------
 
 /// Fast pre-flight test to determine if bwrap (bubblewrap) can run on this
-/// kernel. Runs `bwrap --unshare-all -- /bin/true` which exercises the same
+/// kernel. Runs `bwrap --unshare-all -- true` which exercises the same
 /// namespace setup that Codex uses internally. Completes in ~100ms.
+///
+/// NOTE: We use `true` (PATH lookup) instead of `/bin/true` because on
+/// Arch Linux (and some NixOS setups) `/bin/true` doesn't exist — it's at
+/// `/usr/bin/true`. Inside the bwrap sandbox we use `--ro-bind /usr /usr`
+/// to make it available regardless of distro layout.
 ///
 /// Results are cached to `~/.cache/planner/sandbox-probe` so the probe
 /// only runs once per machine (until the cache file is deleted).
@@ -672,8 +685,12 @@ impl SandboxProbe {
         }
         match lines[1] {
             "full-auto-bwrap" => Some(SandboxMode::Bwrap),
-            "full-auto" => Some(SandboxMode::Landlock),
-            "danger-full-access" => Some(SandboxMode::DangerFullAccess),
+            "full-auto" => Some(SandboxMode::FullAuto),
+            // Legacy values no longer valid — treat as cache miss.
+            "danger-full-access" => {
+                tracing::info!("SandboxProbe: cache contains deprecated 'danger-full-access', ignoring");
+                None
+            }
             _ => None,
         }
     }
@@ -704,12 +721,27 @@ impl SandboxProbe {
         }
     }
 
+    /// Migrate stale cache from pre-v2 sandbox logic.
+    /// If the cache contains `danger-full-access`, delete it so we re-probe.
+    /// This is a one-time cleanup after upgrading from the old 3-mode cascade.
+    fn migrate_stale_cache() {
+        if let Some(path) = Self::cache_path() {
+            if let Ok(content) = std::fs::read_to_string(&path) {
+                if content.contains("danger-full-access") {
+                    tracing::info!(
+                        "SandboxProbe: deleting stale cache with deprecated 'danger-full-access'"
+                    );
+                    let _ = std::fs::remove_file(&path);
+                }
+            }
+        }
+    }
+
     /// Run the live pre-flight probe.
     ///
-    /// Tests: `bwrap --unshare-all -- /bin/true`
+    /// Tests: `bwrap --unshare-all --ro-bind /usr /usr --symlink usr/bin /bin --proc /proc --dev /dev -- true`
     ///   - If exit 0 → Bwrap works
-    ///   - If exit non-0 or error → fall through to Landlock
-    ///   - Landlock is not probed (we learn from codex's output)
+    ///   - If exit non-0 or error → fall through to FullAuto
     fn run() -> SandboxMode {
         // Check if bwrap binary exists first
         let bwrap_check = std::process::Command::new("which")
@@ -720,9 +752,19 @@ impl SandboxProbe {
 
         match bwrap_check {
             Ok(s) if s.success() => {
-                // bwrap exists — try the full namespace test
+                // bwrap exists — try the full namespace test.
+                // We bind /usr and symlink /bin -> usr/bin so `true` resolves
+                // on both Arch (/usr/bin/true) and Debian (/bin/true -> /usr/bin/true).
                 let probe = std::process::Command::new("bwrap")
-                    .args(["--unshare-all", "--", "/bin/true"])
+                    .args([
+                        "--unshare-all",
+                        "--ro-bind", "/usr", "/usr",
+                        "--symlink", "usr/bin", "/bin",
+                        "--symlink", "usr/lib", "/lib",
+                        "--proc", "/proc",
+                        "--dev", "/dev",
+                        "--", "true",
+                    ])
                     .stdout(std::process::Stdio::null())
                     .stderr(std::process::Stdio::piped())
                     .output();
@@ -739,19 +781,19 @@ impl SandboxProbe {
                             output.status, stderr.trim()
                         );
                         // bwrap can't do full namespace isolation (PVE kernel, etc.)
-                        // Fall through to Landlock.
-                        SandboxMode::Landlock
+                        // Fall through to FullAuto — Codex handles sandbox internally.
+                        SandboxMode::FullAuto
                     }
                     Err(e) => {
                         tracing::info!("SandboxProbe: bwrap exec error: {}", e);
-                        SandboxMode::Landlock
+                        SandboxMode::FullAuto
                     }
                 }
             }
             _ => {
                 tracing::info!("SandboxProbe: bwrap not found on PATH");
-                // No bwrap binary — try Landlock (Codex default).
-                SandboxMode::Landlock
+                // No bwrap binary — use FullAuto (Codex default).
+                SandboxMode::FullAuto
             }
         }
     }
@@ -776,23 +818,26 @@ fn dirs_cache_path() -> Option<PathBuf> {
 ///
 /// ## Sandbox Strategy
 ///
-/// Three-layer sandbox resolution:
-///   1. **Pre-flight probe** (~100ms): tests `bwrap --unshare-all` before
-///      calling codex. Skips straight to the working mode.
-///   2. **Persistent cache**: writes probe result to
-///      `~/.cache/planner/sandbox-probe` so subsequent runs start instantly.
-///   3. **Retry loop**: if a mode fails at runtime, generate() retries with
-///      the next fallback mode, actually consuming `max_retries`.
+/// Two-mode sandbox with pre-flight probing:
+///   1. **Bwrap** (preferred): bubblewrap namespace sandbox.
+///      Probe runs `bwrap --unshare-all --ro-bind /usr /usr ... -- true`.
+///   2. **FullAuto** (fallback): Codex's default `--full-auto` flag.
+///      Codex handles Landlock/seccomp internally and degrades gracefully
+///      on kernels without Landlock (Arch, NixOS, WSL, PVE containers).
 ///
-/// Fallback cascade (automatic on sandbox failure, 0 files produced):
-///   1. Bwrap (default) — proper containment via Linux namespaces
-///   2. Landlock — kernel-level sandbox (fails on Arch/NixOS/WSL)
-///   3. danger-full-access — last resort only, worktree isolation only
+/// There is NO `danger-full-access` mode. We never disable OS-level
+/// sandboxing because Codex `--full-auto` works on all tested platforms.
+///
+/// Resolution layers:
+///   1. **Pre-flight probe** (~100ms bwrap test) + **persistent cache**
+///      (`~/.cache/planner/sandbox-probe`). `SandboxMode::resolve()`
+///      handles both.
+///   2. **Runtime fallback**: if Bwrap fails at runtime (0 files +
+///      bwrap-specific stderr), we retry once with FullAuto.
 ///
 /// Override via `PLANNER_CODEX_SANDBOX` env var:
 ///   - `full-auto-bwrap` (default)  → bubblewrap sandbox
-///   - `full-auto`                  → Landlock/Seatbelt sandbox
-///   - `danger-full-access`         → no OS sandbox (worktree isolation only)
+///   - `full-auto`                  → Codex default sandbox
 ///
 /// NOTE: `-a` (--ask-for-approval) is a global flag that does NOT
 /// propagate to `exec` — use `--full-auto` instead.
@@ -1078,27 +1123,18 @@ impl FactoryWorker for CodexFactoryWorker {
             ));
         }
 
-        // --- Three-layer sandbox resolution ---
+        // --- Two-mode sandbox resolution ---
         //
-        // Layer 1: Pre-flight probe (~100ms bwrap test) + Layer 2: persistent
-        // cache (~/.cache/planner/sandbox-probe).  SandboxMode::resolve()
-        // handles both — returns the best mode without wasting a full codex
-        // invocation on a sandbox that can't work.
+        // Layer 1: Pre-flight probe (~100ms bwrap test) + persistent cache
+        // (~/.cache/planner/sandbox-probe).  SandboxMode::resolve() handles
+        // both — returns the best mode without wasting a codex invocation.
         //
-        // Layer 3: Retry loop below — if the resolved mode fails at runtime
-        // (0 files + detect_failure), we invalidate the cache, advance to
-        // the next fallback, and retry immediately.
+        // Layer 2: Runtime fallback — if Bwrap fails at runtime (0 files +
+        // bwrap-specific stderr), invalidate cache, retry with FullAuto.
         let mut current_mode = SandboxMode::resolve();
 
-        // max_retries controls how many sandbox fallback attempts we allow.
-        // Each sandbox failure consumes one retry.  With max_retries=1 and
-        // 3 modes (bwrap → landlock → danger-full-access), the worst case
-        // is: probe picks bwrap, runtime fails → retry with landlock →
-        // runtime fails → (retry budget exhausted, return the failure).
-        //
-        // Bump max_retries to 2 to guarantee we can always reach
-        // danger-full-access from any starting mode.
-        let max_sandbox_retries = config.max_retries.max(2);
+        // One retry is enough: Bwrap → FullAuto. FullAuto is terminal.
+        let max_sandbox_retries = 1_u32;
         let mut attempts: u32 = 0;
 
         loop {
@@ -1132,15 +1168,6 @@ impl FactoryWorker for CodexFactoryWorker {
                             result.duration_secs,
                             next_mode
                         );
-
-                        if next_mode == SandboxMode::DangerFullAccess {
-                            tracing::warn!(
-                                "CodexFactoryWorker: ⚠ LAST RESORT — danger-full-access \
-                                 disables OS-level sandboxing. Worktree isolation at {} \
-                                 is the only containment.",
-                                config.worktree.display()
-                            );
-                        }
 
                         // Invalidate the stale cache and persist the new mode
                         // so future pipeline runs skip straight to it.
@@ -1806,28 +1833,26 @@ mod tests {
     #[test]
     fn sandbox_mode_from_env_full_auto() {
         std::env::set_var("PLANNER_CODEX_SANDBOX", "full-auto");
-        assert_eq!(SandboxMode::from_env(), SandboxMode::Landlock);
+        assert_eq!(SandboxMode::from_env(), SandboxMode::FullAuto);
         std::env::remove_var("PLANNER_CODEX_SANDBOX");
     }
 
     #[test]
-    fn sandbox_mode_from_env_danger() {
+    fn sandbox_mode_from_env_danger_maps_to_full_auto() {
+        // Legacy danger-full-access should map to FullAuto (no longer supported)
         std::env::set_var("PLANNER_CODEX_SANDBOX", "danger-full-access");
-        assert_eq!(SandboxMode::from_env(), SandboxMode::DangerFullAccess);
+        assert_eq!(SandboxMode::from_env(), SandboxMode::FullAuto);
         std::env::remove_var("PLANNER_CODEX_SANDBOX");
     }
 
     #[test]
     fn sandbox_mode_fallback_cascade() {
-        // Bwrap -> Landlock -> DangerFullAccess -> None
+        // Bwrap -> FullAuto -> None
         let bwrap = SandboxMode::Bwrap;
-        assert_eq!(bwrap.fallback(), Some(SandboxMode::Landlock));
+        assert_eq!(bwrap.fallback(), Some(SandboxMode::FullAuto));
 
-        let landlock = SandboxMode::Landlock;
-        assert_eq!(landlock.fallback(), Some(SandboxMode::DangerFullAccess));
-
-        let danger = SandboxMode::DangerFullAccess;
-        assert_eq!(danger.fallback(), None);
+        let full_auto = SandboxMode::FullAuto;
+        assert_eq!(full_auto.fallback(), None);
     }
 
     #[test]
@@ -1837,12 +1862,8 @@ mod tests {
             vec!["--full-auto", "--enable", "use_linux_sandbox_bwrap"]
         );
         assert_eq!(
-            SandboxMode::Landlock.cli_args(),
+            SandboxMode::FullAuto.cli_args(),
             vec!["--full-auto"]
-        );
-        assert_eq!(
-            SandboxMode::DangerFullAccess.cli_args(),
-            vec!["--sandbox", "danger-full-access"]
         );
     }
 
@@ -1854,36 +1875,25 @@ mod tests {
         assert!(mode.detect_failure("", "bubblewrap error: cannot create namespace"));
         assert!(mode.detect_failure("cannot access /dev/urandom", ""));
         assert!(mode.detect_failure("user namespace creation failed", ""));
-        // Should NOT detect Landlock errors
-        assert!(!mode.detect_failure("LandlockRestrict error", ""));
         // Clean output = no failure
         assert!(!mode.detect_failure("files written successfully", ""));
     }
 
     #[test]
-    fn sandbox_mode_detect_landlock_failure() {
-        let mode = SandboxMode::Landlock;
-        // Should detect Landlock-specific errors
-        assert!(mode.detect_failure("LandlockRestrict error", ""));
-        assert!(mode.detect_failure("error applying legacy Linux sandbox", ""));
-        assert!(mode.detect_failure("", "sandbox restrictions failed"));
-        // Should NOT detect bwrap errors
-        assert!(!mode.detect_failure("bwrap failed", ""));
-        // Clean output = no failure
-        assert!(!mode.detect_failure("files written successfully", ""));
-    }
-
-    #[test]
-    fn sandbox_mode_danger_never_detects_failure() {
-        let mode = SandboxMode::DangerFullAccess;
-        // danger-full-access should never report sandbox failure
+    fn sandbox_mode_full_auto_never_detects_failure() {
+        // FullAuto delegates sandbox handling to Codex itself.
+        // We never try to detect sandbox failure for FullAuto — Codex
+        // handles Landlock absence gracefully.
+        let mode = SandboxMode::FullAuto;
         assert!(!mode.detect_failure("any error at all", "any stderr"));
+        assert!(!mode.detect_failure("LandlockRestrict error", ""));
+        assert!(!mode.detect_failure("bwrap: error", "LandlockRestrict"));
     }
 
     #[test]
     fn sandbox_mode_env_roundtrip() {
         // Setting env var then reading should preserve the mode
-        for mode in [SandboxMode::Bwrap, SandboxMode::Landlock, SandboxMode::DangerFullAccess] {
+        for mode in [SandboxMode::Bwrap, SandboxMode::FullAuto] {
             std::env::set_var("PLANNER_CODEX_SANDBOX", mode.env_value());
             assert_eq!(SandboxMode::from_env(), mode, "roundtrip failed for {:?}", mode);
         }
@@ -1905,14 +1915,14 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        let content = format!("{}\ndanger-full-access", ts);
+        let content = format!("{}\nfull-auto-bwrap", ts);
         std::fs::write(&cache_file, &content).unwrap();
 
         // Read it back manually (simulating read_cache logic)
         let read_back = std::fs::read_to_string(&cache_file).unwrap();
         let lines: Vec<&str> = read_back.trim().lines().collect();
         assert_eq!(lines.len(), 2);
-        assert_eq!(lines[1], "danger-full-access");
+        assert_eq!(lines[1], "full-auto-bwrap");
 
         let _ = std::fs::remove_dir_all(&tmp);
     }
@@ -1962,10 +1972,10 @@ mod tests {
                 assert!(!path.exists(), "cache file should be removed after invalidation");
 
                 // Write a new one to verify write after invalidate works
-                SandboxProbe::write_cache(SandboxMode::DangerFullAccess);
+                SandboxProbe::write_cache(SandboxMode::FullAuto);
                 if path.exists() {
                     let content = std::fs::read_to_string(&path).unwrap();
-                    assert!(content.contains("danger-full-access"));
+                    assert!(content.contains("full-auto"));
                 }
 
                 // Cleanup
@@ -1992,9 +2002,10 @@ mod tests {
     fn sandbox_mode_resolve_respects_env_override() {
         // When PLANNER_CODEX_SANDBOX is set, resolve() should return
         // that mode directly without probing.
+        // Legacy danger-full-access maps to FullAuto.
         std::env::set_var("PLANNER_CODEX_SANDBOX", "danger-full-access");
         let mode = SandboxMode::resolve();
-        assert_eq!(mode, SandboxMode::DangerFullAccess);
+        assert_eq!(mode, SandboxMode::FullAuto);
         std::env::remove_var("PLANNER_CODEX_SANDBOX");
     }
 
@@ -2002,15 +2013,13 @@ mod tests {
     fn sandbox_mode_resolve_without_env_returns_valid_mode() {
         // Without env var, resolve() should run probe and return a valid mode.
         // We can't predict which mode (depends on whether bwrap is installed),
-        // but it must be one of the three variants.
+        // but it must be one of the two variants.
         std::env::remove_var("PLANNER_CODEX_SANDBOX");
         // Invalidate cache so we get a fresh probe
         SandboxProbe::invalidate_cache();
         let mode = SandboxMode::resolve();
         assert!(
-            mode == SandboxMode::Bwrap
-                || mode == SandboxMode::Landlock
-                || mode == SandboxMode::DangerFullAccess,
+            mode == SandboxMode::Bwrap || mode == SandboxMode::FullAuto,
             "resolve() returned unexpected mode: {:?}",
             mode
         );
@@ -2020,17 +2029,16 @@ mod tests {
 
     #[test]
     fn sandbox_fallback_exhaustion() {
-        // Starting from DangerFullAccess, there's no fallback.
-        // This models the case where all modes have been tried.
-        let mode = SandboxMode::DangerFullAccess;
+        // Starting from FullAuto, there's no fallback.
+        let mode = SandboxMode::FullAuto;
         assert!(mode.fallback().is_none());
-        // And danger never detects sandbox failure
+        // And FullAuto never detects sandbox failure
         assert!(!mode.detect_failure("bwrap: error", "LandlockRestrict"));
     }
 
     #[test]
     fn sandbox_fallback_full_cascade_from_bwrap() {
-        // Verify the complete cascade: Bwrap -> Landlock -> Danger -> None
+        // Verify the complete cascade: Bwrap -> FullAuto -> None
         let mut mode = SandboxMode::Bwrap;
         let mut cascade = vec![mode];
 
@@ -2041,8 +2049,27 @@ mod tests {
 
         assert_eq!(cascade, vec![
             SandboxMode::Bwrap,
-            SandboxMode::Landlock,
-            SandboxMode::DangerFullAccess,
+            SandboxMode::FullAuto,
         ]);
+    }
+
+    #[test]
+    fn sandbox_probe_migrate_stale_cache() {
+        // If cache contains danger-full-access, migrate_stale_cache
+        // should delete it.
+        SandboxProbe::write_cache(SandboxMode::Bwrap);
+        if let Some(path) = SandboxProbe::cache_path() {
+            // Manually overwrite with stale value
+            let ts = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+            let stale = format!("{}\ndanger-full-access", ts);
+            std::fs::write(&path, &stale).unwrap();
+
+            // Migrate should delete it
+            SandboxProbe::migrate_stale_cache();
+            assert!(!path.exists(), "stale cache should be deleted by migrate");
+        }
     }
 }
