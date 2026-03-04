@@ -1473,9 +1473,73 @@ async fn run_compilation_check(
         };
     }
 
-    // Check for package.json → try npx tsc --noEmit
+    // Check for package.json → install deps, then try npx tsc --noEmit
     let package_json = worktree.join("package.json");
     if package_json.exists() {
+        // Step 1: Install dependencies.  Codex installs them inside its
+        // sandbox, but node_modules/ doesn't persist into the worktree.
+        // Without this, tsc fails with empty errors because it can't
+        // resolve any imports.
+        tracing::info!("Running npm install in {}", worktree.display());
+
+        let install_timeout = timeout_secs.min(120);
+        let npm_install = tokio::time::timeout(
+            std::time::Duration::from_secs(install_timeout),
+            tokio::process::Command::new("npm")
+                .arg("install")
+                .arg("--no-audit")
+                .arg("--no-fund")
+                .current_dir(worktree)
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .output(),
+        )
+        .await;
+
+        match npm_install {
+            Ok(Ok(output)) if output.status.success() => {
+                tracing::info!("npm install succeeded in {}", worktree.display());
+            }
+            Ok(Ok(output)) => {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                tracing::warn!(
+                    "npm install failed (exit {}): stderr={}, stdout={}",
+                    output.status, stderr.chars().take(500).collect::<String>(),
+                    stdout.chars().take(500).collect::<String>(),
+                );
+                // Don't abort — tsc may still find some type errors without
+                // all deps, and those are still valuable feedback.
+            }
+            Ok(Err(e)) => {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    tracing::warn!("npm binary not found — skipping dependency install");
+                } else {
+                    tracing::warn!("npm install error: {}", e);
+                }
+            }
+            Err(_) => {
+                tracing::warn!("npm install timed out after {}s — proceeding anyway", install_timeout);
+            }
+        }
+
+        // Step 2: Check if tsconfig.json or typescript is present before
+        // running tsc.  No point running tsc on a plain JS project.
+        let has_tsconfig = worktree.join("tsconfig.json").exists();
+        let has_typescript_dep = {
+            let pkg = std::fs::read_to_string(&package_json).unwrap_or_default();
+            pkg.contains("\"typescript\"") || pkg.contains("'typescript'")
+        };
+
+        if !has_tsconfig && !has_typescript_dep {
+            tracing::info!(
+                "No tsconfig.json and no typescript dependency in {} — skipping tsc check",
+                worktree.display()
+            );
+            return (true, None);
+        }
+
+        // Step 3: Run tsc
         tracing::info!("Running npx tsc --noEmit in {}", worktree.display());
 
         let result = tokio::time::timeout(
@@ -1495,8 +1559,20 @@ async fn run_compilation_check(
                 if output.status.success() {
                     (true, None)
                 } else {
+                    // tsc reports type errors on stdout, not stderr.
+                    // Capture both to ensure we never return an empty error.
                     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-                    (false, Some(format!("tsc failed: {}", stderr)))
+                    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+                    let combined = if !stdout.trim().is_empty() && !stderr.trim().is_empty() {
+                        format!("tsc failed:\nstdout: {}\nstderr: {}", stdout, stderr)
+                    } else if !stdout.trim().is_empty() {
+                        format!("tsc failed: {}", stdout)
+                    } else if !stderr.trim().is_empty() {
+                        format!("tsc failed: {}", stderr)
+                    } else {
+                        format!("tsc failed with exit code {} (no output)", output.status)
+                    };
+                    (false, Some(combined))
                 }
             }
             Ok(Err(e)) => {

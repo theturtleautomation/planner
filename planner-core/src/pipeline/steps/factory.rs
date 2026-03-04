@@ -11,6 +11,7 @@
 //! Phase 7: Kilroy CLI is replaced by the pluggable FactoryWorker trait,
 //! which enables codex exec, mock workers for testing, and future backends.
 
+use uuid::Uuid;
 use planner_schemas::*;
 use super::StepResult;
 use super::StepError;
@@ -177,12 +178,19 @@ pub async fn execute_factory_with_worker(
     tracing::info!("Factory Diplomat (Worker mode): starting");
 
     // Step 1: Prepare worktree
+    //
+    // Each factory attempt gets its own unique directory via a fresh UUID.
+    // Previously this used `budget.run_id`, which is shared across all
+    // attempts in the retry loop — causing every attempt to collide on
+    // the same path.  `prepare()` wipes that path, destroying the
+    // previous attempt's output before `copy_previous_worktree` can
+    // read it.  Using a per-attempt UUID eliminates the collision.
     let worktree_mgr = WorktreeManager::default_root();
-    let run_id = budget.run_id;
+    let attempt_id = Uuid::new_v4();
 
     let spec_md = render_nlspec_markdown(spec);
     let worktree_info = worktree_mgr.prepare(
-        run_id,
+        attempt_id,
         &spec_md,
         &graph.dot_content,
         &agents.root_agents_md,
@@ -330,7 +338,7 @@ pub async fn execute_factory_with_worker(
             }
             tracing::error!("Factory worker failed: {}", e);
             FactoryOutputV1 {
-                kilroy_run_id: run_id,
+                kilroy_run_id: attempt_id,
                 nlspec_version: spec.version.clone(),
                 attempt: 1,
                 build_status: BuildStatus::Failed,
