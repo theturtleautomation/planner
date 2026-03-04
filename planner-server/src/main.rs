@@ -136,6 +136,16 @@ async fn main() {
 
     // Start server
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
+
+    // Report LLM provider status at startup.
+    let router = planner_core::llm::providers::LlmRouter::from_env();
+    let providers = router.available_providers();
+    if providers.is_empty() {
+        tracing::warn!("No LLM CLI providers detected! Install and authenticate at least one: claude, gemini, codex");
+    } else {
+        tracing::info!("LLM providers available: {:?}", providers);
+    }
+
     tracing::info!("Planner server starting on http://{}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();

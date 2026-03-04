@@ -288,6 +288,34 @@ pub async fn handle_socratic_ws(
     drop(event_tx); // keep channel alive only through io's clone
 
     let router = planner_core::llm::providers::LlmRouter::from_env();
+
+    // Pre-flight check: warn if no LLM providers are available.
+    let available = router.available_providers();
+    if available.is_empty() {
+        tracing::error!(
+            "Session {}: No LLM CLI providers found. Install and authenticate at least one of: claude, gemini, codex",
+            session_id
+        );
+        let err_msg = "No LLM providers available. The planner service user needs at least one of the following CLI tools installed and authenticated: `claude` (Anthropic), `gemini` (Google), or `codex` (OpenAI). Check that these are on the PATH for the user running the planner service.";
+
+        // Send error directly on the socket (the I/O loop hasn't started yet).
+        let error_msg = ServerMessage::Error {
+            message: err_msg.to_string(),
+        };
+        if let Ok(json) = serde_json::to_string(&error_msg) {
+            let _ = socket.send(Message::Text(json.into())).await;
+        }
+        state.sessions.update(session_id, |s| {
+            s.intake_phase = "error".into();
+            s.add_message("system", err_msg);
+        });
+        return;
+    }
+    tracing::info!(
+        "Session {}: LLM providers available: {:?}",
+        session_id, available
+    );
+
     let state_for_engine = state.clone();
 
     // Spawn the interview engine as a background task.
@@ -317,7 +345,21 @@ pub async fn handle_socratic_ws(
                 Some(intake.intent_summary)
             }
             Err(e) => {
-                tracing::warn!("Session {}: Socratic interview failed: {}", session_id, e);
+                let err_msg = format!("Socratic interview failed: {}", e);
+                tracing::warn!("Session {}: {}", session_id, err_msg);
+
+                // Send the error to the client so the UI doesn't hang.
+                io.send(ServerMessage::Error {
+                    message: err_msg.clone(),
+                });
+                io.send_message(&format!("Error: {}", err_msg)).await;
+
+                // Mark session as errored.
+                state_for_engine.sessions.update(session_id, |s| {
+                    s.intake_phase = "error".into();
+                    s.add_message("system", &err_msg);
+                });
+
                 None
             }
         }

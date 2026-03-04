@@ -46,7 +46,7 @@ export interface ChatMessage {
 // ─── Intake Phase ────────────────────────────────────────────────────────────
 
 /** Mirrors the server-side intake_phase field on Session. */
-export type IntakePhase = 'waiting' | 'interviewing' | 'pipeline_running' | 'complete';
+export type IntakePhase = 'waiting' | 'interviewing' | 'pipeline_running' | 'complete' | 'error';
 
 // ─── Socratic Types ──────────────────────────────────────────────────────────
 

@@ -402,12 +402,13 @@ export default function SessionPage() {
   }
 
   // ─────────────────────────────────────────────────────────────────
-  // PHASE: interviewing or pipeline_running or complete
+  // PHASE: interviewing, pipeline_running, complete, or error
   // All share the split-pane layout
   // ─────────────────────────────────────────────────────────────────
   const isInterviewing = effectivePhase === 'interviewing';
   const isPipelineRunning = effectivePhase === 'pipeline_running';
   const isComplete = effectivePhase === 'complete';
+  const isError = effectivePhase === 'error';
 
   return (
     <Layout sessionId={sessionId} isConnected={socratic.isConnected}>
@@ -418,6 +419,40 @@ export default function SessionPage() {
         overflow: 'hidden',
       }}>
         {reconnectBanner}
+
+        {/* Error banner */}
+        {isError && (
+          <div style={{
+            padding: '12px 16px',
+            background: 'rgba(255,68,68,0.10)',
+            borderBottom: '1px solid var(--accent-red)',
+            color: 'var(--accent-red)',
+            fontSize: '12px',
+            textAlign: 'center',
+            flexShrink: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '12px',
+          }}>
+            <span>Interview failed. Check server logs for details.</span>
+            <button
+              onClick={() => void navigate('/')}
+              style={{
+                background: 'transparent',
+                border: '1px solid var(--accent-red)',
+                borderRadius: '3px',
+                color: 'var(--accent-red)',
+                fontSize: '11px',
+                fontFamily: 'inherit',
+                padding: '4px 12px',
+                cursor: 'pointer',
+              }}
+            >
+              ← Back
+            </button>
+          </div>
+        )}
 
         {/* Top bar: ConvergenceBar (interviewing) or PipelineBar (pipeline_running / complete) */}
         {isInterviewing && (

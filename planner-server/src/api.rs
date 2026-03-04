@@ -28,6 +28,7 @@ pub struct HealthResponse {
     pub status: String,
     pub version: String,
     pub sessions_active: usize,
+    pub llm_providers: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -160,10 +161,15 @@ pub fn routes(state: Arc<AppState>) -> Router {
 // ---------------------------------------------------------------------------
 
 async fn health(State(state): State<Arc<AppState>>) -> Json<HealthResponse> {
+    let router = planner_core::llm::providers::LlmRouter::from_env();
+    let providers: Vec<String> = router.available_providers().iter().map(|s| s.to_string()).collect();
+    let status = if providers.is_empty() { "degraded" } else { "ok" };
+
     Json(HealthResponse {
-        status: "ok".into(),
+        status: status.into(),
         version: "0.1.0".into(),
         sessions_active: state.sessions.count(),
+        llm_providers: providers,
     })
 }
 
@@ -671,7 +677,7 @@ mod tests {
 
         let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
         let health: HealthResponse = serde_json::from_slice(&body).unwrap();
-        assert_eq!(health.status, "ok");
+        assert!(health.status == "ok" || health.status == "degraded");
         assert_eq!(health.sessions_active, 0);
     }
 

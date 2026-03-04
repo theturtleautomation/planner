@@ -279,6 +279,11 @@ export function useSocraticWebSocket({
           content: `Error: ${msg.message}`,
           timestamp: new Date().toISOString(),
         }]);
+        // If we haven't progressed past interviewing, mark as error
+        setIntakePhase((prev) => {
+          if (prev === 'waiting' || prev === 'interviewing') return 'error';
+          return prev;
+        });
         break;
       }
     }
