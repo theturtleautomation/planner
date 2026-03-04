@@ -184,20 +184,34 @@ install_llm_clis() {
     local planner_bin="${INSTALL_DIR}/bin"
     mkdir -p "${planner_bin}"
 
-    # Find a working npm + node. Prefer the invoking user's (nvm-managed)
-    # versions since the CLIs may require a specific Node.js version.
+    # ---------------------------------------------------------------
+    # Locate npm + node.
+    # nvm does not load in non-interactive shells (bash -lc won't
+    # source .bashrc behind an interactivity guard). We explicitly
+    # source nvm.sh if present in the invoking user's home.
+    # ---------------------------------------------------------------
     local npm_cmd="npm"
     local node_cmd="node"
     local invoking_user="${SUDO_USER:-}"
 
     if [[ -n "$invoking_user" ]] && [[ "$invoking_user" != "root" ]]; then
+        local user_home
+        user_home=$(eval echo ~"${invoking_user}")
+
+        # Try sourcing nvm explicitly, then resolve npm/node
+        local nvm_script="${user_home}/.nvm/nvm.sh"
+        local nvm_source=""
+        if [[ -s "$nvm_script" ]]; then
+            nvm_source=". \"${nvm_script}\" --no-use 2>/dev/null; nvm use default >/dev/null 2>&1;"
+        fi
+
         local user_npm
-        user_npm=$(sudo -u "$invoking_user" bash -lc "command -v npm 2>/dev/null" 2>/dev/null || true)
+        user_npm=$(sudo -u "$invoking_user" bash -c "${nvm_source} command -v npm 2>/dev/null" 2>/dev/null || true)
         if [[ -n "$user_npm" ]]; then
             npm_cmd="$user_npm"
         fi
         local user_node
-        user_node=$(sudo -u "$invoking_user" bash -lc "command -v node 2>/dev/null" 2>/dev/null || true)
+        user_node=$(sudo -u "$invoking_user" bash -c "${nvm_source} command -v node 2>/dev/null" 2>/dev/null || true)
         if [[ -n "$user_node" ]]; then
             node_cmd="$user_node"
         fi
@@ -217,33 +231,47 @@ install_llm_clis() {
 
     for cli in claude gemini codex; do
         local pkg="${cli_packages[$cli]}"
+
+        # Remove stale symlinks/files from prior installs to prevent EEXIST
+        rm -f "${planner_bin}/${cli}"
+
         info "  Installing ${pkg}..."
         local npm_output
-        if npm_output=$("${npm_cmd}" install -g --prefix "${INSTALL_DIR}" "${pkg}" 2>&1); then
+        if npm_output=$("${npm_cmd}" install -g --prefix "${INSTALL_DIR}" --force "${pkg}" 2>&1); then
             if [[ -x "${planner_bin}/${cli}" ]]; then
-                info "  \u2713 ${cli} installed → ${planner_bin}/${cli}"
+                info "  \u2713 ${cli} installed \u2192 ${planner_bin}/${cli}"
                 found=$((found + 1))
             else
                 warn "  \u2717 ${cli} package installed but binary not found at ${planner_bin}/${cli}"
-                echo "$npm_output" | tail -5
+                echo "$npm_output" | grep -i "error\|warn" | tail -10
             fi
         else
             warn "  \u2717 ${cli} installation failed"
-            echo "$npm_output" | tail -5
+            echo "$npm_output" | grep -i "error" | tail -10
         fi
     done
 
-    # Copy the node binary into planner's bin dir.
+    # Ensure node is available in planner's bin dir.
     # The CLI wrapper scripts use #!/usr/bin/env node — with our controlled
     # PATH, 'env' will find node at /opt/planner/bin/node.
+    local dest_node="${planner_bin}/node"
     local node_real
     node_real=$(readlink -f "$node_cmd" 2>/dev/null || true)
     if [[ -n "$node_real" ]] && [[ -x "$node_real" ]]; then
-        cp -f "$node_real" "${planner_bin}/node"
-        chmod 755 "${planner_bin}/node"
-        info "  \u2713 node copied → ${planner_bin}/node"
+        local dest_real=""
+        [[ -e "$dest_node" ]] && dest_real=$(readlink -f "$dest_node" 2>/dev/null || true)
+        if [[ "$node_real" == "$dest_real" ]]; then
+            info "  \u2713 node already at ${dest_node}"
+        else
+            rm -f "$dest_node"
+            cp "$node_real" "$dest_node"
+            chmod 755 "$dest_node"
+            info "  \u2713 node copied \u2192 ${dest_node}"
+        fi
+    elif [[ -x "$dest_node" ]]; then
+        info "  \u2713 node already at ${dest_node}"
     else
-        warn "  \u2717 Could not locate node binary to copy"
+        warn "  \u2717 Could not locate node binary — CLI tools may not work"
     fi
 
     # Fix ownership — everything under INSTALL_DIR should be accessible
@@ -257,11 +285,11 @@ install_llm_clis() {
         warn "  NO LLM CLI TOOLS INSTALLED"
         warn "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
         warn ""
-        warn "  npm install failed for all packages. Check npm/node versions."
-        warn "  You can install manually:"
-        warn "    npm install -g --prefix ${INSTALL_DIR} @anthropic-ai/claude-code"
-        warn "    npm install -g --prefix ${INSTALL_DIR} @google/gemini-cli"
-        warn "    npm install -g --prefix ${INSTALL_DIR} @openai/codex"
+        warn "  npm install failed. Try installing manually as your regular user:"
+        warn "    sudo npm install -g --prefix ${INSTALL_DIR} @anthropic-ai/claude-code"
+        warn "    sudo npm install -g --prefix ${INSTALL_DIR} @google/gemini-cli"
+        warn "    sudo npm install -g --prefix ${INSTALL_DIR} @openai/codex"
+        warn "  Then re-run: sudo $0 --update"
         warn ""
     else
         info "  ${found} provider(s) installed into ${planner_bin}"
