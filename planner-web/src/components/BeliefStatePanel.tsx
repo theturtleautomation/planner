@@ -2,6 +2,38 @@ import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import type { BeliefState, Classification, Contradiction } from '../types.ts';
 import ClassificationBadge from './ClassificationBadge.tsx';
 
+/**
+ * Safely coerce any value to a display string.
+ *
+ * Serde-serialised Rust enums like `Dimension::Custom("X")` arrive as
+ * `{"custom": "X"}` — rendering that object directly in JSX triggers
+ * React error #31 ("Objects are not valid as a React child").
+ *
+ * This helper unwraps one level of nesting and falls back to
+ * JSON.stringify so nothing ever reaches React as a raw object.
+ */
+function toDisplayString(v: unknown): string {
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+  if (v === null || v === undefined) return '';
+  if (typeof v === 'object') {
+    // Unwrap single-key wrapper objects like {"custom": "Browser Support"}
+    const keys = Object.keys(v as Record<string, unknown>);
+    if (keys.length === 1) {
+      const inner = (v as Record<string, unknown>)[keys[0]];
+      if (typeof inner === 'string') return inner;
+    }
+    // Unwrap nested {value: "..."} (e.g. SlotValue objects)
+    if ('value' in (v as Record<string, unknown>)) {
+      const inner = (v as Record<string, unknown>).value;
+      if (typeof inner === 'string') return inner;
+      return toDisplayString(inner);
+    }
+    return JSON.stringify(v);
+  }
+  return String(v);
+}
+
 interface BeliefStatePanelProps {
   beliefState: BeliefState | null;
   classification: Classification | null;
@@ -298,14 +330,8 @@ export default function BeliefStatePanel({
 
   const canEdit = !!onDimensionEdit;
 
-  /** Extract display value from uncertain slot (handles both nested and flat formats). */
-  const getUncertainValue = (slot: { value: unknown; confidence: number }): string => {
-    if (typeof slot.value === 'string') return slot.value;
-    if (slot.value && typeof slot.value === 'object' && 'value' in slot.value) {
-      return String((slot.value as { value: unknown }).value);
-    }
-    return String(slot.value);
-  };
+  /** Extract display value — handles strings, nested SlotValue objects, and serde enum wrappers. */
+  const getSlotDisplayValue = (slot: unknown): string => toDisplayString(slot);
 
   return (
     <div
@@ -402,7 +428,7 @@ export default function BeliefStatePanel({
               <div
                 key={dim}
                 className={justFilled.has(dim) ? 'slot-just-filled' : undefined}
-                onClick={() => handleDimensionClick(dim, slot.value)}
+                onClick={() => handleDimensionClick(dim, toDisplayString(slot.value))}
                 title={canEdit ? 'Click to edit' : slot.source_quote ?? undefined}
                 style={{
                   fontSize: '12px',
@@ -416,9 +442,9 @@ export default function BeliefStatePanel({
               >
                 <span style={{ flexShrink: 0 }}>✓</span>
                 <span>
-                  <span style={{ fontWeight: 700 }}>{dim}</span>
+                  <span style={{ fontWeight: 700 }}>{toDisplayString(dim)}</span>
                   <span style={{ color: 'var(--text-secondary)', margin: '0 4px' }}>:</span>
-                  <span style={{ color: 'var(--text-primary)' }}>{slot.value}</span>
+                  <span style={{ color: 'var(--text-primary)' }}>{toDisplayString(slot.value)}</span>
                   {slot.source_quote && (
                     <span
                       style={{
@@ -462,7 +488,7 @@ export default function BeliefStatePanel({
               <div
                 key={dim}
                 className={justUncertain.has(dim) ? 'slot-just-uncertain' : undefined}
-                onClick={() => handleDimensionClick(dim, getUncertainValue(slot))}
+                onClick={() => handleDimensionClick(dim, getSlotDisplayValue(slot.value))}
                 title={canEdit ? 'Click to edit' : undefined}
                 style={{
                   fontSize: '12px',
@@ -476,10 +502,10 @@ export default function BeliefStatePanel({
               >
                 <span style={{ flexShrink: 0 }}>?</span>
                 <span>
-                  <span style={{ fontWeight: 700 }}>{dim}</span>
+                  <span style={{ fontWeight: 700 }}>{toDisplayString(dim)}</span>
                   <span style={{ color: 'var(--text-secondary)', margin: '0 4px' }}>:</span>
                   <span style={{ color: 'var(--text-primary)' }}>
-                    {getUncertainValue(slot)}
+                    {getSlotDisplayValue(slot.value)}
                   </span>
                   <span
                     style={{
@@ -510,8 +536,8 @@ export default function BeliefStatePanel({
         ) : (
           beliefState.missing.map((dim) => (
             <div
-              key={dim}
-              onClick={() => handleDimensionClick(dim)}
+              key={toDisplayString(dim)}
+              onClick={() => handleDimensionClick(toDisplayString(dim))}
               style={{
                 fontSize: '12px',
                 color: 'var(--text-secondary)',
@@ -523,7 +549,7 @@ export default function BeliefStatePanel({
               }}
             >
               <span style={{ flexShrink: 0 }}>○</span>
-              <span style={{ fontWeight: 700 }}>{dim}</span>
+              <span style={{ fontWeight: 700 }}>{toDisplayString(dim)}</span>
             </div>
           ))
         )}
@@ -542,7 +568,7 @@ export default function BeliefStatePanel({
         ) : (
           beliefState.out_of_scope.map((dim) => (
             <div
-              key={dim}
+              key={toDisplayString(dim)}
               style={{
                 fontSize: '12px',
                 color: 'var(--border)',
@@ -554,7 +580,7 @@ export default function BeliefStatePanel({
               }}
             >
               <span style={{ flexShrink: 0 }}>✗</span>
-              <span>{dim}</span>
+              <span>{toDisplayString(dim)}</span>
             </div>
           ))
         )}

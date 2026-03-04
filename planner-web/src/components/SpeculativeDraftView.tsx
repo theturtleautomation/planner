@@ -1,6 +1,22 @@
 import { useState, useCallback } from 'react';
 import type { SpeculativeDraft } from '../types.ts';
 
+/** Safely coerce serde enum wrappers (e.g. {"custom": "X"}) to plain strings. */
+function toDisplayString(v: unknown): string {
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+  if (v === null || v === undefined) return '';
+  if (typeof v === 'object') {
+    const keys = Object.keys(v as Record<string, unknown>);
+    if (keys.length === 1) {
+      const inner = (v as Record<string, unknown>)[keys[0]];
+      if (typeof inner === 'string') return inner;
+    }
+    return JSON.stringify(v);
+  }
+  return String(v);
+}
+
 interface SpeculativeDraftViewProps {
   draft: SpeculativeDraft;
   onBack: () => void;
@@ -417,7 +433,7 @@ export default function SpeculativeDraftView({ draft, onBack, onReact }: Specula
                 >
                   <span style={{ flexShrink: 0 }}>?</span>
                   <span>
-                    <span style={{ fontWeight: 700 }}>{a.dimension}</span>
+                    <span style={{ fontWeight: 700 }}>{toDisplayString(a.dimension)}</span>
                     <span style={{ color: 'var(--text-secondary)', margin: '0 6px' }}>—</span>
                     <span style={{ color: 'var(--text-primary)', fontWeight: 400 }}>
                       {a.assumption}
@@ -477,7 +493,7 @@ export default function SpeculativeDraftView({ draft, onBack, onReact }: Specula
                     padding: '3px 8px',
                   }}
                 >
-                  {dim}
+                  {toDisplayString(dim)}
                 </span>
               ))}
             </div>

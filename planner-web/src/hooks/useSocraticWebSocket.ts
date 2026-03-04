@@ -179,11 +179,25 @@ export function useSocraticWebSocket({
       }
 
       case 'belief_state_update': {
+        // Normalise dimension names: serde-serialised Rust enums like
+        // Dimension::Custom("X") arrive as {"custom": "X"} — unwrap them
+        // to plain strings so React never receives objects as children.
+        const normDim = (v: unknown): string => {
+          if (typeof v === 'string') return v;
+          if (v && typeof v === 'object') {
+            const keys = Object.keys(v as Record<string, unknown>);
+            if (keys.length === 1) {
+              const inner = (v as Record<string, unknown>)[keys[0]];
+              if (typeof inner === 'string') return inner;
+            }
+          }
+          return JSON.stringify(v);
+        };
         const bs: BeliefState = {
           filled: msg.filled as BeliefState['filled'],
           uncertain: msg.uncertain as BeliefState['uncertain'],
-          missing: msg.missing,
-          out_of_scope: msg.out_of_scope ?? [],
+          missing: (msg.missing ?? []).map(normDim),
+          out_of_scope: (msg.out_of_scope ?? []).map(normDim),
           convergence_pct: msg.convergence_pct,
         };
         setBeliefState(bs);
