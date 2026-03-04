@@ -22,4 +22,6 @@ pub struct AppState {
     pub auth_config: Option<AuthConfig>,
     /// Filesystem-backed event store. None if persistence is unavailable.
     pub event_store: Option<planner_core::observability::EventStore>,
+    /// Server start time for uptime calculation.
+    pub started_at: std::time::Instant,
 }

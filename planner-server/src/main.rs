@@ -88,6 +88,7 @@ async fn main() {
         sessions: SessionStore::new(),
         auth_config,
         event_store,
+        started_at: std::time::Instant::now(),
     });
 
     // Build in-memory rate limiter and start background eviction task.

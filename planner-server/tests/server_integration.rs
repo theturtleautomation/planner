@@ -34,6 +34,7 @@ fn test_state() -> Arc<AppState> {
         sessions: SessionStore::new(),
         auth_config: None,
         event_store: None,
+        started_at: std::time::Instant::now(),
     })
 }
 

@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 use axum::{
-    extract::{Path, State, WebSocketUpgrade},
+    extract::{Path, Query, State, WebSocketUpgrade},
     http::StatusCode,
     response::{IntoResponse, Json},
     routing::{get, post},
@@ -145,10 +145,65 @@ pub struct EventsQuery {
     pub offset: Option<usize>,
 }
 
+// ---------------------------------------------------------------------------
+// Admin response types
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AdminStatusResponse {
+    pub status: String,
+    pub version: String,
+    pub uptime_secs: u64,
+    pub sessions: AdminSessionStats,
+    pub providers: Vec<AdminProviderInfo>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AdminSessionStats {
+    pub active: usize,
+    pub total_events: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AdminProviderInfo {
+    pub name: String,
+    pub binary: String,
+    pub available: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AdminEventsResponse {
+    pub events: Vec<AdminEventEntry>,
+    pub total: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AdminEventEntry {
+    pub id: String,
+    pub timestamp: String,
+    pub level: String,
+    pub source: String,
+    pub session_id: Option<String>,
+    pub step: Option<String>,
+    pub message: String,
+    pub duration_ms: Option<u64>,
+    pub metadata: serde_json::Value,
+}
+
+/// Query parameters for `GET /admin/events`.
+#[derive(Debug, Deserialize)]
+pub struct AdminEventsQuery {
+    pub limit: Option<usize>,
+    pub level: Option<String>,
+    pub session_id: Option<String>,
+}
+
 
 pub fn routes(state: Arc<AppState>) -> Router {
     let public = Router::new()
         .route("/health", get(health))
+        .route("/admin/status", get(admin_status))
+        .route("/admin/events", get(admin_events))
         .with_state(state.clone());
 
     let protected = Router::new()
@@ -189,6 +244,135 @@ async fn health(State(state): State<Arc<AppState>>) -> Json<HealthResponse> {
         sessions_active: state.sessions.count(),
         llm_providers: providers,
     })
+}
+
+async fn admin_status(State(state): State<Arc<AppState>>) -> Json<AdminStatusResponse> {
+    // Uptime calculation
+    let uptime_secs = state.started_at.elapsed().as_secs();
+
+    // Session stats
+    let active = state.sessions.count();
+    let total_events: usize = state.sessions.list_ids()
+        .iter()
+        .filter_map(|id| state.sessions.get(*id))
+        .map(|s| s.events.len())
+        .sum();
+
+    // Provider availability
+    let providers = vec![
+        AdminProviderInfo {
+            name: "anthropic".into(),
+            binary: "claude".into(),
+            available: planner_core::llm::providers::cli_available("claude"),
+        },
+        AdminProviderInfo {
+            name: "google".into(),
+            binary: "gemini".into(),
+            available: planner_core::llm::providers::cli_available("gemini"),
+        },
+        AdminProviderInfo {
+            name: "openai".into(),
+            binary: "codex".into(),
+            available: planner_core::llm::providers::cli_available("codex"),
+        },
+    ];
+
+    let status = if providers.iter().any(|p| p.available) { "ok" } else { "degraded" };
+
+    Json(AdminStatusResponse {
+        status: status.into(),
+        version: "0.1.0".into(),
+        uptime_secs,
+        sessions: AdminSessionStats { active, total_events },
+        providers,
+    })
+}
+
+async fn admin_events(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<AdminEventsQuery>,
+) -> Result<Json<AdminEventsResponse>, (StatusCode, Json<ErrorResponse>)> {
+    use planner_core::observability::{EventLevel, EventSource};
+
+    // Parse optional session_id filter
+    let filter_session_id: Option<uuid::Uuid> = match query.session_id {
+        Some(ref raw) => {
+            Some(uuid::Uuid::parse_str(raw).map_err(|_| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrorResponse { error: "Invalid session_id: not a valid UUID".into() }),
+                )
+            })?)
+        }
+        None => None,
+    };
+
+    // Parse optional level filter
+    let filter_level: Option<EventLevel> = match query.level.as_deref() {
+        Some("info")  => Some(EventLevel::Info),
+        Some("warn")  => Some(EventLevel::Warn),
+        Some("error") => Some(EventLevel::Error),
+        Some(_)       => None,
+        None          => None,
+    };
+
+    let limit = query.limit.unwrap_or(100).min(1000);
+
+    // Collect events from all in-memory sessions
+    let mut all_events: Vec<AdminEventEntry> = state
+        .sessions
+        .list_ids()
+        .iter()
+        .filter_map(|id| state.sessions.get(*id))
+        .flat_map(|s| s.events.clone())
+        .filter(|e| {
+            if let Some(ref lvl) = filter_level {
+                if &e.level != lvl {
+                    return false;
+                }
+            }
+            if let Some(ref sid) = filter_session_id {
+                match e.session_id {
+                    Some(ref esid) => {
+                        if esid != sid {
+                            return false;
+                        }
+                    }
+                    None => return false,
+                }
+            }
+            true
+        })
+        .map(|e| AdminEventEntry {
+            id: e.id.to_string(),
+            timestamp: e.timestamp.to_rfc3339(),
+            level: match e.level {
+                EventLevel::Info  => "info".into(),
+                EventLevel::Warn  => "warn".into(),
+                EventLevel::Error => "error".into(),
+            },
+            source: match e.source {
+                EventSource::SocraticEngine => "socratic_engine".into(),
+                EventSource::LlmRouter      => "llm_router".into(),
+                EventSource::Pipeline       => "pipeline".into(),
+                EventSource::Factory        => "factory".into(),
+                EventSource::System         => "system".into(),
+            },
+            session_id: e.session_id.map(|id| id.to_string()),
+            step: e.step,
+            message: e.message,
+            duration_ms: e.duration_ms,
+            metadata: e.metadata,
+        })
+        .collect();
+
+    // Sort by timestamp descending (newest first)
+    all_events.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+
+    let total = all_events.len();
+    let events: Vec<AdminEventEntry> = all_events.into_iter().take(limit).collect();
+
+    Ok(Json(AdminEventsResponse { events, total }))
 }
 
 async fn models() -> Json<ModelsResponse> {
@@ -747,6 +931,7 @@ mod tests {
             sessions: SessionStore::new(),
             auth_config: None, // dev mode for tests
             event_store: None,
+            started_at: std::time::Instant::now(),
         })
     }
 
@@ -780,6 +965,7 @@ mod tests {
                 decoding_key: None,
             }),
             event_store: None,
+            started_at: std::time::Instant::now(),
         });
         let app = routes(state);
 
@@ -1003,6 +1189,7 @@ mod tests {
                 decoding_key: None,
             }),
             event_store: None,
+            started_at: std::time::Instant::now(),
         });
         let app = routes(state);
 

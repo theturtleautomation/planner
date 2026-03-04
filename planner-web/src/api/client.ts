@@ -9,6 +9,8 @@ import type {
   BeliefStateResponse,
   ListModelsResponse,
   Session,
+  AdminStatusResponse,
+  AdminEventsResponse,
 } from '../types.ts';
 
 export { ApiError };
@@ -92,6 +94,30 @@ export function createApiClient(getToken: GetTokenFn) {
 
     getBeliefState(id: string): Promise<BeliefStateResponse> {
       return apiFetch<BeliefStateResponse>(getToken, `/sessions/${id}/belief-state`);
+    },
+
+    adminStatus(): Promise<AdminStatusResponse> {
+      return fetch(`${API_BASE}/admin/status`).then(async (res) => {
+        if (!res.ok) {
+          const text = await res.text().catch(() => res.statusText);
+          throw new ApiError(`API GET /admin/status → ${res.status}: ${text}`, res.status);
+        }
+        return res.json() as Promise<AdminStatusResponse>;
+      });
+    },
+
+    adminEvents(params?: { limit?: number; level?: string }): Promise<AdminEventsResponse> {
+      const qs = new URLSearchParams();
+      if (params?.limit !== undefined) qs.set('limit', String(params.limit));
+      if (params?.level !== undefined) qs.set('level', params.level);
+      const query = qs.toString() ? `?${qs.toString()}` : '';
+      return fetch(`${API_BASE}/admin/events${query}`).then(async (res) => {
+        if (!res.ok) {
+          const text = await res.text().catch(() => res.statusText);
+          throw new ApiError(`API GET /admin/events → ${res.status}: ${text}`, res.status);
+        }
+        return res.json() as Promise<AdminEventsResponse>;
+      });
     },
   };
 }

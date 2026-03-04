@@ -182,6 +182,39 @@ export interface ListModelsResponse {
   models: Model[];
 }
 
+// ─── Admin ───────────────────────────────────────────────────────────────────
+
+export interface AdminProviderInfo {
+  name: string;
+  binary: string;
+  available: boolean;
+}
+
+export interface AdminStatusResponse {
+  status: string;
+  version: string;
+  uptime_secs: number;
+  sessions: { active: number; total_events: number };
+  providers: AdminProviderInfo[];
+}
+
+export interface AdminEventEntry {
+  id: string;
+  timestamp: string;
+  level: string;
+  source: string;
+  session_id?: string;
+  step?: string;
+  message: string;
+  duration_ms?: number;
+  metadata: Record<string, unknown>;
+}
+
+export interface AdminEventsResponse {
+  events: AdminEventEntry[];
+  total: number;
+}
+
 // ─── WebSocket Messages ───────────────────────────────────────────────────────
 
 // --- Server → Client ---

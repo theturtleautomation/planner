@@ -70,9 +70,26 @@ export default function Dashboard() {
           borderBottom: '1px solid var(--border)',
           paddingBottom: '12px',
         }}>
-          <span style={{ color: 'var(--text-primary)', fontSize: '14px', fontWeight: 600 }}>
-            sessions
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span style={{ color: 'var(--text-primary)', fontSize: '14px', fontWeight: 600 }}>
+              sessions
+            </span>
+            <a
+              href="/admin"
+              style={{
+                color: 'var(--text-secondary)',
+                fontSize: '11px',
+                textDecoration: 'none',
+                opacity: 0.6,
+                transition: 'opacity 0.18s',
+                fontFamily: 'monospace',
+              }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLAnchorElement).style.opacity = '1'; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLAnchorElement).style.opacity = '0.6'; }}
+            >
+              admin →
+            </a>
+          </div>
           <button
             onClick={handleNewSession}
             style={{

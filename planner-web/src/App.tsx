@@ -4,6 +4,7 @@ import { AUTH0_ENABLED } from './config.ts';
 import LoginPage from './pages/LoginPage.tsx';
 import Dashboard from './pages/Dashboard.tsx';
 import SessionPage from './pages/SessionPage.tsx';
+import AdminPage from './pages/AdminPage.tsx';
 import ProtectedRoute from './auth/ProtectedRoute.tsx';
 
 // ─── Auth0 callback handler ───────────────────────────────────────────────────
@@ -88,6 +89,7 @@ export default function App() {
           </ProtectedRoute>
         }
       />
+      <Route path="/admin" element={<AdminPage />} />
       {/* Catch-all */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
