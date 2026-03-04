@@ -1,0 +1,47 @@
+[Unit]
+Description=Planner — Socratic project intake server
+Documentation=https://github.com/theturtleautomation/planner
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=planner
+Group=planner
+
+# Paths
+ExecStart=/usr/local/bin/planner-server --port 3100 --static-dir /opt/planner/web
+WorkingDirectory=/opt/planner
+
+# Environment
+EnvironmentFile=-/etc/planner/planner.env
+
+# Logging — goes to journalctl -u planner
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=planner
+
+# Hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/opt/planner/data
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+
+# Resource limits
+LimitNOFILE=65536
+
+# Restart policy
+Restart=on-failure
+RestartSec=5
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Install]
+WantedBy=multi-user.target
