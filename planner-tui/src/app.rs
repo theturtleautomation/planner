@@ -238,6 +238,10 @@ pub struct App {
 
     /// LLM provider status detected at startup.
     pub providers: Vec<ProviderStatus>,
+
+    /// Receive structured PlannerEvents from the Socratic engine.
+    /// Set by `pipeline::spawn_socratic_interview()`.
+    pub planner_events_rx: Option<tokio::sync::mpsc::UnboundedReceiver<planner_core::observability::PlannerEvent>>,
 }
 
 impl App {
@@ -308,6 +312,7 @@ impl App {
             logs_scroll_offset: 0,
             logs_filter: None,
             providers,
+            planner_events_rx: None,
         };
 
         app.add_system_message(
@@ -377,6 +382,33 @@ impl App {
             None => self.planner_events.iter().collect(),
             Some(level) => self.planner_events.iter().filter(|e| e.level == level).collect(),
         }
+    }
+
+    /// Drain the planner events channel and update TUI state.
+    ///
+    /// Returns true if any events were processed (useful for forced redraws).
+    pub fn tick_planner_events(&mut self) -> bool {
+        let events: Vec<planner_core::observability::PlannerEvent> = {
+            if let Some(ref mut rx) = self.planner_events_rx {
+                let mut buf = Vec::new();
+                while let Ok(ev) = rx.try_recv() {
+                    buf.push(ev);
+                }
+                buf
+            } else {
+                return false;
+            }
+        };
+
+        if events.is_empty() {
+            return false;
+        }
+
+        for event in events {
+            self.record_planner_event(event);
+        }
+
+        true
     }
 
     // -----------------------------------------------------------------------

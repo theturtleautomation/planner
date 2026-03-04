@@ -98,6 +98,8 @@ async fn run_app<B: Backend>(
                 app.tick();
                 // Drain Socratic events
                 app.tick_socratic();
+                // Drain planner observability events
+                app.tick_planner_events();
             }
             events::Event::Key(key) => {
                 app.handle_key(key);
@@ -108,9 +110,10 @@ async fn run_app<B: Backend>(
         // ── Socratic interview spawn ────────────────────────────────────────
         // The user submitted their first message → spawn the Socratic engine.
         if let Some(initial_message) = app.take_pending_socratic() {
-            let (user_tx, events_rx) = pipeline::spawn_socratic_interview(initial_message);
+            let (user_tx, events_rx, planner_events_rx) = pipeline::spawn_socratic_interview(initial_message);
             app.socratic_tx = Some(user_tx);
             app.socratic_events_rx = Some(events_rx);
+            app.planner_events_rx = Some(planner_events_rx);
         }
 
         // ── Pipeline spawn ──────────────────────────────────────────────────

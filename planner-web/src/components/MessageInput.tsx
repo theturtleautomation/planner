@@ -9,7 +9,7 @@ interface MessageInputProps {
   isLoading?: boolean;
   convergencePct?: number;
   // Socratic props
-  intakePhase?: 'waiting' | 'interviewing' | 'pipeline_running' | 'complete';
+  intakePhase?: 'waiting' | 'interviewing' | 'pipeline_running' | 'complete' | 'error';
   currentQuestion?: {
     text: string;
     targetDimension?: string;
@@ -48,6 +48,7 @@ export default function MessageInput({
   const phaseBlocked =
     intakePhase === 'pipeline_running' ||
     intakePhase === 'complete' ||
+    intakePhase === 'error' ||
     intakePhase === 'waiting';
 
   const isBlocked = disabled || pipelineRunning || isLoading || phaseBlocked;
@@ -89,6 +90,8 @@ export default function MessageInput({
     placeholder = 'Pipeline is running — please wait…';
   } else if (intakePhase === 'complete') {
     placeholder = 'Session complete';
+  } else if (intakePhase === 'error') {
+    placeholder = 'Session error — check event log for details';
   } else if (isLoading) {
     placeholder = 'Waiting for response…';
   }

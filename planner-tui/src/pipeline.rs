@@ -26,15 +26,17 @@
 //! - `App::submit_input()` stores the first message in `pending_socratic_message`.
 //! - The main loop calls `App::take_pending_socratic()`.
 //! - If `Some(message)`, main.rs calls `spawn_socratic_interview()` which
-//!   returns `(user_tx, events_rx)` stored in the `App`.
+//!   returns `(user_tx, events_rx, planner_events_rx)` stored in the `App`.
 //! - Subsequent user input is forwarded via `App::socratic_tx`.
 //! - `App::tick_socratic()` drains `socratic_events_rx` on every tick.
+//! - `App::tick_planner_events()` drains `planner_events_rx` on every tick.
 //! - On `Converged` event, `App` transitions to `PipelineRunning` and sets
 //!   `pending_pipeline_description` for main.rs to call `spawn_pipeline()`.
 
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
 
+use planner_core::observability::{ChannelEventSink, EventSink, PlannerEvent, EventSource};
 use planner_schemas::SocraticEvent;
 
 // ---------------------------------------------------------------------------
@@ -76,6 +78,10 @@ pub type PipelineReceiver = mpsc::UnboundedReceiver<PipelineEvent>;
 struct TuiSocraticIO {
     event_tx: mpsc::UnboundedSender<SocraticEvent>,
     input_rx: Arc<Mutex<mpsc::UnboundedReceiver<String>>>,
+    /// Observability event sink for structured planner events.
+    event_sink: Arc<dyn EventSink>,
+    /// Session ID for tagging emitted events.
+    session_id: uuid::Uuid,
 }
 
 #[async_trait::async_trait]
@@ -90,12 +96,45 @@ impl planner_core::pipeline::steps::socratic::SocraticIO for TuiSocraticIO {
         let _ = self.event_tx.send(SocraticEvent::Question {
             output: output.clone(),
         });
+        self.event_sink.emit(
+            PlannerEvent::info(
+                EventSource::SocraticEngine,
+                "socratic.question.generated",
+                format!("Question generated for dimension '{}'", output.target_dimension.label()),
+            )
+            .with_session(self.session_id)
+            .with_metadata(serde_json::json!({
+                "target_dimension": output.target_dimension.label(),
+                "allow_skip": output.allow_skip,
+            })),
+        );
     }
 
     async fn send_belief_state(&self, state: &planner_schemas::RequirementsBeliefState) {
         let _ = self.event_tx.send(SocraticEvent::BeliefStateUpdate {
             state: state.clone(),
         });
+        let convergence_pct = state.convergence_pct();
+        self.event_sink.emit(
+            PlannerEvent::info(
+                EventSource::SocraticEngine,
+                "socratic.verify.complete",
+                format!(
+                    "Belief state updated: {:.0}% convergence ({} filled, {} uncertain, {} missing)",
+                    convergence_pct * 100.0,
+                    state.filled.len(),
+                    state.uncertain.len(),
+                    state.missing.len(),
+                ),
+            )
+            .with_session(self.session_id)
+            .with_metadata(serde_json::json!({
+                "convergence_pct": convergence_pct,
+                "filled_count": state.filled.len(),
+                "uncertain_count": state.uncertain.len(),
+                "missing_count": state.missing.len(),
+            })),
+        );
     }
 
     async fn send_draft(&self, draft: &planner_schemas::SpeculativeDraft) {
@@ -108,12 +147,54 @@ impl planner_core::pipeline::steps::socratic::SocraticIO for TuiSocraticIO {
         let _ = self.event_tx.send(SocraticEvent::Converged {
             result: result.clone(),
         });
+        self.event_sink.emit(
+            PlannerEvent::info(
+                EventSource::SocraticEngine,
+                "socratic.converged",
+                format!(
+                    "Socratic interview converged at {:.0}% (reason: {:?})",
+                    result.convergence_pct * 100.0,
+                    result.reason,
+                ),
+            )
+            .with_session(self.session_id)
+            .with_metadata(serde_json::json!({
+                "convergence_pct": result.convergence_pct,
+                "reason": format!("{:?}", result.reason),
+            })),
+        );
     }
 
     async fn send_classification(&self, classification: &planner_schemas::DomainClassification) {
         let _ = self.event_tx.send(SocraticEvent::Classified {
             classification: classification.clone(),
         });
+        self.event_sink.emit(
+            PlannerEvent::info(
+                EventSource::SocraticEngine,
+                "socratic.classify.complete",
+                format!(
+                    "Domain classified: {} ({}), budget: {} questions",
+                    classification.project_type,
+                    match classification.complexity {
+                        planner_schemas::ComplexityTier::Light => "light",
+                        planner_schemas::ComplexityTier::Standard => "standard",
+                        planner_schemas::ComplexityTier::Deep => "deep",
+                    },
+                    classification.question_budget,
+                ),
+            )
+            .with_session(self.session_id)
+            .with_metadata(serde_json::json!({
+                "project_type": classification.project_type.to_string(),
+                "complexity": match classification.complexity {
+                    planner_schemas::ComplexityTier::Light => "light",
+                    planner_schemas::ComplexityTier::Standard => "standard",
+                    planner_schemas::ComplexityTier::Deep => "deep",
+                },
+                "question_budget": classification.question_budget,
+            })),
+        );
     }
 
     /// Block until the TUI sends a reply (or the sender is dropped → None).
@@ -144,31 +225,51 @@ impl planner_core::pipeline::steps::socratic::SocraticIO for TuiSocraticIO {
 
 /// Spawn the Socratic interview engine in a background tokio task.
 ///
-/// Returns a tuple `(user_tx, events_rx)`:
+/// Returns a tuple `(user_tx, events_rx, planner_events_rx)`:
 /// - `user_tx` — send user replies into the engine.
 /// - `events_rx` — receive `SocraticEvent`s from the engine.
+/// - `planner_events_rx` — receive structured `PlannerEvent`s for observability.
 ///
-/// The caller (main.rs) stores both in `App`:
+/// The caller (main.rs) stores all three in `App`:
 /// ```rust,ignore
-/// let (tx, rx) = pipeline::spawn_socratic_interview(initial_message);
+/// let (tx, rx, prx) = pipeline::spawn_socratic_interview(initial_message);
 /// app.socratic_tx = Some(tx);
 /// app.socratic_events_rx = Some(rx);
+/// app.planner_events_rx = Some(prx);
 /// ```
 pub fn spawn_socratic_interview(
     initial_message: String,
 ) -> (
     mpsc::UnboundedSender<String>,
     mpsc::UnboundedReceiver<SocraticEvent>,
+    mpsc::UnboundedReceiver<PlannerEvent>,
 ) {
     // user_tx → user_rx: TUI feeds user replies in; engine reads them out
     let (user_tx, user_rx) = mpsc::unbounded_channel::<String>();
     // events_tx → events_rx: engine pushes events in; TUI drains them out
     let (events_tx, events_rx) = mpsc::unbounded_channel::<SocraticEvent>();
+    // planner event sink for observability
+    let (event_sink, planner_events_rx) = ChannelEventSink::new();
+    let event_sink: Arc<dyn EventSink> = Arc::new(event_sink);
+
+    let session_id = uuid::Uuid::new_v4();
 
     let io = Arc::new(TuiSocraticIO {
         event_tx: events_tx.clone(),
         input_rx: Arc::new(Mutex::new(user_rx)),
+        event_sink: event_sink.clone(),
+        session_id,
     });
+
+    // Emit session start event
+    event_sink.emit(
+        PlannerEvent::info(
+            EventSource::System,
+            "system.session.start",
+            format!("TUI session {} starting Socratic interview", session_id),
+        )
+        .with_session(session_id),
+    );
 
     tokio::spawn(async move {
         let router = planner_core::llm::providers::LlmRouter::from_env();
@@ -189,11 +290,19 @@ pub fn spawn_socratic_interview(
                 let _ = events_tx.send(SocraticEvent::Error {
                     message: format!("{}", e),
                 });
+                event_sink.emit(
+                    PlannerEvent::error(
+                        EventSource::SocraticEngine,
+                        "socratic.error",
+                        format!("Socratic interview failed: {}", e),
+                    )
+                    .with_session(session_id),
+                );
             }
         }
     });
 
-    (user_tx, events_rx)
+    (user_tx, events_rx, planner_events_rx)
 }
 
 // ---------------------------------------------------------------------------
