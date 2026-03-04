@@ -1,69 +1,53 @@
+import { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { useAuth0 } from '@auth0/auth0-react';
 import { AUTH0_ENABLED } from './config.ts';
-import LoginPage from './pages/LoginPage.tsx';
 import Dashboard from './pages/Dashboard.tsx';
 import SessionPage from './pages/SessionPage.tsx';
 import AdminPage from './pages/AdminPage.tsx';
 import ProtectedRoute from './auth/ProtectedRoute.tsx';
 
-// ─── Auth0 callback handler ───────────────────────────────────────────────────
-function CallbackPageAuth0() {
-  const { isLoading, error } = useAuth0();
+// ─── Auth0-dependent pages ───────────────────────────────────────────────────
+// Lazy-loaded at module level so the @auth0/auth0-react module is never
+// imported when AUTH0_ENABLED is false. This avoids React 19 context/hook
+// edge cases when the Auth0Provider is absent from the tree.
+const LazyCallbackPageAuth0 = lazy(() =>
+  import('./auth/Auth0Pages.tsx').then((m) => ({ default: m.CallbackPageAuth0 }))
+);
+const LazyRootPageAuth0 = lazy(() =>
+  import('./auth/Auth0Pages.tsx').then((m) => ({ default: m.RootPageAuth0 }))
+);
 
-  if (error) {
-    return (
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        height: '100vh', background: '#0a0a0f', color: '#ff4444',
-        fontFamily: 'monospace', fontSize: '13px',
-      }}>
-        Auth error: {error.message}
-      </div>
-    );
-  }
-
-  if (isLoading) {
-    return (
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        height: '100vh', background: '#0a0a0f', color: '#8888a0',
-        fontFamily: 'monospace', fontSize: '13px',
-      }}>
-        completing authentication…
-      </div>
-    );
-  }
-
-  return <Navigate to="/" replace />;
+function AuthLoadingFallback() {
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      height: '100vh', background: '#0a0a0f', color: '#8888a0',
+      fontFamily: 'monospace', fontSize: '13px',
+    }}>
+      loading…
+    </div>
+  );
 }
 
 function CallbackPage() {
-  if (AUTH0_ENABLED) return <CallbackPageAuth0 />;
+  if (AUTH0_ENABLED) {
+    return (
+      <Suspense fallback={<AuthLoadingFallback />}>
+        <LazyCallbackPageAuth0 />
+      </Suspense>
+    );
+  }
   return <Navigate to="/" replace />;
 }
 
-// ─── Root page ────────────────────────────────────────────────────────────────
-function RootPageAuth0() {
-  const { isAuthenticated, isLoading } = useAuth0();
-
-  if (isLoading) {
+function RootPage() {
+  if (AUTH0_ENABLED) {
     return (
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        height: '100vh', background: '#0a0a0f', color: '#8888a0',
-        fontFamily: 'monospace', fontSize: '13px',
-      }}>
-        loading…
-      </div>
+      <Suspense fallback={<AuthLoadingFallback />}>
+        <LazyRootPageAuth0 />
+      </Suspense>
     );
   }
-
-  return isAuthenticated ? <Dashboard /> : <LoginPage />;
-}
-
-function RootPage() {
-  if (AUTH0_ENABLED) return <RootPageAuth0 />;
   return <Dashboard />;
 }
 

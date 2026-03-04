@@ -17,11 +17,9 @@ export function getLastTokenError(): Error | null {
  * Hook that returns a function to get the Auth0 access token.
  *
  * When AUTH0_ENABLED is false (dev mode), the token is always an empty string.
- * This hook is safe to call unconditionally — when Auth0 is disabled, we still
- * call useAuth0() but it will be wrapped in the Auth0Provider only when enabled.
- *
- * IMPORTANT: When AUTH0_ENABLED=false, do NOT call useAuth0(). Instead we
- * expose a no-op via a separate exported function selected at module level.
+ * This hook is safe to call unconditionally — when Auth0 is disabled, the
+ * useAuth0() hook is never invoked. The module-level ternary selects the
+ * implementation at import time.
  */
 
 // Module-level selection: export the right hook based on compile-time flag.

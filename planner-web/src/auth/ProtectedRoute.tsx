@@ -1,5 +1,4 @@
-import { useAuth0 } from '@auth0/auth0-react';
-import { Navigate, useLocation } from 'react-router-dom';
+import { lazy, Suspense } from 'react';
 import type { ReactNode } from 'react';
 import { AUTH0_ENABLED } from '../config.ts';
 
@@ -12,39 +11,27 @@ function DevRoute({ children }: Props) {
   return <>{children}</>;
 }
 
-// ─── Auth0 mode: requires login ───────────────────────────────────────────────
-function Auth0Route({ children }: Props) {
-  const { isAuthenticated, isLoading } = useAuth0();
-  const location = useLocation();
-
-  if (isLoading) {
-    return (
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        height: '100vh',
-        background: '#0a0a0f',
-        color: '#8888a0',
-        fontFamily: 'monospace',
-        fontSize: '13px',
-      }}>
-        authenticating…
-      </div>
-    );
-  }
-
-  if (!isAuthenticated) {
-    return <Navigate to="/" state={{ from: location }} replace />;
-  }
-
-  return <>{children}</>;
-}
+// ─── Auth0 mode: lazy-loaded to avoid importing @auth0/auth0-react ───────────
+const LazyAuth0Route = lazy(() =>
+  import('./Auth0Route.tsx').then((m) => ({ default: m.default }))
+);
 
 // ─── Export ───────────────────────────────────────────────────────────────────
 export default function ProtectedRoute({ children }: Props) {
   if (AUTH0_ENABLED) {
-    return <Auth0Route>{children}</Auth0Route>;
+    return (
+      <Suspense fallback={
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          height: '100vh', background: '#0a0a0f', color: '#8888a0',
+          fontFamily: 'monospace', fontSize: '13px',
+        }}>
+          authenticating…
+        </div>
+      }>
+        <LazyAuth0Route>{children}</LazyAuth0Route>
+      </Suspense>
+    );
   }
   return <DevRoute>{children}</DevRoute>;
 }
