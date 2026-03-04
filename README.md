@@ -38,16 +38,16 @@ Planner v2 is a Rust workspace that takes a plain-English feature description an
 ## Quick Start
 
 ```bash
-# 1. Install prerequisites (see Installation below)
-rustup update stable
-
-# 2. Clone and build
 git clone https://github.com/theturtleautomation/planner
 cd planner
-cargo build --release
+make build          # cargo build + npm install + vite build
+make test           # cargo test + vitest
 
-# 3. Run the full pipeline
-./target/release/planner-core "Build me a task tracker widget"
+# Run the server (serves web UI at http://localhost:3100)
+./target/release/planner-server
+
+# Or run the TUI
+./target/release/planner-tui
 ```
 
 The pipeline will detect whichever of `claude`, `gemini`, or `codex` you have installed and route model calls accordingly.
@@ -100,13 +100,78 @@ Required only if you want to run or build the `planner-web` React app:
 node --version
 ```
 
-### Build
+### Build (Makefile)
+
+The root Makefile orchestrates both Rust and web builds:
+
+| Command | What it does |
+|---|---|
+| `make` | Check + build everything |
+| `make build` | `cargo build` + `vite build` |
+| `make test` | `cargo test` + `vitest` |
+| `make check` | `cargo check` + tsc/vite |
+| `make rust-release` | `cargo build --release` |
+| `make web-dev` | Start vite dev server |
+| `make clippy` | Lint Rust |
+| `make web-lint` | Lint TS/JS |
+| `make clean` | Remove all artifacts |
+| `make help` | List all targets |
+
+Node modules are auto-installed if missing.
+
+---
+
+## Deployment
+
+### systemd Service
+
+Planner ships with a systemd service unit and install script for production deployment.
+
+#### Install
 
 ```bash
-cargo build --release
+sudo ./deploy/install.sh              # Full install: build, create user, enable service
+sudo ./deploy/install.sh --update     # Rebuild + restart (preserves config)
+sudo ./deploy/install.sh --uninstall  # Remove everything
 ```
 
-Binaries are written to `./target/release/`.
+#### Installed Paths
+
+| Path | Contents |
+|---|---|
+| `/usr/local/bin/planner-server` | Release binary |
+| `/opt/planner/web/` | Vite production build |
+| `/opt/planner/data/` | CXDB MessagePack storage |
+| `/etc/planner/planner.env` | Environment configuration |
+| `/etc/systemd/system/planner.service` | systemd unit |
+
+#### Service Management
+
+```bash
+sudo systemctl status planner         # Check status
+sudo systemctl restart planner        # Restart
+journalctl -u planner -f              # Tail logs
+```
+
+The service runs as a dedicated `planner` system user with systemd hardening (ProtectSystem=strict, NoNewPrivileges, PrivateTmp).
+
+### Environment Configuration
+
+All configuration lives in `/etc/planner/planner.env`. The file is preserved across `--update` runs. Key sections:
+
+- **Server** — Port, bind address
+- **Logging** — `RUST_LOG` with per-crate granularity
+- **Authentication** — Auth0 JWT (optional; omit for dev mode)
+- **LLM Providers** — No API keys needed; authenticate CLIs as the service user:
+  ```bash
+  sudo -u planner claude login
+  sudo -u planner gemini login
+  sudo -u planner codex login
+  ```
+- **Factory Worker** — Worktree root, sandbox mode
+- **Vault Integration** — HashiCorp Vault Agent, systemd LoadCredential, SOPS
+
+See `deploy/planner.env` for the fully documented template.
 
 ---
 
@@ -222,7 +287,7 @@ Key bindings: `Enter` to send, `Ctrl+C` / `q` to quit.
 
 ### `planner-server` — HTTP + WebSocket Backend
 
-Serves the React frontend and exposes a versioned REST + WebSocket API for browser-based planning sessions. All routes are prefixed with `/api/v1`. JWT authentication is fail-closed — requests without a valid token are rejected with `401`.
+Serves the React frontend and exposes a versioned REST + WebSocket API for browser-based planning sessions. Endpoints are available under both `/api` and `/api/v1`. JWT authentication is fail-closed — requests without a valid token are rejected with `401`.
 
 ```bash
 # Default port 3100, serves ./planner-web/dist
@@ -245,16 +310,20 @@ Then open `http://localhost:3100` in your browser.
 | Method | Path | Auth | Description |
 |---|---|---|---|
 | `GET` | `/api/health` | None | Health check |
-| `POST` | `/api/v1/sessions` | Required | Create a new planning session |
-| `GET` | `/api/v1/sessions/:id` | Required | Get session state |
-| `POST` | `/api/v1/sessions/:id/message` | Required | Send a message to the session |
-| `GET` | `/api/v1/sessions/:id/turns` | Required | List all turns for a session |
-| `GET` | `/api/v1/sessions/:id/runs` | Required | List all pipeline runs for a session |
-| `GET` | `/api/v1/sessions/:id/ws` | Required | WebSocket for real-time updates |
-| `GET` | `/api/v1/models` | Required | List available LLM models |
+| `GET` | `/api/models` | Required | List available LLM models |
+| `GET` | `/api/sessions` | Required | List sessions for current user |
+| `POST` | `/api/sessions` | Required | Create a new planning session |
+| `GET` | `/api/sessions/:id` | Required | Get session state |
+| `POST` | `/api/sessions/:id/message` | Required | Send a message to the session |
+| `GET` | `/api/sessions/:id/ws` | Required | WebSocket for real-time updates |
+| `POST` | `/api/sessions/:id/socratic` | Required | Start Socratic interview |
+| `GET` | `/api/sessions/:id/socratic/ws` | Required | Socratic interview WebSocket |
+| `GET` | `/api/sessions/:id/belief-state` | Required | Get current belief state |
+| `GET` | `/api/sessions/:id/turns` | Required | List CXDB turns |
+| `GET` | `/api/sessions/:id/runs` | Required | List pipeline runs |
 | `GET` | `/*` | None | Static file serving (React frontend) |
 
-Rate limiting applies to all `/api/v1` routes: 100 requests/minute per IP. Excess requests receive `429 Too Many Requests`.
+Endpoints are available under both `/api` and `/api/v1`. Rate limiting applies to all API routes: 100 requests/minute per IP. Excess requests receive `429 Too Many Requests`.
 
 If `--static-dir` does not exist, the server starts in API-only mode.
 
@@ -265,19 +334,15 @@ If `--static-dir` does not exist, the server starts in API-only mode.
 A full React + TypeScript + Vite single-page application. Communicates with `planner-server` via REST and WebSocket. Auth0 is optional — omitting Auth0 environment variables activates dev mode (no login required).
 
 ```bash
-cd planner-web
-
-# Install dependencies
-npm install
-
-# Run the development server (http://localhost:5173)
-npm run dev
-
-# Build for production (output to dist/)
+# From repo root (proxied via root package.json)
 npm run build
-
-# Run the test suite
+npm run dev
 npm test
+
+# Or from planner-web/ directly
+cd planner-web
+npm install
+npm run dev
 ```
 
 See [planner-web/README.md](./planner-web/README.md) for full frontend documentation and [AUTH0_SETUP.md](./AUTH0_SETUP.md) for authentication configuration.
@@ -343,16 +408,58 @@ The `--front-office-only` flag runs stages 1–4 (Intake through Lint) and stops
 
 ---
 
+## Socratic Intake Engine
+
+The Socratic intake replaces the simple text-prompt intake with a structured interview loop. Six Rust modules cooperate to elicit requirements through dialogue:
+
+| Module | Role |
+|---|---|
+| `domain_classifier` | Classifies project type (web app, CLI, API, etc.) and complexity tier |
+| `constitution` | Generates required dimensions (auth, storage, UI, etc.) based on classification |
+| `question_planner` | Selects the next question targeting the most uncertain dimension |
+| `belief_state` | Tracks filled/uncertain/missing slots with confidence scores |
+| `convergence` | Decides when enough information has been gathered (staleness detection, budget) |
+| `speculative_draft` | Generates a mid-interview draft for user correction |
+
+The engine supports two I/O backends via the `SocraticIO` trait:
+- **TUI** — Split-pane Ratatui terminal interface
+- **WebSocket** — Real-time browser session with typed messages
+
+### Web Frontend Components
+
+The Socratic interview renders in a split-pane layout:
+
+| Component | Purpose |
+|---|---|
+| `SessionPage` | Orchestrates the interview, routes WS messages to child components |
+| `ChatPanel` | Message history with role-based styling (user/planner/system/event) |
+| `BeliefStatePanel` | Live visualization of filled/uncertain/missing slots with edit support |
+| `SpeculativeDraftView` | Mid-interview draft with per-section [Correct]/[Fix] buttons |
+| `ConvergenceBar` | Visual progress toward interview completion |
+| `ClassificationBadge` | Project type and complexity display |
+| `MessageInput` | Auto-grow textarea with convergence-aware "done" button |
+| `useSocraticWebSocket` | Hook managing WS connection, typed message dispatch, reconnection |
+
+---
+
 ## Project Structure
 
 ```
 planner/
 ├── Cargo.toml                      # Workspace manifest
 ├── Cargo.lock
+├── Makefile                        # Orchestrates Rust + web builds
+├── package.json                    # Root npm scripts (proxied to planner-web)
 ├── AUTH0_SETUP.md                  # Auth0 configuration guide
 ├── ARCHITECTURE.md                 # Full design document
 ├── CONTRIBUTING.md
 ├── DEPLOYMENT.md
+│
+├── deploy/                         # Production deployment
+│   ├── install.sh                  # systemd install/update/uninstall script
+│   ├── planner.service             # systemd unit file
+│   ├── planner.env                 # Environment configuration template
+│   └── package.json
 │
 ├── planner-schemas/                # Artifact types & event sourcing
 │   └── src/
@@ -398,7 +505,15 @@ planner/
 │   │   │   │   ├── validate.rs
 │   │   │   │   ├── telemetry.rs
 │   │   │   │   ├── git.rs
-│   │   │   │   └── context_pack.rs
+│   │   │   │   ├── context_pack.rs
+│   │   │   │   └── socratic/       # Socratic intake engine
+│   │   │   │       ├── mod.rs
+│   │   │   │       ├── domain_classifier.rs
+│   │   │   │       ├── constitution.rs
+│   │   │   │       ├── question_planner.rs
+│   │   │   │       ├── belief_state.rs
+│   │   │   │       ├── convergence.rs
+│   │   │   │       └── speculative_draft.rs
 │   │   │   ├── verification.rs     # Lean4 proposition stub generation
 │   │   │   ├── audit.rs            # Anti-lock-in audit (Ralph module)
 │   │   │   ├── pyramid.rs          # PyramidSummary rollup
@@ -435,7 +550,8 @@ planner/
 │       ├── rate_limit.rs           # Token-bucket rate limiter (100 req/min per IP)
 │       ├── rbac.rs                 # RBAC type system (4 roles, 9 permissions)
 │       ├── session.rs              # SessionStore (parking_lot::RwLock, TTL cleanup)
-│       └── ws.rs                   # WebSocket upgrade + message loop
+│       ├── ws.rs                   # WebSocket upgrade + message loop
+│       └── ws_socratic.rs          # Socratic interview WebSocket handler
 │
 ├── planner-web/                    # React + TypeScript + Vite SPA
 │   ├── src/
@@ -452,17 +568,23 @@ planner/
 │   │   │   ├── ProtectedRoute.tsx
 │   │   │   └── useAuthenticatedFetch.ts
 │   │   ├── components/
-│   │   │   ├── ChatPanel.tsx       # Message list with scroll preservation
-│   │   │   ├── Layout.tsx          # App shell
-│   │   │   ├── MessageInput.tsx    # Auto-grow textarea
-│   │   │   ├── PipelineBar.tsx     # Stage visualization bar
+│   │   │   ├── BeliefStatePanel.tsx    # Live slot visualization with edit support
+│   │   │   ├── ChatPanel.tsx           # Message list with scroll preservation
+│   │   │   ├── ClassificationBadge.tsx # Project type and complexity display
+│   │   │   ├── ConvergenceBar.tsx      # Interview completion progress
+│   │   │   ├── Layout.tsx              # App shell
+│   │   │   ├── MessageInput.tsx        # Auto-grow textarea
+│   │   │   ├── PipelineBar.tsx         # Stage visualization bar
+│   │   │   ├── QuickOptions.tsx
+│   │   │   ├── SpeculativeDraftView.tsx  # Mid-interview draft with correction UI
 │   │   │   └── __tests__/
 │   │   │       ├── ChatPanel.test.tsx
 │   │   │       ├── Layout.test.tsx
 │   │   │       ├── MessageInput.test.tsx
 │   │   │       └── PipelineBar.test.tsx
 │   │   ├── hooks/
-│   │   │   └── useSessionWebSocket.ts  # WebSocket with reconnection logic
+│   │   │   ├── useSocraticWebSocket.ts  # WS connection, typed dispatch, reconnection
+│   │   │   └── useSessionWebSocket.ts   # WebSocket with reconnection logic
 │   │   ├── pages/
 │   │   │   ├── Dashboard.tsx       # Session listing dashboard
 │   │   │   ├── LoginPage.tsx       # Auth0 login / dev-mode bypass
