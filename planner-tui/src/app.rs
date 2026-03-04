@@ -24,6 +24,18 @@ use planner_schemas::{
 use crate::pipeline::{PipelineEvent, PipelineReceiver};
 
 // ---------------------------------------------------------------------------
+// Provider Status
+// ---------------------------------------------------------------------------
+
+/// Detected LLM provider status.
+#[derive(Debug, Clone)]
+pub struct ProviderStatus {
+    pub name: String,
+    pub binary: String,
+    pub available: bool,
+}
+
+// ---------------------------------------------------------------------------
 // Chat Message
 // ---------------------------------------------------------------------------
 
@@ -223,6 +235,9 @@ pub struct App {
 
     /// Event log filter: None = all, Some = filtered level.
     pub logs_filter: Option<planner_core::observability::EventLevel>,
+
+    /// LLM provider status detected at startup.
+    pub providers: Vec<ProviderStatus>,
 }
 
 impl App {
@@ -242,6 +257,24 @@ impl App {
             PipelineStage { name: "Factory".into(),   status: StageStatus::Pending },
             PipelineStage { name: "Validate".into(),  status: StageStatus::Pending },
             PipelineStage { name: "Git".into(),       status: StageStatus::Pending },
+        ];
+
+        let providers = vec![
+            ProviderStatus {
+                name: "anthropic".into(),
+                binary: "claude".into(),
+                available: planner_core::llm::providers::cli_available("claude"),
+            },
+            ProviderStatus {
+                name: "google".into(),
+                binary: "gemini".into(),
+                available: planner_core::llm::providers::cli_available("gemini"),
+            },
+            ProviderStatus {
+                name: "openai".into(),
+                binary: "codex".into(),
+                available: planner_core::llm::providers::cli_available("codex"),
+            },
         ];
 
         let mut app = App {
@@ -274,6 +307,7 @@ impl App {
             right_pane_mode: RightPaneMode::BeliefState,
             logs_scroll_offset: 0,
             logs_filter: None,
+            providers,
         };
 
         app.add_system_message(

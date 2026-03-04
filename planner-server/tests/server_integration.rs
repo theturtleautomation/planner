@@ -33,6 +33,7 @@ fn test_state() -> Arc<AppState> {
     Arc::new(AppState {
         sessions: SessionStore::new(),
         auth_config: None,
+        event_store: None,
     })
 }
 

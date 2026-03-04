@@ -70,10 +70,24 @@ async fn main() {
         tracing::warn!("Auth0 not configured — running in dev mode (no auth)");
     }
 
+    // Initialize event persistence
+    let data_dir = std::env::var("PLANNER_DATA_DIR").unwrap_or_else(|_| "./data".to_string());
+    let event_store = match planner_core::observability::EventStore::new(std::path::Path::new(&data_dir)) {
+        Ok(store) => {
+            tracing::info!("Event persistence enabled: {}/events/", data_dir);
+            Some(store)
+        }
+        Err(e) => {
+            tracing::warn!("Event persistence disabled: {}", e);
+            None
+        }
+    };
+
     // Create shared state
     let state = Arc::new(AppState {
         sessions: SessionStore::new(),
         auth_config,
+        event_store,
     });
 
     // Build in-memory rate limiter and start background eviction task.

@@ -536,6 +536,14 @@ pub async fn handle_socratic_ws(
                     state.sessions.update(session_id, |s| {
                         s.record_event(evt.clone());
                     });
+                    // Persist to disk if event store is available.
+                    if let Some(ref store) = state.event_store {
+                        if let Some(session) = state.sessions.get(session_id) {
+                            if let Err(e) = store.save_session_events(session_id, &session.events) {
+                                tracing::warn!("Failed to persist events for session {}: {}", session_id, e);
+                            }
+                        }
+                    }
                     // Forward to WebSocket client.
                     let ws_msg = ServerMessage::PlannerEvent {
                         id: evt.id.to_string(),
@@ -734,6 +742,14 @@ pub async fn handle_socratic_ws(
                         state.sessions.update(session_id, |s| {
                             s.record_event(evt.clone());
                         });
+                        // Persist to disk if event store is available.
+                        if let Some(ref store) = state.event_store {
+                            if let Some(session) = state.sessions.get(session_id) {
+                                if let Err(e) = store.save_session_events(session_id, &session.events) {
+                                    tracing::warn!("Failed to persist events for session {}: {}", session_id, e);
+                                }
+                            }
+                        }
                         // Forward to WebSocket client.
                         let ws_msg = ServerMessage::PlannerEvent {
                             id: evt.id.to_string(),

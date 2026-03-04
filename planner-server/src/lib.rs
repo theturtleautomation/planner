@@ -20,4 +20,6 @@ pub struct AppState {
     pub sessions: SessionStore,
     /// Auth0 JWT config. None = dev mode (auth bypassed).
     pub auth_config: Option<AuthConfig>,
+    /// Filesystem-backed event store. None if persistence is unavailable.
+    pub event_store: Option<planner_core::observability::EventStore>,
 }

@@ -172,13 +172,25 @@ export default function Dashboard() {
         {/* Session list */}
         {!loading && !fetchError && sessions.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {sessions.map((session) => (
-              <SessionCard
-                key={session.id}
-                session={session}
-                onClick={() => void navigate(`/session/${session.id}`)}
-              />
-            ))}
+            {[...sessions]
+              .sort((a, b) => {
+                // Active phases rank higher (lower sort index = earlier)
+                const ACTIVE_PHASES = new Set(['interviewing', 'pipeline_running']);
+                const aActive = ACTIVE_PHASES.has(a.intake_phase ?? '') ? 0 : 1;
+                const bActive = ACTIVE_PHASES.has(b.intake_phase ?? '') ? 0 : 1;
+                if (aActive !== bActive) return aActive - bActive;
+                // Within same tier: most recent first (latest message timestamp)
+                const aTs = a.messages?.[0]?.timestamp ?? '';
+                const bTs = b.messages?.[0]?.timestamp ?? '';
+                return bTs.localeCompare(aTs);
+              })
+              .map((session) => (
+                <SessionCard
+                  key={session.id}
+                  session={session}
+                  onClick={() => void navigate(`/session/${session.id}`)}
+                />
+              ))}
           </div>
         )}
 
@@ -208,7 +220,7 @@ interface SessionCardProps {
 
 // Intake phase badge config
 const PHASE_CONFIG: Record<
-  'waiting' | 'interviewing' | 'pipeline_running' | 'complete',
+  'waiting' | 'interviewing' | 'pipeline_running' | 'complete' | 'error',
   { label: string; color: string; bg: string; borderColor: string; className?: string }
 > = {
   waiting: {
@@ -236,7 +248,33 @@ const PHASE_CONFIG: Record<
     bg: 'rgba(0,255,136,0.08)',
     borderColor: 'rgba(0,255,136,0.4)',
   },
+  error: {
+    label: 'error',
+    color: 'var(--accent-red)',
+    bg: 'rgba(255,68,68,0.10)',
+    borderColor: 'var(--accent-red)',
+  },
 };
+
+/** Maps an intake phase to its status-dot color. */
+function getStatusDotColor(phase: string): string {
+  switch (phase) {
+    case 'complete':         return 'var(--accent-green)';
+    case 'interviewing':     return 'var(--accent-cyan)';
+    case 'pipeline_running': return 'var(--accent-yellow)';
+    case 'error':            return 'var(--accent-red)';
+    default:                 return 'var(--text-secondary)'; // waiting / unknown
+  }
+}
+
+/** Formats a duration in milliseconds as "Xm" or "Xh Ym". */
+function formatDuration(ms: number): string {
+  const totalMinutes = Math.floor(ms / 60000);
+  if (totalMinutes < 60) return `${totalMinutes}m`;
+  const hours   = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+}
 
 function SessionCard({ session, onClick }: SessionCardProps) {
   const messageCount = session.messages?.length ?? 0;
@@ -249,6 +287,33 @@ function SessionCard({ session, onClick }: SessionCardProps) {
   // Intake phase
   const phase = session.intake_phase ?? 'waiting';
   const phaseConfig = PHASE_CONFIG[phase] ?? PHASE_CONFIG.waiting;
+
+  // Status dot color
+  const statusDotColor = getStatusDotColor(phase);
+
+  // Error indicator: phase is 'error' or session has an error_message
+  const hasError = phase === 'error' || Boolean(session.error_message);
+
+  // Current step label (e.g. "classify_domain")
+  const currentStep = session.current_step ?? null;
+
+  // Error count from events
+  const errorEventCount = session.events?.filter((e) => e.level === 'error').length ?? 0;
+
+  // Duration: first-message → last-message timestamp (or now if active)
+  const isActive = phase === 'interviewing' || phase === 'pipeline_running';
+  let durationText: string | null = null;
+  if (session.messages && session.messages.length > 0) {
+    const first = session.messages[0].timestamp;
+    const last  = isActive
+      ? new Date().toISOString()
+      : (session.messages[session.messages.length - 1].timestamp ?? first);
+    const firstMs = new Date(first).getTime();
+    const lastMs  = new Date(last).getTime();
+    if (!isNaN(firstMs) && !isNaN(lastMs) && lastMs >= firstMs) {
+      durationText = formatDuration(lastMs - firstMs);
+    }
+  }
 
   // Convergence
   const convergencePct = session.belief_state?.convergence_pct;
@@ -329,11 +394,43 @@ function SessionCard({ session, onClick }: SessionCardProps) {
               {Math.round(convergencePct!)}%
             </span>
           )}
+          {/* Error event count badge */}
+          {errorEventCount > 0 && (
+            <span style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              minWidth: '18px',
+              height: '16px',
+              padding: '0 4px',
+              borderRadius: '8px',
+              background: 'rgba(255,68,68,0.18)',
+              border: '1px solid var(--accent-red)',
+              color: 'var(--accent-red)',
+              fontSize: '9px',
+              fontWeight: 700,
+              fontFamily: 'monospace',
+              letterSpacing: '0.02em',
+            }}>
+              {errorEventCount}
+            </span>
+          )}
+          {/* Status dot */}
+          <span style={{
+            display: 'inline-block',
+            width: '8px',
+            height: '8px',
+            borderRadius: '50%',
+            background: statusDotColor,
+            flexShrink: 0,
+          }} />
+          {/* Phase badge (with optional ERR indicator) */}
           <span
             className={phaseConfig.className}
             style={{
               display: 'inline-flex',
               alignItems: 'center',
+              gap: '5px',
               padding: '2px 8px',
               borderRadius: '10px',
               border: `1px solid ${phaseConfig.borderColor}`,
@@ -347,7 +444,29 @@ function SessionCard({ session, onClick }: SessionCardProps) {
             }}
           >
             {phaseConfig.label}
+            {hasError && phase !== 'error' && (
+              <span style={{
+                display: 'inline-block',
+                width: '6px',
+                height: '6px',
+                borderRadius: '50%',
+                background: 'var(--accent-red)',
+                flexShrink: 0,
+              }} />
+            )}
           </span>
+          {/* Current step label */}
+          {currentStep && (
+            <span style={{
+              color: 'var(--text-secondary)',
+              fontSize: '10px',
+              fontFamily: 'monospace',
+              opacity: 0.7,
+              whiteSpace: 'nowrap',
+            }}>
+              · {currentStep}
+            </span>
+          )}
         </div>
       </div>
 
@@ -387,6 +506,17 @@ function SessionCard({ session, onClick }: SessionCardProps) {
           )}
           <span style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>
             {messageCount} {messageCount === 1 ? 'msg' : 'msgs'}
+            {durationText && (
+              <span style={{
+                marginLeft: '5px',
+                color: 'var(--text-secondary)',
+                opacity: 0.65,
+                fontSize: '10px',
+                fontFamily: 'monospace',
+              }}>
+                · {durationText}
+              </span>
+            )}
           </span>
           <span style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>→</span>
         </div>

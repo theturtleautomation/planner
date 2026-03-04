@@ -746,6 +746,7 @@ mod tests {
         Arc::new(AppState {
             sessions: SessionStore::new(),
             auth_config: None, // dev mode for tests
+            event_store: None,
         })
     }
 
@@ -778,6 +779,7 @@ mod tests {
                 audience: "test".into(),
                 decoding_key: None,
             }),
+            event_store: None,
         });
         let app = routes(state);
 
@@ -1000,6 +1002,7 @@ mod tests {
                 audience: "test".into(),
                 decoding_key: None,
             }),
+            event_store: None,
         });
         let app = routes(state);
 

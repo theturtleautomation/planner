@@ -43,9 +43,142 @@ use crate::app::{App, FocusMode, IntakePhase, MessageRole, RightPaneMode, StageS
 /// Draw the complete TUI interface. Layout switches on `intake_phase`.
 pub fn draw(frame: &mut Frame, app: &App) {
     match app.intake_phase {
+        IntakePhase::WaitingForInput => draw_waiting_for_input(frame, app),
         IntakePhase::Interviewing => draw_interviewing(frame, app),
         _ => draw_pipeline(frame, app),
     }
+}
+
+// ---------------------------------------------------------------------------
+// WaitingForInput layout — provider check screen
+// ---------------------------------------------------------------------------
+
+fn draw_waiting_for_input(frame: &mut Frame, app: &App) {
+    let area = frame.area();
+
+    // Vertical slices: Header | Provider panel | Input
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3), // Header
+            Constraint::Min(8),    // Provider status panel
+            Constraint::Length(3), // Input
+        ])
+        .split(area);
+
+    draw_header(frame, chunks[0], app);
+    draw_provider_status(frame, chunks[1], app);
+    draw_input(frame, chunks[2], app);
+}
+
+/// Provider check panel shown during WaitingForInput.
+fn draw_provider_status(frame: &mut Frame, area: Rect, app: &App) {
+    let available_count = app.providers.iter().filter(|p| p.available).count();
+    let total_count = app.providers.len();
+    let all_missing = available_count == 0;
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" PLANNER v2 — Socratic Planning Engine ")
+        .title_style(
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )
+        .border_style(Style::default().fg(Color::DarkGray));
+
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    // Inner layout: top padding | "LLM Providers:" heading | provider rows |
+    //               blank | summary line | blank | warning (if any) | prompt
+    //
+    // We build all content as a Paragraph with styled Lines rather than
+    // a dynamic Layout so it degrades gracefully on small terminals.
+    let mut lines: Vec<Line> = Vec::new();
+
+    // Blank line for visual breathing room
+    lines.push(Line::from(""));
+
+    // Heading
+    lines.push(Line::from(Span::styled(
+        "  LLM Providers:",
+        Style::default()
+            .fg(Color::White)
+            .add_modifier(Modifier::BOLD),
+    )));
+
+    // One row per provider
+    for p in &app.providers {
+        let (icon, icon_style, name_style) = if p.available {
+            (
+                "✓",
+                Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+                Style::default().fg(Color::Green),
+            )
+        } else {
+            (
+                "✗",
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                Style::default().fg(Color::Red),
+            )
+        };
+
+        let detail = if p.available {
+            format!("({} found)", p.binary)
+        } else {
+            format!("({} not found)", p.binary)
+        };
+        let detail_style = if p.available {
+            Style::default().fg(Color::DarkGray)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        };
+
+        lines.push(Line::from(vec![
+            Span::raw("    "),
+            Span::styled(icon, icon_style),
+            Span::raw(" "),
+            Span::styled(format!("{:<10}", p.name), name_style),
+            Span::raw(" "),
+            Span::styled(detail, detail_style),
+        ]));
+    }
+
+    // Blank line
+    lines.push(Line::from(""));
+
+    // Summary line
+    let summary_text = format!("  {} of {} providers available", available_count, total_count);
+    let summary_style = if all_missing {
+        Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
+    } else if available_count < total_count {
+        Style::default().fg(Color::Yellow)
+    } else {
+        Style::default().fg(Color::Green)
+    };
+    lines.push(Line::from(Span::styled(summary_text, summary_style)));
+
+    // Warning when no providers are available
+    if all_missing {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "  ⚠  No LLM providers found. Install claude, gemini, or codex and ensure they are on PATH.",
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        )));
+    }
+
+    // Blank line before prompt hint
+    lines.push(Line::from(""));
+
+    // Prompt hint
+    lines.push(Line::from(Span::styled(
+        "  Describe what you want to build below to start.",
+        Style::default().fg(Color::DarkGray),
+    )));
+
+    let para = Paragraph::new(lines).wrap(Wrap { trim: false });
+    frame.render_widget(para, inner);
 }
 
 // ---------------------------------------------------------------------------
@@ -692,6 +825,38 @@ mod tests {
         let backend = TestBackend::new(80, 24);
         let mut terminal = Terminal::new(backend).unwrap();
         let app = make_app();
+        terminal.draw(|f| draw(f, &app)).unwrap();
+    }
+
+    #[test]
+    fn draw_waiting_with_all_providers_available_does_not_panic() {
+        use crate::app::ProviderStatus;
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = make_app();
+        // Simulate all three providers available
+        app.providers = vec![
+            ProviderStatus { name: "anthropic".into(), binary: "claude".into(), available: true },
+            ProviderStatus { name: "google".into(),    binary: "gemini".into(), available: true },
+            ProviderStatus { name: "openai".into(),    binary: "codex".into(),  available: true },
+        ];
+        terminal.draw(|f| draw(f, &app)).unwrap();
+    }
+
+    #[test]
+    fn draw_waiting_with_no_providers_shows_warning_does_not_panic() {
+        use crate::app::ProviderStatus;
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = make_app();
+        // Simulate no providers — should render the red warning line
+        app.providers = vec![
+            ProviderStatus { name: "anthropic".into(), binary: "claude".into(), available: false },
+            ProviderStatus { name: "google".into(),    binary: "gemini".into(), available: false },
+            ProviderStatus { name: "openai".into(),    binary: "codex".into(),  available: false },
+        ];
         terminal.draw(|f| draw(f, &app)).unwrap();
     }
 

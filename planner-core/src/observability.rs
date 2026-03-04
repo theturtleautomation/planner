@@ -207,6 +207,70 @@ impl EventSink for CollectorEventSink {
 }
 
 // ---------------------------------------------------------------------------
+// Event Persistence
+// ---------------------------------------------------------------------------
+
+/// Filesystem-backed event store. Persists session events as MessagePack.
+pub struct EventStore {
+    events_dir: std::path::PathBuf,
+}
+
+impl EventStore {
+    /// Create a new EventStore, creating the events directory if needed.
+    pub fn new(data_dir: &std::path::Path) -> std::io::Result<Self> {
+        let events_dir = data_dir.join("events");
+        std::fs::create_dir_all(&events_dir)?;
+        Ok(Self { events_dir })
+    }
+
+    /// Persist all events for a session.
+    pub fn save_session_events(&self, session_id: Uuid, events: &[PlannerEvent]) -> std::io::Result<()> {
+        let path = self.events_dir.join(format!("{}.msgpack", session_id));
+        let bytes = rmp_serde::to_vec(events).map_err(|e| {
+            std::io::Error::new(std::io::ErrorKind::Other, format!("MessagePack encode: {}", e))
+        })?;
+        std::fs::write(&path, &bytes)
+    }
+
+    /// Load events for a session. Returns empty vec if file doesn't exist.
+    pub fn load_session_events(&self, session_id: Uuid) -> std::io::Result<Vec<PlannerEvent>> {
+        let path = self.events_dir.join(format!("{}.msgpack", session_id));
+        if !path.exists() {
+            return Ok(Vec::new());
+        }
+        let bytes = std::fs::read(&path)?;
+        rmp_serde::from_slice(&bytes).map_err(|e| {
+            std::io::Error::new(std::io::ErrorKind::Other, format!("MessagePack decode: {}", e))
+        })
+    }
+
+    /// List all session IDs that have persisted events.
+    pub fn list_sessions(&self) -> std::io::Result<Vec<Uuid>> {
+        let mut ids = Vec::new();
+        for entry in std::fs::read_dir(&self.events_dir)? {
+            let entry = entry?;
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if let Some(id_str) = name.strip_suffix(".msgpack") {
+                if let Ok(id) = Uuid::parse_str(id_str) {
+                    ids.push(id);
+                }
+            }
+        }
+        Ok(ids)
+    }
+
+    /// Delete events for a session.
+    pub fn delete_session_events(&self, session_id: Uuid) -> std::io::Result<()> {
+        let path = self.events_dir.join(format!("{}.msgpack", session_id));
+        if path.exists() {
+            std::fs::remove_file(&path)?;
+        }
+        Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -289,5 +353,42 @@ mod tests {
         assert_eq!(format!("{}", EventSource::LlmRouter), "llm_router");
         assert_eq!(format!("{}", EventSource::SocraticEngine), "socratic");
         assert_eq!(format!("{}", EventSource::Pipeline), "pipeline");
+    }
+
+    #[test]
+    fn event_store_save_and_load() {
+        let dir = std::env::temp_dir().join(format!("planner_test_{}", Uuid::new_v4()));
+        let store = EventStore::new(&dir).unwrap();
+
+        let sid = Uuid::new_v4();
+        let events = vec![
+            PlannerEvent::info(EventSource::System, "test.start", "Started"),
+            PlannerEvent::error(EventSource::LlmRouter, "test.fail", "Failed"),
+        ];
+
+        store.save_session_events(sid, &events).unwrap();
+
+        let loaded = store.load_session_events(sid).unwrap();
+        assert_eq!(loaded.len(), 2);
+        assert_eq!(loaded[0].message, "Started");
+        assert_eq!(loaded[1].level, EventLevel::Error);
+
+        let ids = store.list_sessions().unwrap();
+        assert!(ids.contains(&sid));
+
+        store.delete_session_events(sid).unwrap();
+        assert!(store.load_session_events(sid).unwrap().is_empty());
+
+        // Cleanup
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn event_store_load_missing_returns_empty() {
+        let dir = std::env::temp_dir().join(format!("planner_test_{}", Uuid::new_v4()));
+        let store = EventStore::new(&dir).unwrap();
+        let events = store.load_session_events(Uuid::new_v4()).unwrap();
+        assert!(events.is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
