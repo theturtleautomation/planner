@@ -33,6 +33,14 @@ export default function LoginPage() {
 }
 
 // ─── Shared view ─────────────────────────────────────────────────────────────
+const LOGIN_BANNER = `
+ ██████╗ ██╗      █████╗ ███╗   ██╗███╗   ██╗███████╗██████╗
+ ██╔══██╗██║     ██╔══██╗████╗  ██║████╗  ██║██╔════╝██╔══██╗
+ ██████╔╝██║     ███████║██╔██╗ ██║██╔██╗ ██║█████╗  ██████╔╝
+ ██╔═══╝ ██║     ██╔══██║██║╚██╗██║██║╚██╗██║██╔══╝  ██╔══██╗
+ ██║     ███████╗██║  ██║██║ ╚████║██║ ╚████║███████╗██║  ██║
+ ╚═╝     ╚══════╝╚═╝  ╚═╝╚═╝  ╚═══╝╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝`.trimStart();
+
 function LoginView({ onLogin }: { onLogin: () => void }) {
   return (
     <div style={{
@@ -47,7 +55,7 @@ function LoginView({ onLogin }: { onLogin: () => void }) {
       {/* Terminal window */}
       <div style={{
         width: '100%',
-        maxWidth: '480px',
+        maxWidth: '520px',
         border: '1px solid var(--border)',
         borderRadius: '4px',
         overflow: 'hidden',
@@ -70,23 +78,30 @@ function LoginView({ onLogin }: { onLogin: () => void }) {
         </div>
 
         {/* Body */}
-        <div style={{ padding: '32px 28px', background: 'var(--bg-secondary)' }}>
-          <div style={{
-            color: 'var(--accent-cyan)',
-            fontSize: '22px',
-            fontWeight: 700,
-            letterSpacing: '0.04em',
-            marginBottom: '8px',
-            lineHeight: 1.3,
-          }}>
-            PLANNER v2
-          </div>
+        <div style={{ padding: '24px 28px', background: 'var(--bg-secondary)' }}>
+          {/* ASCII banner */}
+          <pre
+            aria-label="Planner"
+            style={{
+              color: 'var(--accent-cyan)',
+              textAlign: 'center',
+              fontSize: 'clamp(5px, 1.4vw, 10px)',
+              lineHeight: 1.2,
+              margin: '0 0 16px 0',
+              padding: 0,
+              userSelect: 'none',
+              overflow: 'hidden',
+            }}
+          >
+            {LOGIN_BANNER}
+          </pre>
 
           <p style={{
             color: 'var(--text-secondary)',
             fontSize: '13px',
             marginBottom: '28px',
             lineHeight: 1.8,
+            textAlign: 'center',
           }}>
             A Socratic AI planning tool. Ask questions, receive structured plans,
             and watch the pipeline transform your ideas into actionable outputs.

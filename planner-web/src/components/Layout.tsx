@@ -75,57 +75,88 @@ function UserInfo() {
   return <UserInfoDev />;
 }
 
+// ─── ASCII Banner ────────────────────────────────────────────────────────────
+const ASCII_BANNER = `
+ ██████╗ ██╗      █████╗ ███╗   ██╗███╗   ██╗███████╗██████╗
+ ██╔══██╗██║     ██╔══██╗████╗  ██║████╗  ██║██╔════╝██╔══██╗
+ ██████╔╝██║     ███████║██╔██╗ ██║██╔██╗ ██║█████╗  ██████╔╝
+ ██╔═══╝ ██║     ██╔══██║██║╚██╗██║██║╚██╗██║██╔══╝  ██╔══██╗
+ ██║     ███████╗██║  ██║██║ ╚████║██║ ╚████║███████╗██║  ██║
+ ╚═╝     ╚══════╝╚═╝  ╚═╝╚═╝  ╚═══╝╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝`.trimStart();
+
 // ─── Layout ───────────────────────────────────────────────────────────────────
 export default function Layout({ children, sessionId, isConnected }: LayoutProps) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--bg-primary)' }}>
-      {/* ── Header ── */}
+      {/* ── Banner ── */}
       <header
         role="banner"
         style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '0 20px', height: '52px',
           borderBottom: '1px solid var(--border)',
           background: 'var(--bg-secondary)',
           flexShrink: 0,
-          flexWrap: 'wrap',
         }}
       >
-        {/* Left */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <span style={{ color: 'var(--accent-cyan)', fontWeight: 600, fontSize: '13px', letterSpacing: '0.05em' }}>
-            PLANNER v2
-          </span>
-          <span style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>— Socratic Lobby</span>
-          {sessionId && (
-            <span style={{
-              color: 'var(--text-secondary)', fontSize: '11px',
-              background: 'var(--bg-tertiary)', padding: '2px 8px',
-              borderRadius: '2px', border: '1px solid var(--border)',
-            }}>
-              session: {sessionId.slice(0, 8)}…
-            </span>
-          )}
-        </div>
+        {/* ASCII art — centered */}
+        <pre
+          aria-label="Planner"
+          style={{
+            color: 'var(--accent-cyan)',
+            textAlign: 'center',
+            fontSize: 'clamp(5px, 1.3vw, 12px)',
+            lineHeight: 1.2,
+            margin: '12px 0 4px 0',
+            padding: 0,
+            userSelect: 'none',
+            overflow: 'hidden',
+          }}
+        >
+          {ASCII_BANNER}
+        </pre>
 
-        {/* Right */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          {/* Connection indicator */}
-          {sessionId !== undefined && (
-            <span
-              aria-label="Connection status"
-              role="status"
-              style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-secondary)' }}
-            >
-              <span style={{
-                width: '8px', height: '8px', borderRadius: '50%', display: 'inline-block',
-                background: isConnected ? 'var(--accent-green)' : 'var(--accent-red)',
-                ...(isConnected ? {} : { animation: 'blink 1.5s ease infinite' }),
-              }} />
-              {isConnected ? 'connected' : 'disconnected'}
+        {/* Status bar */}
+        <div
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '0 20px', height: '32px',
+            borderTop: '1px solid var(--border)',
+          }}
+        >
+          {/* Left — subtitle + session */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <span style={{ color: 'var(--text-secondary)', fontSize: '11px', letterSpacing: '0.08em' }}>
+              SOCRATIC LOBBY
             </span>
-          )}
-          <UserInfo />
+            <span style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>v2</span>
+            {sessionId && (
+              <span style={{
+                color: 'var(--text-secondary)', fontSize: '11px',
+                background: 'var(--bg-tertiary)', padding: '2px 8px',
+                borderRadius: '2px', border: '1px solid var(--border)',
+              }}>
+                session: {sessionId.slice(0, 8)}…
+              </span>
+            )}
+          </div>
+
+          {/* Right — connection + user */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            {sessionId !== undefined && (
+              <span
+                aria-label="Connection status"
+                role="status"
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-secondary)' }}
+              >
+                <span style={{
+                  width: '8px', height: '8px', borderRadius: '50%', display: 'inline-block',
+                  background: isConnected ? 'var(--accent-green)' : 'var(--accent-red)',
+                  ...(isConnected ? {} : { animation: 'blink 1.5s ease infinite' }),
+                }} />
+                {isConnected ? 'connected' : 'disconnected'}
+              </span>
+            )}
+            <UserInfo />
+          </div>
         </div>
       </header>
 
