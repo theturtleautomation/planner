@@ -6,13 +6,16 @@
 //! - **Anthropic** → `claude -p --permission-mode acceptEdits --output-format stream-json --verbose --model <model>`
 //!   Uses `acceptEdits` permission mode: auto-approves file edits, still sandboxes bash commands.
 //!   In `-p` (print) mode with stdin piping, only text completion is needed — no file/shell access.
+//!   Installed via native binary (self-contained, no Node.js).
 //!
 //! - **Google**    → `gemini --prompt "<prompt>" --output-format json --model <model>`
 //!   In headless `--prompt` mode, tool calls are disabled by default unless
 //!   explicitly enabled via `coreTools` config — no sandbox needed.
+//!   Installed via npm (`@google/gemini-cli`).
 //!
 //! - **OpenAI**    → `codex exec --json --full-auto -m <model> "<prompt>"`
 //!   Uses `--full-auto`: workspace-write sandbox + auto-approve in exec mode.
+//!   Installed via npm (`@openai/codex`).
 
 use async_trait::async_trait;
 use serde::Deserialize;

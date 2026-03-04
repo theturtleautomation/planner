@@ -69,11 +69,20 @@ rustup update stable
 
 Planner v2 shells out to native CLI binaries — no API keys are read from environment variables. You need at least one of the following installed and authenticated:
 
-| CLI Binary | Provider | Subscription Required |
-|---|---|---|
-| `claude` | Anthropic | Claude Max or Pro |
-| `gemini` | Google | Gemini Pro |
-| `codex` | OpenAI | ChatGPT Pro |
+| CLI Binary | Provider | Install Method | Subscription Required |
+|---|---|---|---|
+| `claude` | Anthropic | Native installer (recommended) | Claude Max or Pro |
+| `gemini` | Google | `npm install -g @google/gemini-cli` | Gemini Pro |
+| `codex` | OpenAI | `npm install -g @openai/codex` | ChatGPT Pro |
+
+```bash
+# Claude — native installer (self-contained binary, no Node.js needed)
+curl -fsSL https://claude.ai/install.sh | bash
+
+# Gemini + Codex — npm (requires Node.js 18+)
+npm install -g @google/gemini-cli
+npm install -g @openai/codex
+```
 
 If none are found on `$PATH`, `planner-core` will exit with a clear error listing what to install.
 

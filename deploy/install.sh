@@ -164,41 +164,124 @@ CODEX_CONFIG
 }
 
 # ---------------------------------------------------------------------------
-# LLM CLI installation — npm install into /opt/planner/{bin,lib}
+# LLM CLI installation
 # ---------------------------------------------------------------------------
 # The Rust server's CliEnvironment uses env_clear() and sets a controlled
-# PATH that includes /opt/planner/bin/. We install the CLI packages directly
-# into /opt/planner/ using npm's --prefix flag, which places:
-#   - binaries  → /opt/planner/bin/{claude,gemini,codex}
-#   - packages  → /opt/planner/lib/node_modules/...
+# PATH that includes /opt/planner/bin/. We install CLI binaries there so
+# the service user can find them.
 #
-# This avoids symlink permission issues (service user can't traverse
-# /home/<user>/) and makes the installation self-contained.
+# Installation strategy per provider:
 #
-# We also copy the node binary into /opt/planner/bin/ so the npm wrapper
-# scripts can find their runtime (env_clear() strips the original PATH).
+#   claude — Native binary (self-contained, no Node.js).
+#            1. Check if invoking user has it at ~/.local/bin/claude
+#            2. If found, copy it to /opt/planner/bin/claude
+#            3. If not, download via Anthropic's native installer
+#            The npm package (@anthropic-ai/claude-code) has known issues
+#            with postinstall scripts, EEXIST errors, and broken symlinks.
+#            Anthropic recommends the native installer as of late 2025.
+#
+#   gemini — npm install -g --prefix /opt/planner @google/gemini-cli
+#   codex  — npm install -g --prefix /opt/planner @openai/codex
+#
+# The gemini/codex npm wrapper scripts use #!/usr/bin/env node, so we
+# also copy the node binary into /opt/planner/bin/ (env_clear() strips
+# the original PATH).
 #
 install_llm_clis() {
-    info "Installing LLM CLI packages into ${INSTALL_DIR}..."
+    info "Installing LLM CLI tools into ${INSTALL_DIR}/bin..."
 
     local planner_bin="${INSTALL_DIR}/bin"
     mkdir -p "${planner_bin}"
 
+    local invoking_user="${SUDO_USER:-}"
+    local user_home=""
+    if [[ -n "$invoking_user" ]] && [[ "$invoking_user" != "root" ]]; then
+        user_home=$(eval echo ~"${invoking_user}")
+    fi
+
+    local found=0
+
     # ---------------------------------------------------------------
-    # Locate npm + node.
-    # nvm does not load in non-interactive shells (bash -lc won't
-    # source .bashrc behind an interactivity guard). We explicitly
-    # source nvm.sh if present in the invoking user's home.
+    # Claude — native binary (no Node.js required)
     # ---------------------------------------------------------------
+    info "  Installing claude (native binary)..."
+    local claude_src=""
+
+    # Strategy 1: Copy from invoking user's native install
+    if [[ -n "$user_home" ]] && [[ -x "${user_home}/.local/bin/claude" ]]; then
+        claude_src="${user_home}/.local/bin/claude"
+        info "    Found native install at ${claude_src}"
+    fi
+
+    # Strategy 2: Check system-wide locations
+    if [[ -z "$claude_src" ]]; then
+        for candidate in /usr/local/bin/claude /usr/bin/claude; do
+            if [[ -x "$candidate" ]]; then
+                claude_src="$candidate"
+                info "    Found at ${claude_src}"
+                break
+            fi
+        done
+    fi
+
+    # Strategy 3: Check if invoking user has it anywhere on PATH
+    if [[ -z "$claude_src" ]] && [[ -n "$invoking_user" ]]; then
+        local user_claude
+        user_claude=$(sudo -u "$invoking_user" bash -lc "command -v claude 2>/dev/null" 2>/dev/null || true)
+        if [[ -n "$user_claude" ]] && [[ -x "$user_claude" ]]; then
+            claude_src="$user_claude"
+            info "    Found on user PATH at ${claude_src}"
+        fi
+    fi
+
+    if [[ -n "$claude_src" ]]; then
+        # Resolve to actual file (follow symlinks)
+        local claude_real
+        claude_real=$(readlink -f "$claude_src" 2>/dev/null || echo "$claude_src")
+        local dest_real=""
+        [[ -e "${planner_bin}/claude" ]] && dest_real=$(readlink -f "${planner_bin}/claude" 2>/dev/null || true)
+
+        if [[ -n "$dest_real" ]] && [[ "$claude_real" == "$dest_real" ]]; then
+            info "  \u2713 claude already at ${planner_bin}/claude"
+        else
+            rm -f "${planner_bin}/claude"
+            cp "$claude_real" "${planner_bin}/claude"
+            chmod 755 "${planner_bin}/claude"
+            info "  \u2713 claude copied \u2192 ${planner_bin}/claude"
+        fi
+        found=$((found + 1))
+    else
+        # Strategy 4: Download via native installer into a temp HOME,
+        # then copy the binary out.
+        info "    No existing claude binary found. Downloading native installer..."
+        local tmp_claude_home
+        tmp_claude_home=$(mktemp -d)
+        if curl -fsSL https://claude.ai/install.sh | HOME="$tmp_claude_home" bash 2>/dev/null; then
+            if [[ -x "${tmp_claude_home}/.local/bin/claude" ]]; then
+                rm -f "${planner_bin}/claude"
+                cp "${tmp_claude_home}/.local/bin/claude" "${planner_bin}/claude"
+                chmod 755 "${planner_bin}/claude"
+                info "  \u2713 claude downloaded \u2192 ${planner_bin}/claude"
+                found=$((found + 1))
+            else
+                warn "  \u2717 claude native installer ran but binary not found"
+            fi
+        else
+            warn "  \u2717 claude native installer failed (no internet or download error)"
+        fi
+        rm -rf "$tmp_claude_home"
+    fi
+
+    # ---------------------------------------------------------------
+    # Gemini + Codex — npm install
+    # ---------------------------------------------------------------
+    # Locate npm + node.  nvm does not load in non-interactive shells
+    # (bash -lc won't source .bashrc behind an interactivity guard).
+    # We explicitly source nvm.sh if present in the invoking user's home.
     local npm_cmd="npm"
     local node_cmd="node"
-    local invoking_user="${SUDO_USER:-}"
 
-    if [[ -n "$invoking_user" ]] && [[ "$invoking_user" != "root" ]]; then
-        local user_home
-        user_home=$(eval echo ~"${invoking_user}")
-
-        # Try sourcing nvm explicitly, then resolve npm/node
+    if [[ -n "$user_home" ]]; then
         local nvm_script="${user_home}/.nvm/nvm.sh"
         local nvm_source=""
         if [[ -s "$nvm_script" ]]; then
@@ -220,17 +303,13 @@ install_llm_clis() {
     info "  Using npm: ${npm_cmd}"
     info "  Using node: ${node_cmd}"
 
-    # Map of CLI name → npm package
-    declare -A cli_packages=(
-        [claude]="@anthropic-ai/claude-code"
+    declare -A npm_packages=(
         [gemini]="@google/gemini-cli"
         [codex]="@openai/codex"
     )
 
-    local found=0
-
-    for cli in claude gemini codex; do
-        local pkg="${cli_packages[$cli]}"
+    for cli in gemini codex; do
+        local pkg="${npm_packages[$cli]}"
 
         # Remove stale symlinks/files from prior installs to prevent EEXIST
         rm -f "${planner_bin}/${cli}"
@@ -252,8 +331,9 @@ install_llm_clis() {
     done
 
     # Ensure node is available in planner's bin dir.
-    # The CLI wrapper scripts use #!/usr/bin/env node — with our controlled
-    # PATH, 'env' will find node at /opt/planner/bin/node.
+    # The npm CLI wrapper scripts (gemini, codex) use #!/usr/bin/env node —
+    # with our controlled PATH, 'env' will find node at /opt/planner/bin/node.
+    # Claude's native binary does NOT need node.
     local dest_node="${planner_bin}/node"
     local node_real
     node_real=$(readlink -f "$node_cmd" 2>/dev/null || true)
@@ -271,13 +351,12 @@ install_llm_clis() {
     elif [[ -x "$dest_node" ]]; then
         info "  \u2713 node already at ${dest_node}"
     else
-        warn "  \u2717 Could not locate node binary — CLI tools may not work"
+        warn "  \u2717 Could not locate node binary — gemini/codex CLI tools may not work"
     fi
 
     # Fix ownership — everything under INSTALL_DIR should be accessible
-    chown -R "${SERVICE_USER}:${SERVICE_USER}" "${INSTALL_DIR}/bin" "${INSTALL_DIR}/lib" 2>/dev/null || true
-
-    local cli_home="${INSTALL_DIR}/cli-home"
+    chown -R "${SERVICE_USER}:${SERVICE_USER}" "${INSTALL_DIR}/bin" 2>/dev/null || true
+    chown -R "${SERVICE_USER}:${SERVICE_USER}" "${INSTALL_DIR}/lib" 2>/dev/null || true
 
     if [[ $found -eq 0 ]]; then
         echo ""
@@ -285,10 +364,11 @@ install_llm_clis() {
         warn "  NO LLM CLI TOOLS INSTALLED"
         warn "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
         warn ""
-        warn "  npm install failed. Try installing manually as your regular user:"
-        warn "    sudo npm install -g --prefix ${INSTALL_DIR} @anthropic-ai/claude-code"
-        warn "    sudo npm install -g --prefix ${INSTALL_DIR} @google/gemini-cli"
-        warn "    sudo npm install -g --prefix ${INSTALL_DIR} @openai/codex"
+        warn "  Install manually:"
+        warn "    claude:  curl -fsSL https://claude.ai/install.sh | bash"
+        warn "             sudo cp ~/.local/bin/claude ${planner_bin}/claude"
+        warn "    gemini:  sudo npm install -g --prefix ${INSTALL_DIR} @google/gemini-cli"
+        warn "    codex:   sudo npm install -g --prefix ${INSTALL_DIR} @openai/codex"
         warn "  Then re-run: sudo $0 --update"
         warn ""
     else
