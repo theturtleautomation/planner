@@ -299,15 +299,113 @@ install_llm_clis() {
     info "CLI isolation is handled automatically by the Rust server."
     info "Each CLI runs in a clean environment with no MCP servers,"
     info "no plugins, and no project-level config inheritance."
+}
+
+# ---------------------------------------------------------------------------
+# LLM auth verification — check each installed CLI has valid credentials
+# ---------------------------------------------------------------------------
+# Checks for credential files or API keys. If neither is found for a
+# provider, the service will fail at runtime when it tries to call that CLI.
+#
+check_llm_auth() {
+    info "Verifying LLM authentication..."
     echo ""
-    info "To authenticate, run as the planner user with isolated HOME:"
+
+    local planner_bin="${INSTALL_DIR}/bin"
+    local cli_home="${INSTALL_DIR}/cli-home"
+    local conf="${CONF_DIR}/planner.env"
+    local authed=0
+    local installed=0
+    local unauthenticated=()
+
+    # Read API keys from planner.env if it exists
+    local has_anthropic_key=false
+    local has_google_key=false
+    local has_openai_key=false
+    if [[ -f "$conf" ]]; then
+        grep -q '^ANTHROPIC_API_KEY=' "$conf" 2>/dev/null && has_anthropic_key=true
+        grep -q '^GOOGLE_API_KEY=' "$conf" 2>/dev/null && has_google_key=true
+        grep -q '^OPENAI_API_KEY=' "$conf" 2>/dev/null && has_openai_key=true
+    fi
+
+    # --- Claude ---
+    if [[ -x "${planner_bin}/claude" ]]; then
+        installed=$((installed + 1))
+        if [[ "$has_anthropic_key" == "true" ]]; then
+            info "  \u2713 claude  — API key configured in planner.env"
+            authed=$((authed + 1))
+        elif [[ -d "${cli_home}/claude/.claude" ]] &&              find "${cli_home}/claude/.claude" -name "*.json" -size +0c 2>/dev/null | grep -q .; then
+            info "  \u2713 claude  — credentials found in ${cli_home}/claude/"
+            authed=$((authed + 1))
+        else
+            warn "  \u2717 claude  — NOT AUTHENTICATED"
+            unauthenticated+=(claude)
+        fi
+    fi
+
+    # --- Gemini ---
+    if [[ -x "${planner_bin}/gemini" ]]; then
+        installed=$((installed + 1))
+        if [[ "$has_google_key" == "true" ]]; then
+            info "  \u2713 gemini  — API key configured in planner.env"
+            authed=$((authed + 1))
+        elif [[ -d "${cli_home}/gemini/.gemini" ]] &&              find "${cli_home}/gemini/.gemini" -name "*.json" -size +0c 2>/dev/null | grep -q .; then
+            info "  \u2713 gemini  — credentials found in ${cli_home}/gemini/"
+            authed=$((authed + 1))
+        else
+            warn "  \u2717 gemini  — NOT AUTHENTICATED"
+            unauthenticated+=(gemini)
+        fi
+    fi
+
+    # --- Codex ---
+    if [[ -x "${planner_bin}/codex" ]]; then
+        installed=$((installed + 1))
+        if [[ "$has_openai_key" == "true" ]]; then
+            info "  \u2713 codex   — API key configured in planner.env"
+            authed=$((authed + 1))
+        elif [[ -f "${cli_home}/codex/.codex/auth.json" ]] &&              [[ -s "${cli_home}/codex/.codex/auth.json" ]]; then
+            info "  \u2713 codex   — credentials found in ${cli_home}/codex/"
+            authed=$((authed + 1))
+        else
+            warn "  \u2717 codex   — NOT AUTHENTICATED"
+            unauthenticated+=(codex)
+        fi
+    fi
+
     echo ""
-    warn "  sudo -u planner HOME=${cli_home}/claude ${planner_bin}/claude login"
-    warn "  sudo -u planner HOME=${cli_home}/gemini ${planner_bin}/gemini auth login"
-    warn "  sudo -u planner HOME=${cli_home}/codex CODEX_HOME=${cli_home}/codex/.codex ${planner_bin}/codex login"
-    echo ""
-    info "Credentials are stored in ${cli_home}/<provider>/"
-    info "and are isolated from any personal user accounts."
+
+    if [[ ${#unauthenticated[@]} -gt 0 ]]; then
+        warn "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+        warn "  ${#unauthenticated[@]} PROVIDER(S) NEED AUTHENTICATION"
+        warn "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+        echo ""
+        info "Option A — Interactive login (run from a terminal with browser access):"
+        echo ""
+        for cli in "${unauthenticated[@]}"; do
+            case "$cli" in
+                claude) warn "  sudo -u ${SERVICE_USER} HOME=${cli_home}/claude ${planner_bin}/claude login" ;;
+                gemini) warn "  sudo -u ${SERVICE_USER} HOME=${cli_home}/gemini ${planner_bin}/gemini auth login" ;;
+                codex)  warn "  sudo -u ${SERVICE_USER} HOME=${cli_home}/codex CODEX_HOME=${cli_home}/codex/.codex ${planner_bin}/codex login" ;;
+            esac
+        done
+        echo ""
+        info "Option B — API keys (headless servers, no browser required):"
+        info "  Edit ${conf} and add:"
+        echo ""
+        for cli in "${unauthenticated[@]}"; do
+            case "$cli" in
+                claude) warn "  ANTHROPIC_API_KEY=sk-ant-..." ;;
+                gemini) warn "  GOOGLE_API_KEY=AI..." ;;
+                codex)  warn "  OPENAI_API_KEY=sk-..." ;;
+            esac
+        done
+        echo ""
+        info "  Then restart: sudo systemctl restart ${SERVICE_NAME}"
+        echo ""
+    elif [[ $installed -gt 0 ]]; then
+        info "  All ${authed} installed provider(s) are authenticated."
+    fi
 }
 
 # ---------------------------------------------------------------------------
@@ -417,6 +515,9 @@ do_install() {
 
     # Install LLM CLIs into /opt/planner/bin/ and copy node runtime
     install_llm_clis
+
+    # Verify authentication for each installed CLI
+    check_llm_auth
 }
 
 # ---------------------------------------------------------------------------

@@ -120,6 +120,11 @@ impl CliEnvironment {
         // Disable MCP servers explicitly (belt and suspenders with SIMPLE mode)
         env.insert("ENABLE_CLAUDEAI_MCP_SERVERS".into(), "false".into());
 
+        // Pass through API key from planner.env if configured (headless auth)
+        if let Ok(key) = std::env::var("ANTHROPIC_API_KEY") {
+            env.insert("ANTHROPIC_API_KEY".into(), key);
+        }
+
         CliEnvironment {
             env,
             cwd: PathBuf::from(CLI_SANDBOX_DIR),
@@ -149,6 +154,11 @@ impl CliEnvironment {
         // Disable sandbox (we run in headless --prompt mode, no tool execution)
         env.insert("GEMINI_SANDBOX".into(), "false".into());
 
+        // Pass through API key from planner.env if configured (headless auth)
+        if let Ok(key) = std::env::var("GOOGLE_API_KEY") {
+            env.insert("GOOGLE_API_KEY".into(), key);
+        }
+
         CliEnvironment {
             env,
             cwd: PathBuf::from(CLI_SANDBOX_DIR),
@@ -174,6 +184,11 @@ impl CliEnvironment {
         env.insert("XDG_CONFIG_HOME".into(), format!("{}/.config", home));
         env.insert("XDG_DATA_HOME".into(), format!("{}/.local/share", home));
         env.insert("XDG_CACHE_HOME".into(), format!("{}/.cache", home));
+
+        // Pass through API key from planner.env if configured (headless auth)
+        if let Ok(key) = std::env::var("OPENAI_API_KEY") {
+            env.insert("OPENAI_API_KEY".into(), key);
+        }
 
         CliEnvironment {
             env,
