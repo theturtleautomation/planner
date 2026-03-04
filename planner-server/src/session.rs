@@ -9,6 +9,8 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use chrono::Utc;
 
+use planner_schemas::artifacts::socratic::{RequirementsBeliefState, DomainClassification};
+
 // ---------------------------------------------------------------------------
 // Session Types
 // ---------------------------------------------------------------------------
@@ -42,6 +44,20 @@ pub struct Session {
     pub stages: Vec<PipelineStageInfo>,
     pub pipeline_running: bool,
     pub project_description: Option<String>,
+
+    // -----------------------------------------------------------------------
+    // Socratic interview state
+    // -----------------------------------------------------------------------
+
+    /// Current belief state from the Socratic interview.
+    pub belief_state: Option<RequirementsBeliefState>,
+
+    /// Domain classification produced at the start of the interview.
+    pub classification: Option<DomainClassification>,
+
+    /// Phase of the intake process.
+    /// One of: "waiting", "interviewing", "pipeline_running", "complete".
+    pub intake_phase: String,
 }
 
 impl Session {
@@ -75,6 +91,9 @@ impl Session {
             ],
             pipeline_running: false,
             project_description: None,
+            belief_state: None,
+            classification: None,
+            intake_phase: "waiting".into(),
         }
     }
 

@@ -17,6 +17,7 @@ use crate::AppState;
 use crate::auth::{auth_middleware, Claims};
 use crate::session::Session;
 use crate::ws;
+use crate::ws_socratic;
 
 // ---------------------------------------------------------------------------
 // Request/Response types
@@ -96,9 +97,31 @@ pub struct RunListResponse {
     pub runs: Vec<String>,
 }
 
-// ---------------------------------------------------------------------------
-// Routes
-// ---------------------------------------------------------------------------
+/// Request body for starting a Socratic interview.
+#[derive(Debug, Deserialize, Serialize)]
+pub struct StartSocraticRequest {
+    /// Initial project description from the user.
+    pub description: String,
+}
+
+/// Response from starting a Socratic interview.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct StartSocraticResponse {
+    /// Session ID to connect to.
+    pub session_id: String,
+    /// WebSocket URL path for the Socratic interview.
+    pub ws_url: String,
+}
+
+/// Response for the belief-state endpoint.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BeliefStateResponse {
+    pub session_id: String,
+    pub intake_phase: String,
+    /// The belief state JSON, or `null` if the interview hasn't started yet.
+    pub belief_state: serde_json::Value,
+}
+
 
 pub fn routes(state: Arc<AppState>) -> Router {
     let public = Router::new()
@@ -111,6 +134,9 @@ pub fn routes(state: Arc<AppState>) -> Router {
         .route("/sessions/{id}", get(get_session))
         .route("/sessions/{id}/message", post(send_message))
         .route("/sessions/{id}/ws", get(ws_handler))
+        .route("/sessions/{id}/socratic", post(start_socratic))
+        .route("/sessions/{id}/socratic/ws", get(socratic_ws_handler))
+        .route("/sessions/{id}/belief-state", get(get_belief_state))
         // CXDB read API — Phase 6 wiring (Change 4)
         // TODO: populate from durable store when wired into pipeline runner
         .route("/sessions/{id}/turns", get(list_turns))
@@ -507,6 +533,100 @@ async fn ws_handler(
         None => {
             (StatusCode::NOT_FOUND, "Session not found").into_response()
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Socratic interview handlers
+// ---------------------------------------------------------------------------
+
+/// POST /api/sessions/:id/socratic
+///
+/// Start a Socratic interview for an existing session, or create a new one.
+/// Returns the session ID and the WebSocket URL to connect to.
+async fn start_socratic(
+    State(state): State<Arc<AppState>>,
+    claims: Claims,
+    Path(id): Path<Uuid>,
+    Json(req): Json<StartSocraticRequest>,
+) -> Result<Json<StartSocraticResponse>, (StatusCode, Json<ErrorResponse>)> {
+    // Verify ownership.
+    match state.sessions.get(id) {
+        Some(session) if session.user_id == claims.sub => {}
+        Some(_) => {
+            return Err((
+                StatusCode::FORBIDDEN,
+                Json(ErrorResponse { error: "Access denied".into() }),
+            ));
+        }
+        None => {
+            return Err((
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse { error: format!("Session not found: {}", id) }),
+            ));
+        }
+    }
+
+    // Store the initial description in the session for reference.
+    state.sessions.update(id, |s| {
+        s.project_description = Some(req.description.clone());
+        s.intake_phase = "interviewing".into();
+    });
+
+    Ok(Json(StartSocraticResponse {
+        session_id: id.to_string(),
+        ws_url: format!("/api/sessions/{}/socratic/ws", id),
+    }))
+}
+
+/// GET /api/sessions/:id/socratic/ws
+///
+/// WebSocket upgrade for the Socratic interview handler.
+async fn socratic_ws_handler(
+    State(state): State<Arc<AppState>>,
+    claims: Claims,
+    Path(id): Path<Uuid>,
+    ws: WebSocketUpgrade,
+) -> impl IntoResponse {
+    match state.sessions.get(id) {
+        Some(session) if session.user_id == claims.sub => {
+            ws.on_upgrade(move |socket| {
+                ws_socratic::handle_socratic_ws(socket, state, id)
+            })
+        }
+        Some(_) => (StatusCode::FORBIDDEN, "Access denied").into_response(),
+        None => (StatusCode::NOT_FOUND, "Session not found").into_response(),
+    }
+}
+
+/// GET /api/sessions/:id/belief-state
+///
+/// Return the current belief state for a session.
+async fn get_belief_state(
+    State(state): State<Arc<AppState>>,
+    claims: Claims,
+    Path(id): Path<Uuid>,
+) -> Result<Json<BeliefStateResponse>, (StatusCode, Json<ErrorResponse>)> {
+    match state.sessions.get(id) {
+        Some(session) if session.user_id == claims.sub => {
+            let belief_state = match &session.belief_state {
+                Some(bs) => serde_json::to_value(bs).unwrap_or(serde_json::Value::Null),
+                None => serde_json::Value::Null,
+            };
+            Ok(Json(BeliefStateResponse {
+                session_id: id.to_string(),
+                intake_phase: session.intake_phase.clone(),
+                belief_state,
+            }))
+        }
+        Some(_) => Err((
+            StatusCode::FORBIDDEN,
+            Json(ErrorResponse { error: "Access denied".into() }),
+        )),
+        None => Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse { error: format!("Session not found: {}", id) }),
+        )),
     }
 }
 

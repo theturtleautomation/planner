@@ -50,6 +50,52 @@ pub enum ServerMessage {
     Error {
         message: String,
     },
+
+    // -----------------------------------------------------------------------
+    // Socratic interview messages
+    // -----------------------------------------------------------------------
+
+    /// Domain classification complete.
+    #[serde(rename = "classified")]
+    Classified {
+        project_type: String,
+        complexity: String,
+        question_budget: u8,
+    },
+
+    /// Belief state update.
+    #[serde(rename = "belief_state_update")]
+    BeliefStateUpdate {
+        filled: serde_json::Value,
+        uncertain: serde_json::Value,
+        missing: Vec<String>,
+        out_of_scope: Vec<String>,
+        convergence_pct: f32,
+    },
+
+    /// Question for the user.
+    #[serde(rename = "question")]
+    Question {
+        text: String,
+        target_dimension: String,
+        quick_options: Vec<serde_json::Value>,
+        allow_skip: bool,
+    },
+
+    /// Speculative draft for review.
+    #[serde(rename = "speculative_draft")]
+    SpeculativeDraft {
+        sections: Vec<serde_json::Value>,
+        assumptions: Vec<serde_json::Value>,
+        not_discussed: Vec<String>,
+    },
+
+    /// Interview converged — ready to build.
+    #[serde(rename = "converged")]
+    Converged {
+        reason: String,
+        convergence_pct: f32,
+    },
 }
 
 /// Client-to-server WebSocket message.
@@ -66,6 +112,24 @@ pub enum ClientMessage {
     StartPipeline {
         description: String,
     },
+
+    // -----------------------------------------------------------------------
+    // Socratic interview messages
+    // -----------------------------------------------------------------------
+
+    /// User responds during Socratic interview.
+    #[serde(rename = "socratic_response")]
+    SocraticResponse {
+        content: String,
+    },
+
+    /// User skips current question.
+    #[serde(rename = "skip_question")]
+    SkipQuestion,
+
+    /// User says "done, start building".
+    #[serde(rename = "done")]
+    Done,
 }
 
 // ---------------------------------------------------------------------------
@@ -210,6 +274,11 @@ pub async fn handle_ws(mut socket: WebSocket, state: Arc<AppState>, session_id: 
                                         });
                                     }
                                 }
+                                // Socratic messages are handled by ws_socratic::handle_socratic_ws;
+                                // ignore them in the pipeline-phase handler.
+                                ClientMessage::SocraticResponse { .. }
+                                | ClientMessage::SkipQuestion
+                                | ClientMessage::Done => {}
                             }
                         }
                     }

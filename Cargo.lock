@@ -932,6 +932,7 @@ dependencies = [
 name = "planner-server"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "axum",
  "chrono",
  "jsonwebtoken",
@@ -952,6 +953,7 @@ dependencies = [
 name = "planner-tui"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "chrono",
  "crossterm",
  "planner-core",

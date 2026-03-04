@@ -1,10 +1,25 @@
 //! # App State — TUI Application Model
 //!
 //! Manages the state of the Socratic planning TUI session.
+//!
+//! ## Phase lifecycle
+//!
+//! ```text
+//! WaitingForInput  ─► Interviewing  ─► PipelineRunning  ─► Complete
+//! ```
+//!
+//! - **WaitingForInput** — initial state, waiting for the user's first message.
+//! - **Interviewing** — Socratic interview loop is running in a background task.
+//! - **PipelineRunning** — interview converged, full pipeline is executing.
+//! - **Complete** — pipeline finished.
 
 use chrono::Utc;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use uuid::Uuid;
+
+use planner_schemas::{
+    RequirementsBeliefState, DomainClassification, QuestionOutput, SpeculativeDraft, SocraticEvent,
+};
 
 use crate::pipeline::{PipelineEvent, PipelineReceiver};
 
@@ -48,7 +63,7 @@ pub enum StageStatus {
     Pending,
     Running,
     Complete,
-    /// Used when pipeline wiring is complete (Phase F).
+    /// Used when a pipeline stage fails.
     #[allow(dead_code)]
     Failed,
 }
@@ -60,16 +75,35 @@ pub struct PipelineStage {
 }
 
 // ---------------------------------------------------------------------------
+// Intake Phase
+// ---------------------------------------------------------------------------
+
+/// The Socratic interview phase — drives which UI mode is active.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum IntakePhase {
+    /// Waiting for the user's first message.
+    WaitingForInput,
+    /// Running the Socratic interview (split-pane layout).
+    Interviewing,
+    /// Interview complete, full pipeline is running (full-width layout).
+    PipelineRunning,
+    /// Everything done.
+    Complete,
+}
+
+// ---------------------------------------------------------------------------
 // App Focus Mode
 // ---------------------------------------------------------------------------
 
-/// Which panel has focus.
+/// Which panel has keyboard focus.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FocusMode {
     /// User is typing in the input box.
     Input,
     /// User is scrolling through chat history.
     ChatScroll,
+    /// User is browsing the belief-state panel (right pane).
+    BeliefStatePane,
 }
 
 // ---------------------------------------------------------------------------
@@ -82,32 +116,75 @@ pub struct App {
     pub should_quit: bool,
     /// Current input buffer.
     pub input: String,
-    /// Cursor position in the input buffer.
+    /// Cursor position in the input buffer (character index, not byte offset).
     pub cursor_position: usize,
     /// Chat message history.
     pub messages: Vec<ChatMessage>,
     /// Pipeline stages and their status.
     pub stages: Vec<PipelineStage>,
-    /// Current focus mode.
+    /// Current keyboard focus.
     pub focus: FocusMode,
     /// Scroll offset for chat history.
     pub scroll_offset: u16,
     /// Project ID for this session.
     pub project_id: Uuid,
-    /// Session start time.
+    /// Session start time (formatted string).
     pub session_start: String,
     /// Whether the pipeline is actively running.
     pub pipeline_running: bool,
     /// Status message for the bottom bar.
     pub status_message: String,
 
+    // -----------------------------------------------------------------------
+    // Intake phase
+    // -----------------------------------------------------------------------
+
+    /// Current intake phase — governs layout and input routing.
+    pub intake_phase: IntakePhase,
+
+    /// The latest belief state received from the Socratic engine.
+    pub belief_state: Option<RequirementsBeliefState>,
+
+    /// Domain classification, received after the first message is processed.
+    pub classification: Option<DomainClassification>,
+
+    /// The current question being asked by the Socratic engine.
+    pub current_question: Option<QuestionOutput>,
+
+    /// The most recent speculative draft, if any.
+    pub speculative_draft: Option<SpeculativeDraft>,
+
+    /// Convergence percentage (0.0–1.0), derived from the latest belief state.
+    pub convergence_pct: f32,
+
+    // -----------------------------------------------------------------------
+    // Pipeline orchestration
+    // -----------------------------------------------------------------------
+
     /// Pending pipeline description — set by `submit_input()` on the first
-    /// message, consumed by the main loop to spawn the background task.
+    /// message (WaitingForInput phase) so the main loop can spawn the
+    /// Socratic background task.
+    pub pending_socratic_message: Option<String>,
+
+    /// Pending pipeline description — consumed by main loop after interview
+    /// converges, to spawn the full planning pipeline.
     pub pending_pipeline_description: Option<String>,
 
-    /// Channel receiver for pipeline events from the background task.
-    /// `None` until the first pipeline is spawned.
+    /// Channel receiver for pipeline events from the background pipeline task.
+    /// `None` until the Socratic interview completes and the pipeline starts.
     pub pipeline_rx: Option<PipelineReceiver>,
+
+    // -----------------------------------------------------------------------
+    // Socratic IO channels
+    // -----------------------------------------------------------------------
+
+    /// Send user replies into the Socratic engine.
+    /// Set by `pipeline::spawn_socratic_interview()`.
+    pub socratic_tx: Option<tokio::sync::mpsc::UnboundedSender<String>>,
+
+    /// Receive `SocraticEvent`s from the Socratic engine.
+    /// Set by `pipeline::spawn_socratic_interview()`.
+    pub socratic_events_rx: Option<tokio::sync::mpsc::UnboundedReceiver<SocraticEvent>>,
 }
 
 impl App {
@@ -115,18 +192,18 @@ impl App {
         let now = Utc::now();
 
         let stages = vec![
-            PipelineStage { name: "Intake".into(), status: StageStatus::Pending },
-            PipelineStage { name: "Chunk".into(), status: StageStatus::Pending },
-            PipelineStage { name: "Compile".into(), status: StageStatus::Pending },
-            PipelineStage { name: "Lint".into(), status: StageStatus::Pending },
+            PipelineStage { name: "Intake".into(),    status: StageStatus::Pending },
+            PipelineStage { name: "Chunk".into(),     status: StageStatus::Pending },
+            PipelineStage { name: "Compile".into(),   status: StageStatus::Pending },
+            PipelineStage { name: "Lint".into(),      status: StageStatus::Pending },
             PipelineStage { name: "AR Review".into(), status: StageStatus::Pending },
-            PipelineStage { name: "Refine".into(), status: StageStatus::Pending },
+            PipelineStage { name: "Refine".into(),    status: StageStatus::Pending },
             PipelineStage { name: "Scenarios".into(), status: StageStatus::Pending },
-            PipelineStage { name: "Ralph".into(), status: StageStatus::Pending },
-            PipelineStage { name: "Graph".into(), status: StageStatus::Pending },
-            PipelineStage { name: "Factory".into(), status: StageStatus::Pending },
-            PipelineStage { name: "Validate".into(), status: StageStatus::Pending },
-            PipelineStage { name: "Git".into(), status: StageStatus::Pending },
+            PipelineStage { name: "Ralph".into(),     status: StageStatus::Pending },
+            PipelineStage { name: "Graph".into(),     status: StageStatus::Pending },
+            PipelineStage { name: "Factory".into(),   status: StageStatus::Pending },
+            PipelineStage { name: "Validate".into(),  status: StageStatus::Pending },
+            PipelineStage { name: "Git".into(),       status: StageStatus::Pending },
         ];
 
         let mut app = App {
@@ -141,22 +218,34 @@ impl App {
             session_start: now.format("%Y-%m-%d %H:%M UTC").to_string(),
             pipeline_running: false,
             status_message: "Ready — describe what you want to build".into(),
+            intake_phase: IntakePhase::WaitingForInput,
+            belief_state: None,
+            classification: None,
+            current_question: None,
+            speculative_draft: None,
+            convergence_pct: 0.0,
+            pending_socratic_message: None,
             pending_pipeline_description: None,
             pipeline_rx: None,
+            socratic_tx: None,
+            socratic_events_rx: None,
         };
 
-        // Welcome message
         app.add_system_message(
             "Welcome to Planner v2 — Socratic Planning Session\n\
              \n\
              Describe what you want to build and I'll guide you through\n\
              a structured requirements elicitation process.\n\
              \n\
-             Press Enter to submit, Ctrl+C or Esc to quit."
+             Press Enter to submit, Tab to switch panes, Ctrl+C or Esc to quit.",
         );
 
         app
     }
+
+    // -----------------------------------------------------------------------
+    // Message helpers
+    // -----------------------------------------------------------------------
 
     /// Add a system message.
     pub fn add_system_message(&mut self, content: &str) {
@@ -185,44 +274,93 @@ impl App {
         });
     }
 
-    /// Handle a key event.
+    // -----------------------------------------------------------------------
+    // Key handling
+    // -----------------------------------------------------------------------
+
+    /// Dispatch a key event to the focused handler.
     pub fn handle_key(&mut self, key: KeyEvent) {
+        // Ctrl+C always quits regardless of focus
+        if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+            self.should_quit = true;
+            return;
+        }
+
+        // Tab cycles focus regardless of current mode (when not in pipeline-only phase)
+        if key.code == KeyCode::Tab {
+            self.cycle_focus();
+            return;
+        }
+
         match self.focus {
             FocusMode::Input => self.handle_input_key(key),
             FocusMode::ChatScroll => self.handle_scroll_key(key),
+            FocusMode::BeliefStatePane => self.handle_belief_pane_key(key),
         }
+    }
+
+    fn cycle_focus(&mut self) {
+        self.focus = match self.focus {
+            FocusMode::Input => {
+                // Only offer BeliefStatePane during Interviewing
+                if self.intake_phase == IntakePhase::Interviewing {
+                    FocusMode::BeliefStatePane
+                } else {
+                    FocusMode::ChatScroll
+                }
+            }
+            FocusMode::BeliefStatePane => FocusMode::ChatScroll,
+            FocusMode::ChatScroll => FocusMode::Input,
+        };
     }
 
     fn handle_input_key(&mut self, key: KeyEvent) {
         match key.code {
-            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.should_quit = true;
-            }
             KeyCode::Esc => {
-                if self.input.is_empty() {
-                    self.should_quit = true;
-                } else {
-                    self.input.clear();
-                    self.cursor_position = 0;
+                match self.intake_phase {
+                    IntakePhase::Interviewing => {
+                        // Skip the current question
+                        self.skip_current_question();
+                    }
+                    _ => {
+                        if self.input.is_empty() {
+                            self.should_quit = true;
+                        } else {
+                            self.input.clear();
+                            self.cursor_position = 0;
+                        }
+                    }
+                }
+            }
+            KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                if self.intake_phase == IntakePhase::Interviewing {
+                    self.stop_interview();
                 }
             }
             KeyCode::Enter => {
                 self.submit_input();
             }
+            // 1-9: Quick-select answer options (Interviewing phase only)
+            KeyCode::Char(c @ '1'..='9') if self.intake_phase == IntakePhase::Interviewing => {
+                let idx = (c as usize) - ('1' as usize);
+                if let Some(ref question) = self.current_question.clone() {
+                    if idx < question.quick_options.len() {
+                        let value = question.quick_options[idx].value.clone();
+                        self.input = value;
+                        self.cursor_position = self.input.chars().count();
+                        self.submit_input();
+                        return;
+                    }
+                }
+                // No matching quick-option — treat as normal character input
+                self.insert_char(c);
+            }
             KeyCode::Char(c) => {
-                // cursor_position is a CHARACTER index, not a byte index.
-                // Convert to byte position before calling String::insert.
-                let byte_pos = self.input.char_indices()
-                    .nth(self.cursor_position)
-                    .map(|(i, _)| i)
-                    .unwrap_or(self.input.len());
-                self.input.insert(byte_pos, c);
-                self.cursor_position += 1;
+                self.insert_char(c);
             }
             KeyCode::Backspace => {
                 if self.cursor_position > 0 {
                     self.cursor_position -= 1;
-                    // Convert the new (decremented) char position to a byte offset.
                     let byte_pos = self.input.char_indices()
                         .nth(self.cursor_position)
                         .map(|(i, _)| i)
@@ -231,7 +369,6 @@ impl App {
                 }
             }
             KeyCode::Delete => {
-                // Delete the character AT the current char position.
                 let char_count = self.input.chars().count();
                 if self.cursor_position < char_count {
                     let byte_pos = self.input.char_indices()
@@ -247,7 +384,6 @@ impl App {
                 }
             }
             KeyCode::Right => {
-                // Advance only if there are more characters to the right.
                 if self.cursor_position < self.input.chars().count() {
                     self.cursor_position += 1;
                 }
@@ -256,7 +392,6 @@ impl App {
                 self.cursor_position = 0;
             }
             KeyCode::End => {
-                // Set to total number of characters (char index past the last char).
                 self.cursor_position = self.input.chars().count();
             }
             KeyCode::Up => {
@@ -268,9 +403,6 @@ impl App {
 
     fn handle_scroll_key(&mut self, key: KeyEvent) {
         match key.code {
-            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.should_quit = true;
-            }
             KeyCode::Esc | KeyCode::Down => {
                 if self.scroll_offset == 0 {
                     self.focus = FocusMode::Input;
@@ -293,16 +425,35 @@ impl App {
         }
     }
 
-    /// Submit the current input.
-    ///
-    /// On the first submission (pipeline not running), sets `pipeline_running`,
-    /// updates stage state, posts a planner ack message, and stores the
-    /// description in `pending_pipeline_description` for the main loop to pick
-    /// up and spawn the real background task.
-    ///
-    /// On subsequent submissions while the pipeline is running, adds an
-    /// informational message (full Socratic back-and-forth is deferred until
-    /// the pipeline has an interactive callback mode).
+    fn handle_belief_pane_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc => {
+                self.focus = FocusMode::Input;
+            }
+            _ => {
+                self.focus = FocusMode::Input;
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Input helpers
+    // -----------------------------------------------------------------------
+
+    fn insert_char(&mut self, c: char) {
+        let byte_pos = self.input.char_indices()
+            .nth(self.cursor_position)
+            .map(|(i, _)| i)
+            .unwrap_or(self.input.len());
+        self.input.insert(byte_pos, c);
+        self.cursor_position += 1;
+    }
+
+    // -----------------------------------------------------------------------
+    // Submit / skip / stop
+    // -----------------------------------------------------------------------
+
+    /// Submit the current input, routing behaviour by `intake_phase`.
     fn submit_input(&mut self) {
         let text = self.input.trim().to_string();
         if text.is_empty() {
@@ -314,51 +465,82 @@ impl App {
         self.cursor_position = 0;
         self.scroll_offset = 0;
 
-        if !self.pipeline_running {
-            // First message — kick off the real pipeline
-            self.pipeline_running = true;
-            self.stages[0].status = StageStatus::Running;
-            self.status_message = "Pipeline starting...".into();
-
-            self.add_planner_message(&format!(
-                "Starting pipeline for: \"{}\". Running the full pipeline — this may take several minutes.",
-                text,
-            ));
-
-            // Signal the main loop to spawn the background task
-            self.pending_pipeline_description = Some(text);
-        } else {
-            // Pipeline already running — user follow-up
-            self.add_planner_message(
-                "Pipeline is currently running. \
-                 Interactive follow-up during execution will be available in a future version.",
-            );
+        match self.intake_phase {
+            IntakePhase::WaitingForInput => {
+                // Store first message — main loop will spawn the Socratic task
+                self.intake_phase = IntakePhase::Interviewing;
+                self.status_message = "Interview starting…".into();
+                self.pending_socratic_message = Some(text);
+            }
+            IntakePhase::Interviewing => {
+                // Forward the reply to the Socratic engine via the channel
+                if let Some(ref tx) = self.socratic_tx {
+                    let _ = tx.send(text);
+                } else {
+                    self.add_system_message("(Socratic engine not yet ready — please wait)");
+                }
+            }
+            IntakePhase::PipelineRunning => {
+                self.add_planner_message(
+                    "Pipeline is currently running. \
+                     Interactive follow-up during execution will be available in a future version.",
+                );
+            }
+            IntakePhase::Complete => {
+                self.add_planner_message("Session is complete. Start a new session to plan another project.");
+            }
         }
     }
 
-    /// Take the pending pipeline description (consumes it).
-    ///
-    /// Returns `Some(description)` exactly once — the main loop calls this
-    /// after every `tick()` and spawns the pipeline task when it gets a value.
+    /// Skip the current Socratic question (Esc in Interviewing phase).
+    fn skip_current_question(&mut self) {
+        if let Some(ref tx) = self.socratic_tx {
+            let _ = tx.send("skip".to_string());
+            self.add_system_message("(Question skipped)");
+            self.current_question = None;
+        }
+    }
+
+    /// Signal the Socratic engine that the user wants to stop early (Ctrl+D).
+    fn stop_interview(&mut self) {
+        if let Some(ref tx) = self.socratic_tx {
+            let _ = tx.send("just build it".to_string());
+            self.add_system_message("(Interview stopped — proceeding to pipeline)");
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Channel accessors called by main loop
+    // -----------------------------------------------------------------------
+
+    /// Take the pending first message for the Socratic task (consumed once).
+    pub fn take_pending_socratic(&mut self) -> Option<String> {
+        self.pending_socratic_message.take()
+    }
+
+    /// Take the pending pipeline description (consumed once).
     pub fn take_pending_pipeline(&mut self) -> Option<String> {
         self.pending_pipeline_description.take()
     }
 
+    // -----------------------------------------------------------------------
+    // Stage helpers (internal / test API)
+    // -----------------------------------------------------------------------
+
     /// Update a pipeline stage status.
-    /// Internal API for Phase F pipeline wiring.
-    #[allow(dead_code)] // Called from ui.rs tests and Phase F pipeline wiring
+    #[allow(dead_code)]
     pub(crate) fn set_stage_status(&mut self, index: usize, status: StageStatus) {
         if index < self.stages.len() {
             self.stages[index].status = status;
         }
     }
 
-    /// Periodic tick handler — drains the pipeline event channel.
-    ///
-    /// We collect events into a local Vec first so the mutable borrow of
-    /// `self.pipeline_rx` is released before we call other `&mut self` methods.
+    // -----------------------------------------------------------------------
+    // Tick — drain pipeline events
+    // -----------------------------------------------------------------------
+
+    /// Drain the pipeline event channel and update state.
     pub fn tick(&mut self) {
-        // Drain the channel into a local buffer (releases the borrow on `self`)
         let events: Vec<PipelineEvent> = {
             if let Some(ref mut rx) = self.pipeline_rx {
                 let mut buf = Vec::new();
@@ -367,62 +549,179 @@ impl App {
                 }
                 buf
             } else {
-                return;
+                Vec::new()
             }
         };
 
         for event in events {
-            match event {
-                PipelineEvent::Started => {
-                    self.status_message = "Pipeline running...".into();
-                }
-                PipelineEvent::StepComplete(name) => {
-                    // Find the stage by name, mark it Complete, and advance
-                    // the next Pending stage to Running.
-                    let mut found_idx: Option<usize> = None;
-                    for (i, stage) in self.stages.iter_mut().enumerate() {
-                        if stage.name == name {
-                            stage.status = StageStatus::Complete;
-                            found_idx = Some(i);
-                            break;
-                        }
-                    }
-                    // Mark the stage immediately after as Running (if it's still Pending)
-                    if let Some(idx) = found_idx {
-                        let next = idx + 1;
-                        if next < self.stages.len()
-                            && self.stages[next].status == StageStatus::Pending
-                        {
-                            self.stages[next].status = StageStatus::Running;
-                        }
-                        // Update status bar with the just-completed stage name
-                        self.status_message = format!("Completed: {}", name);
-                    }
-                }
-                PipelineEvent::Completed(summary) => {
-                    self.pipeline_running = false;
-                    for stage in &mut self.stages {
+            self.apply_pipeline_event(event);
+        }
+    }
+
+    fn apply_pipeline_event(&mut self, event: PipelineEvent) {
+        match event {
+            PipelineEvent::Started => {
+                self.status_message = "Pipeline running…".into();
+            }
+            PipelineEvent::StepComplete(name) => {
+                let mut found_idx: Option<usize> = None;
+                for (i, stage) in self.stages.iter_mut().enumerate() {
+                    if stage.name == name {
                         stage.status = StageStatus::Complete;
-                    }
-                    self.add_planner_message(&format!(
-                        "Pipeline complete!\n\n{}",
-                        summary
-                    ));
-                    self.status_message =
-                        "Pipeline complete — ready for next session".into();
-                }
-                PipelineEvent::Failed(err) => {
-                    self.pipeline_running = false;
-                    self.add_planner_message(&format!("Pipeline failed: {}", err));
-                    self.status_message = format!("Pipeline failed: {}", err);
-                    // Mark the first Running stage as Failed
-                    for stage in &mut self.stages {
-                        if stage.status == StageStatus::Running {
-                            stage.status = StageStatus::Failed;
-                            break;
-                        }
+                        found_idx = Some(i);
+                        break;
                     }
                 }
+                if let Some(idx) = found_idx {
+                    let next = idx + 1;
+                    if next < self.stages.len()
+                        && self.stages[next].status == StageStatus::Pending
+                    {
+                        self.stages[next].status = StageStatus::Running;
+                    }
+                    self.status_message = format!("Completed: {}", name);
+                }
+            }
+            PipelineEvent::Completed(summary) => {
+                self.pipeline_running = false;
+                self.intake_phase = IntakePhase::Complete;
+                for stage in &mut self.stages {
+                    stage.status = StageStatus::Complete;
+                }
+                self.add_planner_message(&format!("Pipeline complete!\n\n{}", summary));
+                self.status_message = "Pipeline complete — ready for next session".into();
+            }
+            PipelineEvent::Failed(err) => {
+                self.pipeline_running = false;
+                self.add_planner_message(&format!("Pipeline failed: {}", err));
+                self.status_message = format!("Pipeline failed: {}", err);
+                for stage in &mut self.stages {
+                    if stage.status == StageStatus::Running {
+                        stage.status = StageStatus::Failed;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Tick — drain Socratic events
+    // -----------------------------------------------------------------------
+
+    /// Drain the Socratic event channel and update TUI state.
+    ///
+    /// Returns true if any events were processed (useful for forced redraws).
+    pub fn tick_socratic(&mut self) -> bool {
+        let events: Vec<SocraticEvent> = {
+            if let Some(ref mut rx) = self.socratic_events_rx {
+                let mut buf = Vec::new();
+                while let Ok(ev) = rx.try_recv() {
+                    buf.push(ev);
+                }
+                buf
+            } else {
+                return false;
+            }
+        };
+
+        if events.is_empty() {
+            return false;
+        }
+
+        for event in events {
+            self.apply_socratic_event(event);
+        }
+
+        true
+    }
+
+    fn apply_socratic_event(&mut self, event: SocraticEvent) {
+        match event {
+            SocraticEvent::Classified { classification } => {
+                self.status_message = format!(
+                    "{} project — up to {} questions",
+                    classification.project_type,
+                    classification.question_budget
+                );
+                self.add_planner_message(&format!(
+                    "Classified as: {} ({}). I'll ask up to {} questions.",
+                    classification.project_type,
+                    match classification.complexity {
+                        planner_schemas::ComplexityTier::Light => "simple",
+                        planner_schemas::ComplexityTier::Standard => "standard",
+                        planner_schemas::ComplexityTier::Deep => "complex",
+                    },
+                    classification.question_budget
+                ));
+                self.classification = Some(classification);
+            }
+
+            SocraticEvent::BeliefStateUpdate { state } => {
+                self.convergence_pct = state.convergence_pct();
+                self.belief_state = Some(state);
+            }
+
+            SocraticEvent::Question { output } => {
+                self.add_planner_message(&output.question.clone());
+                self.current_question = Some(output);
+                self.status_message = "Answering — [Esc] Skip  [Ctrl+D] Done  [1-9] Quick pick".into();
+            }
+
+            SocraticEvent::SpeculativeDraftReady { draft } => {
+                // Render draft sections as a planner message for the chat pane
+                let mut text = String::from("Here's a speculative draft based on what I know so far:\n");
+                for section in &draft.sections {
+                    text.push_str(&format!("\n**{}**\n{}\n", section.heading, section.content));
+                }
+                if !draft.assumptions.is_empty() {
+                    text.push_str("\nAssumptions (please correct if wrong):\n");
+                    for a in &draft.assumptions {
+                        text.push_str(&format!("  • {} — {}\n", a.dimension.label(), a.assumption));
+                    }
+                }
+                self.add_planner_message(&text);
+                self.speculative_draft = Some(draft);
+            }
+
+            SocraticEvent::ContradictionDetected { contradiction } => {
+                self.add_planner_message(&format!(
+                    "Contradiction detected: {} vs {}\n{}",
+                    contradiction.dimension_a.label(),
+                    contradiction.dimension_b.label(),
+                    contradiction.explanation
+                ));
+            }
+
+            SocraticEvent::Converged { result } => {
+                let pct = (result.convergence_pct * 100.0).round() as u32;
+                self.add_planner_message(&format!(
+                    "Requirements gathering complete ({pct}% converged). Starting the planning pipeline…"
+                ));
+                self.convergence_pct = result.convergence_pct;
+                self.current_question = None;
+                self.intake_phase = IntakePhase::PipelineRunning;
+                self.pipeline_running = true;
+                self.stages[0].status = StageStatus::Running;
+                self.status_message = "Pipeline starting…".into();
+
+                // Signal the main loop to spawn the pipeline.
+                // We use the belief-state goal as the description if available.
+                let description = self.belief_state
+                    .as_ref()
+                    .and_then(|bs| bs.filled.get(&planner_schemas::Dimension::Goal))
+                    .map(|sv| sv.value.clone())
+                    .unwrap_or_else(|| "project from Socratic interview".to_string());
+                self.pending_pipeline_description = Some(description);
+            }
+
+            SocraticEvent::SystemMessage { content } => {
+                self.add_planner_message(&content);
+            }
+
+            SocraticEvent::Error { message } => {
+                self.add_planner_message(&format!("Socratic engine error: {}", message));
+                self.status_message = format!("Error: {}", message);
             }
         }
     }
@@ -438,6 +737,10 @@ mod tests {
     use crate::pipeline::PipelineEvent;
     use tokio::sync::mpsc;
 
+    // -----------------------------------------------------------------------
+    // Preserved tests (updated where needed for new phase model)
+    // -----------------------------------------------------------------------
+
     #[test]
     fn app_starts_with_welcome_message() {
         let app = App::new();
@@ -447,10 +750,16 @@ mod tests {
     }
 
     #[test]
+    fn app_starts_in_waiting_phase() {
+        let app = App::new();
+        assert_eq!(app.intake_phase, IntakePhase::WaitingForInput);
+        assert_eq!(app.focus, FocusMode::Input);
+    }
+
+    #[test]
     fn app_input_handling() {
         let mut app = App::new();
 
-        // Type "hello"
         for c in "hello".chars() {
             app.handle_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
         }
@@ -476,37 +785,38 @@ mod tests {
     }
 
     #[test]
-    fn app_submit_clears_input() {
+    fn app_first_submit_enters_interviewing_phase() {
         let mut app = App::new();
 
         for c in "Build me a widget".chars() {
             app.handle_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
         }
-
         app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
         assert!(app.input.is_empty());
         assert_eq!(app.cursor_position, 0);
-        // Should have welcome + user + planner = 3 messages
-        assert_eq!(app.messages.len(), 3);
+        assert_eq!(app.intake_phase, IntakePhase::Interviewing);
+
+        // welcome + user message = 2
+        assert_eq!(app.messages.len(), 2);
         assert_eq!(app.messages[1].role, MessageRole::User);
-        assert_eq!(app.messages[2].role, MessageRole::Planner);
-        // The planner message should mention the pipeline and the description
-        assert!(app.messages[2].content.contains("pipeline"));
-        assert!(app.messages[2].content.contains("Build me a widget"));
+
+        // pending_socratic_message should be set
+        assert_eq!(app.pending_socratic_message, Some("Build me a widget".to_string()));
+        // pipeline should NOT start yet
+        assert!(!app.pipeline_running);
     }
 
     #[test]
     fn app_empty_submit_ignored() {
         let mut app = App::new();
         let msg_count = app.messages.len();
-
         app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-        assert_eq!(app.messages.len(), msg_count); // No new message
+        assert_eq!(app.messages.len(), msg_count);
     }
 
     #[test]
-    fn app_esc_clears_or_quits() {
+    fn app_esc_clears_or_quits_in_waiting_phase() {
         let mut app = App::new();
 
         // Type something then Esc → clears input
@@ -523,10 +833,72 @@ mod tests {
     }
 
     #[test]
-    fn app_ctrl_c_quits() {
+    fn app_esc_in_interviewing_skips_question() {
+        let mut app = App::new();
+        app.intake_phase = IntakePhase::Interviewing;
+
+        // Provide a channel so skip actually sends
+        let (tx, _rx) = mpsc::unbounded_channel::<String>();
+        app.socratic_tx = Some(tx);
+
+        let msg_count_before = app.messages.len();
+        app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+
+        // Should add a system "(Question skipped)" message
+        assert!(app.messages.len() > msg_count_before);
+        assert!(app.messages.last().unwrap().content.contains("skipped"));
+    }
+
+    #[test]
+    fn app_ctrl_d_in_interviewing_stops_interview() {
+        let mut app = App::new();
+        app.intake_phase = IntakePhase::Interviewing;
+
+        let (tx, _rx) = mpsc::unbounded_channel::<String>();
+        app.socratic_tx = Some(tx);
+
+        let msg_count_before = app.messages.len();
+        app.handle_key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::CONTROL));
+        assert!(app.messages.len() > msg_count_before);
+    }
+
+    #[test]
+    fn app_ctrl_c_always_quits() {
         let mut app = App::new();
         app.handle_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL));
         assert!(app.should_quit);
+    }
+
+    #[test]
+    fn app_tab_cycles_focus() {
+        let mut app = App::new();
+        assert_eq!(app.focus, FocusMode::Input);
+
+        // In WaitingForInput, Tab should skip BeliefStatePane (no interview yet)
+        app.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+        // Goes to ChatScroll (BeliefStatePane skipped when not Interviewing)
+        // Hmm — cycle_focus from Input goes to BeliefStatePane if Interviewing,
+        // else ChatScroll. We're in WaitingForInput → ChatScroll.
+        assert_eq!(app.focus, FocusMode::ChatScroll);
+
+        app.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+        assert_eq!(app.focus, FocusMode::Input);
+    }
+
+    #[test]
+    fn app_tab_includes_belief_pane_during_interviewing() {
+        let mut app = App::new();
+        app.intake_phase = IntakePhase::Interviewing;
+        assert_eq!(app.focus, FocusMode::Input);
+
+        app.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+        assert_eq!(app.focus, FocusMode::BeliefStatePane);
+
+        app.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+        assert_eq!(app.focus, FocusMode::ChatScroll);
+
+        app.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+        assert_eq!(app.focus, FocusMode::Input);
     }
 
     #[test]
@@ -551,11 +923,9 @@ mod tests {
         let mut app = App::new();
         assert_eq!(app.focus, FocusMode::Input);
 
-        // Up arrow → scroll mode
         app.handle_key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
         assert_eq!(app.focus, FocusMode::ChatScroll);
 
-        // Down when at 0 → back to input
         app.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
         assert_eq!(app.focus, FocusMode::Input);
     }
@@ -564,50 +934,41 @@ mod tests {
     fn app_utf8_multibyte_cursor() {
         let mut app = App::new();
 
-        // Type multi-byte characters: '©' is 2 bytes, '中' is 3 bytes
         for c in "a©中b".chars() {
             app.handle_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
         }
-        // 4 characters typed → cursor at char position 4
         assert_eq!(app.cursor_position, 4);
-        // Byte length: 'a'=1, '©'=2, '中'=3, 'b'=1 → 7 bytes
         assert_eq!(app.input.len(), 7);
         assert_eq!(app.input, "a©中b");
 
-        // Backspace: remove 'b' (1 byte)
         app.handle_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
         assert_eq!(app.cursor_position, 3);
         assert_eq!(app.input, "a©中");
 
-        // Backspace: remove '中' (3 bytes)
         app.handle_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
         assert_eq!(app.cursor_position, 2);
         assert_eq!(app.input, "a©");
-        assert_eq!(app.input.len(), 3); // 'a'=1, '©'=2
+        assert_eq!(app.input.len(), 3);
 
-        // Left: move before '©'
         app.handle_key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
         assert_eq!(app.cursor_position, 1);
 
-        // Home
         app.handle_key(KeyEvent::new(KeyCode::Home, KeyModifiers::NONE));
         assert_eq!(app.cursor_position, 0);
 
-        // End
         app.handle_key(KeyEvent::new(KeyCode::End, KeyModifiers::NONE));
-        assert_eq!(app.cursor_position, 2); // 2 chars: 'a' and '©'
+        assert_eq!(app.cursor_position, 2);
 
-        // Insert '€' (3 bytes) at end
         app.handle_key(KeyEvent::new(KeyCode::Char('€'), KeyModifiers::NONE));
         assert_eq!(app.cursor_position, 3);
         assert_eq!(app.input, "a©€");
 
-        // Delete from cursor position 3 (end of string) — should be a no-op
+        // Delete at end — no-op
         app.handle_key(KeyEvent::new(KeyCode::Delete, KeyModifiers::NONE));
         assert_eq!(app.input, "a©€");
         assert_eq!(app.cursor_position, 3);
 
-        // Move left one step then delete '€'
+        // Move left one, then delete '€'
         app.handle_key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
         assert_eq!(app.cursor_position, 2);
         app.handle_key(KeyEvent::new(KeyCode::Delete, KeyModifiers::NONE));
@@ -623,35 +984,31 @@ mod tests {
     }
 
     #[test]
-    fn pipeline_running_flag() {
+    fn take_pending_socratic_consumed_once() {
         let mut app = App::new();
-        assert!(!app.pipeline_running);
-
-        // Submit first message → pipeline starts
-        for c in "Build a widget".chars() {
+        for c in "My project".chars() {
             app.handle_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
         }
         app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
-        assert!(app.pipeline_running);
+        let msg = app.take_pending_socratic();
+        assert_eq!(msg, Some("My project".to_string()));
+        assert_eq!(app.take_pending_socratic(), None);
     }
 
     #[test]
-    fn pending_pipeline_description_is_set_and_taken() {
+    fn take_pending_pipeline_consumed_once() {
         let mut app = App::new();
+        app.pending_pipeline_description = Some("test".to_string());
 
-        for c in "My great project".chars() {
-            app.handle_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
-        }
-        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-
-        // Should have stored the description
         let desc = app.take_pending_pipeline();
-        assert_eq!(desc, Some("My great project".to_string()));
-
-        // Second take returns None (consumed)
+        assert_eq!(desc, Some("test".to_string()));
         assert_eq!(app.take_pending_pipeline(), None);
     }
+
+    // -----------------------------------------------------------------------
+    // Pipeline tick tests (preserved)
+    // -----------------------------------------------------------------------
 
     #[tokio::test]
     async fn tick_step_complete_advances_stages() {
@@ -662,17 +1019,13 @@ mod tests {
         let (tx, rx) = mpsc::unbounded_channel::<PipelineEvent>();
         app.pipeline_rx = Some(rx);
 
-        // Complete the first stage "Intake"
         tx.send(PipelineEvent::StepComplete("Intake".to_string())).unwrap();
         app.tick();
 
         assert_eq!(app.stages[0].status, StageStatus::Complete);
-        // Stage 1 ("Chunk") should now be Running
         assert_eq!(app.stages[1].status, StageStatus::Running);
-        // Status bar should reflect the completed stage
         assert!(app.status_message.contains("Intake"));
 
-        // Complete "Chunk"
         tx.send(PipelineEvent::StepComplete("Chunk".to_string())).unwrap();
         app.tick();
 
@@ -688,36 +1041,30 @@ mod tests {
         let (tx, rx) = mpsc::unbounded_channel::<PipelineEvent>();
         app.pipeline_rx = Some(rx);
 
-        // Send a stage name that doesn't exist
         tx.send(PipelineEvent::StepComplete("NonExistentStage".to_string())).unwrap();
         app.tick();
 
-        // All stages should still be Pending
         assert!(app.stages.iter().all(|s| s.status == StageStatus::Pending));
     }
 
     #[tokio::test]
     async fn tick_processes_pipeline_events() {
         let mut app = App::new();
-
-        // Manually simulate a pipeline being running
         app.pipeline_running = true;
         app.stages[0].status = StageStatus::Running;
 
-        // Create a channel and send events directly (bypass spawn_pipeline)
         let (tx, rx) = mpsc::unbounded_channel::<PipelineEvent>();
         app.pipeline_rx = Some(rx);
 
-        // Send Started
         tx.send(PipelineEvent::Started).unwrap();
         app.tick();
-        assert_eq!(app.status_message, "Pipeline running...");
+        assert!(app.status_message.contains("running"));
 
-        // Send Completed
         tx.send(PipelineEvent::Completed("Project: Test\nSpecs: 1 chunk(s)".into())).unwrap();
         app.tick();
 
         assert!(!app.pipeline_running);
+        assert_eq!(app.intake_phase, IntakePhase::Complete);
         assert!(app.stages.iter().all(|s| s.status == StageStatus::Complete));
         let last_msg = app.messages.last().unwrap();
         assert_eq!(last_msg.role, MessageRole::Planner);
@@ -738,10 +1085,168 @@ mod tests {
         app.tick();
 
         assert!(!app.pipeline_running);
-        // The running stage should now be Failed
         assert_eq!(app.stages[0].status, StageStatus::Failed);
         let last_msg = app.messages.last().unwrap();
         assert!(last_msg.content.contains("Pipeline failed"));
         assert!(last_msg.content.contains("LLM CLI not found"));
+    }
+
+    // -----------------------------------------------------------------------
+    // Socratic tick tests
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn tick_socratic_classified_event() {
+        use planner_schemas::{DomainClassification, ProjectType, ComplexityTier, Dimension};
+
+        let mut app = App::new();
+        app.intake_phase = IntakePhase::Interviewing;
+
+        let (tx, rx) = mpsc::unbounded_channel::<SocraticEvent>();
+        app.socratic_events_rx = Some(rx);
+
+        let classification = DomainClassification {
+            project_type: ProjectType::WebApp,
+            complexity: ComplexityTier::Standard,
+            detected_signals: vec!["web".into()],
+            question_budget: 12,
+            required_dimensions: Dimension::required_for(&ProjectType::WebApp),
+        };
+
+        tx.send(SocraticEvent::Classified { classification: classification.clone() }).unwrap();
+        let had_events = app.tick_socratic();
+
+        assert!(had_events);
+        assert!(app.classification.is_some());
+        assert!(app.status_message.contains("12"));
+    }
+
+    #[tokio::test]
+    async fn tick_socratic_belief_state_update() {
+        use planner_schemas::{DomainClassification, ProjectType, ComplexityTier, Dimension,
+                              RequirementsBeliefState};
+
+        let mut app = App::new();
+        app.intake_phase = IntakePhase::Interviewing;
+
+        let (tx, rx) = mpsc::unbounded_channel::<SocraticEvent>();
+        app.socratic_events_rx = Some(rx);
+
+        let classification = DomainClassification {
+            project_type: ProjectType::CliTool,
+            complexity: ComplexityTier::Light,
+            detected_signals: vec![],
+            question_budget: 5,
+            required_dimensions: Dimension::required_for(&ProjectType::CliTool),
+        };
+        let belief_state = RequirementsBeliefState::from_classification(&classification);
+        let expected_pct = belief_state.convergence_pct();
+
+        tx.send(SocraticEvent::BeliefStateUpdate { state: belief_state }).unwrap();
+        app.tick_socratic();
+
+        assert!(app.belief_state.is_some());
+        assert!((app.convergence_pct - expected_pct).abs() < 0.001);
+    }
+
+    #[tokio::test]
+    async fn tick_socratic_question_event() {
+        use planner_schemas::{QuestionOutput, Dimension, QuickOption};
+
+        let mut app = App::new();
+        app.intake_phase = IntakePhase::Interviewing;
+
+        let (tx, rx) = mpsc::unbounded_channel::<SocraticEvent>();
+        app.socratic_events_rx = Some(rx);
+
+        let question = QuestionOutput {
+            question: "What is the main goal of your project?".into(),
+            target_dimension: Dimension::Goal,
+            quick_options: vec![
+                QuickOption { label: "Productivity".into(), value: "Improve productivity".into() },
+            ],
+            allow_skip: true,
+        };
+
+        tx.send(SocraticEvent::Question { output: question.clone() }).unwrap();
+        app.tick_socratic();
+
+        assert!(app.current_question.is_some());
+        assert_eq!(app.current_question.as_ref().unwrap().question, question.question);
+        // A planner message should have been added
+        let last = app.messages.last().unwrap();
+        assert_eq!(last.role, MessageRole::Planner);
+        assert!(last.content.contains("goal"));
+    }
+
+    #[tokio::test]
+    async fn tick_socratic_converged_starts_pipeline() {
+        use planner_schemas::{ConvergenceResult, StoppingReason};
+
+        let mut app = App::new();
+        app.intake_phase = IntakePhase::Interviewing;
+
+        let (tx, rx) = mpsc::unbounded_channel::<SocraticEvent>();
+        app.socratic_events_rx = Some(rx);
+
+        let result = ConvergenceResult {
+            is_done: true,
+            reason: StoppingReason::CompletenessGate,
+            convergence_pct: 0.9,
+        };
+
+        tx.send(SocraticEvent::Converged { result }).unwrap();
+        app.tick_socratic();
+
+        assert_eq!(app.intake_phase, IntakePhase::PipelineRunning);
+        assert!(app.pipeline_running);
+        assert!(app.pending_pipeline_description.is_some());
+        assert_eq!(app.stages[0].status, StageStatus::Running);
+    }
+
+    #[tokio::test]
+    async fn tick_socratic_error_event() {
+        let mut app = App::new();
+        app.intake_phase = IntakePhase::Interviewing;
+
+        let (tx, rx) = mpsc::unbounded_channel::<SocraticEvent>();
+        app.socratic_events_rx = Some(rx);
+
+        tx.send(SocraticEvent::Error { message: "LLM timeout".into() }).unwrap();
+        app.tick_socratic();
+
+        let last = app.messages.last().unwrap();
+        assert!(last.content.contains("LLM timeout"));
+    }
+
+    #[test]
+    fn quick_select_fills_input_and_submits() {
+        use planner_schemas::{QuestionOutput, Dimension, QuickOption};
+
+        let mut app = App::new();
+        app.intake_phase = IntakePhase::Interviewing;
+
+        // Provide a sender so submit_input can route the reply
+        let (tx, mut rx) = mpsc::unbounded_channel::<String>();
+        app.socratic_tx = Some(tx);
+
+        app.current_question = Some(QuestionOutput {
+            question: "Which best describes your goal?".into(),
+            target_dimension: Dimension::Goal,
+            quick_options: vec![
+                QuickOption { label: "Option A".into(), value: "Improve productivity".into() },
+                QuickOption { label: "Option B".into(), value: "Save time".into() },
+            ],
+            allow_skip: true,
+        });
+
+        // Press '2' → quick-select second option
+        app.handle_key(KeyEvent::new(KeyCode::Char('2'), KeyModifiers::NONE));
+
+        // The channel should have received "Save time"
+        let sent = rx.try_recv().expect("expected message sent to socratic_tx");
+        assert_eq!(sent, "Save time");
+        // Input buffer should be cleared after submit
+        assert!(app.input.is_empty());
     }
 }

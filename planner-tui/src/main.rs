@@ -3,20 +3,19 @@
 //! Terminal-based interface for conducting Socratic planning sessions.
 //! Uses Ratatui for rendering and Crossterm for input handling.
 //!
-//! Layout:
-//!   ┌─────────────────────────────────────────────┐
-//!   │  Planner v2 — Socratic Planning Session     │ ← Header
-//!   ├─────────────────────────────────────────────┤
-//!   │                                             │
-//!   │  [System] Welcome to Planner v2...          │ ← Chat history
-//!   │  [You] Build me a task tracker              │
-//!   │  [Planner] Let me ask some questions...     │
-//!   │                                             │
-//!   ├─────────────────────────────────────────────┤
-//!   │  Pipeline: Intake ■ Compile □ ...           │ ← Status bar
-//!   ├─────────────────────────────────────────────┤
-//!   │  > Type your response...                    │ ← Input
-//!   └─────────────────────────────────────────────┘
+//! ## Layout (Interviewing phase)
+//!   ┌──────────────────────────────────────────────────────────┐
+//!   │  Planner v2 — Socratic Planning Session | Project: …    │ ← Header
+//!   ├──────────────────────────┬───────────────────────────────┤
+//!   │                          │  Domain: Web App (Standard)   │
+//!   │  [System] Welcome…       │  ▓▓▓▓░░░░ 32%                │
+//!   │  [You] Build a tracker   │  ✓ Goal                       │
+//!   │  [Planner] What's the…   │  ? Stakeholders               │
+//!   │                          │  ○ Auth                       │
+//!   ├──────────────────────────┴───────────────────────────────┤
+//!   │  [Tab] Pane  [Esc] Skip  [Ctrl+D] Done  [1-9] Quick pick│ ← Keybinds
+//!   │  > Type your answer…                                     │ ← Input
+//!   └──────────────────────────────────────────────────────────┘
 
 mod app;
 mod ui;
@@ -95,7 +94,10 @@ async fn run_app<B: Backend>(
 
         match events.next().await {
             events::Event::Tick => {
+                // Drain pipeline events
                 app.tick();
+                // Drain Socratic events
+                app.tick_socratic();
             }
             events::Event::Key(key) => {
                 app.handle_key(key);
@@ -103,9 +105,16 @@ async fn run_app<B: Backend>(
             events::Event::Resize(_, _) => {}
         }
 
-        // Check if App has queued a pipeline to start.
-        // We do this AFTER handling events so the planner ack message is visible
-        // before the background task kicks off.
+        // ── Socratic interview spawn ────────────────────────────────────────
+        // The user submitted their first message → spawn the Socratic engine.
+        if let Some(initial_message) = app.take_pending_socratic() {
+            let (user_tx, events_rx) = pipeline::spawn_socratic_interview(initial_message);
+            app.socratic_tx = Some(user_tx);
+            app.socratic_events_rx = Some(events_rx);
+        }
+
+        // ── Pipeline spawn ──────────────────────────────────────────────────
+        // Interview converged → spawn the full planning pipeline.
         if let Some(description) = app.take_pending_pipeline() {
             let rx = pipeline::spawn_pipeline(description);
             app.pipeline_rx = Some(rx);

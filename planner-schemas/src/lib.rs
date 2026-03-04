@@ -53,3 +53,4 @@ pub use artifacts::run_budget::*;
 pub use artifacts::runtime::*;
 pub use artifacts::satisfaction_result::*;
 pub use artifacts::scenario_set::*;
+pub use artifacts::socratic::*;

@@ -18,3 +18,4 @@ pub mod run_budget;
 pub mod runtime;
 pub mod satisfaction_result;
 pub mod scenario_set;
+pub mod socratic;

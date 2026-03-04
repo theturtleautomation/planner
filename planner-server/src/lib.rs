@@ -9,6 +9,7 @@ pub mod rate_limit;
 pub mod rbac;
 pub mod session;
 pub mod ws;
+pub mod ws_socratic;
 
 use auth::AuthConfig;
 use session::SessionStore;

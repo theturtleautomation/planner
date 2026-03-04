@@ -32,6 +32,7 @@ pub mod factory_worker;
 pub mod validate;
 pub mod telemetry;
 pub mod git;
+pub mod socratic;
 
 /// Result type for pipeline step execution.
 pub type StepResult<T> = Result<T, StepError>;
