@@ -79,6 +79,65 @@ check_deps() {
 }
 
 # ---------------------------------------------------------------------------
+# LLM CLI check — verify at least one provider is reachable
+# ---------------------------------------------------------------------------
+check_llm_clis() {
+    info "Checking LLM CLI availability for service user..."
+
+    local found=0
+    local cli_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/opt/planner/bin:/opt/planner/.local/bin:/opt/planner/.npm-global/bin"
+
+    for cli in claude gemini codex; do
+        # Check using the same PATH the service will use
+        if sudo -u "${SERVICE_USER}" env PATH="${cli_path}" HOME="/opt/planner" which "${cli}" &>/dev/null; then
+            local location
+            location=$(sudo -u "${SERVICE_USER}" env PATH="${cli_path}" HOME="/opt/planner" which "${cli}" 2>/dev/null || true)
+            info "  ✓ ${cli} found at ${location}"
+            found=$((found + 1))
+        else
+            warn "  ✗ ${cli} not found"
+        fi
+    done
+
+    if [[ $found -eq 0 ]]; then
+        echo ""
+        warn "═══════════════════════════════════════════════════════════════"
+        warn "  NO LLM CLI TOOLS FOUND"
+        warn "═══════════════════════════════════════════════════════════════"
+        warn ""
+        warn "  The planner server requires at least one LLM CLI tool."
+        warn "  Install the CLI(s) so they are on the service user's PATH:"
+        warn ""
+        warn "    Option A: Install to /usr/local/bin (system-wide):"
+        warn "      npm install -g @anthropic-ai/claude-cli"
+        warn "      npm install -g @google/gemini-cli"
+        warn "      npm install -g @openai/codex-cli"
+        warn ""
+        warn "    Option B: Install into /opt/planner/bin:"
+        warn "      mkdir -p /opt/planner/bin"
+        warn "      # copy or symlink CLI binaries there"
+        warn ""
+        warn "  Then authenticate as the planner user:"
+        warn "    sudo -u planner -H claude login"
+        warn "    sudo -u planner -H gemini login"
+        warn "    sudo -u planner -H codex login"
+        warn ""
+        warn "  (The -H flag sets HOME=/opt/planner so auth credentials"
+        warn "   are stored where the service can read them.)"
+        warn ""
+        warn "  After setup, restart:  sudo systemctl restart planner"
+        warn "═══════════════════════════════════════════════════════════════"
+        echo ""
+    else
+        info "  ${found} provider(s) available."
+        warn "  Remember to authenticate as the service user if not done:"
+        warn "    sudo -u planner -H claude login   (if using claude)"
+        warn "    sudo -u planner -H gemini login   (if using gemini)"
+        warn "    sudo -u planner -H codex login    (if using codex)"
+    fi
+}
+
+# ---------------------------------------------------------------------------
 # Build
 # ---------------------------------------------------------------------------
 do_build() {
@@ -115,9 +174,9 @@ do_install() {
         fi
     fi
 
-    # Create directories
-    info "Setting up directories..."
+    # Create extra directories for CLI tools and config
     mkdir -p "${INSTALL_DIR}" "${WEB_DIR}" "${DATA_DIR}" "${CONF_DIR}"
+    mkdir -p "${INSTALL_DIR}/bin" "${INSTALL_DIR}/.config" "${INSTALL_DIR}/.local"
 
     # Stop service before replacing binary (avoids "Text file busy")
     if systemctl is-active --quiet "${SERVICE_NAME}" 2>/dev/null; then
@@ -180,6 +239,9 @@ do_install() {
     else
         error "Service failed to start. Check: journalctl -u ${SERVICE_NAME} -n 50"
     fi
+
+    # Post-install: check if LLM CLIs are available to the service user
+    check_llm_clis
 }
 
 # ---------------------------------------------------------------------------

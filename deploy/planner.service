@@ -16,6 +16,16 @@ WorkingDirectory=/opt/planner
 # Environment
 EnvironmentFile=-/etc/planner/planner.env
 
+# Extend PATH to include common CLI install locations.
+# LLM CLIs (claude, gemini, codex) may be installed via npm, pip, or
+# direct download into locations not on the default systemd PATH.
+# Add extra paths here or in /etc/planner/planner.env as PATH=...
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/opt/planner/bin:/opt/planner/.local/bin:/opt/planner/.npm-global/bin
+
+# The CLI tools store auth credentials under $HOME/.config/.
+# Ensure HOME is set to the service user's actual home.
+Environment=HOME=/opt/planner
+
 # Logging — goes to journalctl -u planner
 StandardOutput=journal
 StandardError=journal
@@ -26,7 +36,7 @@ NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
-ReadWritePaths=/opt/planner/data
+ReadWritePaths=/opt/planner/data /opt/planner/.config /opt/planner/.local /tmp/planner-worktrees
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
 ProtectControlGroups=yes
