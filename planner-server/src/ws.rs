@@ -96,6 +96,16 @@ pub enum ServerMessage {
         reason: String,
         convergence_pct: f32,
     },
+
+    /// A contradiction was detected between two dimensions.
+    #[serde(rename = "contradiction_detected")]
+    ContradictionDetected {
+        dimension_a: String,
+        value_a: String,
+        dimension_b: String,
+        value_b: String,
+        explanation: String,
+    },
 }
 
 /// Client-to-server WebSocket message.
@@ -130,6 +140,24 @@ pub enum ClientMessage {
     /// User says "done, start building".
     #[serde(rename = "done")]
     Done,
+
+    /// User reacts to a speculative draft section (correct, fix, or confirm/fix assumptions).
+    #[serde(rename = "draft_reaction")]
+    DraftReaction {
+        /// Which section index or "assumptions" this applies to.
+        target: String,
+        /// "correct" | "fix" | "confirm_all" | "fix_these"
+        action: String,
+        /// Optional free-text correction when action is "fix" or "fix_these".
+        correction: Option<String>,
+    },
+
+    /// User edits a dimension value directly from the belief state panel.
+    #[serde(rename = "dimension_edit")]
+    DimensionEdit {
+        dimension: String,
+        new_value: String,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -278,7 +306,9 @@ pub async fn handle_ws(mut socket: WebSocket, state: Arc<AppState>, session_id: 
                                 // ignore them in the pipeline-phase handler.
                                 ClientMessage::SocraticResponse { .. }
                                 | ClientMessage::SkipQuestion
-                                | ClientMessage::Done => {}
+                                | ClientMessage::Done
+                                | ClientMessage::DraftReaction { .. }
+                                | ClientMessage::DimensionEdit { .. } => {}
                             }
                         }
                     }
@@ -361,6 +391,71 @@ mod tests {
         match msg {
             ClientMessage::StartPipeline { description } => {
                 assert_eq!(description, "Task tracker");
+            }
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
+    fn server_message_contradiction_detected_serde() {
+        let msg = ServerMessage::ContradictionDetected {
+            dimension_a: "Deployment".into(),
+            value_a: "serverless".into(),
+            dimension_b: "Database".into(),
+            value_b: "bare metal PostgreSQL".into(),
+            explanation: "Serverless hosting conflicts with bare metal DB requirement".into(),
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"type\":\"contradiction_detected\""));
+        assert!(json.contains("Deployment"));
+        assert!(json.contains("bare metal"));
+
+        let deserialized: ServerMessage = serde_json::from_str(&json).unwrap();
+        match deserialized {
+            ServerMessage::ContradictionDetected { dimension_a, explanation, .. } => {
+                assert_eq!(dimension_a, "Deployment");
+                assert!(explanation.contains("conflicts"));
+            }
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
+    fn client_message_draft_reaction_serde() {
+        let json = r#"{"type":"draft_reaction","target":"0","action":"fix","correction":"Should use REST not GraphQL"}"#;
+        let msg: ClientMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ClientMessage::DraftReaction { target, action, correction } => {
+                assert_eq!(target, "0");
+                assert_eq!(action, "fix");
+                assert_eq!(correction.unwrap(), "Should use REST not GraphQL");
+            }
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
+    fn client_message_draft_reaction_no_correction() {
+        let json = r#"{"type":"draft_reaction","target":"assumptions","action":"confirm_all"}"#;
+        let msg: ClientMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ClientMessage::DraftReaction { target, action, correction } => {
+                assert_eq!(target, "assumptions");
+                assert_eq!(action, "confirm_all");
+                assert!(correction.is_none());
+            }
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
+    fn client_message_dimension_edit_serde() {
+        let json = r#"{"type":"dimension_edit","dimension":"Database","new_value":"SQLite"}"#;
+        let msg: ClientMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ClientMessage::DimensionEdit { dimension, new_value } => {
+                assert_eq!(dimension, "Database");
+                assert_eq!(new_value, "SQLite");
             }
             _ => panic!("wrong variant"),
         }

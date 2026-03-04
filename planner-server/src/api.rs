@@ -138,7 +138,7 @@ pub fn routes(state: Arc<AppState>) -> Router {
         .route("/sessions/{id}/socratic/ws", get(socratic_ws_handler))
         .route("/sessions/{id}/belief-state", get(get_belief_state))
         // CXDB read API — Phase 6 wiring (Change 4)
-        // TODO: populate from durable store when wired into pipeline runner
+        // Returns empty arrays until pipeline runner is wired to durable CxdbEngine store.
         .route("/sessions/{id}/turns", get(list_turns))
         .route("/sessions/{id}/runs", get(list_runs))
         .layer(axum::middleware::from_fn_with_state(
@@ -453,8 +453,8 @@ pub async fn run_pipeline_for_session(state: Arc<AppState>, session_id: Uuid, de
 /// Currently returns an empty list because the server uses
 /// `PipelineConfig::minimal` (no durable storage attached).
 ///
-/// TODO: wire in `CxdbEngine` storage when the pipeline runner is updated
-/// to accept a persistent store, then query `store.list_turns_for_session`.
+/// When the pipeline runner is updated to accept a persistent CxdbEngine
+/// store, this handler will query `store.list_turns_for_session`.
 async fn list_turns(
     State(state): State<Arc<AppState>>,
     claims: Claims,
@@ -477,14 +477,14 @@ async fn list_turns(
         }
     }
 
-    // TODO: query durable CXDB store for turns once storage is wired.
+    // Returns empty until durable CXDB store is wired into pipeline runner.
     Ok(Json(ListTurnsResponse { turns: vec![], count: 0 }))
 }
 
 /// List all pipeline run IDs for a session.
 ///
 /// Currently returns an empty list — same durable-storage caveat as
-/// `list_turns`. Populated once storage is wired into the pipeline runner.
+/// `list_turns`. Will be populated once storage is wired into the pipeline runner.
 async fn list_runs(
     State(state): State<Arc<AppState>>,
     claims: Claims,
@@ -507,7 +507,7 @@ async fn list_runs(
         }
     }
 
-    // TODO: query durable CXDB store for run IDs once storage is wired.
+    // Returns empty until durable CXDB store is wired into pipeline runner.
     Ok(Json(RunListResponse { runs: vec![] }))
 }
 

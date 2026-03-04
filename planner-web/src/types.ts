@@ -59,6 +59,7 @@ export interface SlotValue {
   value: string;
   confidence: number;
   source_turn?: number;
+  source_quote?: string;
 }
 
 /** A single section in a speculative draft. */
@@ -71,6 +72,15 @@ export interface DraftSection {
 export interface DraftAssumption {
   dimension: string;
   assumption: string;
+}
+
+/** A detected contradiction between two dimensions. */
+export interface Contradiction {
+  dimension_a: string;
+  value_a: string;
+  dimension_b: string;
+  value_b: string;
+  explanation: string;
 }
 
 /** The structured belief state sent over WebSocket. */
@@ -167,7 +177,9 @@ export type ServerWsMessage =
   | { type: 'belief_state_update'; filled: Record<string, unknown>; uncertain: Record<string, unknown>; missing: string[]; out_of_scope: string[]; convergence_pct: number }
   | { type: 'question'; text: string; target_dimension: string; quick_options: QuickOption[]; allow_skip: boolean }
   | { type: 'speculative_draft'; sections: DraftSection[]; assumptions: DraftAssumption[]; not_discussed: string[] }
-  | { type: 'converged'; reason: string; convergence_pct: number };
+  | { type: 'converged'; reason: string; convergence_pct: number }
+  // Contradiction detection
+  | { type: 'contradiction_detected'; dimension_a: string; value_a: string; dimension_b: string; value_b: string; explanation: string };
 
 // --- Client → Server ---
 
@@ -178,4 +190,8 @@ export type ClientWsMessage =
   // Socratic interview messages
   | { type: 'socratic_response'; content: string }
   | { type: 'skip_question' }
-  | { type: 'done' };
+  | { type: 'done' }
+  // Draft reactions
+  | { type: 'draft_reaction'; target: string; action: string; correction?: string }
+  // Dimension editing
+  | { type: 'dimension_edit'; dimension: string; new_value: string };

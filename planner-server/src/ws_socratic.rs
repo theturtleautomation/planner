@@ -175,13 +175,22 @@ impl planner_core::pipeline::steps::socratic::SocraticIO for WsSocraticIO {
     }
 
     async fn send_event(&self, event: &SocraticEvent) {
-        // Serialize the raw SocraticEvent and forward as a ChatMessage so that
-        // consumers that understand the full event schema can inspect the type
-        // tag, while others get a plain text representation.
+        // If this is a ContradictionDetected event, send it as a typed
+        // ServerMessage so the frontend can render it in the belief state panel
+        // without parsing a generic JSON blob.
+        if let SocraticEvent::ContradictionDetected { contradiction } = event {
+            self.send(ServerMessage::ContradictionDetected {
+                dimension_a: contradiction.dimension_a.label(),
+                value_a: contradiction.value_a.clone(),
+                dimension_b: contradiction.dimension_b.label(),
+                value_b: contradiction.value_b.clone(),
+                explanation: contradiction.explanation.clone(),
+            });
+        }
+
+        // Also forward the raw event as a ChatMessage so the chat log shows it.
         match serde_json::to_string(event) {
             Ok(json) => {
-                // Forward as a raw text frame so the client can parse the
-                // typed event directly.
                 let _ = self.event_tx.send(ServerMessage::ChatMessage {
                     id: Uuid::new_v4().to_string(),
                     role: "event".into(),
@@ -358,6 +367,29 @@ pub async fn handle_socratic_ws(
                             Ok(ClientMessage::Done) => {
                                 // Signal the engine that the user wants to stop.
                                 let _ = input_tx.send("done".into());
+                            }
+                            Ok(ClientMessage::DraftReaction { target, action, correction }) => {
+                                // Forward draft reactions to the engine as structured input.
+                                // The engine's receive_input() will parse these prefixed commands.
+                                let corr_str = correction.as_deref().unwrap_or("(no correction)");
+                                let msg = if correction.is_some() {
+                                    format!("[draft_reaction] target={} action={} correction={}", target, action, corr_str)
+                                } else {
+                                    format!("[draft_reaction] target={} action={}", target, action)
+                                };
+                                state.sessions.update(session_id, |s| {
+                                    s.add_message("user", &format!("Draft feedback: {} section {} — {}",
+                                        action, target, corr_str));
+                                });
+                                let _ = input_tx.send(msg);
+                            }
+                            Ok(ClientMessage::DimensionEdit { dimension, new_value }) => {
+                                // Forward dimension edits to the engine.
+                                let msg = format!("[dimension_edit] {}={}", dimension, new_value);
+                                state.sessions.update(session_id, |s| {
+                                    s.add_message("user", &format!("Edited dimension '{}' → '{}'", dimension, new_value));
+                                });
+                                let _ = input_tx.send(msg);
                             }
                             Ok(_) => {} // ignore other message types
                             Err(e) => {
@@ -582,5 +614,46 @@ mod tests {
         use planner_core::pipeline::steps::socratic::SocraticIO;
         let received = io.receive_input().await;
         assert!(received.is_none());
+    }
+
+    #[tokio::test]
+    async fn ws_socratic_io_send_event_contradiction() {
+        let (event_tx, mut event_rx) = mpsc::unbounded_channel::<ServerMessage>();
+        let (_input_tx, input_rx) = mpsc::unbounded_channel::<String>();
+        let io = WsSocraticIO::new(event_tx, Arc::new(Mutex::new(input_rx)));
+
+        use planner_schemas::{Contradiction, Dimension};
+        let contradiction = Contradiction {
+            dimension_a: Dimension::Database,
+            value_a: "PostgreSQL".into(),
+            dimension_b: Dimension::Deployment,
+            value_b: "serverless".into(),
+            explanation: "PostgreSQL requires a persistent server".into(),
+            resolved: false,
+        };
+        let event = SocraticEvent::ContradictionDetected { contradiction };
+
+        use planner_core::pipeline::steps::socratic::SocraticIO;
+        io.send_event(&event).await;
+
+        // First message should be the typed ContradictionDetected
+        let msg1 = event_rx.try_recv().unwrap();
+        match msg1 {
+            ServerMessage::ContradictionDetected { dimension_a, dimension_b, explanation, .. } => {
+                assert_eq!(dimension_a, "Database");
+                assert_eq!(dimension_b, "Deployment");
+                assert!(explanation.contains("persistent server"));
+            }
+            other => panic!("expected ContradictionDetected, got {:?}", other),
+        }
+
+        // Second message should be the generic ChatMessage with role "event"
+        let msg2 = event_rx.try_recv().unwrap();
+        match msg2 {
+            ServerMessage::ChatMessage { role, .. } => {
+                assert_eq!(role, "event");
+            }
+            other => panic!("expected ChatMessage with event role, got {:?}", other),
+        }
     }
 }

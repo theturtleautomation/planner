@@ -7,6 +7,7 @@ interface MessageInputProps {
   disabled?: boolean;
   pipelineRunning?: boolean;
   isLoading?: boolean;
+  convergencePct?: number;
   // Socratic props
   intakePhase?: 'waiting' | 'interviewing' | 'pipeline_running' | 'complete';
   currentQuestion?: {
@@ -24,6 +25,7 @@ export default function MessageInput({
   disabled = false,
   pipelineRunning = false,
   isLoading = false,
+  convergencePct = 0,
   intakePhase,
   currentQuestion,
   onSkip,
@@ -211,6 +213,7 @@ export default function MessageInput({
           {showDone && (
             <button
               onClick={onDone}
+              className={convergencePct >= 80 ? 'done-btn-ready' : undefined}
               aria-label="Done with interview"
               style={{
                 background: 'transparent',

@@ -15,6 +15,7 @@ import type {
   ChatMessage,
   Classification,
   ClientWsMessage,
+  Contradiction,
   DraftAssumption,
   DraftSection,
   IntakePhase,
@@ -71,6 +72,7 @@ export interface UseSocraticWebSocketResult {
   convergencePct: number;
   currentQuestion: CurrentQuestion | null;
   speculativeDraft: SpeculativeDraft | null;
+  contradictions: Contradiction[];
 
   // Pipeline state (active after convergence)
   stages: PipelineStage[];
@@ -82,6 +84,8 @@ export interface UseSocraticWebSocketResult {
   sendResponse: (content: string) => void;
   skipQuestion: () => void;
   sendDone: () => void;
+  sendDraftReaction: (target: string, action: string, correction?: string) => void;
+  sendDimensionEdit: (dimension: string, newValue: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -115,6 +119,7 @@ export function useSocraticWebSocket({
   const [convergencePct, setConvergencePct] = useState(0);
   const [currentQuestion, setCurrentQuestion] = useState<CurrentQuestion | null>(null);
   const [speculativeDraft, setSpeculativeDraft] = useState<SpeculativeDraft | null>(null);
+  const [contradictions, setContradictions] = useState<Contradiction[]>([]);
 
   // Pipeline
   const [stages, setStages] = useState<PipelineStage[]>(buildInitialStages);
@@ -214,6 +219,24 @@ export function useSocraticWebSocket({
           id: crypto.randomUUID(),
           role: 'planner',
           content: `Requirements gathering complete (${Math.round(msg.convergence_pct * 100)}% converged). Starting the planning pipeline\u2026`,
+          timestamp: new Date().toISOString(),
+        }]);
+        break;
+      }
+
+      case 'contradiction_detected': {
+        const c: Contradiction = {
+          dimension_a: msg.dimension_a,
+          value_a: msg.value_a,
+          dimension_b: msg.dimension_b,
+          value_b: msg.value_b,
+          explanation: msg.explanation,
+        };
+        setContradictions((prev) => [...prev, c]);
+        setMessages((prev) => [...prev, {
+          id: crypto.randomUUID(),
+          role: 'system',
+          content: `\u26a0 Contradiction detected: ${msg.dimension_a} ("${msg.value_a}") conflicts with ${msg.dimension_b} ("${msg.value_b}") \u2014 ${msg.explanation}`,
           timestamp: new Date().toISOString(),
         }]);
         break;
@@ -448,6 +471,31 @@ export function useSocraticWebSocket({
     sendRaw({ type: 'done' });
   }, [sendRaw]);
 
+  /** Send a reaction to a speculative draft section or assumptions. */
+  const sendDraftReaction = useCallback((target: string, action: string, correction?: string): void => {
+    const msg: ClientWsMessage = correction !== undefined
+      ? { type: 'draft_reaction', target, action, correction }
+      : { type: 'draft_reaction', target, action };
+    sendRaw(msg);
+    setMessages((prev) => [...prev, {
+      id: crypto.randomUUID(),
+      role: 'user',
+      content: `[Draft feedback] ${action} section "${target}"${correction ? `: ${correction}` : ''}`,
+      timestamp: new Date().toISOString(),
+    }]);
+  }, [sendRaw]);
+
+  /** Send a dimension value edit from the belief state panel. */
+  const sendDimensionEdit = useCallback((dimension: string, newValue: string): void => {
+    sendRaw({ type: 'dimension_edit', dimension, new_value: newValue });
+    setMessages((prev) => [...prev, {
+      id: crypto.randomUUID(),
+      role: 'user',
+      content: `[Edit] ${dimension} → "${newValue}"`,
+      timestamp: new Date().toISOString(),
+    }]);
+  }, [sendRaw]);
+
   return {
     isConnected,
     reconnectFailed,
@@ -458,6 +506,7 @@ export function useSocraticWebSocket({
     convergencePct,
     currentQuestion,
     speculativeDraft,
+    contradictions,
     stages,
     pipelineComplete,
     pipelineSummary,
@@ -465,5 +514,7 @@ export function useSocraticWebSocket({
     sendResponse,
     skipQuestion,
     sendDone,
+    sendDraftReaction,
+    sendDimensionEdit,
   };
 }

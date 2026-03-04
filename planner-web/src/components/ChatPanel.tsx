@@ -80,6 +80,7 @@ function MessageItem({ msg }: { msg: ChatMessage }) {
     system: 'var(--text-secondary)',
     user: 'var(--accent-green)',
     planner: 'var(--accent-cyan)',
+    event: 'var(--accent-yellow)',
   };
 
   const labelColor = roleColors[msg.role] ?? 'var(--text-secondary)';
@@ -151,6 +152,19 @@ function MessageItem({ msg }: { msg: ChatMessage }) {
           >
             {msg.content}
           </ReactMarkdown>
+        </div>
+      ) : msg.role === 'event' ? (
+        <div style={{
+          color: 'var(--text-primary)',
+          fontSize: '12px',
+          paddingLeft: '8px',
+          borderLeft: '2px solid var(--accent-yellow)',
+          background: 'rgba(255,215,0,0.04)',
+          padding: '4px 8px',
+          borderRadius: '0 3px 3px 0',
+          lineHeight: '1.5',
+        }}>
+          {msg.content}
         </div>
       ) : msg.role === 'system' ? (
         <div style={{

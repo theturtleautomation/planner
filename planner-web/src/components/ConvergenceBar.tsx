@@ -25,6 +25,7 @@ export default function ConvergenceBar({ convergencePct, classification }: Conve
 
   return (
     <div
+      className={pct >= 80 ? 'convergence-high' : undefined}
       style={{
         height: '36px',
         background: 'var(--bg-secondary)',

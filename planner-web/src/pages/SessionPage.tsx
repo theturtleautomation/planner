@@ -137,6 +137,7 @@ export default function SessionPage() {
         <SpeculativeDraftView
           draft={socratic.speculativeDraft}
           onBack={() => setShowDraft(false)}
+          onReact={socratic.sendDraftReaction}
         />
       );
     }
@@ -144,6 +145,8 @@ export default function SessionPage() {
       <BeliefStatePanel
         beliefState={socratic.beliefState}
         classification={socratic.classification}
+        contradictions={socratic.contradictions}
+        onDimensionEdit={socratic.sendDimensionEdit}
       />
     );
   })();
@@ -426,15 +429,9 @@ export default function SessionPage() {
         )}
 
         {/* Split pane */}
-        <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-          {/* Left: Chat + Input (50%) */}
-          <div style={{
-            flex: 1,
-            display: 'flex',
-            flexDirection: 'column',
-            borderRight: '1px solid var(--border)',
-            overflow: 'hidden',
-          }}>
+        <div className="split-pane">
+          {/* Left: Chat + Input */}
+          <div className="pane-left">
             <ChatPanel messages={socratic.messages} />
 
             {/* Pipeline complete summary */}
@@ -461,16 +458,12 @@ export default function SessionPage() {
               onDone={socratic.sendDone}
               disabled={!socratic.isConnected}
               pipelineRunning={isPipelineRunning}
+              convergencePct={socratic.convergencePct * 100}
             />
           </div>
 
-          {/* Right: BeliefStatePanel or SpeculativeDraftView (50%) */}
-          <div style={{
-            flex: 1,
-            display: 'flex',
-            flexDirection: 'column',
-            overflow: 'hidden',
-          }}>
+          {/* Right: BeliefStatePanel or SpeculativeDraftView */}
+          <div className="pane-right">
             {/* Draft toggle hint when draft is available but we're viewing belief state */}
             {socratic.speculativeDraft && !showDraft && (
               <div style={{
