@@ -168,7 +168,9 @@ do_install() {
         info "Service is running."
         local port
         port=$(grep -oP '(?<=--port )\d+' /etc/systemd/system/${SERVICE_NAME}.service || echo "3100")
-        info "Access at: http://$(hostname -I | awk '{print $1}'):${port}"
+        local ip
+        ip=$(ip -4 route get 1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}' || hostname -f 2>/dev/null || echo "localhost")
+        info "Access at: http://${ip}:${port}"
     else
         error "Service failed to start. Check: journalctl -u ${SERVICE_NAME} -n 50"
     fi
