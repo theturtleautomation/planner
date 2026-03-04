@@ -78,6 +78,7 @@ struct ClassifyJson {
     project_type: String,
     complexity: String,
     detected_signals: Vec<String>,
+    #[allow(dead_code)] // Deserialized for validation; budget derived from complexity tier
     question_budget: u8,
 }
 

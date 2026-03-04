@@ -23,7 +23,7 @@ use planner_schemas::*;
 use crate::llm::providers::LlmRouter;
 use crate::cxdb::TurnStore;
 
-use super::super::{StepResult, StepError};
+use super::super::StepResult;
 use super::domain_classifier;
 use super::belief_state;
 use super::constitution;
@@ -169,6 +169,7 @@ pub async fn run_interview<IO: SocraticIO, S: TurnStore>(
     }
 
     // --- Phase 4: Interview Loop ---
+    #[allow(unused_assignments)]
     let mut last_question: Option<String> = None;
 
     loop {

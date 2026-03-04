@@ -1,0 +1,10 @@
+{
+  "name": "planner",
+  "private": true,
+  "scripts": {
+    "build": "npm run build --prefix planner-web",
+    "dev": "npm run dev --prefix planner-web",
+    "test": "npm run test --prefix planner-web",
+    "lint": "npm run lint --prefix planner-web"
+  }
+}
