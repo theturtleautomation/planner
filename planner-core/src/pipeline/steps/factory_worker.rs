@@ -1285,7 +1285,6 @@ impl FactoryWorker for CodexFactoryWorker {
                 "codex CLI not found. Install it or check your PATH.".into(),
             ));
         }
-        let codex_binary = self.binary_path.as_ref().unwrap();
 
         // --- Three-mode sandbox resolution ---
         //
