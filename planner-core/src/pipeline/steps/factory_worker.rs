@@ -1124,11 +1124,14 @@ impl CodexFactoryWorker {
             args.join(" ")
         );
 
+        let codex_env = crate::llm::providers::CliEnvironment::for_codex();
+
         let (stdout, stderr) = match crate::llm::providers::run_cli(
             "codex",
             &args,
             Some(prompt),
             config.timeout_secs,
+            Some(&codex_env),
         )
         .await
         {

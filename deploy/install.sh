@@ -79,62 +79,140 @@ check_deps() {
 }
 
 # ---------------------------------------------------------------------------
+# LLM CLI Isolation Setup
+# ---------------------------------------------------------------------------
+# Creates isolated home directories for each LLM CLI provider.
+# Each gets its own HOME so auth credentials, config, and cache
+# are completely separated from any user account.
+#
+# Directory layout:
+#   /opt/planner/cli-home/
+#     claude/           ← HOME for claude CLI
+#       .claude/        ← auth + config (CLAUDE_CONFIG_DIR)
+#     gemini/           ← HOME for gemini CLI
+#       .gemini/        ← user-level settings
+#       settings.json   ← system-level lockdown (no extensions/MCPs)
+#     codex/            ← HOME for codex CLI
+#       .codex/         ← auth + config (CODEX_HOME)
+#       .config/        ← XDG_CONFIG_HOME
+#       .local/         ← XDG_DATA_HOME parent
+#       .cache/         ← XDG_CACHE_HOME
+#   /opt/planner/cli-sandbox/   ← Empty CWD for all CLI invocations
+#
+setup_cli_isolation() {
+    info "Setting up CLI isolation directories..."
+
+    local cli_home="${INSTALL_DIR}/cli-home"
+    local sandbox="${INSTALL_DIR}/cli-sandbox"
+
+    # Claude
+    mkdir -p "${cli_home}/claude/.claude"
+
+    # Gemini
+    mkdir -p "${cli_home}/gemini/.gemini"
+
+    # Write a locked-down Gemini system settings file.
+    # System settings have highest precedence and override user/project settings.
+    cat > "${cli_home}/gemini/settings.json" << 'GEMINI_SETTINGS'
+{
+  "tools": {
+    "core": [],
+    "exclude": ["*"]
+  },
+  "security": {
+    "disableYoloMode": true,
+    "blockGitExtensions": true,
+    "enablePermanentToolApproval": false
+  },
+  "hooksConfig": {
+    "disabled": ["*"]
+  },
+  "admin": {
+    "extensions": {
+      "enabled": false
+    }
+  }
+}
+GEMINI_SETTINGS
+
+    # Codex
+    mkdir -p "${cli_home}/codex/.codex"
+    mkdir -p "${cli_home}/codex/.config"
+    mkdir -p "${cli_home}/codex/.local/share"
+    mkdir -p "${cli_home}/codex/.cache"
+
+    # Write a clean Codex config.toml with NO MCP servers.
+    # If this file doesn't exist, codex may try to create one or
+    # fall back to discovery that could find project-level configs.
+    if [[ ! -f "${cli_home}/codex/.codex/config.toml" ]]; then
+        cat > "${cli_home}/codex/.codex/config.toml" << 'CODEX_CONFIG'
+# Planner service — clean Codex config.
+# No MCP servers. No project-level config inheritance.
+# Auth credentials are stored alongside this file by `codex login`.
+CODEX_CONFIG
+    fi
+
+    # Sandbox directory — must be empty, used as CWD to prevent
+    # project-level config discovery (.claude/, .gemini/, .codex/)
+    mkdir -p "${sandbox}"
+
+    # Own everything by the service user
+    chown -R "${SERVICE_USER}:${SERVICE_USER}" "${cli_home}"
+    chown -R "${SERVICE_USER}:${SERVICE_USER}" "${sandbox}"
+
+    info "CLI isolation ready: ${cli_home}"
+}
+
+# ---------------------------------------------------------------------------
 # LLM CLI check — verify at least one provider is reachable
 # ---------------------------------------------------------------------------
 check_llm_clis() {
     info "Checking LLM CLI availability for service user..."
 
     local found=0
-    local cli_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/opt/planner/bin:/opt/planner/.local/bin:/opt/planner/.npm-global/bin"
 
     for cli in claude gemini codex; do
-        # Check using the same PATH the service will use
-        if sudo -u "${SERVICE_USER}" env PATH="${cli_path}" HOME="/opt/planner" which "${cli}" &>/dev/null; then
+        if command -v "${cli}" &>/dev/null; then
             local location
-            location=$(sudo -u "${SERVICE_USER}" env PATH="${cli_path}" HOME="/opt/planner" which "${cli}" 2>/dev/null || true)
-            info "  ✓ ${cli} found at ${location}"
+            location=$(command -v "${cli}")
+            info "  \u2713 ${cli} found at ${location}"
             found=$((found + 1))
         else
-            warn "  ✗ ${cli} not found"
+            warn "  \u2717 ${cli} not found on PATH"
         fi
     done
 
+    local cli_home="${INSTALL_DIR}/cli-home"
+
     if [[ $found -eq 0 ]]; then
         echo ""
-        warn "═══════════════════════════════════════════════════════════════"
+        warn "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
         warn "  NO LLM CLI TOOLS FOUND"
-        warn "═══════════════════════════════════════════════════════════════"
+        warn "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
         warn ""
         warn "  The planner server requires at least one LLM CLI tool."
-        warn "  Install the CLI(s) so they are on the service user's PATH:"
+        warn "  Install globally:  npm install -g @anthropic-ai/claude-cli"
+        warn "                     npm install -g @google/gemini-cli"
+        warn "                     npm install -g @openai/codex-cli"
         warn ""
-        warn "    Option A: Install to /usr/local/bin (system-wide):"
-        warn "      npm install -g @anthropic-ai/claude-cli"
-        warn "      npm install -g @google/gemini-cli"
-        warn "      npm install -g @openai/codex-cli"
-        warn ""
-        warn "    Option B: Install into /opt/planner/bin:"
-        warn "      mkdir -p /opt/planner/bin"
-        warn "      # copy or symlink CLI binaries there"
-        warn ""
-        warn "  Then authenticate as the planner user:"
-        warn "    sudo -u planner -H claude login"
-        warn "    sudo -u planner -H gemini login"
-        warn "    sudo -u planner -H codex login"
-        warn ""
-        warn "  (The -H flag sets HOME=/opt/planner so auth credentials"
-        warn "   are stored where the service can read them.)"
-        warn ""
-        warn "  After setup, restart:  sudo systemctl restart planner"
-        warn "═══════════════════════════════════════════════════════════════"
-        echo ""
     else
         info "  ${found} provider(s) available."
-        warn "  Remember to authenticate as the service user if not done:"
-        warn "    sudo -u planner -H claude login   (if using claude)"
-        warn "    sudo -u planner -H gemini login   (if using gemini)"
-        warn "    sudo -u planner -H codex login    (if using codex)"
     fi
+
+    echo ""
+    info "CLI isolation is handled automatically by the Rust server."
+    info "Each CLI runs in a clean environment with no MCP servers,"
+    info "no plugins, and no project-level config inheritance."
+    echo ""
+    info "To authenticate, run as the planner user with HOME set"
+    info "to the provider's isolated directory:"
+    echo ""
+    warn "  sudo -u planner HOME=${cli_home}/claude claude login"
+    warn "  sudo -u planner HOME=${cli_home}/gemini gemini auth login"
+    warn "  sudo -u planner HOME=${cli_home}/codex CODEX_HOME=${cli_home}/codex/.codex codex login"
+    echo ""
+    info "Credentials are stored in ${cli_home}/<provider>/"
+    info "and are isolated from any personal user accounts."
 }
 
 # ---------------------------------------------------------------------------
@@ -176,7 +254,9 @@ do_install() {
 
     # Create extra directories for CLI tools and config
     mkdir -p "${INSTALL_DIR}" "${WEB_DIR}" "${DATA_DIR}" "${CONF_DIR}"
-    mkdir -p "${INSTALL_DIR}/bin" "${INSTALL_DIR}/.config" "${INSTALL_DIR}/.local"
+
+    # Set up CLI isolation directories
+    setup_cli_isolation
 
     # Stop service before replacing binary (avoids "Text file busy")
     if systemctl is-active --quiet "${SERVICE_NAME}" 2>/dev/null; then

@@ -16,6 +16,8 @@
 
 use async_trait::async_trait;
 use serde::Deserialize;
+use std::collections::HashMap;
+use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::Duration;
 use tokio::process::Command;
@@ -25,6 +27,160 @@ use crate::observability;
 
 /// Default timeout for CLI invocations (5 minutes).
 const DEFAULT_TIMEOUT_SECS: u64 = 300;
+
+// ===========================================================================
+// CLI Isolation
+// ===========================================================================
+//
+// Each LLM CLI tool (claude, gemini, codex) loads plugins, MCP servers,
+// project-level configs, and extensions from various locations:
+//
+//   claude: ~/.claude/, ~/.claude.json, CWD/.claude/, CLAUDE.md
+//   gemini: ~/.gemini/settings.json, CWD/.gemini/, extensions
+//   codex:  $CODEX_HOME (~/.codex/), CWD/.codex/config.toml
+//
+// When the planner service invokes these CLIs, we must guarantee a clean,
+// deterministic execution environment — no personal configs, no MCP servers,
+// no plugins from whoever installed the binary. This is achieved by:
+//
+//   1. env_clear() — start with a blank environment (no inherited vars)
+//   2. Inject only the vars each CLI needs (PATH, HOME, auth config paths)
+//   3. Set provider-specific isolation flags (CLAUDE_CODE_SIMPLE, -e none, etc.)
+//   4. Set CWD to a known-empty directory (/opt/planner/cli-sandbox)
+//
+// Auth credentials are stored in /opt/planner/cli-home/<provider>/ and
+// are set up once via `sudo -u planner -H <cli> login`. The isolation
+// env ensures the CLI reads ONLY from that directory, not from any
+// project or user-level config.
+
+/// Base directory for isolated CLI environments.
+/// Each provider gets a subdirectory: claude/, gemini/, codex/
+const CLI_HOME_BASE: &str = "/opt/planner/cli-home";
+
+/// An empty directory used as CWD to prevent project-level config discovery.
+const CLI_SANDBOX_DIR: &str = "/opt/planner/cli-sandbox";
+
+/// Execution environment for an isolated CLI invocation.
+#[derive(Debug, Clone)]
+pub struct CliEnvironment {
+    /// Environment variables (replaces the inherited environment entirely).
+    pub env: HashMap<String, String>,
+    /// Working directory for the CLI process.
+    pub cwd: PathBuf,
+}
+
+impl CliEnvironment {
+    /// Build base environment shared by all providers.
+    /// Starts from an empty env and adds only what's needed.
+    fn base() -> HashMap<String, String> {
+        let mut env = HashMap::new();
+
+        // Minimal PATH: system paths + planner bin directory
+        env.insert(
+            "PATH".into(),
+            "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/opt/planner/bin".into(),
+        );
+
+        // Temp directory (PrivateTmp in systemd, or system default)
+        let tmp = std::env::var("TMPDIR").unwrap_or_else(|_| "/tmp".into());
+        env.insert("TMPDIR".into(), tmp.clone());
+        env.insert("TMP".into(), tmp.clone());
+        env.insert("TEMP".into(), tmp);
+
+        // Locale — prevents CLI tools from complaining
+        env.insert("LANG".into(), "en_US.UTF-8".into());
+        env.insert("LC_ALL".into(), "en_US.UTF-8".into());
+
+        // Disable color codes in CLI output (we parse structured output)
+        env.insert("NO_COLOR".into(), "1".into());
+        env.insert("TERM".into(), "dumb".into());
+
+        env
+    }
+
+    /// Build an isolated environment for the Anthropic `claude` CLI.
+    ///
+    /// Isolation strategy:
+    /// - `CLAUDE_CODE_SIMPLE=true` — disables MCP servers, plugins, hooks,
+    ///   CLAUDE.md loading, session memory, attachments. Fully minimal mode.
+    /// - `CLAUDE_CONFIG_DIR` — points to our isolated config directory
+    ///   where auth credentials are stored.
+    /// - `HOME` — set to the provider's isolated home so ~/.claude.json
+    ///   and ~/.claude/ resolve to our controlled directory.
+    /// - CWD — empty sandbox directory prevents .claude/ and CLAUDE.md
+    ///   discovery from any project.
+    pub fn for_claude() -> Self {
+        let mut env = Self::base();
+        let home = format!("{}/claude", CLI_HOME_BASE);
+
+        env.insert("HOME".into(), home.clone());
+        env.insert("CLAUDE_CONFIG_DIR".into(), format!("{}/.claude", home));
+        env.insert("CLAUDE_CODE_SIMPLE".into(), "true".into());
+
+        // Disable MCP servers explicitly (belt and suspenders with SIMPLE mode)
+        env.insert("ENABLE_CLAUDEAI_MCP_SERVERS".into(), "false".into());
+
+        CliEnvironment {
+            env,
+            cwd: PathBuf::from(CLI_SANDBOX_DIR),
+        }
+    }
+
+    /// Build an isolated environment for the Google `gemini` CLI.
+    ///
+    /// Isolation strategy:
+    /// - `GEMINI_CLI_SYSTEM_SETTINGS_PATH` — points to our controlled
+    ///   settings.json with extensions and tools disabled.
+    /// - `-e none` is passed as a CLI arg (not env) to disable extensions.
+    /// - `HOME` — set to the provider's isolated home so ~/.gemini/
+    ///   resolves to our controlled directory.
+    /// - CWD — empty sandbox directory prevents .gemini/ project config
+    ///   discovery.
+    pub fn for_gemini() -> Self {
+        let mut env = Self::base();
+        let home = format!("{}/gemini", CLI_HOME_BASE);
+
+        env.insert("HOME".into(), home.clone());
+
+        // Point system settings to our controlled file (highest precedence)
+        let settings_path = format!("{}/settings.json", home);
+        env.insert("GEMINI_CLI_SYSTEM_SETTINGS_PATH".into(), settings_path);
+
+        // Disable sandbox (we run in headless --prompt mode, no tool execution)
+        env.insert("GEMINI_SANDBOX".into(), "false".into());
+
+        CliEnvironment {
+            env,
+            cwd: PathBuf::from(CLI_SANDBOX_DIR),
+        }
+    }
+
+    /// Build an isolated environment for the OpenAI `codex` CLI.
+    ///
+    /// Isolation strategy:
+    /// - `CODEX_HOME` — overrides the config directory. Points to our
+    ///   controlled directory with auth but no MCP servers in config.toml.
+    /// - `HOME` — set to the provider's isolated home.
+    /// - CWD — empty sandbox directory prevents .codex/config.toml
+    ///   discovery from any project directory.
+    pub fn for_codex() -> Self {
+        let mut env = Self::base();
+        let home = format!("{}/codex", CLI_HOME_BASE);
+
+        env.insert("HOME".into(), home.clone());
+        env.insert("CODEX_HOME".into(), format!("{}/.codex", home));
+
+        // XDG dirs — prevent any fallback to unexpected locations
+        env.insert("XDG_CONFIG_HOME".into(), format!("{}/.config", home));
+        env.insert("XDG_DATA_HOME".into(), format!("{}/.local/share", home));
+        env.insert("XDG_CACHE_HOME".into(), format!("{}/.cache", home));
+
+        CliEnvironment {
+            env,
+            cwd: PathBuf::from(CLI_SANDBOX_DIR),
+        }
+    }
+}
 
 // ===========================================================================
 // Shared helpers
@@ -70,16 +226,32 @@ fn build_prompt(request: &CompletionRequest) -> String {
 }
 
 /// Run a CLI command with timeout and return (stdout, stderr).
+///
+/// When `cli_env` is `Some`, the process environment is fully replaced
+/// (via `env_clear()` + `envs()`) and CWD is set to the sandbox directory.
+/// This ensures complete isolation from the host user's config, plugins,
+/// and MCP servers.
 pub async fn run_cli(
     binary: &str,
     args: &[&str],
     stdin_input: Option<&str>,
     timeout_secs: u64,
+    cli_env: Option<&CliEnvironment>,
 ) -> Result<(String, String), LlmError> {
     let mut cmd = Command::new(binary);
     cmd.args(args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+
+    // Apply isolated environment if provided
+    if let Some(env) = cli_env {
+        cmd.env_clear();
+        cmd.envs(&env.env);
+        // Only set CWD if the directory exists (graceful fallback)
+        if env.cwd.exists() {
+            cmd.current_dir(&env.cwd);
+        }
+    }
 
     if stdin_input.is_some() {
         cmd.stdin(Stdio::piped());
@@ -150,6 +322,7 @@ pub async fn run_cli_instrumented(
     stdin_input: Option<&str>,
     timeout_secs: u64,
     model: &str,
+    cli_env: Option<&CliEnvironment>,
 ) -> Result<(String, String), LlmError> {
     use observability::{PlannerEvent, EventSource};
 
@@ -169,7 +342,7 @@ pub async fn run_cli_instrumented(
     sink.emit(start_event);
 
     let start = std::time::Instant::now();
-    let result = run_cli(binary, args, stdin_input, timeout_secs).await;
+    let result = run_cli(binary, args, stdin_input, timeout_secs, cli_env).await;
     let elapsed_ms = start.elapsed().as_millis() as u64;
 
     match &result {
@@ -242,6 +415,7 @@ pub async fn run_cli_instrumented(
 
 pub struct AnthropicCliClient {
     timeout_secs: u64,
+    env: CliEnvironment,
 }
 
 impl AnthropicCliClient {
@@ -253,6 +427,7 @@ impl AnthropicCliClient {
         }
         Ok(AnthropicCliClient {
             timeout_secs: DEFAULT_TIMEOUT_SECS,
+            env: CliEnvironment::for_claude(),
         })
     }
 
@@ -312,8 +487,7 @@ impl LlmClient for AnthropicCliClient {
             &model_arg,
         ];
 
-        // Pipe prompt via stdin (avoids shell escaping issues with -p)
-        let (stdout, _stderr) = run_cli("claude", &args, Some(&prompt), self.timeout_secs).await?;
+        let (stdout, _stderr) = run_cli("claude", &args, Some(&prompt), self.timeout_secs, Some(&self.env)).await?;
 
         // Parse stream-json: one JSON object per line.
         // We want the final result that contains the complete text.
@@ -385,6 +559,7 @@ impl LlmClient for AnthropicCliClient {
 
 pub struct GoogleCliClient {
     timeout_secs: u64,
+    env: CliEnvironment,
 }
 
 impl GoogleCliClient {
@@ -396,6 +571,7 @@ impl GoogleCliClient {
         }
         Ok(GoogleCliClient {
             timeout_secs: DEFAULT_TIMEOUT_SECS,
+            env: CliEnvironment::for_gemini(),
         })
     }
 
@@ -447,7 +623,7 @@ impl LlmClient for GoogleCliClient {
             &model_arg,
         ];
 
-        let (stdout, _stderr) = run_cli("gemini", &args, None, self.timeout_secs).await?;
+        let (stdout, _stderr) = run_cli("gemini", &args, None, self.timeout_secs, Some(&self.env)).await?;
 
         // Gemini --output-format json emits a single JSON object.
         // Try structured parse first, fall back to raw stdout.
@@ -491,6 +667,7 @@ impl LlmClient for GoogleCliClient {
 
 pub struct OpenAiCliClient {
     timeout_secs: u64,
+    env: CliEnvironment,
 }
 
 impl OpenAiCliClient {
@@ -502,6 +679,7 @@ impl OpenAiCliClient {
         }
         Ok(OpenAiCliClient {
             timeout_secs: DEFAULT_TIMEOUT_SECS,
+            env: CliEnvironment::for_codex(),
         })
     }
 
@@ -576,7 +754,7 @@ impl LlmClient for OpenAiCliClient {
             "-",  // read prompt from stdin
         ];
 
-        let (stdout, _stderr) = run_cli("codex", &args, Some(&prompt), self.timeout_secs).await?;
+        let (stdout, _stderr) = run_cli("codex", &args, Some(&prompt), self.timeout_secs, Some(&self.env)).await?;
 
         // Strategy 1: Read from --output-last-message file (most reliable)
         let content = if output_file.exists() {
