@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { WS_PROTOCOL } from '../config.ts';
+import { uuidv4 } from '../lib/uuid.ts';
 import type {
   ChatMessage,
   ClientWsMessage,
@@ -124,7 +125,7 @@ export function useSessionWebSocket({
         }
         case 'message': {
           const cm: ChatMessage = {
-            id: crypto.randomUUID(),
+            id: uuidv4(),
             role: msg.role,
             content: msg.content,
             timestamp: new Date().toISOString(),

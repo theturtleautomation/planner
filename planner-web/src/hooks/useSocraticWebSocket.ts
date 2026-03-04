@@ -10,6 +10,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { WS_PROTOCOL } from '../config.ts';
+import { uuidv4 } from '../lib/uuid.ts';
 import type {
   BeliefState,
   ChatMessage,
@@ -169,7 +170,7 @@ export function useSocraticWebSocket({
         });
         // Add a planner message for the chat
         setMessages((prev) => [...prev, {
-          id: crypto.randomUUID(),
+          id: uuidv4(),
           role: 'planner',
           content: `Classified as: **${msg.project_type}** (${msg.complexity}). I'll ask up to ${msg.question_budget} questions.`,
           timestamp: new Date().toISOString(),
@@ -199,7 +200,7 @@ export function useSocraticWebSocket({
         });
         // Also add the question text as a planner chat message
         setMessages((prev) => [...prev, {
-          id: crypto.randomUUID(),
+          id: uuidv4(),
           role: 'planner',
           content: msg.text,
           timestamp: new Date().toISOString(),
@@ -214,7 +215,7 @@ export function useSocraticWebSocket({
           not_discussed: msg.not_discussed,
         });
         setMessages((prev) => [...prev, {
-          id: crypto.randomUUID(),
+          id: uuidv4(),
           role: 'planner',
           content: 'Here\'s a speculative draft based on what I know so far. Review it in the right panel.',
           timestamp: new Date().toISOString(),
@@ -227,7 +228,7 @@ export function useSocraticWebSocket({
         setCurrentQuestion(null);
         setIntakePhase('pipeline_running');
         setMessages((prev) => [...prev, {
-          id: crypto.randomUUID(),
+          id: uuidv4(),
           role: 'planner',
           content: `Requirements gathering complete (${Math.round(msg.convergence_pct * 100)}% converged). Starting the planning pipeline\u2026`,
           timestamp: new Date().toISOString(),
@@ -245,7 +246,7 @@ export function useSocraticWebSocket({
         };
         setContradictions((prev) => [...prev, c]);
         setMessages((prev) => [...prev, {
-          id: crypto.randomUUID(),
+          id: uuidv4(),
           role: 'system',
           content: `\u26a0 Contradiction detected: ${msg.dimension_a} ("${msg.value_a}") conflicts with ${msg.dimension_b} ("${msg.value_b}") \u2014 ${msg.explanation}`,
           timestamp: new Date().toISOString(),
@@ -266,7 +267,7 @@ export function useSocraticWebSocket({
 
       case 'message': {
         const cm: ChatMessage = {
-          id: msg.id ?? crypto.randomUUID(),
+          id: msg.id ?? uuidv4(),
           role: msg.role,
           content: msg.content,
           timestamp: msg.timestamp ?? new Date().toISOString(),
@@ -285,7 +286,7 @@ export function useSocraticWebSocket({
       case 'error': {
         console.error('[Socratic WS] server error:', msg.message);
         setMessages((prev) => [...prev, {
-          id: crypto.randomUUID(),
+          id: uuidv4(),
           role: 'system',
           content: `Error: ${msg.message}`,
           timestamp: new Date().toISOString(),
@@ -475,7 +476,7 @@ export function useSocraticWebSocket({
   /** Send a user response during the interview. */
   const sendResponse = useCallback((content: string): void => {
     setMessages((prev) => [...prev, {
-      id: crypto.randomUUID(),
+      id: uuidv4(),
       role: 'user',
       content,
       timestamp: new Date().toISOString(),
@@ -488,7 +489,7 @@ export function useSocraticWebSocket({
   const skipQuestion = useCallback((): void => {
     setCurrentQuestion(null);
     setMessages((prev) => [...prev, {
-      id: crypto.randomUUID(),
+      id: uuidv4(),
       role: 'system',
       content: '(Question skipped)',
       timestamp: new Date().toISOString(),
@@ -499,7 +500,7 @@ export function useSocraticWebSocket({
   /** Signal "done, start building." */
   const sendDone = useCallback((): void => {
     setMessages((prev) => [...prev, {
-      id: crypto.randomUUID(),
+      id: uuidv4(),
       role: 'system',
       content: '(Done — starting pipeline)',
       timestamp: new Date().toISOString(),
@@ -514,7 +515,7 @@ export function useSocraticWebSocket({
       : { type: 'draft_reaction', target, action };
     sendRaw(msg);
     setMessages((prev) => [...prev, {
-      id: crypto.randomUUID(),
+      id: uuidv4(),
       role: 'user',
       content: `[Draft feedback] ${action} section "${target}"${correction ? `: ${correction}` : ''}`,
       timestamp: new Date().toISOString(),
@@ -525,7 +526,7 @@ export function useSocraticWebSocket({
   const sendDimensionEdit = useCallback((dimension: string, newValue: string): void => {
     sendRaw({ type: 'dimension_edit', dimension, new_value: newValue });
     setMessages((prev) => [...prev, {
-      id: crypto.randomUUID(),
+      id: uuidv4(),
       role: 'user',
       content: `[Edit] ${dimension} → "${newValue}"`,
       timestamp: new Date().toISOString(),
