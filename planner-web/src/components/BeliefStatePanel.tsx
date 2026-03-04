@@ -390,7 +390,7 @@ export default function BeliefStatePanel({
               <DimensionEditor
                 key={dim}
                 dimension={dim}
-                currentValue={slot.value}
+                currentValue={editingCurrentValue}
                 onSave={handleEditSave}
                 onCancel={() => setEditingDimension(null)}
               />
@@ -450,7 +450,7 @@ export default function BeliefStatePanel({
               <DimensionEditor
                 key={dim}
                 dimension={dim}
-                currentValue={slot.value}
+                currentValue={editingCurrentValue}
                 onSave={handleEditSave}
                 onCancel={() => setEditingDimension(null)}
               />
