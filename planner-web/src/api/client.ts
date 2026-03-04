@@ -5,6 +5,8 @@ import type {
   CreateSessionResponse,
   GetSessionResponse,
   SendMessageResponse,
+  StartSocraticResponse,
+  BeliefStateResponse,
   ListModelsResponse,
   Session,
 } from '../types.ts';
@@ -79,6 +81,17 @@ export function createApiClient(getToken: GetTokenFn) {
 
     listModels(): Promise<ListModelsResponse> {
       return apiFetch<ListModelsResponse>(getToken, '/models');
+    },
+
+    startSocratic(id: string, description: string): Promise<StartSocraticResponse> {
+      return apiFetch<StartSocraticResponse>(getToken, `/sessions/${id}/socratic`, {
+        method: 'POST',
+        body: JSON.stringify({ description }),
+      });
+    },
+
+    getBeliefState(id: string): Promise<BeliefStateResponse> {
+      return apiFetch<BeliefStateResponse>(getToken, `/sessions/${id}/belief-state`);
     },
   };
 }

@@ -35,7 +35,7 @@ describe('createApiClient', () => {
   }
 
   it('getSession makes GET request to correct endpoint', async () => {
-    const sessionData = { session: { id: 'abc', messages: [], stages: [], pipeline_running: false } };
+    const sessionData = { session: { id: 'abc', messages: [], stages: [], pipeline_running: false, intake_phase: 'waiting' } };
     fetchSpy.mockResolvedValue(makeFetchResponse(sessionData));
     const api = createApiClient(mockGetToken);
     const result = await api.getSession('abc');
@@ -47,7 +47,7 @@ describe('createApiClient', () => {
   });
 
   it('createSession makes POST request to /api/sessions', async () => {
-    const sessionData = { session: { id: 'new-id', messages: [], stages: [], pipeline_running: false } };
+    const sessionData = { session: { id: 'new-id', messages: [], stages: [], pipeline_running: false, intake_phase: 'waiting' } };
     fetchSpy.mockResolvedValue(makeFetchResponse(sessionData));
     const api = createApiClient(mockGetToken);
     await api.createSession();
@@ -58,7 +58,7 @@ describe('createApiClient', () => {
   });
 
   it('createSession sends {} as body', async () => {
-    const sessionData = { session: { id: 'new-id', messages: [], stages: [], pipeline_running: false } };
+    const sessionData = { session: { id: 'new-id', messages: [], stages: [], pipeline_running: false, intake_phase: 'waiting' } };
     fetchSpy.mockResolvedValue(makeFetchResponse(sessionData));
     const api = createApiClient(mockGetToken);
     await api.createSession();
@@ -80,7 +80,7 @@ describe('createApiClient', () => {
     const msgData = {
       user_message: { id: '1', role: 'user', content: 'Hi', timestamp: '' },
       planner_message: { id: '2', role: 'planner', content: 'Hello', timestamp: '' },
-      session: { id: 'sess-1', messages: [], stages: [], pipeline_running: false },
+      session: { id: 'sess-1', messages: [], stages: [], pipeline_running: false, intake_phase: 'waiting' },
     };
     fetchSpy.mockResolvedValue(makeFetchResponse(msgData));
     const api = createApiClient(mockGetToken);
@@ -144,6 +144,78 @@ describe('createApiClient', () => {
     const api = createApiClient(mockGetToken);
     await api.health();
     expect(fetchSpy).toHaveBeenCalledWith('/api/health', expect.any(Object));
+  });
+
+  it('startSocratic makes POST request to /sessions/:id/socratic', async () => {
+    const responseData = { session_id: 'sess-1', ws_url: 'ws://localhost/ws/sess-1' };
+    fetchSpy.mockResolvedValue(makeFetchResponse(responseData));
+    const api = createApiClient(mockGetToken);
+    await api.startSocratic('sess-1', 'Build a todo app');
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/sessions/sess-1/socratic',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
+  it('startSocratic sends description in request body', async () => {
+    const responseData = { session_id: 'sess-1', ws_url: 'ws://localhost/ws/sess-1' };
+    fetchSpy.mockResolvedValue(makeFetchResponse(responseData));
+    const api = createApiClient(mockGetToken);
+    await api.startSocratic('sess-1', 'Build a todo app');
+    const callArgs = fetchSpy.mock.calls[0][1] as RequestInit;
+    expect(JSON.parse(callArgs.body as string)).toEqual({ description: 'Build a todo app' });
+  });
+
+  it('startSocratic returns session_id and ws_url', async () => {
+    const responseData = { session_id: 'sess-1', ws_url: 'ws://localhost/ws/sess-1' };
+    fetchSpy.mockResolvedValue(makeFetchResponse(responseData));
+    const api = createApiClient(mockGetToken);
+    const result = await api.startSocratic('sess-1', 'Build a todo app');
+    expect(result).toEqual(responseData);
+  });
+
+  it('getBeliefState makes GET request to /sessions/:id/belief-state', async () => {
+    const responseData = {
+      session_id: 'sess-1',
+      intake_phase: 'interviewing',
+      belief_state: null,
+    };
+    fetchSpy.mockResolvedValue(makeFetchResponse(responseData));
+    const api = createApiClient(mockGetToken);
+    await api.getBeliefState('sess-1');
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/sessions/sess-1/belief-state',
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    );
+  });
+
+  it('getBeliefState returns belief state response', async () => {
+    const responseData = {
+      session_id: 'sess-1',
+      intake_phase: 'interviewing',
+      belief_state: {
+        filled: { stack: { value: 'React', confidence: 0.9 } },
+        uncertain: {},
+        missing: ['deployment'],
+        out_of_scope: [],
+        convergence_pct: 45,
+      },
+    };
+    fetchSpy.mockResolvedValue(makeFetchResponse(responseData));
+    const api = createApiClient(mockGetToken);
+    const result = await api.getBeliefState('sess-1');
+    expect(result).toEqual(responseData);
+  });
+
+  it('getBeliefState uses GET method (no body)', async () => {
+    const responseData = { session_id: 'sess-2', intake_phase: 'waiting', belief_state: null };
+    fetchSpy.mockResolvedValue(makeFetchResponse(responseData));
+    const api = createApiClient(mockGetToken);
+    await api.getBeliefState('sess-2');
+    const callArgs = fetchSpy.mock.calls[0][1] as RequestInit;
+    // Default GET requests do not set a method or body
+    expect(callArgs.method).toBeUndefined();
+    expect(callArgs.body).toBeUndefined();
   });
 });
 

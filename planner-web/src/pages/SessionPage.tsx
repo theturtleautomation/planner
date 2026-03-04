@@ -4,11 +4,13 @@ import Layout from '../components/Layout.tsx';
 import ChatPanel from '../components/ChatPanel.tsx';
 import PipelineBar from '../components/PipelineBar.tsx';
 import MessageInput from '../components/MessageInput.tsx';
+import ConvergenceBar from '../components/ConvergenceBar.tsx';
+import BeliefStatePanel from '../components/BeliefStatePanel.tsx';
+import SpeculativeDraftView from '../components/SpeculativeDraftView.tsx';
 import { createApiClient } from '../api/client.ts';
-import { ApiError } from '../api/client.ts';
 import { useGetAccessToken } from '../auth/useAuthenticatedFetch.ts';
-import { useSessionWebSocket } from '../hooks/useSessionWebSocket.ts';
-import type { ChatMessage, Session } from '../types.ts';
+import { useSocraticWebSocket } from '../hooks/useSocraticWebSocket.ts';
+import type { Session } from '../types.ts';
 
 export default function SessionPage() {
   const { id: routeId } = useParams<{ id: string }>();
@@ -23,38 +25,41 @@ export default function SessionPage() {
     routeId && routeId !== 'new' ? routeId : null,
   );
   const [initError, setInitError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [sendError, setSendError] = useState<string | null>(null);
 
-  // WebSocket
-  const { stages, messages: wsMessages, isConnected, pipelineComplete } =
-    useSessionWebSocket({ sessionId, getToken });
+  // Waiting phase state
+  const [description, setDescription] = useState('');
+  const [isStarting, setIsStarting] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
 
-  // Merge REST messages from session load + WebSocket messages (deduped by ID)
-  const [restMessages, setRestMessages] = useState<ChatMessage[]>([]);
-  const allMessages = useMemo(() => {
-    const merged = [...restMessages, ...wsMessages];
-    const seen = new Set<string>();
-    return merged.filter(msg => {
-      if (seen.has(msg.id)) return false;
-      seen.add(msg.id);
-      return true;
-    });
-  }, [restMessages, wsMessages]);
+  // Right panel toggle: show draft vs. belief state
+  const [showDraft, setShowDraft] = useState(false);
+
+  // Socratic WebSocket hook
+  const socratic = useSocraticWebSocket({ sessionId, getToken });
+
+  // Auto-show draft when it arrives
+  useEffect(() => {
+    if (socratic.speculativeDraft) {
+      setShowDraft(true);
+    }
+  }, [socratic.speculativeDraft]);
+
+  // Track whether we've triggered auto-connect for an existing session
+  const autoConnectAttemptedRef = useRef(false);
 
   // ── Init: create or load session ──
   useEffect(() => {
     let cancelled = false;
+    autoConnectAttemptedRef.current = false;
 
     const init = async (): Promise<void> => {
       try {
         if (!routeId || routeId === 'new') {
-          // Create a new session
+          // Create a new session — don't auto-connect WS
           const resp = await api.createSession();
           if (cancelled) return;
           setSession(resp.session);
           setSessionId(resp.session.id);
-          setRestMessages(resp.session.messages ?? []);
           void navigate(`/session/${resp.session.id}`, { replace: true });
         } else {
           // Load existing session
@@ -62,7 +67,6 @@ export default function SessionPage() {
           if (cancelled) return;
           setSession(resp.session);
           setSessionId(resp.session.id);
-          setRestMessages(resp.session.messages ?? []);
         }
       } catch (err) {
         if (cancelled) return;
@@ -77,38 +81,72 @@ export default function SessionPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeId]);
 
-  // Keep session pipeline_running in sync with pipelineComplete.
-  // Use a ref to avoid re-render loop when pipelineComplete stays true.
-  const pipelineCompletedHandled = useRef(false);
+  // Auto-connect WS for existing sessions that are already in progress
   useEffect(() => {
-    if (pipelineComplete && session && !pipelineCompletedHandled.current) {
-      pipelineCompletedHandled.current = true;
-      setSession((prev) => prev ? { ...prev, pipeline_running: false } : prev);
+    if (!session || !sessionId || autoConnectAttemptedRef.current) return;
+    const phase = session.intake_phase;
+    if (phase === 'interviewing' || phase === 'pipeline_running' || phase === 'complete') {
+      autoConnectAttemptedRef.current = true;
+      // Seed the description if available so sendDescription can reconnect
+      const desc = session.project_description ?? '';
+      socratic.sendDescription(desc);
     }
-    if (!pipelineComplete) {
-      pipelineCompletedHandled.current = false;
-    }
-  }, [pipelineComplete, session]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, sessionId]);
 
-  // ── Send message ──
-  const handleSend = useCallback(async (content: string): Promise<void> => {
-    if (!sessionId) return;
-    setIsLoading(true);
-    setSendError(null);
+  // ── Description submission ──
+  const handleStartInterview = useCallback(async (): Promise<void> => {
+    if (!sessionId || !description.trim()) return;
+    setIsStarting(true);
+    setStartError(null);
     try {
-      const resp = await api.sendMessage(sessionId, content);
-      setRestMessages((prev) => [...prev, resp.user_message, resp.planner_message]);
-      setSession(resp.session);
+      // 1. Create the server-side Socratic session
+      await api.startSocratic(sessionId, description.trim());
+      // 2. Connect WS and send initial description
+      socratic.sendDescription(description.trim());
     } catch (err) {
-      console.error('[SessionPage] sendMessage error:', err);
-      setSendError('Failed to send message. Please try again.');
-      setTimeout(() => setSendError(null), 5000);
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[SessionPage] startSocratic error:', msg);
+      setStartError('Failed to start interview. Please try again.');
+      setTimeout(() => setStartError(null), 6000);
     } finally {
-      setIsLoading(false);
+      setIsStarting(false);
     }
-  }, [sessionId, api]);
+  }, [sessionId, description, api, socratic]);
 
-  const pipelineRunning = session?.pipeline_running ?? false;
+  // Textarea auto-grow ref
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (el) {
+      el.style.height = 'auto';
+      el.style.height = Math.min(el.scrollHeight, 300) + 'px';
+    }
+  }, [description]);
+
+  // ── Effective intake phase ──
+  // Use the WS hook's phase once connected; fall back to the session's stored phase
+  const effectivePhase = socratic.intakePhase !== 'waiting'
+    ? socratic.intakePhase
+    : (session?.intake_phase ?? 'waiting');
+
+  // ── Right panel content ──
+  const rightPanelContent = (() => {
+    if (showDraft && socratic.speculativeDraft) {
+      return (
+        <SpeculativeDraftView
+          draft={socratic.speculativeDraft}
+          onBack={() => setShowDraft(false)}
+        />
+      );
+    }
+    return (
+      <BeliefStatePanel
+        beliefState={socratic.beliefState}
+        classification={socratic.classification}
+      />
+    );
+  })();
 
   // ── Error state ──
   if (initError) {
@@ -167,42 +205,307 @@ export default function SessionPage() {
     );
   }
 
+  // ── Reconnect failure banner ──
+  const reconnectBanner = socratic.reconnectFailed && (
+    <div style={{
+      padding: '8px 16px',
+      background: 'rgba(255,68,68,0.10)',
+      borderBottom: '1px solid var(--accent-red)',
+      color: 'var(--accent-red)',
+      fontSize: '12px',
+      textAlign: 'center',
+      flexShrink: 0,
+    }}>
+      Connection lost. Please refresh to reconnect.
+    </div>
+  );
+
+  // ─────────────────────────────────────────────────────────────────
+  // PHASE: waiting — show description form
+  // ─────────────────────────────────────────────────────────────────
+  if (effectivePhase === 'waiting') {
+    return (
+      <Layout sessionId={sessionId} isConnected={false}>
+        <div style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+        }}>
+          {reconnectBanner}
+          <div style={{
+            flex: 1,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '24px',
+            overflow: 'auto',
+          }}>
+            <div style={{
+              width: '100%',
+              maxWidth: '600px',
+              background: 'var(--bg-secondary)',
+              border: '1px solid var(--border)',
+              borderRadius: '4px',
+              padding: '28px 32px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '16px',
+            }}>
+              {/* Header */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <span style={{
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  letterSpacing: '0.1em',
+                  textTransform: 'uppercase',
+                  color: 'var(--accent-cyan)',
+                }}>
+                  Planner v2
+                </span>
+                <h2 style={{
+                  margin: 0,
+                  fontSize: '18px',
+                  fontWeight: 700,
+                  color: 'var(--text-primary)',
+                  fontFamily: 'inherit',
+                }}>
+                  Describe your project
+                </h2>
+                <p style={{
+                  margin: 0,
+                  fontSize: '13px',
+                  color: 'var(--text-secondary)',
+                  lineHeight: '1.5',
+                }}>
+                  Give a brief overview — what you want to build, who it's for, and any important constraints. We'll ask focused questions to fill in the details.
+                </p>
+              </div>
+
+              {/* Textarea */}
+              <div style={{
+                background: 'var(--bg-tertiary)',
+                border: `1px solid ${description.trim() ? 'var(--accent-cyan)' : 'var(--border)'}`,
+                borderRadius: '3px',
+                padding: '10px 14px',
+                transition: 'border-color 0.18s',
+              }}>
+                <textarea
+                  ref={textareaRef}
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey && !isStarting && description.trim()) {
+                      e.preventDefault();
+                      void handleStartInterview();
+                    }
+                  }}
+                  disabled={isStarting}
+                  placeholder="e.g. A multi-tenant SaaS dashboard for tracking equipment rentals, with role-based access for admins and field staff…"
+                  rows={4}
+                  aria-label="Project description"
+                  style={{
+                    width: '100%',
+                    background: 'transparent',
+                    border: 'none',
+                    outline: 'none',
+                    color: isStarting ? 'var(--text-secondary)' : 'var(--text-primary)',
+                    fontSize: '13px',
+                    lineHeight: '1.6',
+                    resize: 'none',
+                    minHeight: '90px',
+                    maxHeight: '300px',
+                    overflowY: 'auto',
+                    fontFamily: 'inherit',
+                    boxSizing: 'border-box',
+                    cursor: isStarting ? 'not-allowed' : 'text',
+                  }}
+                />
+              </div>
+
+              {/* Character count */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}>
+                <span style={{
+                  fontSize: '11px',
+                  color: description.length > 2000 ? 'var(--accent-red)' : 'var(--text-secondary)',
+                }}>
+                  {description.length} chars
+                  {description.length > 2000 && ' — try to keep it concise'}
+                </span>
+                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                  Enter to submit
+                </span>
+              </div>
+
+              {/* Error */}
+              {startError && (
+                <div style={{
+                  padding: '8px 12px',
+                  background: 'rgba(255,68,68,0.10)',
+                  border: '1px solid var(--accent-red)',
+                  borderRadius: '3px',
+                  color: 'var(--accent-red)',
+                  fontSize: '12px',
+                }}>
+                  {startError}
+                </div>
+              )}
+
+              {/* Submit button */}
+              <button
+                onClick={() => void handleStartInterview()}
+                disabled={!description.trim() || isStarting}
+                style={{
+                  alignSelf: 'flex-end',
+                  background: !description.trim() || isStarting
+                    ? 'transparent'
+                    : 'var(--accent-cyan)',
+                  border: `1px solid ${!description.trim() || isStarting
+                    ? 'var(--border)'
+                    : 'var(--accent-cyan)'}`,
+                  color: !description.trim() || isStarting
+                    ? 'var(--text-secondary)'
+                    : 'var(--bg-primary)',
+                  padding: '8px 20px',
+                  fontSize: '13px',
+                  fontWeight: 700,
+                  fontFamily: 'inherit',
+                  borderRadius: '3px',
+                  cursor: !description.trim() || isStarting ? 'not-allowed' : 'pointer',
+                  transition: 'background 0.18s, border-color 0.18s, color 0.18s',
+                  letterSpacing: '0.03em',
+                }}
+              >
+                {isStarting ? 'Starting…' : 'Start Interview →'}
+              </button>
+            </div>
+          </div>
+
+          {/* Disabled MessageInput for consistent chrome */}
+          <MessageInput
+            onSend={() => undefined}
+            disabled={true}
+            intakePhase="waiting"
+          />
+        </div>
+      </Layout>
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // PHASE: interviewing or pipeline_running or complete
+  // All share the split-pane layout
+  // ─────────────────────────────────────────────────────────────────
+  const isInterviewing = effectivePhase === 'interviewing';
+  const isPipelineRunning = effectivePhase === 'pipeline_running';
+  const isComplete = effectivePhase === 'complete';
+
   return (
-    <Layout sessionId={sessionId} isConnected={isConnected}>
+    <Layout sessionId={sessionId} isConnected={socratic.isConnected}>
       <div style={{
         display: 'flex',
         flexDirection: 'column',
         height: '100%',
         overflow: 'hidden',
       }}>
-        {/* Chat area */}
-        <ChatPanel messages={allMessages} />
+        {reconnectBanner}
 
-        {/* Pipeline bar */}
-        <PipelineBar stages={stages} />
-
-        {/* Send error banner */}
-        {sendError && (
-          <div style={{
-            padding: '8px 16px',
-            background: 'rgba(255,68,68,0.10)',
-            borderTop: '1px solid var(--accent-red)',
-            color: 'var(--accent-red)',
-            fontSize: '12px',
-            textAlign: 'center',
-            flexShrink: 0,
-          }}>
-            {sendError}
-          </div>
+        {/* Top bar: ConvergenceBar (interviewing) or PipelineBar (pipeline_running / complete) */}
+        {isInterviewing && (
+          <ConvergenceBar
+            convergencePct={socratic.convergencePct * 100}
+            classification={socratic.classification}
+          />
+        )}
+        {(isPipelineRunning || isComplete) && (
+          <PipelineBar stages={socratic.stages} />
         )}
 
-        {/* Input */}
-        <MessageInput
-          onSend={(content) => { void handleSend(content); }}
-          disabled={!sessionId}
-          pipelineRunning={pipelineRunning}
-          isLoading={isLoading}
-        />
+        {/* Split pane */}
+        <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+          {/* Left: Chat + Input (50%) */}
+          <div style={{
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            borderRight: '1px solid var(--border)',
+            overflow: 'hidden',
+          }}>
+            <ChatPanel messages={socratic.messages} />
+
+            {/* Pipeline complete summary */}
+            {isComplete && socratic.pipelineSummary && (
+              <div style={{
+                padding: '12px 16px',
+                background: 'rgba(0,255,136,0.06)',
+                borderTop: '1px solid var(--accent-green)',
+                color: 'var(--accent-green)',
+                fontSize: '12px',
+                flexShrink: 0,
+                lineHeight: '1.5',
+              }}>
+                <span style={{ fontWeight: 700, letterSpacing: '0.04em' }}>Pipeline complete — </span>
+                {socratic.pipelineSummary}
+              </div>
+            )}
+
+            <MessageInput
+              onSend={(content) => socratic.sendResponse(content)}
+              intakePhase={socratic.intakePhase}
+              currentQuestion={socratic.currentQuestion}
+              onSkip={socratic.skipQuestion}
+              onDone={socratic.sendDone}
+              disabled={!socratic.isConnected}
+              pipelineRunning={isPipelineRunning}
+            />
+          </div>
+
+          {/* Right: BeliefStatePanel or SpeculativeDraftView (50%) */}
+          <div style={{
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+          }}>
+            {/* Draft toggle hint when draft is available but we're viewing belief state */}
+            {socratic.speculativeDraft && !showDraft && (
+              <div style={{
+                padding: '6px 14px',
+                background: 'rgba(0,212,255,0.06)',
+                borderBottom: '1px solid var(--border)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexShrink: 0,
+              }}>
+                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                  Speculative draft available
+                </span>
+                <button
+                  onClick={() => setShowDraft(true)}
+                  style={{
+                    background: 'transparent',
+                    border: '1px solid var(--accent-cyan)',
+                    borderRadius: '3px',
+                    color: 'var(--accent-cyan)',
+                    fontSize: '10px',
+                    fontFamily: 'inherit',
+                    letterSpacing: '0.04em',
+                    padding: '3px 10px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  View Draft
+                </button>
+              </div>
+            )}
+            {rightPanelContent}
+          </div>
+        </div>
       </div>
     </Layout>
   );

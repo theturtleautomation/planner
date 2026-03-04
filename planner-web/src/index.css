@@ -105,3 +105,117 @@ input, textarea {
     gap: 4px;
   }
 }
+
+/* ─── Belief state dimension transitions ─────────────────────────────────── */
+@keyframes slot-fill {
+  0% { background-color: transparent; }
+  50% { background-color: rgba(0, 255, 136, 0.15); }
+  100% { background-color: transparent; }
+}
+
+@keyframes slot-uncertain {
+  0% { background-color: transparent; }
+  50% { background-color: rgba(255, 215, 0, 0.12); }
+  100% { background-color: transparent; }
+}
+
+.slot-just-filled {
+  animation: slot-fill 0.6s ease-out;
+}
+
+.slot-just-uncertain {
+  animation: slot-uncertain 0.6s ease-out;
+}
+
+/* ─── Convergence bar glow at high convergence ───────────────────────────── */
+@keyframes convergence-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(0, 255, 136, 0); }
+  50% { box-shadow: 0 0 8px 2px rgba(0, 255, 136, 0.3); }
+}
+
+.convergence-high {
+  animation: convergence-glow 2s ease-in-out infinite;
+}
+
+/* ─── Split pane layout ──────────────────────────────────────────────────── */
+.split-pane {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.split-pane > .pane-left {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.split-pane > .pane-right {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Responsive: stack panes on mobile */
+@media (max-width: 768px) {
+  .split-pane {
+    flex-direction: column;
+  }
+  .split-pane > .pane-left {
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    flex: none;
+    height: 50%;
+  }
+  .split-pane > .pane-right {
+    flex: none;
+    height: 50%;
+  }
+}
+
+/* ─── Quick options chip hover ───────────────────────────────────────────── */
+.quick-option-chip:hover {
+  border-color: var(--accent-cyan);
+  color: var(--accent-cyan);
+  background: rgba(0, 212, 255, 0.08);
+}
+
+/* ─── Speculative draft section fade-in ──────────────────────────────────── */
+@keyframes fade-in-up {
+  0% { opacity: 0; transform: translateY(8px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+.draft-section-enter {
+  animation: fade-in-up 0.3s ease-out;
+}
+
+/* ─── Intake phase badge animations ──────────────────────────────────────── */
+@keyframes phase-interviewing-pulse {
+  0%, 100% { border-color: var(--accent-cyan); }
+  50% { border-color: rgba(0, 212, 255, 0.3); }
+}
+
+.phase-interviewing {
+  animation: phase-interviewing-pulse 2s ease-in-out infinite;
+}
+
+/* ─── Description textarea focus ─────────────────────────────────────────── */
+.description-textarea:focus {
+  border-color: var(--accent-cyan);
+  outline: none;
+  box-shadow: 0 0 0 1px var(--accent-cyan);
+}
+
+/* ─── Done button pulse when convergence is high ─────────────────────────── */
+@keyframes done-pulse {
+  0%, 100% { border-color: var(--accent-green); }
+  50% { border-color: rgba(0, 255, 136, 0.5); box-shadow: 0 0 6px 1px rgba(0, 255, 136, 0.2); }
+}
+
+.done-btn-ready {
+  animation: done-pulse 2s ease-in-out infinite;
+}

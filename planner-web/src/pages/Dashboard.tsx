@@ -206,15 +206,67 @@ interface SessionCardProps {
   onClick: () => void;
 }
 
+// Intake phase badge config
+const PHASE_CONFIG: Record<
+  'waiting' | 'interviewing' | 'pipeline_running' | 'complete',
+  { label: string; color: string; bg: string; borderColor: string; className?: string }
+> = {
+  waiting: {
+    label: 'waiting',
+    color: 'var(--text-secondary)',
+    bg: 'rgba(136,136,160,0.12)',
+    borderColor: 'rgba(136,136,160,0.3)',
+  },
+  interviewing: {
+    label: 'interviewing',
+    color: 'var(--accent-cyan)',
+    bg: 'rgba(0,212,255,0.08)',
+    borderColor: 'var(--accent-cyan)',
+    className: 'phase-interviewing',
+  },
+  pipeline_running: {
+    label: 'building',
+    color: 'var(--accent-yellow)',
+    bg: 'rgba(255,215,0,0.08)',
+    borderColor: 'rgba(255,215,0,0.5)',
+  },
+  complete: {
+    label: 'complete',
+    color: 'var(--accent-green)',
+    bg: 'rgba(0,255,136,0.08)',
+    borderColor: 'rgba(0,255,136,0.4)',
+  },
+};
+
 function SessionCard({ session, onClick }: SessionCardProps) {
   const messageCount = session.messages?.length ?? 0;
-  const pipelineStatus = session.pipeline_running ? 'running' : 'idle';
-  const pipelineColor = session.pipeline_running ? 'var(--accent-yellow)' : 'var(--text-secondary)';
 
   // Use first message timestamp as created-at approximation, or fall back to id prefix
   const createdAt = session.messages?.[0]?.timestamp
     ? formatDate(session.messages[0].timestamp)
     : `id: ${session.id.slice(0, 8)}`;
+
+  // Intake phase
+  const phase = session.intake_phase ?? 'waiting';
+  const phaseConfig = PHASE_CONFIG[phase] ?? PHASE_CONFIG.waiting;
+
+  // Convergence
+  const convergencePct = session.belief_state?.convergence_pct;
+  const hasConvergence = convergencePct !== undefined && convergencePct !== null;
+
+  // Classification
+  const classification = session.classification;
+  const classificationText = classification
+    ? `${classification.project_type} · ${classification.complexity}`
+    : null;
+
+  // Description snippet
+  const descriptionRaw = session.project_description ?? null;
+  const descriptionSnippet = descriptionRaw
+    ? descriptionRaw.length > 80
+      ? descriptionRaw.slice(0, 80) + '…'
+      : descriptionRaw
+    : null;
 
   return (
     <div
@@ -224,15 +276,14 @@ function SessionCard({ session, onClick }: SessionCardProps) {
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onClick(); }}
       style={{
         display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
+        flexDirection: 'column',
+        gap: '6px',
         padding: '12px 16px',
         background: 'var(--bg-secondary)',
         border: '1px solid var(--border)',
         borderRadius: '3px',
         cursor: 'pointer',
         transition: 'border-color 0.18s, background 0.18s',
-        gap: '12px',
       }}
       onMouseEnter={(e) => {
         (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--accent-cyan)';
@@ -243,35 +294,102 @@ function SessionCard({ session, onClick }: SessionCardProps) {
         (e.currentTarget as HTMLDivElement).style.background = 'var(--bg-secondary)';
       }}
     >
-      {/* Session ID */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
-        <span style={{
-          color: 'var(--accent-cyan)',
-          fontSize: '12px',
-          fontWeight: 600,
-          letterSpacing: '0.04em',
-          fontFamily: 'monospace',
-        }}>
-          {session.id.slice(0, 8)}…
-        </span>
-        <span style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>
-          {createdAt}
-        </span>
+      {/* Row 1: session ID (left) | intake phase badge + convergence (right) */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: '8px',
+        minWidth: 0,
+      }}>
+        {/* Session ID + timestamp */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1px', minWidth: 0 }}>
+          <span style={{
+            color: 'var(--accent-cyan)',
+            fontSize: '12px',
+            fontWeight: 600,
+            letterSpacing: '0.04em',
+            fontFamily: 'monospace',
+          }}>
+            {session.id.slice(0, 8)}…
+          </span>
+          <span style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>
+            {createdAt}
+          </span>
+        </div>
+
+        {/* Phase badge + convergence */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+          {hasConvergence && (
+            <span style={{
+              color: 'var(--text-secondary)',
+              fontSize: '10px',
+              fontFamily: 'monospace',
+            }}>
+              {Math.round(convergencePct!)}%
+            </span>
+          )}
+          <span
+            className={phaseConfig.className}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              padding: '2px 8px',
+              borderRadius: '10px',
+              border: `1px solid ${phaseConfig.borderColor}`,
+              background: phaseConfig.bg,
+              color: phaseConfig.color,
+              fontSize: '10px',
+              fontWeight: 600,
+              letterSpacing: '0.05em',
+              textTransform: 'uppercase',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {phaseConfig.label}
+          </span>
+        </div>
       </div>
 
-      {/* Stats */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexShrink: 0 }}>
-        <span style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>
-          {messageCount} {messageCount === 1 ? 'msg' : 'msgs'}
-        </span>
+      {/* Row 2: description snippet (left) | classification + message count (right) */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: '8px',
+        minWidth: 0,
+      }}>
+        {/* Description snippet */}
         <span style={{
-          color: pipelineColor,
+          color: 'var(--text-secondary)',
           fontSize: '11px',
-          fontWeight: 500,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          flex: 1,
+          minWidth: 0,
         }}>
-          {pipelineStatus}
+          {descriptionSnippet ?? <span style={{ fontStyle: 'italic', opacity: 0.6 }}>no description</span>}
         </span>
-        <span style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>→</span>
+
+        {/* Classification + message count */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
+          {classificationText && (
+            <span style={{
+              color: 'var(--text-secondary)',
+              fontSize: '10px',
+              fontFamily: 'monospace',
+              opacity: 0.75,
+              whiteSpace: 'nowrap',
+            }}>
+              {classificationText}
+            </span>
+          )}
+          <span style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>
+            {messageCount} {messageCount === 1 ? 'msg' : 'msgs'}
+          </span>
+          <span style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>→</span>
+        </div>
       </div>
     </div>
   );
