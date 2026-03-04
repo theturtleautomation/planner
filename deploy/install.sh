@@ -119,6 +119,12 @@ do_install() {
     info "Setting up directories..."
     mkdir -p "${INSTALL_DIR}" "${WEB_DIR}" "${DATA_DIR}" "${CONF_DIR}"
 
+    # Stop service before replacing binary (avoids "Text file busy")
+    if systemctl is-active --quiet "${SERVICE_NAME}" 2>/dev/null; then
+        info "Stopping service for update..."
+        systemctl stop "${SERVICE_NAME}"
+    fi
+
     # Copy binary
     local binary="${REPO_ROOT}/target/release/planner-server"
     [[ -f "$binary" ]] || die "Release binary not found at ${binary} — run build first"
