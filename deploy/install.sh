@@ -164,23 +164,95 @@ CODEX_CONFIG
 }
 
 # ---------------------------------------------------------------------------
-# LLM CLI check — verify at least one provider is reachable
+# LLM CLI discovery — find binaries and symlink into /opt/planner/bin/
 # ---------------------------------------------------------------------------
-check_llm_clis() {
-    info "Checking LLM CLI availability for service user..."
+# The Rust server's CliEnvironment uses env_clear() and sets a controlled
+# PATH that includes /opt/planner/bin/. The CLIs are typically installed
+# in user-local paths (nvm, ~/.local/bin) that won't be on the service
+# user's PATH. We resolve each binary now and create stable symlinks.
+#
+# Search order per CLI:
+#   1. Invoking user's PATH (via sudo -u $SUDO_USER which <cli>)
+#   2. Common global paths (/usr/local/bin, /usr/bin)
+#   3. Common user-local paths (~user/.local/bin, nvm dirs, ~/.npm-global)
+#
+link_llm_clis() {
+    info "Discovering and linking LLM CLI binaries..."
+
+    local planner_bin="${INSTALL_DIR}/bin"
+    mkdir -p "${planner_bin}"
 
     local found=0
+    local invoking_user="${SUDO_USER:-}"
 
     for cli in claude gemini codex; do
-        if command -v "${cli}" &>/dev/null; then
-            local location
-            location=$(command -v "${cli}")
-            info "  \u2713 ${cli} found at ${location}"
+        local resolved=""
+
+        # Strategy 1: Ask the invoking user's shell (preserves their PATH/nvm)
+        if [[ -n "$invoking_user" ]] && [[ "$invoking_user" != "root" ]]; then
+            resolved=$(sudo -u "$invoking_user" bash -lc "command -v ${cli} 2>/dev/null" 2>/dev/null || true)
+        fi
+
+        # Strategy 2: Check root's own PATH
+        if [[ -z "$resolved" ]]; then
+            resolved=$(command -v "${cli}" 2>/dev/null || true)
+        fi
+
+        # Strategy 3: Brute-force search common locations
+        if [[ -z "$resolved" ]]; then
+            local search_paths=(
+                /usr/local/bin/${cli}
+                /usr/bin/${cli}
+            )
+            # Add invoking user's common locations
+            if [[ -n "$invoking_user" ]] && [[ "$invoking_user" != "root" ]]; then
+                local user_home
+                user_home=$(eval echo ~"${invoking_user}")
+                search_paths+=(
+                    "${user_home}/.local/bin/${cli}"
+                    "${user_home}/.npm-global/bin/${cli}"
+                )
+                # nvm: check all installed node versions
+                if [[ -d "${user_home}/.nvm/versions/node" ]]; then
+                    for node_dir in "${user_home}/.nvm/versions/node"/*/bin; do
+                        [[ -x "${node_dir}/${cli}" ]] && search_paths+=("${node_dir}/${cli}")
+                    done
+                fi
+            fi
+
+            for candidate in "${search_paths[@]}"; do
+                if [[ -x "$candidate" ]]; then
+                    resolved="$candidate"
+                    break
+                fi
+            done
+        fi
+
+        # Create or update symlink
+        if [[ -n "$resolved" ]]; then
+            # Resolve symlinks to get the real binary path
+            resolved=$(readlink -f "$resolved")
+            ln -sf "$resolved" "${planner_bin}/${cli}"
+            info "  \u2713 ${cli} → ${resolved}"
             found=$((found + 1))
         else
-            warn "  \u2717 ${cli} not found on PATH"
+            warn "  \u2717 ${cli} not found anywhere"
         fi
     done
+
+    # Also link node (required by npm-installed CLIs as the runtime)
+    local node_resolved=""
+    if [[ -n "$invoking_user" ]] && [[ "$invoking_user" != "root" ]]; then
+        node_resolved=$(sudo -u "$invoking_user" bash -lc "command -v node 2>/dev/null" 2>/dev/null || true)
+    fi
+    if [[ -z "$node_resolved" ]]; then
+        node_resolved=$(command -v node 2>/dev/null || true)
+    fi
+    if [[ -n "$node_resolved" ]]; then
+        node_resolved=$(readlink -f "$node_resolved")
+        ln -sf "$node_resolved" "${planner_bin}/node"
+        info "  \u2713 node → ${node_resolved}"
+    fi
 
     local cli_home="${INSTALL_DIR}/cli-home"
 
@@ -196,7 +268,7 @@ check_llm_clis() {
         warn "                     npm install -g @openai/codex-cli"
         warn ""
     else
-        info "  ${found} provider(s) available."
+        info "  ${found} provider(s) linked into ${planner_bin}"
     fi
 
     echo ""
@@ -204,12 +276,11 @@ check_llm_clis() {
     info "Each CLI runs in a clean environment with no MCP servers,"
     info "no plugins, and no project-level config inheritance."
     echo ""
-    info "To authenticate, run as the planner user with HOME set"
-    info "to the provider's isolated directory:"
+    info "To authenticate, run as the planner user with isolated HOME:"
     echo ""
-    warn "  sudo -u planner HOME=${cli_home}/claude claude login"
-    warn "  sudo -u planner HOME=${cli_home}/gemini gemini auth login"
-    warn "  sudo -u planner HOME=${cli_home}/codex CODEX_HOME=${cli_home}/codex/.codex codex login"
+    warn "  sudo -u planner HOME=${cli_home}/claude ${planner_bin}/claude login"
+    warn "  sudo -u planner HOME=${cli_home}/gemini ${planner_bin}/gemini auth login"
+    warn "  sudo -u planner HOME=${cli_home}/codex CODEX_HOME=${cli_home}/codex/.codex ${planner_bin}/codex login"
     echo ""
     info "Credentials are stored in ${cli_home}/<provider>/"
     info "and are isolated from any personal user accounts."
@@ -320,8 +391,8 @@ do_install() {
         error "Service failed to start. Check: journalctl -u ${SERVICE_NAME} -n 50"
     fi
 
-    # Post-install: check if LLM CLIs are available to the service user
-    check_llm_clis
+    # Discover LLM CLIs and symlink into /opt/planner/bin/
+    link_llm_clis
 }
 
 # ---------------------------------------------------------------------------
