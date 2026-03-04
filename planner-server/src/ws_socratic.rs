@@ -34,6 +34,10 @@ use planner_schemas::{
     SpeculativeDraft, SocraticEvent,
 };
 
+// Import SocraticIO trait so we can call .send_message() on Arc<WsSocraticIO>
+// inside the spawned engine task's error handler.
+use planner_core::pipeline::steps::socratic::SocraticIO;
+
 use crate::AppState;
 use crate::ws::{ClientMessage, ServerMessage};
 
