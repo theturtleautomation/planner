@@ -164,111 +164,107 @@ CODEX_CONFIG
 }
 
 # ---------------------------------------------------------------------------
-# LLM CLI discovery — find binaries and symlink into /opt/planner/bin/
+# LLM CLI installation — npm install into /opt/planner/{bin,lib}
 # ---------------------------------------------------------------------------
 # The Rust server's CliEnvironment uses env_clear() and sets a controlled
-# PATH that includes /opt/planner/bin/. The CLIs are typically installed
-# in user-local paths (nvm, ~/.local/bin) that won't be on the service
-# user's PATH. We resolve each binary now and create stable symlinks.
+# PATH that includes /opt/planner/bin/. We install the CLI packages directly
+# into /opt/planner/ using npm's --prefix flag, which places:
+#   - binaries  → /opt/planner/bin/{claude,gemini,codex}
+#   - packages  → /opt/planner/lib/node_modules/...
 #
-# Search order per CLI:
-#   1. Invoking user's PATH (via sudo -u $SUDO_USER which <cli>)
-#   2. Common global paths (/usr/local/bin, /usr/bin)
-#   3. Common user-local paths (~user/.local/bin, nvm dirs, ~/.npm-global)
+# This avoids symlink permission issues (service user can't traverse
+# /home/<user>/) and makes the installation self-contained.
 #
-link_llm_clis() {
-    info "Discovering and linking LLM CLI binaries..."
+# We also copy the node binary into /opt/planner/bin/ so the npm wrapper
+# scripts can find their runtime (env_clear() strips the original PATH).
+#
+install_llm_clis() {
+    info "Installing LLM CLI packages into ${INSTALL_DIR}..."
 
     local planner_bin="${INSTALL_DIR}/bin"
     mkdir -p "${planner_bin}"
 
-    local found=0
+    # Find a working npm + node. Prefer the invoking user's (nvm-managed)
+    # versions since the CLIs may require a specific Node.js version.
+    local npm_cmd="npm"
+    local node_cmd="node"
     local invoking_user="${SUDO_USER:-}"
 
+    if [[ -n "$invoking_user" ]] && [[ "$invoking_user" != "root" ]]; then
+        local user_npm
+        user_npm=$(sudo -u "$invoking_user" bash -lc "command -v npm 2>/dev/null" 2>/dev/null || true)
+        if [[ -n "$user_npm" ]]; then
+            npm_cmd="$user_npm"
+        fi
+        local user_node
+        user_node=$(sudo -u "$invoking_user" bash -lc "command -v node 2>/dev/null" 2>/dev/null || true)
+        if [[ -n "$user_node" ]]; then
+            node_cmd="$user_node"
+        fi
+    fi
+
+    info "  Using npm: ${npm_cmd}"
+    info "  Using node: ${node_cmd}"
+
+    # Map of CLI name → npm package
+    declare -A cli_packages=(
+        [claude]="@anthropic-ai/claude-code"
+        [gemini]="@google/gemini-cli"
+        [codex]="@openai/codex"
+    )
+
+    local found=0
+
     for cli in claude gemini codex; do
-        local resolved=""
-
-        # Strategy 1: Ask the invoking user's shell (preserves their PATH/nvm)
-        if [[ -n "$invoking_user" ]] && [[ "$invoking_user" != "root" ]]; then
-            resolved=$(sudo -u "$invoking_user" bash -lc "command -v ${cli} 2>/dev/null" 2>/dev/null || true)
-        fi
-
-        # Strategy 2: Check root's own PATH
-        if [[ -z "$resolved" ]]; then
-            resolved=$(command -v "${cli}" 2>/dev/null || true)
-        fi
-
-        # Strategy 3: Brute-force search common locations
-        if [[ -z "$resolved" ]]; then
-            local search_paths=(
-                /usr/local/bin/${cli}
-                /usr/bin/${cli}
-            )
-            # Add invoking user's common locations
-            if [[ -n "$invoking_user" ]] && [[ "$invoking_user" != "root" ]]; then
-                local user_home
-                user_home=$(eval echo ~"${invoking_user}")
-                search_paths+=(
-                    "${user_home}/.local/bin/${cli}"
-                    "${user_home}/.npm-global/bin/${cli}"
-                )
-                # nvm: check all installed node versions
-                if [[ -d "${user_home}/.nvm/versions/node" ]]; then
-                    for node_dir in "${user_home}/.nvm/versions/node"/*/bin; do
-                        [[ -x "${node_dir}/${cli}" ]] && search_paths+=("${node_dir}/${cli}")
-                    done
-                fi
+        local pkg="${cli_packages[$cli]}"
+        info "  Installing ${pkg}..."
+        local npm_output
+        if npm_output=$("${npm_cmd}" install -g --prefix "${INSTALL_DIR}" "${pkg}" 2>&1); then
+            if [[ -x "${planner_bin}/${cli}" ]]; then
+                info "  \u2713 ${cli} installed → ${planner_bin}/${cli}"
+                found=$((found + 1))
+            else
+                warn "  \u2717 ${cli} package installed but binary not found at ${planner_bin}/${cli}"
+                echo "$npm_output" | tail -5
             fi
-
-            for candidate in "${search_paths[@]}"; do
-                if [[ -x "$candidate" ]]; then
-                    resolved="$candidate"
-                    break
-                fi
-            done
-        fi
-
-        # Create or update symlink
-        if [[ -n "$resolved" ]]; then
-            # Resolve symlinks to get the real binary path
-            resolved=$(readlink -f "$resolved")
-            ln -sf "$resolved" "${planner_bin}/${cli}"
-            info "  \u2713 ${cli} → ${resolved}"
-            found=$((found + 1))
         else
-            warn "  \u2717 ${cli} not found anywhere"
+            warn "  \u2717 ${cli} installation failed"
+            echo "$npm_output" | tail -5
         fi
     done
 
-    # Also link node (required by npm-installed CLIs as the runtime)
-    local node_resolved=""
-    if [[ -n "$invoking_user" ]] && [[ "$invoking_user" != "root" ]]; then
-        node_resolved=$(sudo -u "$invoking_user" bash -lc "command -v node 2>/dev/null" 2>/dev/null || true)
+    # Copy the node binary into planner's bin dir.
+    # The CLI wrapper scripts use #!/usr/bin/env node — with our controlled
+    # PATH, 'env' will find node at /opt/planner/bin/node.
+    local node_real
+    node_real=$(readlink -f "$node_cmd" 2>/dev/null || true)
+    if [[ -n "$node_real" ]] && [[ -x "$node_real" ]]; then
+        cp -f "$node_real" "${planner_bin}/node"
+        chmod 755 "${planner_bin}/node"
+        info "  \u2713 node copied → ${planner_bin}/node"
+    else
+        warn "  \u2717 Could not locate node binary to copy"
     fi
-    if [[ -z "$node_resolved" ]]; then
-        node_resolved=$(command -v node 2>/dev/null || true)
-    fi
-    if [[ -n "$node_resolved" ]]; then
-        node_resolved=$(readlink -f "$node_resolved")
-        ln -sf "$node_resolved" "${planner_bin}/node"
-        info "  \u2713 node → ${node_resolved}"
-    fi
+
+    # Fix ownership — everything under INSTALL_DIR should be accessible
+    chown -R "${SERVICE_USER}:${SERVICE_USER}" "${INSTALL_DIR}/bin" "${INSTALL_DIR}/lib" 2>/dev/null || true
 
     local cli_home="${INSTALL_DIR}/cli-home"
 
     if [[ $found -eq 0 ]]; then
         echo ""
         warn "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
-        warn "  NO LLM CLI TOOLS FOUND"
+        warn "  NO LLM CLI TOOLS INSTALLED"
         warn "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
         warn ""
-        warn "  The planner server requires at least one LLM CLI tool."
-        warn "  Install globally:  npm install -g @anthropic-ai/claude-cli"
-        warn "                     npm install -g @google/gemini-cli"
-        warn "                     npm install -g @openai/codex-cli"
+        warn "  npm install failed for all packages. Check npm/node versions."
+        warn "  You can install manually:"
+        warn "    npm install -g --prefix ${INSTALL_DIR} @anthropic-ai/claude-code"
+        warn "    npm install -g --prefix ${INSTALL_DIR} @google/gemini-cli"
+        warn "    npm install -g --prefix ${INSTALL_DIR} @openai/codex"
         warn ""
     else
-        info "  ${found} provider(s) linked into ${planner_bin}"
+        info "  ${found} provider(s) installed into ${planner_bin}"
     fi
 
     echo ""
@@ -391,8 +387,8 @@ do_install() {
         error "Service failed to start. Check: journalctl -u ${SERVICE_NAME} -n 50"
     fi
 
-    # Discover LLM CLIs and symlink into /opt/planner/bin/
-    link_llm_clis
+    # Install LLM CLIs into /opt/planner/bin/ and copy node runtime
+    install_llm_clis
 }
 
 # ---------------------------------------------------------------------------
