@@ -163,7 +163,7 @@ fn draw_provider_status(frame: &mut Frame, area: Rect, app: &App) {
     if all_missing {
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
-            "  ⚠  No LLM providers found. Install claude, gemini, or codex and ensure they are on PATH.",
+            "  ⚠  No LLM providers found. Install claude, gemini, or codex into /opt/planner/bin/ via the install script.",
             Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
         )));
     }

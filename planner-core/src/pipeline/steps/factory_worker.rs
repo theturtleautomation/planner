@@ -995,21 +995,21 @@ fn dirs_cache_path() -> Option<PathBuf> {
 /// `WorktreeManager::prepare` already runs `git init` in the worktree,
 /// making it a trusted git directory.
 pub struct CodexFactoryWorker {
-    /// Whether the codex CLI is available.
-    cli_available: bool,
+    /// Resolved absolute path to the codex binary, or None if not found.
+    binary_path: Option<String>,
 }
 
 impl CodexFactoryWorker {
     /// Create a new CodexFactoryWorker.
     ///
-    /// Checks if the `codex` CLI is available on PATH.
+    /// Resolves the `codex` CLI binary path from /opt/planner/bin/ or system PATH.
     pub fn new() -> StepResult<Self> {
-        let available = crate::llm::providers::cli_available("codex");
-        if !available {
+        let binary_path = crate::llm::providers::resolve_cli_binary("codex");
+        if binary_path.is_none() {
             tracing::warn!("codex CLI not found — CodexFactoryWorker will fail on invocation");
         }
         Ok(CodexFactoryWorker {
-            cli_available: available,
+            binary_path,
         })
     }
 
@@ -1126,8 +1126,10 @@ impl CodexFactoryWorker {
 
         let codex_env = crate::llm::providers::CliEnvironment::for_codex();
 
+        let codex_bin = self.binary_path.as_deref().unwrap_or("codex");
+
         let (stdout, stderr) = match crate::llm::providers::run_cli(
-            "codex",
+            codex_bin,
             &args,
             Some(prompt),
             config.timeout_secs,
@@ -1278,11 +1280,12 @@ impl FactoryWorker for CodexFactoryWorker {
         let invocation_id = Uuid::new_v4();
         let overall_start = std::time::Instant::now();
 
-        if !self.cli_available {
+        if self.binary_path.is_none() {
             return Err(StepError::FactoryError(
                 "codex CLI not found. Install it or check your PATH.".into(),
             ));
         }
+        let codex_binary = self.binary_path.as_ref().unwrap();
 
         // --- Three-mode sandbox resolution ---
         //

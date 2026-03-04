@@ -204,6 +204,10 @@ install_llm_clis() {
     # ---------------------------------------------------------------
     # Claude — native binary (no Node.js required)
     # ---------------------------------------------------------------
+    if [[ -x "${planner_bin}/claude" ]]; then
+        info "  ✓ claude already installed at ${planner_bin}/claude — skipping"
+        found=$((found + 1))
+    else
     info "  Installing claude (native binary)..."
     local claude_src=""
 
@@ -272,6 +276,8 @@ install_llm_clis() {
         rm -rf "$tmp_claude_home"
     fi
 
+    fi  # end claude skip-if-exists
+
     # ---------------------------------------------------------------
     # Gemini + Codex — npm install
     # ---------------------------------------------------------------
@@ -310,6 +316,13 @@ install_llm_clis() {
 
     for cli in gemini codex; do
         local pkg="${npm_packages[$cli]}"
+
+        # Skip if already installed and executable
+        if [[ -x "${planner_bin}/${cli}" ]]; then
+            info "  ✓ ${cli} already installed at ${planner_bin}/${cli} — skipping"
+            found=$((found + 1))
+            continue
+        fi
 
         # Remove stale symlinks/files from prior installs to prevent EEXIST
         rm -f "${planner_bin}/${cli}"

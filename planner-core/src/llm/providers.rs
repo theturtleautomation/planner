@@ -63,6 +63,10 @@ const CLI_HOME_BASE: &str = "/opt/planner/cli-home";
 /// An empty directory used as CWD to prevent project-level config discovery.
 const CLI_SANDBOX_DIR: &str = "/opt/planner/cli-sandbox";
 
+/// Directory where CLI binaries are installed by deploy/install.sh.
+/// The installer places claude, gemini, codex, and node here.
+const CLI_BIN_DIR: &str = "/opt/planner/bin";
+
 /// Execution environment for an isolated CLI invocation.
 #[derive(Debug, Clone)]
 pub struct CliEnvironment {
@@ -204,15 +208,39 @@ impl CliEnvironment {
 // Shared helpers
 // ===========================================================================
 
-/// Check if a CLI binary exists on the system PATH.
-pub fn cli_available(binary: &str) -> bool {
-    std::process::Command::new("which")
-        .arg(binary)
-        .stdout(Stdio::null())
+/// Resolve the absolute path to a CLI binary.
+///
+/// First checks the planner install directory (`/opt/planner/bin/<name>`).
+/// If not found there, falls back to the system PATH via `which`.
+/// Returns `None` if the binary cannot be found anywhere.
+pub fn resolve_cli_binary(name: &str) -> Option<String> {
+    // Primary: check the planner install directory
+    let installed_path = format!("{}/{}", CLI_BIN_DIR, name);
+    if std::path::Path::new(&installed_path).is_file() {
+        return Some(installed_path);
+    }
+
+    // Fallback: check system PATH (for dev mode / non-deployed setups)
+    let output = std::process::Command::new("which")
+        .arg(name)
+        .stdout(Stdio::piped())
         .stderr(Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+        .output()
+        .ok()?;
+
+    if output.status.success() {
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !path.is_empty() {
+            return Some(path);
+        }
+    }
+
+    None
+}
+
+/// Check if a CLI binary is available (either installed or on PATH).
+pub fn cli_available(name: &str) -> bool {
+    resolve_cli_binary(name).is_some()
 }
 
 /// Build a single prompt string from a CompletionRequest.
@@ -434,18 +462,21 @@ pub async fn run_cli_instrumented(
 pub struct AnthropicCliClient {
     timeout_secs: u64,
     env: CliEnvironment,
+    /// Absolute path to the `claude` binary.
+    binary_path: String,
 }
 
 impl AnthropicCliClient {
     pub fn new() -> Result<Self, LlmError> {
-        if !cli_available("claude") {
-            return Err(LlmError::CliBinaryNotFound {
+        let binary_path = resolve_cli_binary("claude").ok_or_else(|| {
+            LlmError::CliBinaryNotFound {
                 binary: "claude".into(),
-            });
-        }
+            }
+        })?;
         Ok(AnthropicCliClient {
             timeout_secs: DEFAULT_TIMEOUT_SECS,
             env: CliEnvironment::for_claude(),
+            binary_path,
         })
     }
 
@@ -505,7 +536,7 @@ impl LlmClient for AnthropicCliClient {
             &model_arg,
         ];
 
-        let (stdout, _stderr) = run_cli("claude", &args, Some(&prompt), self.timeout_secs, Some(&self.env)).await?;
+        let (stdout, _stderr) = run_cli(&self.binary_path, &args, Some(&prompt), self.timeout_secs, Some(&self.env)).await?;
 
         // Parse stream-json: one JSON object per line.
         // We want the final result that contains the complete text.
@@ -578,18 +609,21 @@ impl LlmClient for AnthropicCliClient {
 pub struct GoogleCliClient {
     timeout_secs: u64,
     env: CliEnvironment,
+    /// Absolute path to the `gemini` binary.
+    binary_path: String,
 }
 
 impl GoogleCliClient {
     pub fn new() -> Result<Self, LlmError> {
-        if !cli_available("gemini") {
-            return Err(LlmError::CliBinaryNotFound {
+        let binary_path = resolve_cli_binary("gemini").ok_or_else(|| {
+            LlmError::CliBinaryNotFound {
                 binary: "gemini".into(),
-            });
-        }
+            }
+        })?;
         Ok(GoogleCliClient {
             timeout_secs: DEFAULT_TIMEOUT_SECS,
             env: CliEnvironment::for_gemini(),
+            binary_path,
         })
     }
 
@@ -641,7 +675,7 @@ impl LlmClient for GoogleCliClient {
             &model_arg,
         ];
 
-        let (stdout, _stderr) = run_cli("gemini", &args, None, self.timeout_secs, Some(&self.env)).await?;
+        let (stdout, _stderr) = run_cli(&self.binary_path, &args, None, self.timeout_secs, Some(&self.env)).await?;
 
         // Gemini --output-format json emits a single JSON object.
         // Try structured parse first, fall back to raw stdout.
@@ -686,18 +720,21 @@ impl LlmClient for GoogleCliClient {
 pub struct OpenAiCliClient {
     timeout_secs: u64,
     env: CliEnvironment,
+    /// Absolute path to the `codex` binary.
+    binary_path: String,
 }
 
 impl OpenAiCliClient {
     pub fn new() -> Result<Self, LlmError> {
-        if !cli_available("codex") {
-            return Err(LlmError::CliBinaryNotFound {
+        let binary_path = resolve_cli_binary("codex").ok_or_else(|| {
+            LlmError::CliBinaryNotFound {
                 binary: "codex".into(),
-            });
-        }
+            }
+        })?;
         Ok(OpenAiCliClient {
             timeout_secs: DEFAULT_TIMEOUT_SECS,
             env: CliEnvironment::for_codex(),
+            binary_path,
         })
     }
 
@@ -772,7 +809,7 @@ impl LlmClient for OpenAiCliClient {
             "-",  // read prompt from stdin
         ];
 
-        let (stdout, _stderr) = run_cli("codex", &args, Some(&prompt), self.timeout_secs, Some(&self.env)).await?;
+        let (stdout, _stderr) = run_cli(&self.binary_path, &args, Some(&prompt), self.timeout_secs, Some(&self.env)).await?;
 
         // Strategy 1: Read from --output-last-message file (most reliable)
         let content = if output_file.exists() {

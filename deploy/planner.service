@@ -19,8 +19,10 @@ EnvironmentFile=-/etc/planner/planner.env
 # LLM CLI isolation is handled by the Rust code (CliEnvironment in
 # planner-core/src/llm/providers.rs). Each CLI invocation gets a fully
 # clean environment via env_clear() + provider-specific env vars.
-# The service itself only needs a basic PATH to find the CLI binaries.
+# The service PATH includes /opt/planner/bin/ so resolve_cli_binary()
+# can find binaries both via direct path check and via the fallback `which`.
 Environment=HOME=/opt/planner
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/opt/planner/bin
 
 # Logging — goes to journalctl -u planner
 StandardOutput=journal

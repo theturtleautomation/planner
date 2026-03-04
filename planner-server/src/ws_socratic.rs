@@ -404,7 +404,7 @@ pub async fn handle_socratic_ws(
             "Session {}: No LLM CLI providers found. Install and authenticate at least one of: claude, gemini, codex",
             session_id
         );
-        let err_msg = "No LLM providers available. The planner service user needs at least one of the following CLI tools installed and authenticated: `claude` (Anthropic), `gemini` (Google), or `codex` (OpenAI). Check that these are on the PATH for the user running the planner service.";
+        let err_msg = "No LLM providers available. The planner service user needs at least one of the following CLI tools installed in /opt/planner/bin/ and authenticated: `claude` (Anthropic), `gemini` (Google), or `codex` (OpenAI). Run 'sudo ./deploy/install.sh --update' to install them.";
 
         // Send error directly on the socket (the I/O loop hasn't started yet).
         let error_msg = ServerMessage::Error {
