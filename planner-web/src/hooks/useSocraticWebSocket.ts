@@ -18,9 +18,12 @@ import type {
   Contradiction,
   DraftAssumption,
   DraftSection,
+  EventLevel,
+  EventSourceType,
   IntakePhase,
   PipelineStage,
   PipelineStageName,
+  PlannerEvent,
   QuickOption,
   ServerWsMessage,
   SpeculativeDraft,
@@ -79,6 +82,10 @@ export interface UseSocraticWebSocketResult {
   pipelineComplete: boolean;
   pipelineSummary: string | null;
 
+  // Observability
+  events: PlannerEvent[];
+  currentStep: string | null;
+
   // Actions
   sendDescription: (description: string) => void;
   sendResponse: (content: string) => void;
@@ -125,6 +132,10 @@ export function useSocraticWebSocket({
   const [stages, setStages] = useState<PipelineStage[]>(buildInitialStages);
   const [pipelineComplete, setPipelineComplete] = useState(false);
   const [pipelineSummary, setPipelineSummary] = useState<string | null>(null);
+
+  // Observability
+  const [events, setEvents] = useState<PlannerEvent[]>([]);
+  const [currentStep, setCurrentStep] = useState<string | null>(null);
 
   // Refs
   const wsRef = useRef<WebSocket | null>(null);
@@ -286,6 +297,24 @@ export function useSocraticWebSocket({
         });
         break;
       }
+
+      case 'planner_event': {
+        const event: PlannerEvent = {
+          id: msg.id,
+          timestamp: msg.timestamp,
+          level: msg.level as EventLevel,
+          source: msg.source as EventSourceType,
+          step: msg.step,
+          message: msg.message,
+          duration_ms: msg.duration_ms,
+          metadata: msg.metadata ?? {},
+        };
+        setEvents((prev) => [...prev, event]);
+        if (msg.step) {
+          setCurrentStep(msg.step);
+        }
+        break;
+      }
     }
   }, []);
 
@@ -383,6 +412,8 @@ export function useSocraticWebSocket({
     setStages(buildInitialStages());
     setPipelineComplete(false);
     setPipelineSummary(null);
+    setEvents([]);
+    setCurrentStep(null);
 
     // Don't auto-connect — the session page will trigger connect after
     // POST /socratic succeeds and we get the ws_url back.
@@ -515,6 +546,8 @@ export function useSocraticWebSocket({
     stages,
     pipelineComplete,
     pipelineSummary,
+    events,
+    currentStep,
     sendDescription,
     sendResponse,
     skipQuestion,

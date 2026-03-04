@@ -29,6 +29,8 @@ use tokio::sync::mpsc;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
+use planner_core::observability::EventSink;
+
 use planner_schemas::{
     DomainClassification, QuestionOutput, RequirementsBeliefState, ConvergenceResult,
     SpeculativeDraft, SocraticEvent,
@@ -54,14 +56,20 @@ pub struct WsSocraticIO {
     event_tx: mpsc::UnboundedSender<ServerMessage>,
     /// Receive user input forwarded from the WebSocket client.
     input_rx: Arc<Mutex<mpsc::UnboundedReceiver<String>>>,
+    /// Optional observability event sink.
+    event_sink: Option<Arc<dyn EventSink>>,
+    /// Session ID for tagging emitted events.
+    session_id: Uuid,
 }
 
 impl WsSocraticIO {
     pub fn new(
         event_tx: mpsc::UnboundedSender<ServerMessage>,
         input_rx: Arc<Mutex<mpsc::UnboundedReceiver<String>>>,
+        event_sink: Option<Arc<dyn EventSink>>,
+        session_id: Uuid,
     ) -> Self {
-        Self { event_tx, input_rx }
+        Self { event_tx, input_rx, event_sink, session_id }
     }
 
     /// Helper: send a `ServerMessage`, logging errors silently.
@@ -94,6 +102,24 @@ impl planner_core::pipeline::steps::socratic::SocraticIO for WsSocraticIO {
             quick_options,
             allow_skip: output.allow_skip,
         });
+
+        if let Some(ref sink) = self.event_sink {
+            sink.emit(
+                planner_core::observability::PlannerEvent::info(
+                    planner_core::observability::EventSource::SocraticEngine,
+                    "socratic.question.generated",
+                    format!(
+                        "Question generated for dimension '{}'",
+                        output.target_dimension.label(),
+                    ),
+                )
+                .with_session(self.session_id)
+                .with_metadata(serde_json::json!({
+                    "target_dimension": output.target_dimension.label(),
+                    "allow_skip": output.allow_skip,
+                })),
+            );
+        }
     }
 
     async fn send_belief_state(&self, state: &RequirementsBeliefState) {
@@ -117,13 +143,38 @@ impl planner_core::pipeline::steps::socratic::SocraticIO for WsSocraticIO {
             })
             .collect();
 
+        let convergence_pct = state.convergence_pct();
+
         self.send(ServerMessage::BeliefStateUpdate {
             filled: serde_json::Value::Object(filled),
             uncertain: serde_json::Value::Object(uncertain),
             missing: state.missing.iter().map(|d| d.label()).collect(),
             out_of_scope: state.out_of_scope.iter().map(|d| d.label()).collect(),
-            convergence_pct: state.convergence_pct(),
+            convergence_pct,
         });
+
+        if let Some(ref sink) = self.event_sink {
+            sink.emit(
+                planner_core::observability::PlannerEvent::info(
+                    planner_core::observability::EventSource::SocraticEngine,
+                    "socratic.verify.complete",
+                    format!(
+                        "Belief state updated: {:.0}% convergence ({} filled, {} uncertain, {} missing)",
+                        convergence_pct * 100.0,
+                        state.filled.len(),
+                        state.uncertain.len(),
+                        state.missing.len(),
+                    ),
+                )
+                .with_session(self.session_id)
+                .with_metadata(serde_json::json!({
+                    "convergence_pct": convergence_pct,
+                    "filled_count": state.filled.len(),
+                    "uncertain_count": state.uncertain.len(),
+                    "missing_count": state.missing.len(),
+                })),
+            );
+        }
     }
 
     async fn send_draft(&self, draft: &SpeculativeDraft) {
@@ -157,9 +208,28 @@ impl planner_core::pipeline::steps::socratic::SocraticIO for WsSocraticIO {
             .unwrap_or_else(|_| "converged".into());
 
         self.send(ServerMessage::Converged {
-            reason,
+            reason: reason.clone(),
             convergence_pct: result.convergence_pct,
         });
+
+        if let Some(ref sink) = self.event_sink {
+            sink.emit(
+                planner_core::observability::PlannerEvent::info(
+                    planner_core::observability::EventSource::SocraticEngine,
+                    "socratic.converged",
+                    format!(
+                        "Socratic interview converged at {:.0}% (reason: {})",
+                        result.convergence_pct * 100.0,
+                        reason,
+                    ),
+                )
+                .with_session(self.session_id)
+                .with_metadata(serde_json::json!({
+                    "convergence_pct": result.convergence_pct,
+                    "reason": reason,
+                })),
+            );
+        }
     }
 
     async fn send_classification(&self, classification: &DomainClassification) {
@@ -172,6 +242,35 @@ impl planner_core::pipeline::steps::socratic::SocraticIO for WsSocraticIO {
             },
             question_budget: classification.question_budget,
         });
+
+        if let Some(ref sink) = self.event_sink {
+            sink.emit(
+                planner_core::observability::PlannerEvent::info(
+                    planner_core::observability::EventSource::SocraticEngine,
+                    "socratic.classify.complete",
+                    format!(
+                        "Domain classified: {} ({}), budget: {} questions",
+                        classification.project_type,
+                        match classification.complexity {
+                            planner_schemas::ComplexityTier::Light => "light",
+                            planner_schemas::ComplexityTier::Standard => "standard",
+                            planner_schemas::ComplexityTier::Deep => "deep",
+                        },
+                        classification.question_budget,
+                    ),
+                )
+                .with_session(self.session_id)
+                .with_metadata(serde_json::json!({
+                    "project_type": classification.project_type.to_string(),
+                    "complexity": match classification.complexity {
+                        planner_schemas::ComplexityTier::Light => "light",
+                        planner_schemas::ComplexityTier::Standard => "standard",
+                        planner_schemas::ComplexityTier::Deep => "deep",
+                    },
+                    "question_budget": classification.question_budget,
+                })),
+            );
+        }
     }
 
     async fn receive_input(&self) -> Option<String> {
@@ -288,7 +387,12 @@ pub async fn handle_socratic_ws(
     // original immediately so the channel closes when the engine task
     // finishes (its Arc<WsSocraticIO> drops), allowing event_rx.recv()
     // to return None and unblock the I/O loop.
-    let io = Arc::new(WsSocraticIO::new(event_tx.clone(), input_rx));
+
+    // Create the observability event sink and its receiver.
+    let (event_sink, mut planner_event_rx) = planner_core::observability::ChannelEventSink::new();
+    let event_sink: Arc<dyn planner_core::observability::EventSink> = Arc::new(event_sink);
+
+    let io = Arc::new(WsSocraticIO::new(event_tx.clone(), input_rx, Some(event_sink.clone()), session_id));
     drop(event_tx); // keep channel alive only through io's clone
 
     let router = planner_core::llm::providers::LlmRouter::from_env();
@@ -320,9 +424,23 @@ pub async fn handle_socratic_ws(
         session_id, available
     );
 
+    // Emit the session-start lifecycle event.
+    event_sink.emit(
+        planner_core::observability::PlannerEvent::info(
+            planner_core::observability::EventSource::System,
+            "system.session.start",
+            format!("Session {} starting Socratic interview", session_id),
+        )
+        .with_session(session_id)
+        .with_metadata(serde_json::json!({
+            "providers": available.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
+        }))
+    );
+
     let state_for_engine = state.clone();
 
     // Spawn the interview engine as a background task.
+    let sink = event_sink.clone();
     let engine_handle = tokio::spawn(async move {
         let result = planner_core::pipeline::steps::socratic::run_interview::<WsSocraticIO, planner_core::cxdb::CxdbEngine>(
             &router,
@@ -341,6 +459,14 @@ pub async fn handle_socratic_ws(
                     s.intake_phase = "pipeline_running".into();
                 });
 
+                sink.emit(
+                    planner_core::observability::PlannerEvent::info(
+                        planner_core::observability::EventSource::SocraticEngine,
+                        "socratic.converged",
+                        "Socratic interview converged, starting pipeline",
+                    ).with_session(session_id)
+                );
+
                 // Build the description from the completed belief state.
                 let intake = planner_core::pipeline::steps::socratic::session_to_intake(
                     &session,
@@ -351,6 +477,14 @@ pub async fn handle_socratic_ws(
             Err(e) => {
                 let err_msg = format!("Socratic interview failed: {}", e);
                 tracing::warn!("Session {}: {}", session_id, err_msg);
+
+                sink.emit(
+                    planner_core::observability::PlannerEvent::error(
+                        planner_core::observability::EventSource::SocraticEngine,
+                        "socratic.error",
+                        format!("Socratic interview failed: {}", e),
+                    ).with_session(session_id)
+                );
 
                 // Send the error to the client so the UI doesn't hang.
                 io.send(ServerMessage::Error {
@@ -391,6 +525,32 @@ pub async fn handle_socratic_ws(
                     None => {
                         // event_tx dropped — engine finished.
                         break;
+                    }
+                }
+            }
+
+            // Forward observability events to the client and record in session.
+            planner_evt = planner_event_rx.recv() => {
+                if let Some(evt) = planner_evt {
+                    // Record in session.
+                    state.sessions.update(session_id, |s| {
+                        s.record_event(evt.clone());
+                    });
+                    // Forward to WebSocket client.
+                    let ws_msg = ServerMessage::PlannerEvent {
+                        id: evt.id.to_string(),
+                        timestamp: evt.timestamp.to_rfc3339(),
+                        level: format!("{}", evt.level),
+                        source: format!("{}", evt.source),
+                        step: evt.step.clone(),
+                        message: evt.message.clone(),
+                        duration_ms: evt.duration_ms,
+                        metadata: evt.metadata.clone(),
+                    };
+                    if let Ok(json) = serde_json::to_string(&ws_msg) {
+                        if socket.send(Message::Text(json.into())).await.is_err() {
+                            return;
+                        }
                     }
                 }
             }
@@ -567,6 +727,32 @@ pub async fn handle_socratic_ws(
                     }
                 }
 
+                // Forward observability events to the client and record in session.
+                planner_evt = planner_event_rx.recv() => {
+                    if let Some(evt) = planner_evt {
+                        // Record in session.
+                        state.sessions.update(session_id, |s| {
+                            s.record_event(evt.clone());
+                        });
+                        // Forward to WebSocket client.
+                        let ws_msg = ServerMessage::PlannerEvent {
+                            id: evt.id.to_string(),
+                            timestamp: evt.timestamp.to_rfc3339(),
+                            level: format!("{}", evt.level),
+                            source: format!("{}", evt.source),
+                            step: evt.step.clone(),
+                            message: evt.message.clone(),
+                            duration_ms: evt.duration_ms,
+                            metadata: evt.metadata.clone(),
+                        };
+                        if let Ok(json) = serde_json::to_string(&ws_msg) {
+                            if socket.send(Message::Text(json.into())).await.is_err() {
+                                return;
+                            }
+                        }
+                    }
+                }
+
                 msg = socket.recv() => {
                     match msg {
                         Some(Ok(Message::Close(_))) | None => return,
@@ -590,7 +776,7 @@ mod tests {
     async fn ws_socratic_io_send_classification() {
         let (event_tx, mut event_rx) = mpsc::unbounded_channel::<ServerMessage>();
         let (_input_tx, input_rx) = mpsc::unbounded_channel::<String>();
-        let io = WsSocraticIO::new(event_tx, Arc::new(Mutex::new(input_rx)));
+        let io = WsSocraticIO::new(event_tx, Arc::new(Mutex::new(input_rx)), None, Uuid::new_v4());
 
         use planner_schemas::{DomainClassification, ProjectType, ComplexityTier, Dimension};
 
@@ -620,7 +806,7 @@ mod tests {
     async fn ws_socratic_io_send_message() {
         let (event_tx, mut event_rx) = mpsc::unbounded_channel::<ServerMessage>();
         let (_input_tx, input_rx) = mpsc::unbounded_channel::<String>();
-        let io = WsSocraticIO::new(event_tx, Arc::new(Mutex::new(input_rx)));
+        let io = WsSocraticIO::new(event_tx, Arc::new(Mutex::new(input_rx)), None, Uuid::new_v4());
 
         use planner_core::pipeline::steps::socratic::SocraticIO;
         io.send_message("Hello from the engine").await;
@@ -639,7 +825,7 @@ mod tests {
     async fn ws_socratic_io_receive_input() {
         let (event_tx, _event_rx) = mpsc::unbounded_channel::<ServerMessage>();
         let (input_tx, input_rx) = mpsc::unbounded_channel::<String>();
-        let io = WsSocraticIO::new(event_tx, Arc::new(Mutex::new(input_rx)));
+        let io = WsSocraticIO::new(event_tx, Arc::new(Mutex::new(input_rx)), None, Uuid::new_v4());
 
         input_tx.send("hello world".into()).unwrap();
 
@@ -652,7 +838,7 @@ mod tests {
     async fn ws_socratic_io_receive_input_returns_none_when_closed() {
         let (event_tx, _event_rx) = mpsc::unbounded_channel::<ServerMessage>();
         let (input_tx, input_rx) = mpsc::unbounded_channel::<String>();
-        let io = WsSocraticIO::new(event_tx, Arc::new(Mutex::new(input_rx)));
+        let io = WsSocraticIO::new(event_tx, Arc::new(Mutex::new(input_rx)), None, Uuid::new_v4());
 
         // Drop the sender — channel is closed.
         drop(input_tx);
@@ -666,7 +852,7 @@ mod tests {
     async fn ws_socratic_io_send_event_contradiction() {
         let (event_tx, mut event_rx) = mpsc::unbounded_channel::<ServerMessage>();
         let (_input_tx, input_rx) = mpsc::unbounded_channel::<String>();
-        let io = WsSocraticIO::new(event_tx, Arc::new(Mutex::new(input_rx)));
+        let io = WsSocraticIO::new(event_tx, Arc::new(Mutex::new(input_rx)), None, Uuid::new_v4());
 
         use planner_schemas::{Contradiction, Dimension};
         let contradiction = Contradiction {

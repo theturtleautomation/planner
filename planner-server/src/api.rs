@@ -128,6 +128,23 @@ pub struct BeliefStateResponse {
     pub belief_state: serde_json::Value,
 }
 
+/// Response for `GET /sessions/{id}/events`.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SessionEventsResponse {
+    pub session_id: String,
+    pub events: Vec<planner_core::observability::PlannerEvent>,
+    pub count: usize,
+}
+
+/// Query parameters for `GET /sessions/{id}/events`.
+#[derive(Debug, Deserialize)]
+pub struct EventsQuery {
+    pub level: Option<String>,
+    pub source: Option<String>,
+    pub limit: Option<usize>,
+    pub offset: Option<usize>,
+}
+
 
 pub fn routes(state: Arc<AppState>) -> Router {
     let public = Router::new()
@@ -147,6 +164,7 @@ pub fn routes(state: Arc<AppState>) -> Router {
         // Returns empty arrays until pipeline runner is wired to durable CxdbEngine store.
         .route("/sessions/{id}/turns", get(list_turns))
         .route("/sessions/{id}/runs", get(list_runs))
+        .route("/sessions/{id}/events", get(get_session_events))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             auth_middleware,
@@ -520,6 +538,75 @@ async fn list_runs(
 
     // Returns empty until durable CXDB store is wired into pipeline runner.
     Ok(Json(RunListResponse { runs: vec![] }))
+}
+
+// ---------------------------------------------------------------------------
+// Events endpoint
+// ---------------------------------------------------------------------------
+
+/// GET /sessions/{id}/events
+///
+/// Return the structured observability event log for a session,
+/// with optional filtering by level, source, and pagination.
+async fn get_session_events(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    claims: Claims,
+    axum::extract::Query(query): axum::extract::Query<EventsQuery>,
+) -> Result<Json<SessionEventsResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let session_id = Uuid::parse_str(&id).map_err(|_| {
+        (StatusCode::BAD_REQUEST, Json(ErrorResponse { error: "Invalid session ID".into() }))
+    })?;
+
+    let session = state.sessions.get(session_id).ok_or_else(|| {
+        (StatusCode::NOT_FOUND, Json(ErrorResponse { error: "Session not found".into() }))
+    })?;
+
+    if session.user_id != claims.sub && session.user_id != "dev|local" {
+        return Err((StatusCode::FORBIDDEN, Json(ErrorResponse { error: "Not your session".into() })));
+    }
+
+    let mut events: Vec<planner_core::observability::PlannerEvent> = session.events.clone();
+
+    // Filter by level
+    if let Some(ref level) = query.level {
+        let target_level = match level.to_lowercase().as_str() {
+            "info" => Some(planner_core::observability::EventLevel::Info),
+            "warn" => Some(planner_core::observability::EventLevel::Warn),
+            "error" => Some(planner_core::observability::EventLevel::Error),
+            _ => None,
+        };
+        if let Some(target) = target_level {
+            events.retain(|e| e.level == target);
+        }
+    }
+
+    // Filter by source
+    if let Some(ref source) = query.source {
+        let target_source = match source.to_lowercase().as_str() {
+            "socratic" | "socratic_engine" => Some(planner_core::observability::EventSource::SocraticEngine),
+            "llm" | "llm_router" => Some(planner_core::observability::EventSource::LlmRouter),
+            "pipeline" => Some(planner_core::observability::EventSource::Pipeline),
+            "factory" => Some(planner_core::observability::EventSource::Factory),
+            "system" => Some(planner_core::observability::EventSource::System),
+            _ => None,
+        };
+        if let Some(target) = target_source {
+            events.retain(|e| e.source == target);
+        }
+    }
+
+    // Pagination
+    let offset = query.offset.unwrap_or(0);
+    let limit = query.limit.unwrap_or(500);
+    let total = events.len();
+    let events: Vec<_> = events.into_iter().skip(offset).take(limit).collect();
+
+    Ok(Json(SessionEventsResponse {
+        session_id: id,
+        events,
+        count: total,
+    }))
 }
 
 // ---------------------------------------------------------------------------
@@ -1025,6 +1112,122 @@ mod tests {
 
         let req = Request::builder()
             .uri(format!("/sessions/{}/runs", id))
+            .body(Body::empty())
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    // -----------------------------------------------------------------------
+    // Events endpoint tests
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_get_events_empty() {
+        let state = test_state();
+        let session = state.sessions.create("dev|local");
+        let id = session.id;
+        let app = routes(state);
+
+        let req = Request::builder()
+            .uri(format!("/sessions/{}/events", id))
+            .body(Body::empty())
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let result: SessionEventsResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(result.events.len(), 0);
+        assert_eq!(result.count, 0);
+        assert_eq!(result.session_id, id.to_string());
+    }
+
+    #[tokio::test]
+    async fn test_get_events_with_data() {
+        use planner_core::observability::{PlannerEvent, EventSource};
+        let state = test_state();
+        let session_obj = state.sessions.create("dev|local");
+        let id = session_obj.id;
+
+        // Add events to the session.
+        state.sessions.update(id, |s| {
+            s.record_event(PlannerEvent::info(EventSource::Pipeline, "step.start", "Pipeline started"));
+            s.record_event(PlannerEvent::error(EventSource::LlmRouter, "llm.call.error", "LLM failed"));
+        });
+
+        let app = routes(state);
+
+        let req = Request::builder()
+            .uri(format!("/sessions/{}/events", id))
+            .body(Body::empty())
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let result: SessionEventsResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(result.count, 2);
+        assert_eq!(result.events.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_get_events_filter_level() {
+        use planner_core::observability::{PlannerEvent, EventSource};
+        let state = test_state();
+        let session_obj = state.sessions.create("dev|local");
+        let id = session_obj.id;
+
+        state.sessions.update(id, |s| {
+            s.record_event(PlannerEvent::info(EventSource::System, "a", "info event"));
+            s.record_event(PlannerEvent::error(EventSource::System, "b", "error event"));
+            s.record_event(PlannerEvent::warn(EventSource::System, "c", "warn event"));
+        });
+
+        let app = routes(state);
+
+        let req = Request::builder()
+            .uri(format!("/sessions/{}/events?level=error", id))
+            .body(Body::empty())
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let result: SessionEventsResponse = serde_json::from_slice(&body).unwrap();
+        // count = total matching filter, events = paginated slice
+        assert_eq!(result.count, 1);
+        assert_eq!(result.events.len(), 1);
+        assert_eq!(result.events[0].message, "error event");
+    }
+
+    #[tokio::test]
+    async fn test_get_events_not_found() {
+        let state = test_state();
+        let app = routes(state);
+
+        let req = Request::builder()
+            .uri(format!("/sessions/{}/events", Uuid::new_v4()))
+            .body(Body::empty())
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_get_events_wrong_user() {
+        let state = test_state();
+        let session_obj = state.sessions.create("other_user|evts");
+        let id = session_obj.id;
+        let app = routes(state);
+
+        let req = Request::builder()
+            .uri(format!("/sessions/{}/events", id))
             .body(Body::empty())
             .unwrap();
 

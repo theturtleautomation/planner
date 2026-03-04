@@ -51,6 +51,19 @@ pub enum ServerMessage {
         message: String,
     },
 
+    /// A structured observability event.
+    #[serde(rename = "planner_event")]
+    PlannerEvent {
+        id: String,
+        timestamp: String,
+        level: String,
+        source: String,
+        step: Option<String>,
+        message: String,
+        duration_ms: Option<u64>,
+        metadata: serde_json::Value,
+    },
+
     // -----------------------------------------------------------------------
     // Socratic interview messages
     // -----------------------------------------------------------------------
@@ -370,6 +383,34 @@ mod tests {
         };
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains("pipeline_complete"));
+    }
+
+    #[test]
+    fn server_message_planner_event_serde() {
+        let msg = ServerMessage::PlannerEvent {
+            id: "test-id".into(),
+            timestamp: "2026-03-04T00:00:00Z".into(),
+            level: "info".into(),
+            source: "llm_router".into(),
+            step: Some("llm.call.complete".into()),
+            message: "LLM call completed".into(),
+            duration_ms: Some(1234),
+            metadata: serde_json::json!({"model": "claude-opus-4-6"}),
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"type\":\"planner_event\""));
+        assert!(json.contains("llm.call.complete"));
+        assert!(json.contains("1234"));
+
+        let deserialized: ServerMessage = serde_json::from_str(&json).unwrap();
+        match deserialized {
+            ServerMessage::PlannerEvent { level, source, duration_ms, .. } => {
+                assert_eq!(level, "info");
+                assert_eq!(source, "llm_router");
+                assert_eq!(duration_ms, Some(1234));
+            }
+            _ => panic!("wrong variant"),
+        }
     }
 
     #[test]

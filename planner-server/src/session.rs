@@ -58,6 +58,16 @@ pub struct Session {
     /// Phase of the intake process.
     /// One of: "waiting", "interviewing", "pipeline_running", "complete".
     pub intake_phase: String,
+
+    /// Structured event log for this session.
+    #[serde(default)]
+    pub events: Vec<planner_core::observability::PlannerEvent>,
+
+    /// What step is currently executing (for quick status display).
+    pub current_step: Option<String>,
+
+    /// Last error message (for quick display without scanning events).
+    pub error_message: Option<String>,
 }
 
 impl Session {
@@ -94,7 +104,42 @@ impl Session {
             belief_state: None,
             classification: None,
             intake_phase: "waiting".into(),
+            events: Vec::new(),
+            current_step: None,
+            error_message: None,
         }
+    }
+
+    /// Count LLM calls from the event log.
+    pub fn llm_call_count(&self) -> usize {
+        self.events.iter().filter(|e| {
+            e.source == planner_core::observability::EventSource::LlmRouter
+                && e.step.as_deref().map(|s| s.starts_with("llm.call.complete")).unwrap_or(false)
+        }).count()
+    }
+
+    /// Total LLM latency from the event log.
+    pub fn llm_total_latency_ms(&self) -> u64 {
+        self.events.iter().filter(|e| {
+            e.source == planner_core::observability::EventSource::LlmRouter
+                && e.step.as_deref().map(|s| s.starts_with("llm.call.complete")).unwrap_or(false)
+        }).filter_map(|e| e.duration_ms).sum()
+    }
+
+    /// Count errors from the event log.
+    pub fn error_count(&self) -> usize {
+        self.events.iter().filter(|e| e.level == planner_core::observability::EventLevel::Error).count()
+    }
+
+    /// Push an event into this session's log and update current_step/error_message.
+    pub fn record_event(&mut self, event: planner_core::observability::PlannerEvent) {
+        if event.level == planner_core::observability::EventLevel::Error {
+            self.error_message = Some(event.message.clone());
+        }
+        if let Some(ref step) = event.step {
+            self.current_step = Some(step.clone());
+        }
+        self.events.push(event);
     }
 
     /// Add a message to the session.
@@ -218,6 +263,9 @@ mod tests {
         assert_eq!(session.stages.len(), 12);
         assert!(!session.pipeline_running);
         assert_eq!(session.user_id, "dev|local");
+        assert_eq!(session.events.len(), 0);
+        assert!(session.current_step.is_none());
+        assert!(session.error_message.is_none());
     }
 
     #[test]
@@ -292,12 +340,60 @@ mod tests {
 
     #[test]
     fn session_serialization() {
-        let session = Session::new("auth0|abc123");
+        use planner_core::observability::{PlannerEvent, EventSource};
+        let mut session = Session::new("auth0|abc123");
+        // Add an event so we can verify round-trip.
+        let event = PlannerEvent::info(EventSource::Pipeline, "test.step", "Test event");
+        session.record_event(event);
         let json = serde_json::to_string(&session).unwrap();
         let deserialized: Session = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.id, session.id);
         assert_eq!(deserialized.stages.len(), 12);
         assert_eq!(deserialized.user_id, "auth0|abc123");
+        assert_eq!(deserialized.events.len(), 1);
+        assert_eq!(deserialized.events[0].message, "Test event");
+        assert_eq!(deserialized.current_step.as_deref(), Some("test.step"));
+    }
+
+    #[test]
+    fn session_helper_methods() {
+        use planner_core::observability::{PlannerEvent, EventSource};
+        let mut session = Session::new("auth0|test");
+
+        // Initially zero.
+        assert_eq!(session.llm_call_count(), 0);
+        assert_eq!(session.llm_total_latency_ms(), 0);
+        assert_eq!(session.error_count(), 0);
+
+        // Record an LLM complete event.
+        let llm_event = PlannerEvent::info(
+            EventSource::LlmRouter,
+            "llm.call.complete",
+            "LLM done",
+        ).with_duration(123);
+        session.record_event(llm_event);
+        assert_eq!(session.llm_call_count(), 1);
+        assert_eq!(session.llm_total_latency_ms(), 123);
+        assert_eq!(session.current_step.as_deref(), Some("llm.call.complete"));
+
+        // Record an error event.
+        let err_event = PlannerEvent::error(
+            EventSource::Pipeline,
+            "pipeline.error",
+            "Something failed",
+        );
+        session.record_event(err_event);
+        assert_eq!(session.error_count(), 1);
+        assert_eq!(session.error_message.as_deref(), Some("Something failed"));
+
+        // LLM start event should NOT count toward llm_call_count.
+        let start_event = PlannerEvent::info(
+            EventSource::LlmRouter,
+            "llm.call.start",
+            "Starting",
+        );
+        session.record_event(start_event);
+        assert_eq!(session.llm_call_count(), 1); // still 1
     }
 
     #[test]

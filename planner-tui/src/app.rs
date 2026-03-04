@@ -104,6 +104,19 @@ pub enum FocusMode {
     ChatScroll,
     /// User is browsing the belief-state panel (right pane).
     BeliefStatePane,
+    /// User is browsing the logs panel.
+    LogsPane,
+}
+
+// ---------------------------------------------------------------------------
+// Right Pane Mode
+// ---------------------------------------------------------------------------
+
+/// Which view is shown in the right pane.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RightPaneMode {
+    BeliefState,
+    Logs,
 }
 
 // ---------------------------------------------------------------------------
@@ -185,6 +198,31 @@ pub struct App {
     /// Receive `SocraticEvent`s from the Socratic engine.
     /// Set by `pipeline::spawn_socratic_interview()`.
     pub socratic_events_rx: Option<tokio::sync::mpsc::UnboundedReceiver<SocraticEvent>>,
+
+    // -----------------------------------------------------------------------
+    // Observability
+    // -----------------------------------------------------------------------
+
+    /// Structured observability events for this session.
+    pub planner_events: Vec<planner_core::observability::PlannerEvent>,
+
+    /// Current step being executed (for status bar display).
+    pub current_step: Option<String>,
+
+    /// When the current step started (for elapsed time display).
+    pub current_step_started: Option<std::time::Instant>,
+
+    /// LLM call count (derived from events for quick access).
+    pub llm_call_count: u32,
+
+    /// Which right-pane view is active.
+    pub right_pane_mode: RightPaneMode,
+
+    /// Scroll offset for the logs panel.
+    pub logs_scroll_offset: u16,
+
+    /// Event log filter: None = all, Some = filtered level.
+    pub logs_filter: Option<planner_core::observability::EventLevel>,
 }
 
 impl App {
@@ -229,6 +267,13 @@ impl App {
             pipeline_rx: None,
             socratic_tx: None,
             socratic_events_rx: None,
+            planner_events: Vec::new(),
+            current_step: None,
+            current_step_started: None,
+            llm_call_count: 0,
+            right_pane_mode: RightPaneMode::BeliefState,
+            logs_scroll_offset: 0,
+            logs_filter: None,
         };
 
         app.add_system_message(
@@ -275,6 +320,32 @@ impl App {
     }
 
     // -----------------------------------------------------------------------
+    // Observability helpers
+    // -----------------------------------------------------------------------
+
+    /// Record a PlannerEvent and update derived state.
+    pub fn record_planner_event(&mut self, event: planner_core::observability::PlannerEvent) {
+        if let Some(ref step) = event.step {
+            self.current_step = Some(step.clone());
+            self.current_step_started = Some(std::time::Instant::now());
+        }
+        if event.source == planner_core::observability::EventSource::LlmRouter
+            && event.step.as_deref().map(|s| s.starts_with("llm.call.complete")).unwrap_or(false)
+        {
+            self.llm_call_count += 1;
+        }
+        self.planner_events.push(event);
+    }
+
+    /// Get filtered events for the logs panel.
+    pub fn filtered_events(&self) -> Vec<&planner_core::observability::PlannerEvent> {
+        match self.logs_filter {
+            None => self.planner_events.iter().collect(),
+            Some(level) => self.planner_events.iter().filter(|e| e.level == level).collect(),
+        }
+    }
+
+    // -----------------------------------------------------------------------
     // Key handling
     // -----------------------------------------------------------------------
 
@@ -296,21 +367,28 @@ impl App {
             FocusMode::Input => self.handle_input_key(key),
             FocusMode::ChatScroll => self.handle_scroll_key(key),
             FocusMode::BeliefStatePane => self.handle_belief_pane_key(key),
+            FocusMode::LogsPane => self.handle_logs_pane_key(key),
         }
     }
 
     fn cycle_focus(&mut self) {
         self.focus = match self.focus {
-            FocusMode::Input => {
-                // Only offer BeliefStatePane during Interviewing
+            FocusMode::Input => FocusMode::ChatScroll,
+            FocusMode::ChatScroll => {
                 if self.intake_phase == IntakePhase::Interviewing {
                     FocusMode::BeliefStatePane
                 } else {
-                    FocusMode::ChatScroll
+                    FocusMode::Input
                 }
             }
-            FocusMode::BeliefStatePane => FocusMode::ChatScroll,
-            FocusMode::ChatScroll => FocusMode::Input,
+            FocusMode::BeliefStatePane => {
+                if self.intake_phase == IntakePhase::Interviewing {
+                    FocusMode::LogsPane
+                } else {
+                    FocusMode::Input
+                }
+            }
+            FocusMode::LogsPane => FocusMode::Input,
         };
     }
 
@@ -354,6 +432,13 @@ impl App {
                 }
                 // No matching quick-option — treat as normal character input
                 self.insert_char(c);
+            }
+            // 'L' toggles the right pane between BeliefState and Logs (Interviewing only)
+            KeyCode::Char('l') if self.intake_phase == IntakePhase::Interviewing => {
+                self.right_pane_mode = match self.right_pane_mode {
+                    RightPaneMode::BeliefState => RightPaneMode::Logs,
+                    RightPaneMode::Logs => RightPaneMode::BeliefState,
+                };
             }
             KeyCode::Char(c) => {
                 self.insert_char(c);
@@ -433,6 +518,46 @@ impl App {
             _ => {
                 self.focus = FocusMode::Input;
             }
+        }
+    }
+
+    fn handle_logs_pane_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc => {
+                self.focus = FocusMode::Input;
+            }
+            // j / Down — scroll logs down (toward newer events)
+            KeyCode::Char('j') | KeyCode::Down => {
+                if self.logs_scroll_offset > 0 {
+                    self.logs_scroll_offset -= 1;
+                } else {
+                    self.focus = FocusMode::Input;
+                }
+            }
+            // k / Up — scroll logs up (toward older events)
+            KeyCode::Char('k') | KeyCode::Up => {
+                self.logs_scroll_offset += 1;
+            }
+            KeyCode::PageUp => {
+                self.logs_scroll_offset += 10;
+            }
+            KeyCode::PageDown => {
+                self.logs_scroll_offset = self.logs_scroll_offset.saturating_sub(10);
+            }
+            // f — cycle filter: None → Error → Warn → None
+            KeyCode::Char('f') => {
+                self.logs_filter = match self.logs_filter {
+                    None => Some(planner_core::observability::EventLevel::Error),
+                    Some(planner_core::observability::EventLevel::Error) => {
+                        Some(planner_core::observability::EventLevel::Warn)
+                    }
+                    Some(planner_core::observability::EventLevel::Warn) => None,
+                    Some(planner_core::observability::EventLevel::Info) => None,
+                };
+                // Reset scroll when filter changes
+                self.logs_scroll_offset = 0;
+            }
+            _ => {}
         }
     }
 
@@ -874,14 +999,13 @@ mod tests {
         let mut app = App::new();
         assert_eq!(app.focus, FocusMode::Input);
 
-        // In WaitingForInput, Tab should skip BeliefStatePane (no interview yet)
+        // In WaitingForInput, Tab should skip BeliefStatePane/LogsPane (no interview yet)
         app.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
-        // Goes to ChatScroll (BeliefStatePane skipped when not Interviewing)
-        // Hmm — cycle_focus from Input goes to BeliefStatePane if Interviewing,
-        // else ChatScroll. We're in WaitingForInput → ChatScroll.
+        // Input → ChatScroll
         assert_eq!(app.focus, FocusMode::ChatScroll);
 
         app.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+        // ChatScroll → Input (not Interviewing, so skip belief/logs)
         assert_eq!(app.focus, FocusMode::Input);
     }
 
@@ -891,12 +1015,19 @@ mod tests {
         app.intake_phase = IntakePhase::Interviewing;
         assert_eq!(app.focus, FocusMode::Input);
 
-        app.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
-        assert_eq!(app.focus, FocusMode::BeliefStatePane);
-
+        // Input → ChatScroll
         app.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
         assert_eq!(app.focus, FocusMode::ChatScroll);
 
+        // ChatScroll → BeliefStatePane
+        app.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+        assert_eq!(app.focus, FocusMode::BeliefStatePane);
+
+        // BeliefStatePane → LogsPane
+        app.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+        assert_eq!(app.focus, FocusMode::LogsPane);
+
+        // LogsPane → Input
         app.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
         assert_eq!(app.focus, FocusMode::Input);
     }
@@ -1221,7 +1352,7 @@ mod tests {
 
     #[test]
     fn quick_select_fills_input_and_submits() {
-        use planner_schemas::{QuestionOutput, Dimension, QuickOption};
+        use planner_schemas::{Dimension, QuestionOutput, QuickOption};
 
         let mut app = App::new();
         app.intake_phase = IntakePhase::Interviewing;
@@ -1248,5 +1379,133 @@ mod tests {
         assert_eq!(sent, "Save time");
         // Input buffer should be cleared after submit
         assert!(app.input.is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // Observability tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn record_planner_event_updates_current_step() {
+        use planner_core::observability::{EventSource, PlannerEvent};
+
+        let mut app = App::new();
+        assert!(app.current_step.is_none());
+
+        let event = PlannerEvent::info(EventSource::Pipeline, "compile", "Compiling NLSpec");
+        app.record_planner_event(event);
+
+        assert_eq!(app.current_step.as_deref(), Some("compile"));
+        assert!(app.current_step_started.is_some());
+        assert_eq!(app.planner_events.len(), 1);
+        assert_eq!(app.llm_call_count, 0);
+    }
+
+    #[test]
+    fn record_planner_event_counts_llm_calls() {
+        use planner_core::observability::{EventSource, PlannerEvent};
+
+        let mut app = App::new();
+        assert_eq!(app.llm_call_count, 0);
+
+        // A non-LLM-complete event should NOT increment the counter
+        let ev1 = PlannerEvent::info(EventSource::LlmRouter, "llm.call.start", "Starting");
+        app.record_planner_event(ev1);
+        assert_eq!(app.llm_call_count, 0);
+
+        // An LlmRouter event with step starting with "llm.call.complete" should increment
+        let ev2 = PlannerEvent::info(EventSource::LlmRouter, "llm.call.complete", "Done");
+        app.record_planner_event(ev2);
+        assert_eq!(app.llm_call_count, 1);
+
+        // Another complete event
+        let ev3 = PlannerEvent::info(EventSource::LlmRouter, "llm.call.complete.extra", "Done");
+        app.record_planner_event(ev3);
+        assert_eq!(app.llm_call_count, 2);
+    }
+
+    #[test]
+    fn filtered_events_none_returns_all() {
+        use planner_core::observability::{EventSource, PlannerEvent};
+
+        let mut app = App::new();
+        app.record_planner_event(PlannerEvent::info(EventSource::Pipeline, "a", "Info"));
+        app.record_planner_event(PlannerEvent::warn(EventSource::Pipeline, "b", "Warn"));
+        app.record_planner_event(PlannerEvent::error(EventSource::Pipeline, "c", "Error"));
+
+        assert!(app.logs_filter.is_none());
+        assert_eq!(app.filtered_events().len(), 3);
+    }
+
+    #[test]
+    fn filtered_events_error_filter() {
+        use planner_core::observability::{EventLevel, EventSource, PlannerEvent};
+
+        let mut app = App::new();
+        app.logs_filter = Some(EventLevel::Error);
+
+        app.record_planner_event(PlannerEvent::info(EventSource::Pipeline, "a", "Info"));
+        app.record_planner_event(PlannerEvent::warn(EventSource::Pipeline, "b", "Warn"));
+        app.record_planner_event(PlannerEvent::error(EventSource::Pipeline, "c", "Error"));
+
+        let filtered = app.filtered_events();
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].message, "Error");
+    }
+
+    #[test]
+    fn logs_pane_key_scrolls_and_filters() {
+        use planner_core::observability::{EventLevel, EventSource, PlannerEvent};
+
+        let mut app = App::new();
+        app.focus = FocusMode::LogsPane;
+        app.intake_phase = IntakePhase::Interviewing;
+
+        // Add some events
+        for i in 0..5 {
+            app.record_planner_event(PlannerEvent::info(
+                EventSource::Pipeline,
+                format!("step.{}", i),
+                format!("Event {}", i),
+            ));
+        }
+
+        // k → scroll up
+        app.handle_key(KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE));
+        assert_eq!(app.logs_scroll_offset, 1);
+
+        app.handle_key(KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE));
+        assert_eq!(app.logs_scroll_offset, 2);
+
+        // j → scroll down
+        app.handle_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE));
+        assert_eq!(app.logs_scroll_offset, 1);
+
+        // f → cycle filter to Error
+        app.focus = FocusMode::LogsPane;
+        app.handle_key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE));
+        assert_eq!(app.logs_filter, Some(EventLevel::Error));
+        assert_eq!(app.logs_scroll_offset, 0); // reset on filter change
+
+        // f → cycle to Warn
+        app.handle_key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE));
+        assert_eq!(app.logs_filter, Some(EventLevel::Warn));
+
+        // f → cycle back to None
+        app.handle_key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE));
+        assert!(app.logs_filter.is_none());
+    }
+
+    #[test]
+    fn l_key_toggles_right_pane_mode() {
+        let mut app = App::new();
+        app.intake_phase = IntakePhase::Interviewing;
+        assert_eq!(app.right_pane_mode, RightPaneMode::BeliefState);
+
+        app.handle_key(KeyEvent::new(KeyCode::Char('l'), KeyModifiers::NONE));
+        assert_eq!(app.right_pane_mode, RightPaneMode::Logs);
+
+        app.handle_key(KeyEvent::new(KeyCode::Char('l'), KeyModifiers::NONE));
+        assert_eq!(app.right_pane_mode, RightPaneMode::BeliefState);
     }
 }

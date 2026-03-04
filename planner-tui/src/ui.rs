@@ -34,7 +34,7 @@ use ratatui::widgets::{
 
 use planner_schemas::ComplexityTier;
 
-use crate::app::{App, FocusMode, IntakePhase, MessageRole, StageStatus};
+use crate::app::{App, FocusMode, IntakePhase, MessageRole, RightPaneMode, StageStatus};
 
 // ---------------------------------------------------------------------------
 // Entry point
@@ -68,7 +68,7 @@ fn draw_interviewing(frame: &mut Frame, app: &App) {
 
     draw_header(frame, rows[0], app);
 
-    // Horizontal split: Chat (50%) | Belief State (50%)
+    // Horizontal split: Chat (50%) | Right Pane (50%)
     let columns = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
@@ -78,9 +78,12 @@ fn draw_interviewing(frame: &mut Frame, app: &App) {
         .split(rows[1]);
 
     draw_chat(frame, columns[0], app);
-    draw_belief_state(frame, columns[1], app);
+    match app.right_pane_mode {
+        RightPaneMode::BeliefState => draw_belief_state(frame, columns[1], app),
+        RightPaneMode::Logs => draw_logs_panel(frame, columns[1], app),
+    }
 
-    draw_keybind_bar(frame, rows[2]);
+    draw_status_bar(frame, rows[2], app);
     draw_input(frame, rows[3], app);
 }
 
@@ -426,13 +429,168 @@ fn draw_belief_state(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_widget(dim_list, inner_rows[2]);
 }
 
-/// Keybind status bar — 1-line hint strip.
-fn draw_keybind_bar(frame: &mut Frame, area: Rect) {
-    let hint = Paragraph::new(
-        " [Tab] Switch pane  [Esc] Skip  [Ctrl+D] Done  [1-9] Quick select  [Ctrl+C] Quit"
-    )
-    .style(Style::default().fg(Color::DarkGray));
-    frame.render_widget(hint, area);
+/// Enriched status bar — 1-line strip showing phase, step, LLM count, and hints.
+fn draw_status_bar(frame: &mut Frame, area: Rect, app: &App) {
+    // [phase: INTERVIEWING]  [step: classify_domain 2.3s]  [llm: 3 calls]  [L: logs]
+    let phase_label = match app.intake_phase {
+        IntakePhase::WaitingForInput  => "WAITING",
+        IntakePhase::Interviewing     => "INTERVIEWING",
+        IntakePhase::PipelineRunning  => "PIPELINE",
+        IntakePhase::Complete         => "COMPLETE",
+    };
+
+    let mut spans: Vec<Span> = Vec::new();
+
+    // Phase segment
+    spans.push(Span::styled(
+        format!(" [phase: {}]", phase_label),
+        Style::default().fg(Color::Cyan),
+    ));
+    spans.push(Span::styled("  ", Style::default()));
+
+    // Step segment
+    let step_text = if let Some(ref step) = app.current_step {
+        let elapsed = app.current_step_started
+            .map(|inst| inst.elapsed().as_secs_f32())
+            .unwrap_or(0.0);
+        format!("[step: {} {:.1}s]", step, elapsed)
+    } else {
+        "[step: —]".to_string()
+    };
+    spans.push(Span::styled(
+        step_text,
+        Style::default().fg(Color::Yellow),
+    ));
+    spans.push(Span::styled("  ", Style::default()));
+
+    // LLM call count segment
+    spans.push(Span::styled(
+        format!("[llm: {} calls]", app.llm_call_count),
+        Style::default().fg(Color::Magenta),
+    ));
+    spans.push(Span::styled("  ", Style::default()));
+
+    // Hint: toggle logs
+    let logs_hint = match app.right_pane_mode {
+        RightPaneMode::BeliefState => "[L: logs]",
+        RightPaneMode::Logs        => "[L: belief]",
+    };
+    spans.push(Span::styled(
+        logs_hint,
+        Style::default().fg(Color::DarkGray),
+    ));
+
+    // Separator hints
+    spans.push(Span::styled(
+        "  [Tab] pane  [Esc] skip  [Ctrl+D] done  [1-9] quick",
+        Style::default().fg(Color::DarkGray),
+    ));
+
+    let line = Line::from(spans);
+    let bar = Paragraph::new(line).style(Style::default().fg(Color::DarkGray));
+    frame.render_widget(bar, area);
+}
+
+/// Logs panel — shown in the right pane when `right_pane_mode == Logs`.
+fn draw_logs_panel(frame: &mut Frame, area: Rect, app: &App) {
+    let is_focused = app.focus == FocusMode::LogsPane;
+
+    // Title reflects active filter
+    let filter_label = match app.logs_filter {
+        None                                                  => "All",
+        Some(planner_core::observability::EventLevel::Error) => "Errors",
+        Some(planner_core::observability::EventLevel::Warn)  => "Warnings",
+        Some(planner_core::observability::EventLevel::Info)  => "Info",
+    };
+    let title = format!(" Logs [{}] [f: filter] ", filter_label);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(title)
+        .title_style(
+            Style::default()
+                .fg(Color::Blue)
+                .add_modifier(Modifier::BOLD),
+        )
+        .border_style(if is_focused {
+            Style::default().fg(Color::Yellow)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        });
+
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let events = app.filtered_events();
+
+    if events.is_empty() {
+        let empty = Paragraph::new(Span::styled(
+            "  No events yet",
+            Style::default().fg(Color::DarkGray).add_modifier(Modifier::DIM),
+        ));
+        frame.render_widget(empty, inner);
+        return;
+    }
+
+    let total = events.len() as u16;
+    // Clamp scroll offset so it cannot exceed the list length
+    let clamped_scroll = app.logs_scroll_offset.min(total.saturating_sub(1));
+
+    // Build lines from filtered events
+    let lines: Vec<Line> = events
+        .iter()
+        .map(|ev| {
+            let (level_color, level_str) = match ev.level {
+                planner_core::observability::EventLevel::Info  => (Color::DarkGray, "INFO "),
+                planner_core::observability::EventLevel::Warn  => (Color::Yellow,   "WARN "),
+                planner_core::observability::EventLevel::Error => (Color::Red,      "ERROR"),
+            };
+
+            let ts = ev.timestamp.format("%H:%M:%S").to_string();
+            let source_str = format!("{}", ev.source);
+            let step_str = ev.step.as_deref().unwrap_or("");
+
+            // Truncate long messages to fit the pane
+            let msg = if ev.message.len() > 60 {
+                format!("{}…", &ev.message[..58])
+            } else {
+                ev.message.clone()
+            };
+
+            let body = if step_str.is_empty() {
+                msg
+            } else {
+                format!("{}: {}", step_str, msg)
+            };
+
+            Line::from(vec![
+                Span::styled(
+                    format!("{} ", ts),
+                    Style::default().fg(Color::DarkGray),
+                ),
+                Span::styled(
+                    format!("{} ", level_str),
+                    Style::default().fg(level_color).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    format!("{:<12} ", source_str),
+                    Style::default().fg(Color::DarkGray),
+                ),
+                Span::styled(body, Style::default().fg(level_color)),
+            ])
+        })
+        .collect();
+
+    let logs_para = Paragraph::new(lines).scroll((clamped_scroll, 0));
+    frame.render_widget(logs_para, inner);
+
+    // Scrollbar when there are enough events to scroll
+    if total > 4 {
+        let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight);
+        let mut scrollbar_state = ScrollbarState::new(total as usize)
+            .position(clamped_scroll as usize);
+        frame.render_stateful_widget(scrollbar, area, &mut scrollbar_state);
+    }
 }
 
 /// Pipeline status bar — shown in pipeline layout only.
@@ -629,6 +787,70 @@ mod tests {
         for stage in &mut app.stages {
             stage.status = StageStatus::Complete;
         }
+        terminal.draw(|f| draw(f, &app)).unwrap();
+    }
+
+    #[test]
+    fn draw_interviewing_logs_panel_empty_does_not_panic() {
+        let backend = TestBackend::new(120, 40);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = make_app();
+        app.intake_phase = IntakePhase::Interviewing;
+        app.right_pane_mode = RightPaneMode::Logs;
+        terminal.draw(|f| draw(f, &app)).unwrap();
+    }
+
+    #[test]
+    fn draw_interviewing_logs_panel_with_events_does_not_panic() {
+        use planner_core::observability::{EventSource, PlannerEvent};
+
+        let backend = TestBackend::new(120, 40);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = make_app();
+        app.intake_phase = IntakePhase::Interviewing;
+        app.right_pane_mode = RightPaneMode::Logs;
+
+        app.record_planner_event(PlannerEvent::info(
+            EventSource::Pipeline,
+            "compile",
+            "Compiling NLSpec",
+        ));
+        app.record_planner_event(PlannerEvent::warn(
+            EventSource::SocraticEngine,
+            "interview",
+            "Low confidence",
+        ));
+        app.record_planner_event(PlannerEvent::error(
+            EventSource::LlmRouter,
+            "llm.call.complete",
+            "LLM timed out",
+        ));
+
+        terminal.draw(|f| draw(f, &app)).unwrap();
+    }
+
+    #[test]
+    fn draw_interviewing_logs_panel_filter_errors_does_not_panic() {
+        use planner_core::observability::{EventLevel, EventSource, PlannerEvent};
+
+        let backend = TestBackend::new(120, 40);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = make_app();
+        app.intake_phase = IntakePhase::Interviewing;
+        app.right_pane_mode = RightPaneMode::Logs;
+        app.logs_filter = Some(EventLevel::Error);
+
+        app.record_planner_event(PlannerEvent::info(
+            EventSource::Pipeline,
+            "compile",
+            "Compiling NLSpec",
+        ));
+        app.record_planner_event(PlannerEvent::error(
+            EventSource::LlmRouter,
+            "llm.call.complete",
+            "Timeout",
+        ));
+
         terminal.draw(|f| draw(f, &app)).unwrap();
     }
 

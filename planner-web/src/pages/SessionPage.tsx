@@ -7,6 +7,8 @@ import MessageInput from '../components/MessageInput.tsx';
 import ConvergenceBar from '../components/ConvergenceBar.tsx';
 import BeliefStatePanel from '../components/BeliefStatePanel.tsx';
 import SpeculativeDraftView from '../components/SpeculativeDraftView.tsx';
+import EventLogPanel from '../components/EventLogPanel.tsx';
+import SessionStatusHeader from '../components/SessionStatusHeader.tsx';
 import { createApiClient } from '../api/client.ts';
 import { useGetAccessToken } from '../auth/useAuthenticatedFetch.ts';
 import { useSocraticWebSocket } from '../hooks/useSocraticWebSocket.ts';
@@ -31,8 +33,15 @@ export default function SessionPage() {
   const [isStarting, setIsStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
 
-  // Right panel toggle: show draft vs. belief state
-  const [showDraft, setShowDraft] = useState(false);
+  // Right panel tab: 'belief' | 'draft' | 'logs'
+  type RightPanelTab = 'belief' | 'draft' | 'logs';
+  const [rightTab, setRightTab] = useState<RightPanelTab>('belief');
+
+  // Helper to switch to draft tab
+  const setShowDraft = (v: boolean) => setRightTab(v ? 'draft' : 'belief');
+
+  // Logs panel toggle (via SessionStatusHeader or tab)
+  const [showLogs, setShowLogs] = useState(false);
 
   // Socratic WebSocket hook
   const socratic = useSocraticWebSocket({ sessionId, getToken });
@@ -132,13 +141,35 @@ export default function SessionPage() {
     ? socratic.intakePhase
     : (session?.intake_phase ?? 'waiting');
 
+  // Sync showLogs state into the rightTab system and vice versa
+  // When showLogs is toggled via SessionStatusHeader button, switch to logs tab
+  const handleToggleLogs = useCallback(() => {
+    setShowLogs((v) => {
+      const next = !v;
+      if (next) {
+        setRightTab('logs');
+      } else if (rightTab === 'logs') {
+        setRightTab('belief');
+      }
+      return next;
+    });
+  }, [rightTab]);
+
+  // Keep showLogs in sync when tab changes
+  useEffect(() => {
+    setShowLogs(rightTab === 'logs');
+  }, [rightTab]);
+
   // ── Right panel content ──
   const rightPanelContent = (() => {
-    if (showDraft && socratic.speculativeDraft) {
+    if (rightTab === 'logs') {
+      return <EventLogPanel events={socratic.events} />;
+    }
+    if (rightTab === 'draft' && socratic.speculativeDraft) {
       return (
         <SpeculativeDraftView
           draft={socratic.speculativeDraft}
-          onBack={() => setShowDraft(false)}
+          onBack={() => setRightTab('belief')}
           onReact={socratic.sendDraftReaction}
         />
       );
@@ -454,6 +485,18 @@ export default function SessionPage() {
           </div>
         )}
 
+        {/* Status header + Top progress bar */}
+        {(isInterviewing || isPipelineRunning || isComplete) && (
+          <SessionStatusHeader
+            currentStep={socratic.currentStep}
+            events={socratic.events}
+            isError={isError}
+            errorMessage={session?.error_message}
+            onToggleLogs={handleToggleLogs}
+            showLogs={showLogs}
+          />
+        )}
+
         {/* Top bar: ConvergenceBar (interviewing) or PipelineBar (pipeline_running / complete) */}
         {isInterviewing && (
           <ConvergenceBar
@@ -499,41 +542,117 @@ export default function SessionPage() {
             />
           </div>
 
-          {/* Right: BeliefStatePanel or SpeculativeDraftView */}
-          <div className="pane-right">
-            {/* Draft toggle hint when draft is available but we're viewing belief state */}
-            {socratic.speculativeDraft && !showDraft && (
-              <div style={{
-                padding: '6px 14px',
-                background: 'rgba(0,212,255,0.06)',
-                borderBottom: '1px solid var(--border)',
+          {/* Right: tabbed panel — Belief State | Draft | Logs */}
+          <div className="pane-right" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            {/* Tab bar */}
+            <div
+              style={{
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'space-between',
+                gap: '0',
+                borderBottom: '1px solid var(--border)',
+                background: 'var(--bg-secondary)',
                 flexShrink: 0,
-              }}>
-                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                  Speculative draft available
-                </span>
-                <button
-                  onClick={() => setShowDraft(true)}
-                  style={{
-                    background: 'transparent',
-                    border: '1px solid var(--accent-cyan)',
-                    borderRadius: '3px',
-                    color: 'var(--accent-cyan)',
-                    fontSize: '10px',
-                    fontFamily: 'inherit',
-                    letterSpacing: '0.04em',
-                    padding: '3px 10px',
-                    cursor: 'pointer',
-                  }}
-                >
-                  View Draft
-                </button>
-              </div>
-            )}
-            {rightPanelContent}
+              }}
+            >
+              {/* Belief State tab */}
+              <button
+                onClick={() => setRightTab('belief')}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  borderBottom: rightTab === 'belief' ? '2px solid var(--accent-cyan)' : '2px solid transparent',
+                  color: rightTab === 'belief' ? 'var(--accent-cyan)' : 'var(--text-secondary)',
+                  fontSize: '11px',
+                  fontWeight: rightTab === 'belief' ? 700 : 400,
+                  fontFamily: 'inherit',
+                  padding: '7px 14px',
+                  cursor: 'pointer',
+                  letterSpacing: '0.03em',
+                  transition: 'color 0.15s, border-color 0.15s',
+                }}
+              >
+                Belief State
+              </button>
+
+              {/* Draft tab */}
+              <button
+                onClick={() => socratic.speculativeDraft && setRightTab('draft')}
+                disabled={!socratic.speculativeDraft}
+                title={!socratic.speculativeDraft ? 'No draft available yet' : undefined}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  borderBottom: rightTab === 'draft' ? '2px solid var(--accent-cyan)' : '2px solid transparent',
+                  color: !socratic.speculativeDraft
+                    ? 'var(--text-secondary)'
+                    : rightTab === 'draft'
+                    ? 'var(--accent-cyan)'
+                    : 'var(--text-secondary)',
+                  fontSize: '11px',
+                  fontWeight: rightTab === 'draft' ? 700 : 400,
+                  fontFamily: 'inherit',
+                  padding: '7px 14px',
+                  cursor: !socratic.speculativeDraft ? 'not-allowed' : 'pointer',
+                  letterSpacing: '0.03em',
+                  opacity: !socratic.speculativeDraft ? 0.4 : 1,
+                  transition: 'color 0.15s, border-color 0.15s, opacity 0.15s',
+                }}
+              >
+                Draft
+                {socratic.speculativeDraft && rightTab !== 'draft' && (
+                  <span
+                    style={{
+                      marginLeft: '5px',
+                      display: 'inline-block',
+                      width: '5px',
+                      height: '5px',
+                      borderRadius: '50%',
+                      background: 'var(--accent-cyan)',
+                      verticalAlign: 'middle',
+                      marginBottom: '1px',
+                    }}
+                  />
+                )}
+              </button>
+
+              {/* Logs tab */}
+              <button
+                onClick={() => setRightTab('logs')}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  borderBottom: rightTab === 'logs' ? '2px solid var(--accent-cyan)' : '2px solid transparent',
+                  color: rightTab === 'logs' ? 'var(--accent-cyan)' : 'var(--text-secondary)',
+                  fontSize: '11px',
+                  fontWeight: rightTab === 'logs' ? 700 : 400,
+                  fontFamily: 'inherit',
+                  padding: '7px 14px',
+                  cursor: 'pointer',
+                  letterSpacing: '0.03em',
+                  transition: 'color 0.15s, border-color 0.15s',
+                }}
+              >
+                Logs
+                {socratic.events.length > 0 && (
+                  <span
+                    style={{
+                      marginLeft: '5px',
+                      fontSize: '9px',
+                      color: rightTab === 'logs' ? 'var(--accent-cyan)' : 'var(--text-secondary)',
+                      opacity: 0.75,
+                    }}
+                  >
+                    {socratic.events.length}
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {/* Panel content */}
+            <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+              {rightPanelContent}
+            </div>
           </div>
         </div>
       </div>

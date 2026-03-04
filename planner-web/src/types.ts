@@ -106,6 +106,23 @@ export interface SpeculativeDraft {
   not_discussed: string[];
 }
 
+// ─── Observability ──────────────────────────────────────────────────────────
+
+export type EventLevel = 'info' | 'warn' | 'error';
+export type EventSourceType = 'socratic_engine' | 'llm_router' | 'factory' | 'pipeline' | 'system';
+
+export interface PlannerEvent {
+  id: string;
+  timestamp: string;
+  level: EventLevel;
+  source: EventSourceType;
+  session_id?: string;
+  step?: string;
+  message: string;
+  duration_ms?: number;
+  metadata: Record<string, unknown>;
+}
+
 // ─── Session ─────────────────────────────────────────────────────────────────
 
 export interface Session {
@@ -117,6 +134,9 @@ export interface Session {
   belief_state?: BeliefState | null;
   classification?: Classification | null;
   project_description?: string | null;
+  events?: PlannerEvent[];
+  current_step?: string | null;
+  error_message?: string | null;
 }
 
 // ─── API Responses ───────────────────────────────────────────────────────────
@@ -179,7 +199,9 @@ export type ServerWsMessage =
   | { type: 'speculative_draft'; sections: DraftSection[]; assumptions: DraftAssumption[]; not_discussed: string[] }
   | { type: 'converged'; reason: string; convergence_pct: number }
   // Contradiction detection
-  | { type: 'contradiction_detected'; dimension_a: string; value_a: string; dimension_b: string; value_b: string; explanation: string };
+  | { type: 'contradiction_detected'; dimension_a: string; value_a: string; dimension_b: string; value_b: string; explanation: string }
+  // Observability
+  | { type: 'planner_event'; id: string; timestamp: string; level: string; source: string; step?: string; message: string; duration_ms?: number; metadata: Record<string, unknown> };
 
 // --- Client → Server ---
 

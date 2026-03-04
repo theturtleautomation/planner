@@ -9,4 +9,5 @@
 pub mod cxdb;
 pub mod dtu;
 pub mod llm;
+pub mod observability;
 pub mod pipeline;

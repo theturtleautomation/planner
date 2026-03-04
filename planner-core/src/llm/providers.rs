@@ -21,6 +21,7 @@ use std::time::Duration;
 use tokio::process::Command;
 
 use super::{CompletionRequest, CompletionResponse, LlmClient, LlmError, Role};
+use crate::observability;
 
 /// Default timeout for CLI invocations (5 minutes).
 const DEFAULT_TIMEOUT_SECS: u64 = 300;
@@ -138,6 +139,89 @@ pub async fn run_cli(
     }
 
     Ok((stdout, stderr))
+}
+
+/// Instrumented version of `run_cli` that emits events via EventSink.
+pub async fn run_cli_instrumented(
+    sink: &dyn observability::EventSink,
+    session_id: Option<uuid::Uuid>,
+    binary: &str,
+    args: &[&str],
+    stdin_input: Option<&str>,
+    timeout_secs: u64,
+    model: &str,
+) -> Result<(String, String), LlmError> {
+    use observability::{PlannerEvent, EventSource};
+
+    let prompt_len = stdin_input.map(|s| s.len()).unwrap_or(0);
+    let mut start_event = PlannerEvent::info(
+        EventSource::LlmRouter,
+        "llm.call.start",
+        format!("Starting {} call to {}", binary, model),
+    ).with_metadata(serde_json::json!({
+        "model": model,
+        "provider": binary,
+        "prompt_len": prompt_len,
+    }));
+    if let Some(sid) = session_id {
+        start_event = start_event.with_session(sid);
+    }
+    sink.emit(start_event);
+
+    let start = std::time::Instant::now();
+    let result = run_cli(binary, args, stdin_input, timeout_secs).await;
+    let elapsed_ms = start.elapsed().as_millis() as u64;
+
+    match &result {
+        Ok((stdout, _stderr)) => {
+            let mut event = PlannerEvent::info(
+                EventSource::LlmRouter,
+                "llm.call.complete",
+                format!("{} call to {} completed in {}ms", binary, model, elapsed_ms),
+            ).with_duration(elapsed_ms)
+            .with_metadata(serde_json::json!({
+                "model": model,
+                "provider": binary,
+                "response_len": stdout.len(),
+            }));
+            if let Some(sid) = session_id {
+                event = event.with_session(sid);
+            }
+            sink.emit(event);
+        }
+        Err(e) => {
+            let (exit_code, stderr_preview) = match e {
+                LlmError::CliExecError { exit_code, stderr } => {
+                    (*exit_code, stderr.chars().take(200).collect::<String>())
+                }
+                LlmError::Timeout { timeout_secs } => {
+                    (None, format!("Timed out after {}s", timeout_secs))
+                }
+                LlmError::CliBinaryNotFound { binary } => {
+                    (None, format!("Binary not found: {}", binary))
+                }
+                other => (None, format!("{}", other)),
+            };
+
+            let mut event = PlannerEvent::error(
+                EventSource::LlmRouter,
+                "llm.call.error",
+                format!("{} call to {} failed after {}ms", binary, model, elapsed_ms),
+            ).with_duration(elapsed_ms)
+            .with_metadata(serde_json::json!({
+                "model": model,
+                "provider": binary,
+                "exit_code": exit_code,
+                "stderr_preview": stderr_preview,
+            }));
+            if let Some(sid) = session_id {
+                event = event.with_session(sid);
+            }
+            sink.emit(event);
+        }
+    }
+
+    result
 }
 
 // ===========================================================================
@@ -622,6 +706,100 @@ impl LlmRouter {
         provider.complete(request).await
     }
 
+    /// Route a request to the appropriate provider, emitting observability
+    /// events before and after the LLM call via `sink`.
+    ///
+    /// Identical to `complete()` in behaviour; adds structured start/complete/error
+    /// events so callers can track LLM latency without wrapping every call site.
+    pub async fn complete_instrumented(
+        &self,
+        request: CompletionRequest,
+        sink: &dyn observability::EventSink,
+        session_id: Option<uuid::Uuid>,
+    ) -> Result<CompletionResponse, LlmError> {
+        use observability::{PlannerEvent, EventSource};
+
+        // Determine which binary would be used for this model, for event metadata.
+        let binary = self.binary_for_model(&request.model);
+        let model = request.model.clone();
+        let prompt_len = request.messages.iter().map(|m| m.content.len()).sum::<usize>();
+
+        let mut start_event = PlannerEvent::info(
+            EventSource::LlmRouter,
+            "llm.call.start",
+            format!("Starting {} call to {}", binary, model),
+        ).with_metadata(serde_json::json!({
+            "model": model,
+            "provider": binary,
+            "prompt_len": prompt_len,
+        }));
+        if let Some(sid) = session_id {
+            start_event = start_event.with_session(sid);
+        }
+        sink.emit(start_event);
+
+        let start = std::time::Instant::now();
+        let result = self.complete(request).await;
+        let elapsed_ms = start.elapsed().as_millis() as u64;
+
+        match &result {
+            Ok(resp) => {
+                let mut event = PlannerEvent::info(
+                    EventSource::LlmRouter,
+                    "llm.call.complete",
+                    format!("{} call to {} completed in {}ms", binary, model, elapsed_ms),
+                ).with_duration(elapsed_ms)
+                .with_metadata(serde_json::json!({
+                    "model": model,
+                    "provider": binary,
+                    "response_len": resp.content.len(),
+                    "input_tokens": resp.input_tokens,
+                    "output_tokens": resp.output_tokens,
+                }));
+                if let Some(sid) = session_id {
+                    event = event.with_session(sid);
+                }
+                sink.emit(event);
+            }
+            Err(e) => {
+                let stderr_preview = format!("{}", e).chars().take(200).collect::<String>();
+                let mut event = PlannerEvent::error(
+                    EventSource::LlmRouter,
+                    "llm.call.error",
+                    format!("{} call to {} failed after {}ms", binary, model, elapsed_ms),
+                ).with_duration(elapsed_ms)
+                .with_metadata(serde_json::json!({
+                    "model": model,
+                    "provider": binary,
+                    "error": stderr_preview,
+                }));
+                if let Some(sid) = session_id {
+                    event = event.with_session(sid);
+                }
+                sink.emit(event);
+            }
+        }
+
+        result
+    }
+
+    /// Return the CLI binary name that would be used for a given model ID.
+    /// Used for event metadata in `complete_instrumented`.
+    fn binary_for_model(&self, model: &str) -> &'static str {
+        if let Some(ref _mock) = self.mock {
+            return "mock";
+        }
+        if model.starts_with("claude-") {
+            "claude"
+        } else if model.starts_with("gemini-") {
+            "gemini"
+        } else if model.starts_with("gpt-") {
+            "codex"
+        } else {
+            "claude" // default
+        }
+    }
+
     fn resolve_provider(&self, model: &str) -> Result<&dyn LlmClient, LlmError> {
         // If a mock is installed, always use it.
         if let Some(ref mock) = self.mock {
@@ -759,5 +937,97 @@ mod tests {
         assert!(cli_available("ls"));
         // something nonsensical should not
         assert!(!cli_available("zzz_nonexistent_binary_999"));
+    }
+
+    #[test]
+    fn binary_for_model_routes_correctly() {
+        let router = LlmRouter {
+            anthropic: None,
+            google: None,
+            openai: None,
+            mock: None,
+        };
+        assert_eq!(router.binary_for_model("claude-opus-4-6"), "claude");
+        assert_eq!(router.binary_for_model("gemini-3.1-pro-preview"), "gemini");
+        assert_eq!(router.binary_for_model("gpt-5.3-codex"), "codex");
+        assert_eq!(router.binary_for_model("unknown-model"), "claude");
+    }
+
+    #[tokio::test]
+    async fn complete_instrumented_emits_events_on_success() {
+        use crate::llm::{CompletionRequest, CompletionResponse, Message, Role, LlmError};
+        use crate::observability::{CollectorEventSink, EventLevel};
+        use async_trait::async_trait;
+
+        struct MockClient;
+        #[async_trait]
+        impl LlmClient for MockClient {
+            async fn complete(&self, req: CompletionRequest) -> Result<CompletionResponse, LlmError> {
+                Ok(CompletionResponse {
+                    content: "mock response".into(),
+                    model: req.model,
+                    input_tokens: 10,
+                    output_tokens: 5,
+                    estimated_cost_usd: 0.0,
+                })
+            }
+            fn provider_name(&self) -> &str { "mock" }
+        }
+
+        let router = LlmRouter::with_mock(Box::new(MockClient));
+        let sink = CollectorEventSink::new();
+        let request = CompletionRequest {
+            system: None,
+            messages: vec![Message { role: Role::User, content: "Hello".into() }],
+            max_tokens: 100,
+            temperature: 0.0,
+            model: "claude-opus-4-6".into(),
+        };
+
+        let result = router.complete_instrumented(request, &sink, None).await;
+        assert!(result.is_ok());
+        assert_eq!(sink.count(), 2); // start + complete
+
+        let events = sink.events();
+        assert_eq!(events[0].step.as_deref(), Some("llm.call.start"));
+        assert_eq!(events[0].level, EventLevel::Info);
+        assert_eq!(events[1].step.as_deref(), Some("llm.call.complete"));
+        assert_eq!(events[1].level, EventLevel::Info);
+        assert!(events[1].duration_ms.is_some());
+    }
+
+    #[tokio::test]
+    async fn complete_instrumented_emits_error_event_on_failure() {
+        use crate::llm::{CompletionRequest, CompletionResponse, Message, Role, LlmError};
+        use crate::observability::{CollectorEventSink, EventLevel};
+        use async_trait::async_trait;
+
+        struct FailingClient;
+        #[async_trait]
+        impl LlmClient for FailingClient {
+            async fn complete(&self, _req: CompletionRequest) -> Result<CompletionResponse, LlmError> {
+                Err(LlmError::CliBinaryNotFound { binary: "claude".into() })
+            }
+            fn provider_name(&self) -> &str { "mock" }
+        }
+
+        let router = LlmRouter::with_mock(Box::new(FailingClient));
+        let sink = CollectorEventSink::new();
+        let request = CompletionRequest {
+            system: None,
+            messages: vec![Message { role: Role::User, content: "Hello".into() }],
+            max_tokens: 100,
+            temperature: 0.0,
+            model: "claude-opus-4-6".into(),
+        };
+
+        let result = router.complete_instrumented(request, &sink, None).await;
+        assert!(result.is_err());
+        assert_eq!(sink.count(), 2); // start + error
+
+        let events = sink.events();
+        assert_eq!(events[0].step.as_deref(), Some("llm.call.start"));
+        assert_eq!(events[1].step.as_deref(), Some("llm.call.error"));
+        assert_eq!(events[1].level, EventLevel::Error);
     }
 }
