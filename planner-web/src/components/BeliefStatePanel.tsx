@@ -239,6 +239,37 @@ export default function BeliefStatePanel({
     setEditingDimension(null);
   }, [editingDimension, onDimensionEdit]);
 
+  // Derive entries before hooks that depend on them — safe even when beliefState is null
+  const filledEntries = beliefState ? Object.entries(beliefState.filled) : [];
+  const uncertainEntries = beliefState ? Object.entries(beliefState.uncertain) : [];
+
+  // ALL hooks must execute on every render — never place hooks after an early return.
+  // Track which dimensions just transitioned to filled/uncertain for CSS animations.
+  const prevFilledRef = useRef<Set<string>>(new Set());
+  const prevUncertainRef = useRef<Set<string>>(new Set());
+  const justFilled = useMemo(() => {
+    const prev = prevFilledRef.current;
+    const current = new Set(filledEntries.map(([dim]) => dim));
+    const newlyFilled = new Set<string>();
+    for (const dim of current) {
+      if (!prev.has(dim)) newlyFilled.add(dim);
+    }
+    prevFilledRef.current = current;
+    return newlyFilled;
+  }, [filledEntries]);
+
+  const justUncertain = useMemo(() => {
+    const prev = prevUncertainRef.current;
+    const current = new Set(uncertainEntries.map(([dim]) => dim));
+    const newlyUncertain = new Set<string>();
+    for (const dim of current) {
+      if (!prev.has(dim)) newlyUncertain.add(dim);
+    }
+    prevUncertainRef.current = current;
+    return newlyUncertain;
+  }, [uncertainEntries]);
+
+  // Now safe to early-return — all 8 hooks have executed.
   if (!beliefState) {
     return (
       <div
@@ -265,8 +296,6 @@ export default function BeliefStatePanel({
     );
   }
 
-  const filledEntries = Object.entries(beliefState.filled);
-  const uncertainEntries = Object.entries(beliefState.uncertain);
   const canEdit = !!onDimensionEdit;
 
   /** Extract display value from uncertain slot (handles both nested and flat formats). */
@@ -277,31 +306,6 @@ export default function BeliefStatePanel({
     }
     return String(slot.value);
   };
-
-  // Track which dimensions just transitioned to filled/uncertain for CSS animations
-  const prevFilledRef = useRef<Set<string>>(new Set());
-  const prevUncertainRef = useRef<Set<string>>(new Set());
-  const justFilled = useMemo(() => {
-    const prev = prevFilledRef.current;
-    const current = new Set(filledEntries.map(([dim]) => dim));
-    const newlyFilled = new Set<string>();
-    for (const dim of current) {
-      if (!prev.has(dim)) newlyFilled.add(dim);
-    }
-    prevFilledRef.current = current;
-    return newlyFilled;
-  }, [filledEntries]);
-
-  const justUncertain = useMemo(() => {
-    const prev = prevUncertainRef.current;
-    const current = new Set(uncertainEntries.map(([dim]) => dim));
-    const newlyUncertain = new Set<string>();
-    for (const dim of current) {
-      if (!prev.has(dim)) newlyUncertain.add(dim);
-    }
-    prevUncertainRef.current = current;
-    return newlyUncertain;
-  }, [uncertainEntries]);
 
   return (
     <div
