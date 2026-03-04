@@ -58,15 +58,17 @@ export default function SessionPage() {
           // Create a new session — don't auto-connect WS
           const resp = await api.createSession();
           if (cancelled) return;
-          setSession(resp.session);
-          setSessionId(resp.session.id);
-          void navigate(`/session/${resp.session.id}`, { replace: true });
+          const s = resp.session ?? resp;
+          setSession(s as Session);
+          setSessionId((s as Session).id);
+          void navigate(`/session/${(s as Session).id}`, { replace: true });
         } else {
           // Load existing session
           const resp = await api.getSession(routeId);
           if (cancelled) return;
-          setSession(resp.session);
-          setSessionId(resp.session.id);
+          const s = resp.session ?? resp;
+          setSession(s as Session);
+          setSessionId((s as Session).id);
         }
       } catch (err) {
         if (cancelled) return;

@@ -40,6 +40,11 @@ pub struct ListSessionsResponse {
     pub sessions: Vec<Session>,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GetSessionResponse {
+    pub session: Session,
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 pub struct SendMessageRequest {
     pub content: String,
@@ -230,7 +235,7 @@ async fn get_session(
     State(state): State<Arc<AppState>>,
     claims: Claims,
     Path(id): Path<Uuid>,
-) -> Result<Json<Session>, (StatusCode, Json<ErrorResponse>)> {
+) -> Result<Json<GetSessionResponse>, (StatusCode, Json<ErrorResponse>)> {
     match state.sessions.get(id) {
         Some(session) => {
             if session.user_id != claims.sub {
@@ -241,7 +246,7 @@ async fn get_session(
                     }),
                 ));
             }
-            Ok(Json(session))
+            Ok(Json(GetSessionResponse { session }))
         }
         None => Err((
             StatusCode::NOT_FOUND,
@@ -772,8 +777,8 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::OK);
 
         let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
-        let retrieved: Session = serde_json::from_slice(&body).unwrap();
-        assert_eq!(retrieved.id, id);
+        let wrapped: GetSessionResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(wrapped.session.id, id);
     }
 
     #[tokio::test]
