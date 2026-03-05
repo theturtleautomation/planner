@@ -12,6 +12,12 @@ import type {
   AdminStatusResponse,
   AdminEventsResponse,
 } from '../types.ts';
+import type {
+  BlueprintResponse,
+  NodeListResponse,
+  BlueprintNode,
+  ImpactReport,
+} from '../types/blueprint.ts';
 
 export { ApiError };
 
@@ -117,6 +123,63 @@ export function createApiClient(getToken: GetTokenFn) {
           throw new ApiError(`API GET /admin/events → ${res.status}: ${text}`, res.status);
         }
         return res.json() as Promise<AdminEventsResponse>;
+      });
+    },
+
+    // ─── Blueprint ──────────────────────────────────────────────────────
+
+    /** GET /blueprint — Full graph snapshot (summaries + edges + counts). */
+    getBlueprint(): Promise<BlueprintResponse> {
+      return apiFetch<BlueprintResponse>(getToken, '/blueprint');
+    },
+
+    /** GET /blueprint/nodes?type=<type> — List nodes, optionally by type. */
+    listBlueprintNodes(nodeType?: string): Promise<NodeListResponse> {
+      const qs = nodeType ? `?type=${encodeURIComponent(nodeType)}` : '';
+      return apiFetch<NodeListResponse>(getToken, `/blueprint/nodes${qs}`);
+    },
+
+    /** POST /blueprint/nodes — Create a new node. */
+    createBlueprintNode(node: BlueprintNode): Promise<{ id: string; message: string }> {
+      return apiFetch<{ id: string; message: string }>(getToken, '/blueprint/nodes', {
+        method: 'POST',
+        body: JSON.stringify(node),
+      });
+    },
+
+    /** GET /blueprint/nodes/:id — Get a single node (full data). */
+    getBlueprintNode(nodeId: string): Promise<BlueprintNode> {
+      return apiFetch<BlueprintNode>(getToken, `/blueprint/nodes/${encodeURIComponent(nodeId)}`);
+    },
+
+    /** PATCH /blueprint/nodes/:id — Replace a node. */
+    updateBlueprintNode(nodeId: string, node: BlueprintNode): Promise<{ id: string; message: string }> {
+      return apiFetch<{ id: string; message: string }>(getToken, `/blueprint/nodes/${encodeURIComponent(nodeId)}`, {
+        method: 'PATCH',
+        body: JSON.stringify(node),
+      });
+    },
+
+    /** DELETE /blueprint/nodes/:id — Remove a node and its edges. */
+    deleteBlueprintNode(nodeId: string): Promise<{ message: string }> {
+      return apiFetch<{ message: string }>(getToken, `/blueprint/nodes/${encodeURIComponent(nodeId)}`, {
+        method: 'DELETE',
+      });
+    },
+
+    /** POST /blueprint/edges — Create a directed edge. */
+    createBlueprintEdge(edge: { source: string; target: string; edge_type: string; metadata?: string }): Promise<{ message: string }> {
+      return apiFetch<{ message: string }>(getToken, '/blueprint/edges', {
+        method: 'POST',
+        body: JSON.stringify(edge),
+      });
+    },
+
+    /** POST /blueprint/impact-preview — Analyze impact of changing a node. */
+    impactPreview(nodeId: string, changeDescription: string): Promise<ImpactReport> {
+      return apiFetch<ImpactReport>(getToken, '/blueprint/impact-preview', {
+        method: 'POST',
+        body: JSON.stringify({ node_id: nodeId, change_description: changeDescription }),
       });
     },
   };

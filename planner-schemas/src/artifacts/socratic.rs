@@ -974,7 +974,8 @@ mod tests {
         let counts = state.counts();
         assert_eq!(counts.filled, 1);
         assert_eq!(counts.uncertain, 1);
-        assert_eq!(counts.missing, initial_missing - 1); // Goal moved to filled, Performance may or may not have been in missing
+        // Goal moved from missing to filled, Performance moved from missing to uncertain.
+        assert_eq!(counts.missing, initial_missing - 2);
     }
 
     #[test]

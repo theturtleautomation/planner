@@ -640,7 +640,7 @@ impl BlueprintStore {
 
         // Write each node as a separate file.
         for (id, node) in &snapshot.nodes {
-            let bytes = rmp_serde::to_vec(node)
+            let bytes = rmp_serde::to_vec_named(node)
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 
             let final_path = nodes_dir.join(format!("{}.msgpack", id));
@@ -671,7 +671,7 @@ impl BlueprintStore {
 
         // Write edges.
         {
-            let bytes = rmp_serde::to_vec(&snapshot.edges)
+            let bytes = rmp_serde::to_vec_named(&snapshot.edges)
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
             let final_path = blueprint_dir.join("edges.msgpack");
             let tmp_path = blueprint_dir.join("edges.msgpack.tmp");
@@ -703,7 +703,7 @@ impl BlueprintStore {
 
         let history_dir = blueprint_dir.join("history");
         let snapshot = self.blueprint.read().clone();
-        let bytes = rmp_serde::to_vec(&snapshot)
+        let bytes = rmp_serde::to_vec_named(&snapshot)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 
         let timestamp = chrono::Utc::now().format("%Y-%m-%dT%H-%M-%SZ").to_string();

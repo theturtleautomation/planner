@@ -4,6 +4,9 @@ import { AUTH0_ENABLED } from './config.ts';
 import Dashboard from './pages/Dashboard.tsx';
 import SessionPage from './pages/SessionPage.tsx';
 import AdminPage from './pages/AdminPage.tsx';
+
+// Blueprint page is heavy (D3) — lazy-load it
+const BlueprintPage = lazy(() => import('./pages/BlueprintPage.tsx'));
 import ProtectedRoute from './auth/ProtectedRoute.tsx';
 
 // ─── Auth0-dependent pages ───────────────────────────────────────────────────
@@ -74,6 +77,16 @@ export default function App() {
         }
       />
       <Route path="/admin" element={<AdminPage />} />
+      <Route
+        path="/blueprint"
+        element={
+          <ProtectedRoute>
+            <Suspense fallback={<AuthLoadingFallback />}>
+              <BlueprintPage />
+            </Suspense>
+          </ProtectedRoute>
+        }
+      />
       {/* Catch-all */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

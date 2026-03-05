@@ -75,6 +75,24 @@ export default function Dashboard() {
               sessions
             </span>
             <a
+              href="/blueprint"
+              style={{
+                color: 'var(--accent-cyan)',
+                fontSize: '11px',
+                textDecoration: 'none',
+                opacity: 0.75,
+                transition: 'opacity 0.18s',
+                fontFamily: 'monospace',
+                padding: '2px 8px',
+                border: '1px solid rgba(0,212,255,0.25)',
+                borderRadius: '10px',
+              }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLAnchorElement).style.opacity = '1'; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLAnchorElement).style.opacity = '0.75'; }}
+            >
+              blueprint →
+            </a>
+            <a
               href="/admin"
               style={{
                 color: 'var(--text-secondary)',

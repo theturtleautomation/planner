@@ -616,8 +616,8 @@ mod tests {
         assert_eq!(decoded.id().as_str(), "dec-use-msgpack-a1b2c3d4");
         assert_eq!(decoded.type_name(), "decision");
 
-        // MessagePack roundtrip
-        let bytes = rmp_serde::to_vec(&node).unwrap();
+        // MessagePack roundtrip (must use named to preserve serde tag keys)
+        let bytes = rmp_serde::to_vec_named(&node).unwrap();
         let decoded_mp: BlueprintNode = rmp_serde::from_slice(&bytes).unwrap();
         assert_eq!(decoded_mp.name(), "Use MessagePack for disk serialization");
     }
@@ -660,7 +660,7 @@ mod tests {
         };
 
         let node = BlueprintNode::Component(comp);
-        let bytes = rmp_serde::to_vec(&node).unwrap();
+        let bytes = rmp_serde::to_vec_named(&node).unwrap();
         let decoded: BlueprintNode = rmp_serde::from_slice(&bytes).unwrap();
         assert_eq!(decoded.name(), "CXDB");
         assert_eq!(decoded.type_name(), "component");
@@ -717,7 +717,7 @@ mod tests {
         };
 
         let node = BlueprintNode::Pattern(pat);
-        let bytes = rmp_serde::to_vec(&node).unwrap();
+        let bytes = rmp_serde::to_vec_named(&node).unwrap();
         let decoded: BlueprintNode = rmp_serde::from_slice(&bytes).unwrap();
         assert_eq!(decoded.name(), "Event Sourcing");
     }

@@ -880,9 +880,9 @@ mod tests {
 
         use planner_schemas::{Contradiction, Dimension};
         let contradiction = Contradiction {
-            dimension_a: Dimension::Database,
+            dimension_a: Dimension::DataModel,
             value_a: "PostgreSQL".into(),
-            dimension_b: Dimension::Deployment,
+            dimension_b: Dimension::Integrations,
             value_b: "serverless".into(),
             explanation: "PostgreSQL requires a persistent server".into(),
             resolved: false,
@@ -896,8 +896,8 @@ mod tests {
         let msg1 = event_rx.try_recv().unwrap();
         match msg1 {
             ServerMessage::ContradictionDetected { dimension_a, dimension_b, explanation, .. } => {
-                assert_eq!(dimension_a, "Database");
-                assert_eq!(dimension_b, "Deployment");
+                assert_eq!(dimension_a, "Data Model");
+                assert_eq!(dimension_b, "Integrations");
                 assert!(explanation.contains("persistent server"));
             }
             other => panic!("expected ContradictionDetected, got {:?}", other),

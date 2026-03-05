@@ -35,6 +35,7 @@ fn test_state() -> Arc<AppState> {
         auth_config: None,
         event_store: None,
         started_at: std::time::Instant::now(),
+        blueprints: planner_core::blueprint::BlueprintStore::new(),
     })
 }
 
@@ -66,7 +67,13 @@ async fn tier2_health_endpoint() {
         .unwrap();
     let health: serde_json::Value = serde_json::from_slice(&body).unwrap();
 
-    assert_eq!(health["status"], "ok");
+    // Server status may be "ok" or "degraded" depending on LLM availability.
+    let status = health["status"].as_str().unwrap();
+    assert!(
+        status == "ok" || status == "degraded",
+        "Expected 'ok' or 'degraded', got '{}'",
+        status,
+    );
     assert_eq!(health["version"], "0.1.0");
     assert_eq!(health["sessions_active"], 0);
 }
