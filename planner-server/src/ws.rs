@@ -118,6 +118,15 @@ pub enum ServerMessage {
         value_b: String,
         explanation: String,
     },
+
+    /// Acknowledges a draft reaction was received and forwarded to the engine.
+    #[serde(rename = "draft_reaction_ack")]
+    DraftReactionAck {
+        /// Which section index or "assumptions" this acknowledges.
+        target: String,
+        /// The action that was acknowledged ("correct", "fix", "confirm_all", "fix_these").
+        action: String,
+    },
 }
 
 /// Client-to-server WebSocket message.
@@ -499,5 +508,38 @@ mod tests {
             }
             _ => panic!("wrong variant"),
         }
+    }
+
+    #[test]
+    fn server_message_draft_reaction_ack_serde() {
+        let msg = ServerMessage::DraftReactionAck {
+            target: "0".into(),
+            action: "correct".into(),
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"type\":\"draft_reaction_ack\""));
+        assert!(json.contains("\"target\":\"0\""));
+        assert!(json.contains("\"action\":\"correct\""));
+
+        let deserialized: ServerMessage = serde_json::from_str(&json).unwrap();
+        match deserialized {
+            ServerMessage::DraftReactionAck { target, action } => {
+                assert_eq!(target, "0");
+                assert_eq!(action, "correct");
+            }
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
+    fn server_message_draft_reaction_ack_assumptions() {
+        let msg = ServerMessage::DraftReactionAck {
+            target: "assumptions".into(),
+            action: "confirm_all".into(),
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("draft_reaction_ack"));
+        assert!(json.contains("assumptions"));
+        assert!(json.contains("confirm_all"));
     }
 }

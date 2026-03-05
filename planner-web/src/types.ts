@@ -232,6 +232,8 @@ export type ServerWsMessage =
   | { type: 'converged'; reason: string; convergence_pct: number }
   // Contradiction detection
   | { type: 'contradiction_detected'; dimension_a: string; value_a: string; dimension_b: string; value_b: string; explanation: string }
+  // Draft reaction acknowledgment
+  | { type: 'draft_reaction_ack'; target: string; action: string }
   // Observability
   | { type: 'planner_event'; id: string; timestamp: string; level: string; source: string; step?: string; message: string; duration_ms?: number; metadata: Record<string, unknown> };
 

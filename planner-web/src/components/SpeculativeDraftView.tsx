@@ -21,6 +21,8 @@ interface SpeculativeDraftViewProps {
   draft: SpeculativeDraft;
   onBack: () => void;
   onReact?: (target: string, action: string, correction?: string) => void;
+  /** Server-acknowledged confirmed sections. Keyed by target ("0", "1", … or "assumptions"). */
+  confirmedSections: Set<string>;
 }
 
 /** Small inline correction input shown when "Fix" is clicked. */
@@ -108,15 +110,12 @@ function CorrectionInput({
   );
 }
 
-export default function SpeculativeDraftView({ draft, onBack, onReact }: SpeculativeDraftViewProps) {
+export default function SpeculativeDraftView({ draft, onBack, onReact, confirmedSections }: SpeculativeDraftViewProps) {
   // Track which section/assumptions has an open correction input.
   const [fixingTarget, setFixingTarget] = useState<string | null>(null);
-  // Track which sections/assumptions have been reacted to (for visual feedback).
-  const [reacted, setReacted] = useState<Set<string>>(new Set());
 
   const handleCorrect = useCallback((target: string) => {
     onReact?.(target, 'correct');
-    setReacted((prev) => new Set(prev).add(target));
     setFixingTarget(null);
   }, [onReact]);
 
@@ -126,13 +125,11 @@ export default function SpeculativeDraftView({ draft, onBack, onReact }: Specula
 
   const handleFixSubmit = useCallback((target: string, correction: string) => {
     onReact?.(target, 'fix', correction);
-    setReacted((prev) => new Set(prev).add(target));
     setFixingTarget(null);
   }, [onReact]);
 
   const handleConfirmAllAssumptions = useCallback(() => {
     onReact?.('assumptions', 'confirm_all');
-    setReacted((prev) => new Set(prev).add('assumptions'));
     setFixingTarget(null);
   }, [onReact]);
 
@@ -142,7 +139,6 @@ export default function SpeculativeDraftView({ draft, onBack, onReact }: Specula
 
   const handleFixAssumptionsSubmit = useCallback((correction: string) => {
     onReact?.('assumptions', 'fix_these', correction);
-    setReacted((prev) => new Set(prev).add('assumptions'));
     setFixingTarget(null);
   }, [onReact]);
 
@@ -233,7 +229,7 @@ export default function SpeculativeDraftView({ draft, onBack, onReact }: Specula
         {/* Draft sections */}
         {draft.sections.map((section, i) => {
           const target = String(i);
-          const isReacted = reacted.has(target);
+          const isReacted = confirmedSections.has(target);
           const isFixing = fixingTarget === target;
 
           return (
@@ -345,7 +341,7 @@ export default function SpeculativeDraftView({ draft, onBack, onReact }: Specula
               display: 'flex',
               flexDirection: 'column',
               gap: '8px',
-              opacity: reacted.has('assumptions') ? 0.6 : 1,
+              opacity: confirmedSections.has('assumptions') ? 0.6 : 1,
               transition: 'opacity 0.3s',
             }}
           >
@@ -369,7 +365,7 @@ export default function SpeculativeDraftView({ draft, onBack, onReact }: Specula
               </div>
 
               {/* Assumption reaction buttons */}
-              {onReact && !reacted.has('assumptions') && (
+              {onReact && !confirmedSections.has('assumptions') && (
                 <div style={{ display: 'flex', gap: '4px' }}>
                   <button
                     onClick={handleConfirmAllAssumptions}
@@ -406,7 +402,7 @@ export default function SpeculativeDraftView({ draft, onBack, onReact }: Specula
                 </div>
               )}
 
-              {reacted.has('assumptions') && (
+              {confirmedSections.has('assumptions') && (
                 <span style={{ fontSize: '10px', color: 'var(--accent-green)' }}>
                   ✓ reviewed
                 </span>

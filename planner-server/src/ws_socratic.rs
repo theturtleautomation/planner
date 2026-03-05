@@ -593,6 +593,19 @@ pub async fn handle_socratic_ws(
                                         action, target, corr_str));
                                 });
                                 let _ = input_tx.send(msg);
+
+                                // Immediately acknowledge the reaction so the frontend can
+                                // persist the confirmed state without waiting for a full
+                                // round-trip through the engine.
+                                let ack = ServerMessage::DraftReactionAck {
+                                    target: target.clone(),
+                                    action: action.clone(),
+                                };
+                                if let Ok(json) = serde_json::to_string(&ack) {
+                                    if socket.send(Message::Text(json.into())).await.is_err() {
+                                        return; // client disconnected
+                                    }
+                                }
                             }
                             Ok(ClientMessage::DimensionEdit { dimension, new_value }) => {
                                 // Forward dimension edits to the engine.

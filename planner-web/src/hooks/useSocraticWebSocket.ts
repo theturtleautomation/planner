@@ -76,6 +76,7 @@ export interface UseSocraticWebSocketResult {
   convergencePct: number;
   currentQuestion: CurrentQuestion | null;
   speculativeDraft: SpeculativeDraft | null;
+  confirmedSections: Set<string>;
   contradictions: Contradiction[];
 
   // Pipeline state (active after convergence)
@@ -128,6 +129,10 @@ export function useSocraticWebSocket({
   const [currentQuestion, setCurrentQuestion] = useState<CurrentQuestion | null>(null);
   const [speculativeDraft, setSpeculativeDraft] = useState<SpeculativeDraft | null>(null);
   const [contradictions, setContradictions] = useState<Contradiction[]>([]);
+
+  // Draft section confirmation state — survives across re-renders, tab switches,
+  // and new draft arrivals. Keyed by section target ("0", "1", … or "assumptions").
+  const [confirmedSections, setConfirmedSections] = useState<Set<string>>(new Set());
 
   // Pipeline
   const [stages, setStages] = useState<PipelineStage[]>(buildInitialStages);
@@ -264,6 +269,18 @@ export function useSocraticWebSocket({
           content: `\u26a0 Contradiction detected: ${msg.dimension_a} ("${msg.value_a}") conflicts with ${msg.dimension_b} ("${msg.value_b}") \u2014 ${msg.explanation}`,
           timestamp: new Date().toISOString(),
         }]);
+        break;
+      }
+
+      case 'draft_reaction_ack': {
+        // Server confirmed it received our draft reaction.
+        // Mark the target as confirmed (idempotent — optimistic update already added it).
+        setConfirmedSections((prev) => {
+          if (prev.has(msg.target)) return prev;
+          const next = new Set(prev);
+          next.add(msg.target);
+          return next;
+        });
         break;
       }
 
@@ -423,6 +440,7 @@ export function useSocraticWebSocket({
     setConvergencePct(0);
     setCurrentQuestion(null);
     setSpeculativeDraft(null);
+    setConfirmedSections(new Set());
     setStages(buildInitialStages());
     setPipelineComplete(false);
     setPipelineSummary(null);
@@ -527,6 +545,15 @@ export function useSocraticWebSocket({
       ? { type: 'draft_reaction', target, action, correction }
       : { type: 'draft_reaction', target, action };
     sendRaw(msg);
+
+    // Optimistic update: immediately mark as confirmed so the UI reflects
+    // the action without waiting for the server round-trip.
+    setConfirmedSections((prev) => {
+      const next = new Set(prev);
+      next.add(target);
+      return next;
+    });
+
     setMessages((prev) => [...prev, {
       id: uuidv4(),
       role: 'user',
@@ -556,6 +583,7 @@ export function useSocraticWebSocket({
     convergencePct,
     currentQuestion,
     speculativeDraft,
+    confirmedSections,
     contradictions,
     stages,
     pipelineComplete,

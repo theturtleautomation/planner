@@ -146,6 +146,7 @@ export default function SessionPage() {
           draft={socratic.speculativeDraft}
           onBack={() => setRightTab('belief')}
           onReact={socratic.sendDraftReaction}
+          confirmedSections={socratic.confirmedSections}
         />
       );
     }
