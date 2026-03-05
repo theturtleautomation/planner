@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import rehypeSanitize from 'rehype-sanitize';
 import type { ChatMessage } from '../types.ts';
@@ -71,6 +71,90 @@ export default function ChatPanel({ messages }: ChatPanelProps) {
         <MessageItem key={msg.id} msg={msg} />
       ))}
       <div ref={bottomRef} />
+    </div>
+  );
+}
+
+function CollapsibleEvent({ content }: { content: string }) {
+  const [expanded, setExpanded] = useState(false);
+
+  // Try to extract a short summary from the content
+  let summary = 'Event';
+  try {
+    const parsed = JSON.parse(content);
+    if (parsed.message) {
+      summary = String(parsed.message).slice(0, 80);
+    } else if (parsed.step) {
+      summary = String(parsed.step).slice(0, 80);
+    } else if (parsed.source) {
+      summary = String(parsed.source).slice(0, 80);
+    }
+  } catch {
+    // Not JSON — use first 80 chars of raw content
+    const firstLine = content.split('\n')[0] ?? '';
+    if (firstLine.length > 0) {
+      summary = firstLine.slice(0, 80);
+    }
+  }
+
+  return (
+    <div style={{
+      borderLeft: '2px solid var(--accent-yellow)',
+      borderRadius: '0 3px 3px 0',
+      background: 'rgba(255,215,0,0.04)',
+    }}>
+      {/* Collapsed header — always visible */}
+      <div
+        onClick={() => setExpanded((v) => !v)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px',
+          padding: '4px 8px',
+          cursor: 'pointer',
+          userSelect: 'none',
+        }}
+        title={expanded ? 'Collapse event' : 'Expand event'}
+      >
+        <span
+          style={{
+            fontSize: '10px',
+            color: 'var(--accent-yellow)',
+            flexShrink: 0,
+            transition: 'transform 0.15s',
+            transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)',
+            display: 'inline-block',
+          }}
+        >
+          ▶
+        </span>
+        <span style={{
+          fontSize: '11px',
+          color: 'var(--accent-yellow)',
+          opacity: 0.85,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}>
+          {summary}
+        </span>
+      </div>
+
+      {/* Expanded content */}
+      {expanded && (
+        <div style={{
+          padding: '4px 8px 6px 22px',
+          color: 'var(--text-primary)',
+          fontSize: '11px',
+          lineHeight: '1.5',
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-word',
+          fontFamily: 'monospace',
+          borderTop: '1px solid rgba(255,215,0,0.12)',
+        }}>
+          {content}
+        </div>
+      )}
     </div>
   );
 }
@@ -154,18 +238,7 @@ function MessageItem({ msg }: { msg: ChatMessage }) {
           </ReactMarkdown>
         </div>
       ) : msg.role === 'event' ? (
-        <div style={{
-          color: 'var(--text-primary)',
-          fontSize: '12px',
-          paddingLeft: '8px',
-          borderLeft: '2px solid var(--accent-yellow)',
-          background: 'rgba(255,215,0,0.04)',
-          padding: '4px 8px',
-          borderRadius: '0 3px 3px 0',
-          lineHeight: '1.5',
-        }}>
-          {msg.content}
-        </div>
+        <CollapsibleEvent content={msg.content} />
       ) : msg.role === 'system' ? (
         <div style={{
           color: 'var(--text-secondary)',
