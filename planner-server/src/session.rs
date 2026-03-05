@@ -170,6 +170,29 @@ impl Session {
 }
 
 // ---------------------------------------------------------------------------
+// Session Summary (lightweight projection)
+// ---------------------------------------------------------------------------
+
+/// Lightweight session summary for list endpoints.
+///
+/// Excludes the full `messages` and `events` vectors to avoid
+/// cloning potentially large payloads when only metadata is needed.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionSummary {
+    pub id: Uuid,
+    pub user_id: String,
+    pub created_at: String,
+    pub last_accessed: String,
+    pub pipeline_running: bool,
+    pub intake_phase: String,
+    pub project_description: Option<String>,
+    pub message_count: usize,
+    pub event_count: usize,
+    pub current_step: Option<String>,
+    pub error_message: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
 // Session Store
 // ---------------------------------------------------------------------------
 
@@ -275,15 +298,38 @@ impl SessionStore {
         session
     }
 
-    /// Get a session by ID. Updates `last_accessed`.
+    /// Get a session by ID (read-only, no side effects).
+    ///
+    /// Does NOT update `last_accessed` and does NOT mark dirty.
+    /// Use this for ownership checks, status reads, and any path
+    /// that doesn't need to extend the session's expiry window.
     pub fn get(&self, id: Uuid) -> Option<Session> {
+        self.sessions.read().get(&id).cloned()
+    }
+
+    /// Get a session if it exists AND belongs to `user_id`.
+    ///
+    /// Returns `None` if the session doesn't exist.
+    /// Returns `Err(())` if the session exists but belongs to a different user.
+    /// Read-only — does not mark dirty.
+    pub fn get_if_owned(&self, id: Uuid, user_id: &str) -> Result<Session, Option<()>> {
+        match self.sessions.read().get(&id) {
+            Some(session) if session.user_id == user_id => Ok(session.clone()),
+            Some(_) => Err(Some(())),  // exists but wrong owner
+            None => Err(None),          // does not exist
+        }
+    }
+
+    /// Touch a session, updating `last_accessed` and marking dirty.
+    ///
+    /// Call this after a meaningful user interaction (message send,
+    /// WebSocket connect) to extend the session's expiry window.
+    pub fn touch(&self, id: Uuid) {
         let mut sessions = self.sessions.write();
         if let Some(session) = sessions.get_mut(&id) {
             session.last_accessed = Utc::now().to_rfc3339();
+            drop(sessions);
             self.mark_dirty(id);
-            Some(session.clone())
-        } else {
-            None
         }
     }
 
@@ -376,17 +422,18 @@ impl SessionStore {
     /// Uses atomic write-then-rename: data goes to `{id}.msgpack.tmp` first,
     /// then is renamed to `{id}.msgpack`. This means a crash mid-write leaves
     /// the previous good copy intact.
+    ///
+    /// IDs are removed from the dirty set only after a successful write.
+    /// This means mutations that land between snapshot and write are never lost.
     pub fn flush_dirty(&self) -> (usize, usize) {
         let sessions_dir = match &self.sessions_dir {
             Some(d) => d,
             None => return (0, 0),
         };
 
-        // Snapshot and clear dirty set.
+        // Snapshot dirty IDs without clearing — we remove only on success.
         let dirty_ids: Vec<Uuid> = {
-            let mut dirty = self.dirty.write();
-            let ids: Vec<Uuid> = dirty.drain().collect();
-            ids
+            self.dirty.read().iter().copied().collect()
         };
 
         if dirty_ids.is_empty() {
@@ -402,7 +449,11 @@ impl SessionStore {
         for id in &dirty_ids {
             let session = match sessions.get(id) {
                 Some(s) => s,
-                None => continue, // Session was deleted between mark and flush.
+                None => {
+                    // Session was deleted between mark and flush — clear from dirty.
+                    self.dirty.write().remove(id);
+                    continue;
+                }
             };
 
             let final_path = sessions_dir.join(format!("{}.msgpack", id));
@@ -412,17 +463,16 @@ impl SessionStore {
                 Ok(bytes) => {
                     if let Err(e) = std::fs::write(&tmp_path, &bytes) {
                         tracing::error!("Failed to write tmp session {}: {}", id, e);
-                        // Re-mark as dirty so we retry next cycle.
-                        self.dirty.write().insert(*id);
                         errors += 1;
                         continue;
                     }
                     if let Err(e) = std::fs::rename(&tmp_path, &final_path) {
                         tracing::error!("Failed to rename session {}: {}", id, e);
-                        self.dirty.write().insert(*id);
                         errors += 1;
                         continue;
                     }
+                    // Success — remove from dirty set.
+                    self.dirty.write().remove(id);
                     flushed += 1;
                 }
                 Err(e) => {
@@ -464,6 +514,42 @@ impl SessionStore {
     /// Number of sessions currently marked dirty.
     pub fn dirty_count(&self) -> usize {
         self.dirty.read().len()
+    }
+
+    /// Snapshot all events from all sessions under a single read lock.
+    ///
+    /// Returns `(session_id, events)` pairs. Does NOT mark anything dirty.
+    /// Use this for admin endpoints that need to aggregate events.
+    pub fn snapshot_all_events(&self) -> Vec<(Uuid, Vec<planner_core::observability::PlannerEvent>)> {
+        self.sessions
+            .read()
+            .iter()
+            .map(|(id, s)| (*id, s.events.clone()))
+            .collect()
+    }
+
+    /// Return lightweight session summaries for a user, without cloning event logs.
+    ///
+    /// Use this for list endpoints where the full Session payload is wasteful.
+    pub fn list_summaries_for_user(&self, user_id: &str) -> Vec<SessionSummary> {
+        self.sessions
+            .read()
+            .values()
+            .filter(|s| s.user_id == user_id)
+            .map(|s| SessionSummary {
+                id: s.id,
+                user_id: s.user_id.clone(),
+                created_at: s.created_at.clone(),
+                last_accessed: s.last_accessed.clone(),
+                pipeline_running: s.pipeline_running,
+                intake_phase: s.intake_phase.clone(),
+                project_description: s.project_description.clone(),
+                message_count: s.messages.len(),
+                event_count: s.events.len(),
+                current_step: s.current_step.clone(),
+                error_message: s.error_message.clone(),
+            })
+            .collect()
     }
 
 } // impl SessionStore

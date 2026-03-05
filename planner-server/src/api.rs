@@ -250,12 +250,11 @@ async fn admin_status(State(state): State<Arc<AppState>>) -> Json<AdminStatusRes
     // Uptime calculation
     let uptime_secs = state.started_at.elapsed().as_secs();
 
-    // Session stats
+    // Session stats — use snapshot to avoid marking all sessions dirty.
     let active = state.sessions.count();
-    let total_events: usize = state.sessions.list_ids()
+    let total_events: usize = state.sessions.snapshot_all_events()
         .iter()
-        .filter_map(|id| state.sessions.get(*id))
-        .map(|s| s.events.len())
+        .map(|(_, events)| events.len())
         .sum();
 
     // Provider availability
@@ -318,13 +317,12 @@ async fn admin_events(
 
     let limit = query.limit.unwrap_or(100).min(1000);
 
-    // Collect events from all in-memory sessions
+    // Collect events from all in-memory sessions via single read-lock snapshot.
     let mut all_events: Vec<AdminEventEntry> = state
         .sessions
-        .list_ids()
-        .iter()
-        .filter_map(|id| state.sessions.get(*id))
-        .flat_map(|s| s.events.clone())
+        .snapshot_all_events()
+        .into_iter()
+        .flat_map(|(_, events)| events)
         .filter(|e| {
             if let Some(ref lvl) = filter_level {
                 if &e.level != lvl {
@@ -444,23 +442,15 @@ async fn get_session(
     claims: Claims,
     Path(id): Path<Uuid>,
 ) -> Result<Json<GetSessionResponse>, (StatusCode, Json<ErrorResponse>)> {
-    match state.sessions.get(id) {
-        Some(session) => {
-            if session.user_id != claims.sub {
-                return Err((
-                    StatusCode::FORBIDDEN,
-                    Json(ErrorResponse {
-                        error: "Access denied".into(),
-                    }),
-                ));
-            }
-            Ok(Json(GetSessionResponse { session }))
-        }
-        None => Err((
+    match state.sessions.get_if_owned(id, &claims.sub) {
+        Ok(session) => Ok(Json(GetSessionResponse { session })),
+        Err(Some(())) => Err((
+            StatusCode::FORBIDDEN,
+            Json(ErrorResponse { error: "Access denied".into() }),
+        )),
+        Err(None) => Err((
             StatusCode::NOT_FOUND,
-            Json(ErrorResponse {
-                error: format!("Session not found: {}", id),
-            }),
+            Json(ErrorResponse { error: format!("Session not found: {}", id) }),
         )),
     }
 }
@@ -471,28 +461,6 @@ async fn send_message(
     Path(id): Path<Uuid>,
     Json(req): Json<SendMessageRequest>,
 ) -> Result<Json<SendMessageResponse>, (StatusCode, Json<ErrorResponse>)> {
-    // Verify ownership before proceeding
-    match state.sessions.get(id) {
-        Some(session) => {
-            if session.user_id != claims.sub {
-                return Err((
-                    StatusCode::FORBIDDEN,
-                    Json(ErrorResponse {
-                        error: "Access denied".into(),
-                    }),
-                ));
-            }
-        }
-        None => {
-            return Err((
-                StatusCode::NOT_FOUND,
-                Json(ErrorResponse {
-                    error: format!("Session not found: {}", id),
-                }),
-            ));
-        }
-    }
-
     let content = req.content.trim().to_string();
     if content.is_empty() {
         return Err((
@@ -503,21 +471,23 @@ async fn send_message(
         ));
     }
 
-    // Check if pipeline was already running before the update
-    let was_running = state.sessions.get(id)
-        .map(|s| s.pipeline_running)
-        .unwrap_or(false);
+    // Single atomic update: ownership check + pipeline check + mutation.
+    // No separate get() calls — eliminates TOCTOU race.
+    let mut should_spawn_pipeline = false;
 
-    // Add user message and generate the initial planner acknowledgement.
-    // The actual pipeline runs in a background task — clients poll
-    // GET /api/sessions/:id or connect to the WebSocket for live updates.
     let result = state.sessions.update(id, |session| {
+        // Ownership check inside the lock.
+        if session.user_id != claims.sub {
+            return;  // We'll detect this after by checking the returned session.
+        }
+
         session.add_message("user", &content);
 
         if !session.pipeline_running {
             session.pipeline_running = true;
             session.project_description = Some(content.clone());
             session.stages[0].status = "running".into();
+            should_spawn_pipeline = true;
 
             session.add_message(
                 "planner",
@@ -540,9 +510,20 @@ async fn send_message(
 
     match result {
         Some(session) => {
-            // Spawn the pipeline task only if it wasn't already running before
-            // this request set it to running.
-            if !was_running && session.pipeline_running {
+            // Verify ownership: if the session's user_id doesn't match,
+            // the closure above was a no-op (no messages were added).
+            if session.user_id != claims.sub {
+                return Err((
+                    StatusCode::FORBIDDEN,
+                    Json(ErrorResponse { error: "Access denied".into() }),
+                ));
+            }
+
+            // Touch to extend expiry after a real user interaction.
+            state.sessions.touch(id);
+
+            // Spawn pipeline only if this request transitioned it to running.
+            if should_spawn_pipeline {
                 let state_clone = state.clone();
                 let session_id = id;
                 let description = content.clone();
@@ -552,7 +533,7 @@ async fn send_message(
                 });
             }
 
-            // Use safe index access for the response messages
+            // Use safe index access for the response messages.
             let msgs = &session.messages;
             let planner_msg = msgs.last().cloned().unwrap_or_else(|| crate::session::SessionMessage {
                 id: uuid::Uuid::new_v4(),
@@ -673,16 +654,16 @@ async fn list_turns(
     claims: Claims,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ListTurnsResponse>, (StatusCode, Json<ErrorResponse>)> {
-    // Verify session exists and belongs to the requesting user.
-    match state.sessions.get(id) {
-        Some(session) if session.user_id == claims.sub => {}
-        Some(_) => {
+    // Verify session exists and belongs to the requesting user (read-only).
+    match state.sessions.get_if_owned(id, &claims.sub) {
+        Ok(_) => {}
+        Err(Some(())) => {
             return Err((
                 StatusCode::FORBIDDEN,
                 Json(ErrorResponse { error: "Access denied".into() }),
             ));
         }
-        None => {
+        Err(None) => {
             return Err((
                 StatusCode::NOT_FOUND,
                 Json(ErrorResponse { error: format!("Session not found: {}", id) }),
@@ -703,16 +684,16 @@ async fn list_runs(
     claims: Claims,
     Path(id): Path<Uuid>,
 ) -> Result<Json<RunListResponse>, (StatusCode, Json<ErrorResponse>)> {
-    // Verify session exists and belongs to the requesting user.
-    match state.sessions.get(id) {
-        Some(session) if session.user_id == claims.sub => {}
-        Some(_) => {
+    // Verify session exists and belongs to the requesting user (read-only).
+    match state.sessions.get_if_owned(id, &claims.sub) {
+        Ok(_) => {}
+        Err(Some(())) => {
             return Err((
                 StatusCode::FORBIDDEN,
                 Json(ErrorResponse { error: "Access denied".into() }),
             ));
         }
-        None => {
+        Err(None) => {
             return Err((
                 StatusCode::NOT_FOUND,
                 Json(ErrorResponse { error: format!("Session not found: {}", id) }),
@@ -742,13 +723,19 @@ async fn get_session_events(
         (StatusCode::BAD_REQUEST, Json(ErrorResponse { error: "Invalid session ID".into() }))
     })?;
 
-    let session = state.sessions.get(session_id).ok_or_else(|| {
-        (StatusCode::NOT_FOUND, Json(ErrorResponse { error: "Session not found".into() }))
-    })?;
-
-    if session.user_id != claims.sub && session.user_id != "dev|local" {
-        return Err((StatusCode::FORBIDDEN, Json(ErrorResponse { error: "Not your session".into() })));
-    }
+    let session = match state.sessions.get_if_owned(session_id, &claims.sub) {
+        Ok(s) => s,
+        Err(Some(())) => {
+            // Allow dev|local sessions to be read by anyone (dev mode compat).
+            match state.sessions.get(session_id) {
+                Some(s) if s.user_id == "dev|local" => s,
+                _ => return Err((StatusCode::FORBIDDEN, Json(ErrorResponse { error: "Not your session".into() }))),
+            }
+        }
+        Err(None) => {
+            return Err((StatusCode::NOT_FOUND, Json(ErrorResponse { error: "Session not found".into() })));
+        }
+    };
 
     let mut events: Vec<planner_core::observability::PlannerEvent> = session.events.clone();
 
@@ -803,16 +790,17 @@ async fn ws_handler(
     Path(id): Path<Uuid>,
     ws: WebSocketUpgrade,
 ) -> impl IntoResponse {
-    // Verify the session exists and belongs to the user
-    match state.sessions.get(id) {
-        Some(session) if session.user_id == claims.sub => {
+    // Verify the session exists and belongs to the user (read-only).
+    match state.sessions.get_if_owned(id, &claims.sub) {
+        Ok(_) => {
+            // Touch to extend expiry — WebSocket connect is a real interaction.
+            state.sessions.touch(id);
             ws.on_upgrade(move |socket| ws::handle_ws(socket, state, id))
         }
-        Some(_) => {
-            // Session exists but belongs to a different user
+        Err(Some(())) => {
             (StatusCode::FORBIDDEN, "Access denied").into_response()
         }
-        None => {
+        Err(None) => {
             (StatusCode::NOT_FOUND, "Session not found").into_response()
         }
     }
@@ -832,16 +820,16 @@ async fn start_socratic(
     Path(id): Path<Uuid>,
     Json(req): Json<StartSocraticRequest>,
 ) -> Result<Json<StartSocraticResponse>, (StatusCode, Json<ErrorResponse>)> {
-    // Verify ownership.
-    match state.sessions.get(id) {
-        Some(session) if session.user_id == claims.sub => {}
-        Some(_) => {
+    // Verify ownership (read-only).
+    match state.sessions.get_if_owned(id, &claims.sub) {
+        Ok(_) => {}
+        Err(Some(())) => {
             return Err((
                 StatusCode::FORBIDDEN,
                 Json(ErrorResponse { error: "Access denied".into() }),
             ));
         }
-        None => {
+        Err(None) => {
             return Err((
                 StatusCode::NOT_FOUND,
                 Json(ErrorResponse { error: format!("Session not found: {}", id) }),
@@ -854,6 +842,9 @@ async fn start_socratic(
         s.project_description = Some(req.description.clone());
         s.intake_phase = "interviewing".into();
     });
+
+    // Touch to extend expiry.
+    state.sessions.touch(id);
 
     Ok(Json(StartSocraticResponse {
         session_id: id.to_string(),
@@ -870,14 +861,15 @@ async fn socratic_ws_handler(
     Path(id): Path<Uuid>,
     ws: WebSocketUpgrade,
 ) -> impl IntoResponse {
-    match state.sessions.get(id) {
-        Some(session) if session.user_id == claims.sub => {
+    match state.sessions.get_if_owned(id, &claims.sub) {
+        Ok(_) => {
+            state.sessions.touch(id);
             ws.on_upgrade(move |socket| {
                 ws_socratic::handle_socratic_ws(socket, state, id)
             })
         }
-        Some(_) => (StatusCode::FORBIDDEN, "Access denied").into_response(),
-        None => (StatusCode::NOT_FOUND, "Session not found").into_response(),
+        Err(Some(())) => (StatusCode::FORBIDDEN, "Access denied").into_response(),
+        Err(None) => (StatusCode::NOT_FOUND, "Session not found").into_response(),
     }
 }
 
@@ -889,8 +881,8 @@ async fn get_belief_state(
     claims: Claims,
     Path(id): Path<Uuid>,
 ) -> Result<Json<BeliefStateResponse>, (StatusCode, Json<ErrorResponse>)> {
-    match state.sessions.get(id) {
-        Some(session) if session.user_id == claims.sub => {
+    match state.sessions.get_if_owned(id, &claims.sub) {
+        Ok(session) => {
             let belief_state = match &session.belief_state {
                 Some(bs) => serde_json::to_value(bs).unwrap_or(serde_json::Value::Null),
                 None => serde_json::Value::Null,
@@ -901,11 +893,11 @@ async fn get_belief_state(
                 belief_state,
             }))
         }
-        Some(_) => Err((
+        Err(Some(())) => Err((
             StatusCode::FORBIDDEN,
             Json(ErrorResponse { error: "Access denied".into() }),
         )),
-        None => Err((
+        Err(None) => Err((
             StatusCode::NOT_FOUND,
             Json(ErrorResponse { error: format!("Session not found: {}", id) }),
         )),

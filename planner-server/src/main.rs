@@ -138,11 +138,14 @@ async fn main() {
         ))
         .layer(cors);
 
-    // Start background session flush task (runs every 5 seconds)
+    // Start background session flush task (runs every 5 seconds, with initial delay)
     {
         let flush_state = state.clone();
         tokio::spawn(async move {
-            let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
+            let mut interval = tokio::time::interval_at(
+                tokio::time::Instant::now() + std::time::Duration::from_secs(5),
+                std::time::Duration::from_secs(5),
+            );
             loop {
                 interval.tick().await;
                 let (flushed, errors) = flush_state.sessions.flush_dirty();
@@ -153,11 +156,14 @@ async fn main() {
         });
     }
 
-    // Start background session cleanup task (runs every 5 minutes)
+    // Start background session cleanup task (runs every 5 minutes, with initial delay)
     {
         let cleanup_state = state.clone();
         tokio::spawn(async move {
-            let mut interval = tokio::time::interval(std::time::Duration::from_secs(300));
+            let mut interval = tokio::time::interval_at(
+                tokio::time::Instant::now() + std::time::Duration::from_secs(300),
+                std::time::Duration::from_secs(300),
+            );
             loop {
                 interval.tick().await;
                 cleanup_state.sessions.cleanup_expired(3600);
@@ -194,5 +200,18 @@ async fn main() {
     tracing::info!("Planner server starting on http://{}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+
+    // Graceful shutdown: flush dirty sessions on SIGINT/SIGTERM.
+    let shutdown_state = state.clone();
+    let shutdown = async move {
+        tokio::signal::ctrl_c().await.ok();
+        tracing::info!("Shutdown signal received — flushing dirty sessions...");
+        let (flushed, errors) = shutdown_state.sessions.flush_dirty();
+        tracing::info!("Final flush: {} written, {} errors", flushed, errors);
+    };
+
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown)
+        .await
+        .unwrap();
 }
