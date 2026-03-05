@@ -156,6 +156,16 @@ CODEX_CONFIG
     # project-level config discovery (.claude/, .gemini/, .codex/)
     mkdir -p "${sandbox}"
 
+    # Claude CLI requires the CWD to be a git repo ("trusted directory").
+    # Initialize as a git repo if not already one.
+    if [[ ! -d "${sandbox}/.git" ]]; then
+        info "  Initializing git repo in CLI sandbox (Claude CLI requires trusted directory)..."
+        git -C "${sandbox}" init -q
+        git -C "${sandbox}" config user.email "planner@localhost"
+        git -C "${sandbox}" config user.name "Planner"
+        git -C "${sandbox}" commit --allow-empty -q -m "planner: cli sandbox init"
+    fi
+
     # Own everything by the service user
     chown -R "${SERVICE_USER}:${SERVICE_USER}" "${cli_home}"
     chown -R "${SERVICE_USER}:${SERVICE_USER}" "${sandbox}"

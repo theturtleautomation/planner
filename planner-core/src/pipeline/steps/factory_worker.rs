@@ -991,9 +991,9 @@ fn dirs_cache_path() -> Option<PathBuf> {
 /// NOTE: `-a` (--ask-for-approval) is a global flag that does NOT
 /// propagate to `exec` — use `--full-auto` instead.
 ///
-/// The `--skip-git-repo-check` flag is NOT used because
-/// `WorktreeManager::prepare` already runs `git init` in the worktree,
-/// making it a trusted git directory.
+/// The CLI sandbox directory is git-init'd by `ensure_sandbox_git_init()`
+/// (called lazily from `run_cli()`), satisfying the "trusted directory"
+/// requirement that some CLIs enforce.
 pub struct CodexFactoryWorker {
     /// Resolved absolute path to the codex binary, or None if not found.
     binary_path: Option<String>,

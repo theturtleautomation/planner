@@ -67,6 +67,90 @@ const CLI_SANDBOX_DIR: &str = "/opt/planner/cli-sandbox";
 /// The installer places claude, gemini, codex, and node here.
 const CLI_BIN_DIR: &str = "/opt/planner/bin";
 
+/// Ensure the CLI sandbox directory exists and is a git repository.
+///
+/// The Claude CLI requires running inside a "trusted directory" (a git
+/// repo). Since we use an isolated empty directory as CWD for all CLI
+/// invocations, we must `git init` it so Claude doesn't refuse to start.
+///
+/// This is idempotent — `git init` on an existing repo is a no-op.
+/// Called lazily on first CLI invocation via `std::sync::Once`.
+pub fn ensure_sandbox_git_init() {
+    use std::sync::Once;
+    static INIT: Once = Once::new();
+
+    INIT.call_once(|| {
+        let sandbox = std::path::Path::new(CLI_SANDBOX_DIR);
+
+        // Create the directory if it doesn't exist (dev mode without install.sh)
+        if !sandbox.exists() {
+            if let Err(e) = std::fs::create_dir_all(sandbox) {
+                tracing::warn!(
+                    "Failed to create CLI sandbox dir {}: {}",
+                    CLI_SANDBOX_DIR, e
+                );
+                return;
+            }
+        }
+
+        // Check if already a git repo
+        let git_dir = sandbox.join(".git");
+        if git_dir.exists() {
+            tracing::debug!("CLI sandbox {} is already a git repo", CLI_SANDBOX_DIR);
+            return;
+        }
+
+        // git init
+        let result = std::process::Command::new("git")
+            .arg("init")
+            .current_dir(sandbox)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+
+        match result {
+            Ok(s) if s.success() => {
+                // Configure git user (required for any future commits)
+                let _ = std::process::Command::new("git")
+                    .args(["config", "user.email", "planner@localhost"])
+                    .current_dir(sandbox)
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .status();
+                let _ = std::process::Command::new("git")
+                    .args(["config", "user.name", "Planner"])
+                    .current_dir(sandbox)
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .status();
+                // Create an empty initial commit so it's a fully valid repo
+                let _ = std::process::Command::new("git")
+                    .args(["commit", "--allow-empty", "-m", "planner: cli sandbox init"])
+                    .current_dir(sandbox)
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .status();
+                tracing::info!(
+                    "CLI sandbox git-init'd at {} (Claude CLI requires trusted directory)",
+                    CLI_SANDBOX_DIR
+                );
+            }
+            Ok(s) => {
+                tracing::warn!(
+                    "git init in {} exited with {} — Claude CLI may refuse to run",
+                    CLI_SANDBOX_DIR, s
+                );
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "git init failed in {}: {} — Claude CLI may refuse to run",
+                    CLI_SANDBOX_DIR, e
+                );
+            }
+        }
+    });
+}
+
 /// Execution environment for an isolated CLI invocation.
 #[derive(Debug, Clone)]
 pub struct CliEnvironment {
@@ -284,6 +368,9 @@ pub async fn run_cli(
     timeout_secs: u64,
     cli_env: Option<&CliEnvironment>,
 ) -> Result<(String, String), LlmError> {
+    // Ensure the CLI sandbox is a git repo (Claude CLI requires "trusted directory")
+    ensure_sandbox_git_init();
+
     let mut cmd = Command::new(binary);
     cmd.args(args)
         .stdout(Stdio::piped())
@@ -456,11 +543,10 @@ pub async fn run_cli_instrumented(
 // stdin piping, Claude only returns text completions — no file writes
 // or bash commands are executed, so this is safe and non-bypassing.
 //
-// `--skip-git-repo-check` is required because the CLI runs in an
-// isolated sandbox directory (/opt/planner/cli-sandbox) that is NOT
-// a git repository. Without this flag, the Claude CLI refuses to start
-// with: "Not inside a trusted directory". Since we're in `-p` (pipe)
-// mode with no file/shell access, git trust is irrelevant.
+// The CLI sandbox directory (/opt/planner/cli-sandbox) is git-init'd
+// at startup via `ensure_sandbox_git_init()` so the Claude CLI treats
+// it as a trusted directory. Without this, Claude refuses to run with:
+// "Not inside a trusted directory".
 //
 // stream-json format emits one JSON object per line. The final "result"
 // message contains the assistant's response text and token usage.
@@ -538,7 +624,6 @@ impl LlmClient for AnthropicCliClient {
             "--output-format",
             "stream-json",
             "--verbose",
-            "--skip-git-repo-check",
             "--model",
             &model_arg,
         ];
@@ -807,7 +892,6 @@ impl LlmClient for OpenAiCliClient {
         let args = vec![
             "exec",
             "--json",
-            "--skip-git-repo-check",
             "--sandbox",
             "workspace-write",
             "-m",
