@@ -86,6 +86,22 @@ async fn main() {
         }
     };
 
+    // Initialize Blueprint store — disk-backed alongside sessions.
+    let blueprint_store = match planner_core::blueprint::BlueprintStore::open(std::path::Path::new(&data_dir)) {
+        Ok(store) => {
+            let (nodes, edges) = store.counts();
+            tracing::info!(
+                "Blueprint persistence enabled: {}/blueprint/ ({} nodes, {} edges loaded)",
+                data_dir, nodes, edges,
+            );
+            store
+        }
+        Err(e) => {
+            tracing::warn!("Blueprint persistence unavailable ({}), falling back to in-memory only", e);
+            planner_core::blueprint::BlueprintStore::new()
+        }
+    };
+
     // Initialize event persistence
     let event_store = match planner_core::observability::EventStore::new(std::path::Path::new(&data_dir)) {
         Ok(store) => {
@@ -101,6 +117,7 @@ async fn main() {
     // Create shared state
     let state = Arc::new(AppState {
         sessions: session_store,
+        blueprints: blueprint_store,
         auth_config,
         event_store,
         started_at: std::time::Instant::now(),
@@ -138,7 +155,7 @@ async fn main() {
         ))
         .layer(cors);
 
-    // Start background session flush task (runs every 5 seconds, with initial delay)
+    // Start background session + blueprint flush task (runs every 5 seconds, with initial delay)
     {
         let flush_state = state.clone();
         tokio::spawn(async move {
@@ -151,6 +168,11 @@ async fn main() {
                 let (flushed, errors) = flush_state.sessions.flush_dirty();
                 if errors > 0 {
                     tracing::warn!("Session flush: {} written, {} errors", flushed, errors);
+                }
+                match flush_state.blueprints.flush() {
+                    Ok(true) => tracing::debug!("Blueprint flushed to disk"),
+                    Ok(false) => {} // nothing dirty
+                    Err(e) => tracing::warn!("Blueprint flush error: {}", e),
                 }
             }
         });
@@ -201,13 +223,36 @@ async fn main() {
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
 
-    // Graceful shutdown: flush dirty sessions on SIGINT/SIGTERM.
+    // Graceful shutdown: flush dirty sessions on SIGINT or SIGTERM.
     let shutdown_state = state.clone();
     let shutdown = async move {
-        tokio::signal::ctrl_c().await.ok();
-        tracing::info!("Shutdown signal received — flushing dirty sessions...");
+        let ctrl_c = tokio::signal::ctrl_c();
+        #[cfg(unix)]
+        let mut sigterm = tokio::signal::unix::signal(
+            tokio::signal::unix::SignalKind::terminate(),
+        ).expect("failed to register SIGTERM handler");
+        #[cfg(unix)]
+        let sigterm_recv = sigterm.recv();
+        #[cfg(not(unix))]
+        let sigterm_recv = std::future::pending::<Option<()>>();
+
+        tokio::select! {
+            _ = ctrl_c => {
+                tracing::info!("SIGINT received — initiating graceful shutdown...");
+            }
+            _ = sigterm_recv => {
+                tracing::info!("SIGTERM received — initiating graceful shutdown...");
+            }
+        }
+
+        tracing::info!("Flushing dirty sessions and blueprint...");
         let (flushed, errors) = shutdown_state.sessions.flush_dirty();
-        tracing::info!("Final flush: {} written, {} errors", flushed, errors);
+        tracing::info!("Session flush: {} written, {} errors", flushed, errors);
+        match shutdown_state.blueprints.flush() {
+            Ok(true) => tracing::info!("Blueprint flushed to disk"),
+            Ok(false) => tracing::info!("Blueprint clean — no flush needed"),
+            Err(e) => tracing::warn!("Blueprint shutdown flush error: {}", e),
+        }
     };
 
     axum::serve(listener, app)

@@ -142,6 +142,17 @@
 }
 
 /* ============================================
+   LIGHT MODE — BADGE CONTRAST OVERRIDES (WCAG AA)
+   Darkened badge backgrounds so white text meets 4.5:1 contrast ratio
+   ============================================ */
+[data-theme="light"] .badge-decision  { background: #0d7377; color: #ffffff; }
+[data-theme="light"] .badge-technology { background: #1565c0; color: #ffffff; }
+[data-theme="light"] .badge-component  { background: #6a1b9a; color: #ffffff; }
+[data-theme="light"] .badge-constraint { background: #c62828; color: #ffffff; }
+[data-theme="light"] .badge-pattern    { background: #2e7d32; color: #ffffff; }
+[data-theme="light"] .badge-quality    { background: #e65100; color: #ffffff; }
+
+/* ============================================
    BASE RESET
    ============================================ */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -957,9 +968,38 @@ input, select { font: inherit; color: inherit; }
   .drawer { width: 340px; }
   .modal { width: 90vw; }
 }
-@media (max-width: 640px) {
+
+/* 768px: collapse sidebar to icons-only */
+@media (max-width: 768px) {
+  .app { grid-template-columns: 48px 1fr; }
+  .sidebar { padding: var(--space-4) 0; overflow-x: hidden; }
+  .sidebar-brand { padding: var(--space-2); justify-content: center; }
+  .sidebar-wordmark { display: none; }
+  .sidebar-label { display: none; }
+  .sidebar-item { padding: var(--space-2); justify-content: center; gap: 0; border-radius: var(--radius-sm); }
+  .sidebar-item .icon { opacity: 1; width: 18px; height: 18px; }
+  .sidebar-item > span:not(.icon),
+  .sidebar-item > .count { display: none; }
+  .drawer { width: 90vw; }
+  .modal { width: 95vw; }
+  .topbar-subtitle { display: none; }
+}
+
+/* 480px: stack view tabs vertically, reduce font sizes */
+@media (max-width: 480px) {
   .app { grid-template-columns: 1fr; }
   .sidebar { display: none; }
+  .topbar { flex-direction: column; align-items: flex-start; gap: var(--space-2); padding: var(--space-2) var(--space-3); min-height: auto; }
+  .topbar-left { flex-direction: column; align-items: flex-start; gap: var(--space-2); width: 100%; }
+  .topbar-right { width: 100%; justify-content: flex-end; }
+  .view-tabs { flex-direction: column; width: 100%; }
+  .view-tab { width: 100%; text-align: center; padding: var(--space-2) var(--space-3); }
+  .topbar-title { font-size: var(--text-base); }
+  .graph-legend { flex-wrap: wrap; font-size: 0.5625rem; gap: var(--space-2); padding: var(--space-1) var(--space-2); }
+  .edge-legend { display: none; }
+  .drawer { width: 100%; }
+  .modal { width: 100%; max-height: 100dvh; border-radius: 0; }
+  .impact-terminal { font-size: 0.6875rem; padding: var(--space-3); }
 }
 
 /* ============================================
@@ -1086,7 +1126,7 @@ input, select { font: inherit; color: inherit; }
       </div>
     </div>
 
-    <div class="content">
+    <div class="content" aria-live="polite" aria-label="Blueprint view content">
       <!-- Graph View -->
       <div class="graph-view active" id="graph-view">
         <div class="graph-loading" id="graph-loading">
@@ -1188,53 +1228,53 @@ input, select { font: inherit; color: inherit; }
     </div>
     <div class="modal-body">
       <div class="impact-terminal">
-        <div class="impact-header-line">Impact Plan: DEC use-messagepack-c3d4 → Proposed change to SQLite</div>
+        <div class="impact-header-line">Impact Plan: DEC use-messagepack-c3d4 → Proposed change: Use SQLite</div>
         <div class="impact-rule">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</div>
-        <div class="impact-summary"><strong>Summary:</strong> 2 reconverge, 2 update, 1 invalidate, 1 new</div>
+        <div class="impact-summary"><strong>Summary:</strong> 2 reconverge, 2 update, 1 remove, 1 add</div>
 
         <div class="impact-line">
           <span class="impact-symbol update">~</span>
-          <span class="impact-id">COMP cxdb-store-a7b8</span>
+          <span class="impact-id">COMP: CXDB</span>
           <span class="impact-tag reconverge">[RECONVERGE]</span>
           <span class="impact-warn">⚠</span>
         </div>
-        <div class="impact-desc">Storage implementation must be rewritten for SQL schema</div>
+        <div class="impact-desc">Storage must be rewritten</div>
 
         <div class="impact-line">
           <span class="impact-symbol update">~</span>
-          <span class="impact-id">COMP event-store-e1f2</span>
+          <span class="impact-id">COMP: EventStore</span>
           <span class="impact-tag reconverge">[RECONVERGE]</span>
           <span class="impact-warn">⚠</span>
         </div>
-        <div class="impact-desc">Event persistence format changes</div>
+        <div class="impact-desc">Event format changes</div>
 
         <div class="impact-line">
           <span class="impact-symbol remove">✗</span>
-          <span class="impact-id">TECH messagepack-u1v2</span>
+          <span class="impact-id">TECH: rmp-serde</span>
           <span class="impact-tag remove">[REMOVE]</span>
         </div>
         <div class="impact-desc">No longer needed</div>
 
         <div class="impact-line">
           <span class="impact-symbol add">+</span>
-          <span class="impact-id">TECH rusqlite (new)</span>
+          <span class="impact-id">TECH: rusqlite</span>
           <span class="impact-tag add">[ADD]</span>
         </div>
-        <div class="impact-desc">Required: SQLite driver for Rust</div>
+        <div class="impact-desc">Required SQLite driver</div>
 
         <div class="impact-line">
           <span class="impact-symbol update">~</span>
-          <span class="impact-id">PAT memory-first-disk-u7v8</span>
+          <span class="impact-id">PAT: Memory-first</span>
           <span class="impact-tag update">[UPDATE]</span>
         </div>
-        <div class="impact-desc">Pattern unchanged but implementation differs</div>
+        <div class="impact-desc">Implementation strategy differs</div>
 
         <div class="impact-line">
-          <span class="impact-symbol invalidate">⛔</span>
-          <span class="impact-id">DEC atomic-writes (implied)</span>
-          <span class="impact-tag invalidate">[INVALIDATE]</span>
+          <span class="impact-symbol update">~</span>
+          <span class="impact-id">QR: Crash-safe</span>
+          <span class="impact-tag update">[UPDATE]</span>
         </div>
-        <div class="impact-desc">SQLite handles atomicity internally</div>
+        <div class="impact-desc">Verification approach changes</div>
       </div>
     </div>
     <div class="modal-footer">
@@ -1246,6 +1286,10 @@ input, select { font: inherit; color: inherit; }
     </div>
   </div>
 </div>
+
+<!-- Visually-hidden ARIA live region for screen reader announcements -->
+<div id="view-announcer" role="status" aria-live="polite" aria-atomic="true"
+  style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;"></div>
 
 <script>
 // ============================================
@@ -1423,6 +1467,10 @@ viewTabs.forEach(tab => {
     });
     if (currentView === 'table') renderTable();
     if (currentView === 'radar') renderRadar();
+    // Announce view change to screen readers via aria-live region
+    const viewNames = { graph: 'Graph view', table: 'Table view', radar: 'Radar view' };
+    const announcer = document.getElementById('view-announcer');
+    if (announcer) announcer.textContent = viewNames[currentView] || currentView;
   });
 });
 
@@ -1466,6 +1514,7 @@ themeToggle.addEventListener('click', () => {
     ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>'
     : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
   // Invalidate color cache and re-render
+  colorCache = {}; // clear stale theme values before repopulating
   populateColorCache();
   if (graphSimulation) {
     updateGraphColors();
@@ -1827,14 +1876,21 @@ function initGraph() {
       return typeY[d.type] || 0;
     }).strength(0.15));
 
+  // requestAnimationFrame throttle: prevent excessive repaints during simulation ticks
+  let rafPending = false;
   graphSimulation.on('tick', () => {
-    graphLink
-      .attr('x1', d => d.source.x)
-      .attr('y1', d => d.source.y)
-      .attr('x2', d => d.target.x)
-      .attr('y2', d => d.target.y);
-
-    graphNode.attr('transform', d => `translate(${d.x},${d.y})`);
+    if (!rafPending) {
+      rafPending = true;
+      requestAnimationFrame(() => {
+        graphLink
+          .attr('x1', d => d.source.x)
+          .attr('y1', d => d.source.y)
+          .attr('x2', d => d.target.x)
+          .attr('y2', d => d.target.y);
+        graphNode.attr('transform', d => `translate(${d.x},${d.y})`);
+        rafPending = false;
+      });
+    }
   });
 
   graphNode.call(drag(graphSimulation));

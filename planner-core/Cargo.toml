@@ -17,6 +17,7 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 async-trait = { workspace = true }
 thiserror = { workspace = true }
+parking_lot = { workspace = true }
 
 [features]
 live-llm = []

@@ -4,6 +4,7 @@
 
 pub mod agents_manifest;
 pub mod ar_report;
+pub mod blueprint;
 pub mod consequence_card;
 pub mod dtu;
 pub mod factory_output;

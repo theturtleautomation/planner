@@ -226,6 +226,11 @@ impl SessionStore {
         let sessions_dir = data_dir.join("sessions");
         std::fs::create_dir_all(&sessions_dir)?;
 
+        // Validate directory is writable.
+        let probe = sessions_dir.join(".write_probe");
+        std::fs::write(&probe, b"ok")?;
+        std::fs::remove_file(&probe)?;
+
         let mut sessions = HashMap::new();
         let mut load_errors = 0u32;
 
@@ -406,6 +411,17 @@ impl SessionStore {
         }
     }
 
+    /// Explicitly delete a session by ID.
+    /// Removes from memory, dirty set, and disk.
+    pub fn delete(&self, id: Uuid) -> bool {
+        let existed = self.sessions.write().remove(&id).is_some();
+        if existed {
+            self.dirty.write().remove(&id);
+            self.delete_from_disk(id);
+        }
+        existed
+    }
+
     // -----------------------------------------------------------------------
     // Persistence internals
     // -----------------------------------------------------------------------
@@ -443,43 +459,57 @@ impl SessionStore {
         let mut flushed = 0usize;
         let mut errors = 0usize;
 
-        // Read-lock to snapshot sessions.
-        let sessions = self.sessions.read();
-
-        for id in &dirty_ids {
-            let session = match sessions.get(id) {
-                Some(s) => s,
-                None => {
-                    // Session was deleted between mark and flush — clear from dirty.
-                    self.dirty.write().remove(id);
-                    continue;
+        // Snapshot dirty sessions under read lock, then release.
+        // This prevents the read lock from being held during disk I/O.
+        let session_snapshots: Vec<(Uuid, Vec<u8>)> = {
+            let sessions = self.sessions.read();
+            let mut snapshots = Vec::with_capacity(dirty_ids.len());
+            for id in &dirty_ids {
+                match sessions.get(id) {
+                    Some(session) => {
+                        match rmp_serde::to_vec(session) {
+                            Ok(bytes) => snapshots.push((*id, bytes)),
+                            Err(e) => {
+                                tracing::error!("Failed to encode session {}: {}", id, e);
+                                errors += 1;
+                            }
+                        }
+                    }
+                    None => {
+                        // Session deleted between mark and flush — clear dirty.
+                        self.dirty.write().remove(id);
+                    }
                 }
-            };
+            }
+            snapshots
+        };
+        // Read lock released here — mutations are unblocked during I/O.
 
+        for (id, bytes) in &session_snapshots {
             let final_path = sessions_dir.join(format!("{}.msgpack", id));
             let tmp_path = sessions_dir.join(format!("{}.msgpack.tmp", id));
 
-            match rmp_serde::to_vec(session) {
-                Ok(bytes) => {
-                    if let Err(e) = std::fs::write(&tmp_path, &bytes) {
-                        tracing::error!("Failed to write tmp session {}: {}", id, e);
-                        errors += 1;
-                        continue;
-                    }
-                    if let Err(e) = std::fs::rename(&tmp_path, &final_path) {
-                        tracing::error!("Failed to rename session {}: {}", id, e);
-                        errors += 1;
-                        continue;
-                    }
-                    // Success — remove from dirty set.
-                    self.dirty.write().remove(id);
-                    flushed += 1;
-                }
-                Err(e) => {
-                    tracing::error!("Failed to encode session {}: {}", id, e);
-                    errors += 1;
-                }
+            // Write + fsync + rename for crash durability.
+            let write_result = (|| -> std::io::Result<()> {
+                let mut file = std::fs::File::create(&tmp_path)?;
+                std::io::Write::write_all(&mut file, bytes)?;
+                file.sync_all()?;
+                Ok(())
+            })();
+
+            if let Err(e) = write_result {
+                tracing::error!("Failed to write/fsync session {}: {}", id, e);
+                errors += 1;
+                continue;
             }
+            if let Err(e) = std::fs::rename(&tmp_path, &final_path) {
+                tracing::error!("Failed to rename session {}: {}", id, e);
+                errors += 1;
+                continue;
+            }
+            // Success — remove from dirty set.
+            self.dirty.write().remove(id);
+            flushed += 1;
         }
 
         if flushed > 0 || errors > 0 {

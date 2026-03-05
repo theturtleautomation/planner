@@ -39,6 +39,7 @@ pub use turn::{ArtifactPayload, Turn, TurnMetadata};
 // Re-export all artifact types at the crate root for ergonomic access.
 pub use artifacts::agents_manifest::*;
 pub use artifacts::ar_report::*;
+pub use artifacts::blueprint::*;
 pub use artifacts::consequence_card::*;
 pub use artifacts::dtu::*;
 pub use artifacts::factory_output::*;

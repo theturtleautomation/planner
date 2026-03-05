@@ -1,0 +1,800 @@
+//! # Living System Blueprint — Data Model
+//!
+//! Typed dependency graph where every node is an editable parameter that
+//! influences system design.  Editing any node triggers impact preview,
+//! user confirmation, and AI reconvergence of affected downstream nodes.
+//!
+//! ## Node Types
+//!
+//! | Type               | Shape (UI) | ID Prefix |
+//! |--------------------|------------|-----------|
+//! | Decision           | diamond    | DEC-      |
+//! | Technology         | hexagon    | TECH-     |
+//! | Component          | rectangle  | COMP-     |
+//! | Constraint         | pentagon   | CON-      |
+//! | Pattern            | oval       | PAT-      |
+//! | Quality Requirement| shield     | QR-       |
+//!
+//! ## Edge Types
+//!
+//! | Edge          | Source → Target                              |
+//! |---------------|----------------------------------------------|
+//! | decided_by    | Tech/Comp/Pattern → Decision                 |
+//! | supersedes    | Decision → Decision                          |
+//! | depends_on    | Component → Component                        |
+//! | uses          | Component → Technology                       |
+//! | constrains    | Constraint → Decision/Comp/Tech              |
+//! | implements    | Component → Pattern                          |
+//! | satisfies     | Decision/Pattern → QualityRequirement        |
+//! | affects       | Decision → Component/Technology              |
+
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use uuid::Uuid;
+
+// ---------------------------------------------------------------------------
+// Node ID — human-readable slug with UUID suffix
+// ---------------------------------------------------------------------------
+
+/// A globally unique, human-readable node identifier.
+///
+/// Format: `{slug}-{uuid8}` where slug is a kebab-case summary and uuid8 is
+/// the first 8 hex chars of a UUID v4.  Examples:
+/// - `use-messagepack-a1b2c3d4`
+/// - `rust-core-engine-e5f6a7b8`
+///
+/// NodeIds are serialized as plain strings for JSON/MessagePack compatibility.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct NodeId(pub String);
+
+impl NodeId {
+    /// Create a new NodeId from a human-readable slug.
+    /// Appends the first 8 hex chars of a fresh UUID for uniqueness.
+    pub fn new(slug: &str) -> Self {
+        let uuid_prefix = &Uuid::new_v4().to_string()[..8];
+        let clean = slug
+            .to_lowercase()
+            .replace(|c: char| !c.is_alphanumeric() && c != '-', "-")
+            .trim_matches('-')
+            .to_string();
+        NodeId(format!("{}-{}", clean, uuid_prefix))
+    }
+
+    /// Create a NodeId with a specific prefix (e.g. "DEC", "TECH") and slug.
+    pub fn with_prefix(prefix: &str, slug: &str) -> Self {
+        let uuid_prefix = &Uuid::new_v4().to_string()[..8];
+        let clean = slug
+            .to_lowercase()
+            .replace(|c: char| !c.is_alphanumeric() && c != '-', "-")
+            .trim_matches('-')
+            .to_string();
+        NodeId(format!("{}-{}-{}", prefix.to_lowercase(), clean, uuid_prefix))
+    }
+
+    /// Parse a NodeId from an existing string (no generation).
+    pub fn from_raw(raw: impl Into<String>) -> Self {
+        NodeId(raw.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for NodeId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Edge types
+// ---------------------------------------------------------------------------
+
+/// The semantic type of a relationship between two Blueprint nodes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EdgeType {
+    /// Technology/Component/Pattern → Decision: "exists because of"
+    DecidedBy,
+    /// Decision → Decision: "replaces"
+    Supersedes,
+    /// Component → Component: "needs at runtime/build"
+    DependsOn,
+    /// Component → Technology: "is built with"
+    Uses,
+    /// Constraint → Decision/Component/Technology: "limits"
+    Constrains,
+    /// Component → Pattern: "follows"
+    Implements,
+    /// Decision/Pattern → QualityRequirement: "achieves"
+    Satisfies,
+    /// Decision → Component/Technology: "changing impacts"
+    Affects,
+}
+
+impl EdgeType {
+    /// All edge type variants for iteration.
+    pub const ALL: &'static [EdgeType] = &[
+        EdgeType::DecidedBy,
+        EdgeType::Supersedes,
+        EdgeType::DependsOn,
+        EdgeType::Uses,
+        EdgeType::Constrains,
+        EdgeType::Implements,
+        EdgeType::Satisfies,
+        EdgeType::Affects,
+    ];
+}
+
+impl std::fmt::Display for EdgeType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EdgeType::DecidedBy => write!(f, "decided_by"),
+            EdgeType::Supersedes => write!(f, "supersedes"),
+            EdgeType::DependsOn => write!(f, "depends_on"),
+            EdgeType::Uses => write!(f, "uses"),
+            EdgeType::Constrains => write!(f, "constrains"),
+            EdgeType::Implements => write!(f, "implements"),
+            EdgeType::Satisfies => write!(f, "satisfies"),
+            EdgeType::Affects => write!(f, "affects"),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Edge
+// ---------------------------------------------------------------------------
+
+/// A typed, directional edge between two Blueprint nodes.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Edge {
+    pub source: NodeId,
+    pub target: NodeId,
+    pub edge_type: EdgeType,
+    /// Optional context for the edge (e.g. "technology choice" for decided_by).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
+// Shared enums used across node types
+// ---------------------------------------------------------------------------
+
+/// Decision status lifecycle.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DecisionStatus {
+    Proposed,
+    Accepted,
+    Superseded,
+    Deprecated,
+}
+
+/// Technology adoption ring (ThoughtWorks Radar pattern).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AdoptionRing {
+    Adopt,
+    Trial,
+    Assess,
+    Hold,
+}
+
+/// Technology category.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TechnologyCategory {
+    Language,
+    Framework,
+    Library,
+    Runtime,
+    Tool,
+    Platform,
+    Protocol,
+}
+
+/// Component type within the system.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ComponentType {
+    Module,
+    Service,
+    Library,
+    Store,
+    Interface,
+    Pipeline,
+}
+
+/// Component lifecycle status.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ComponentStatus {
+    Planned,
+    InProgress,
+    Shipped,
+    Deprecated,
+}
+
+/// Constraint type.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConstraintType {
+    Technical,
+    Organizational,
+    Philosophical,
+    Regulatory,
+}
+
+/// Quality attribute category.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum QualityAttribute {
+    Performance,
+    Reliability,
+    Security,
+    Usability,
+    Maintainability,
+}
+
+/// Quality requirement priority.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum QualityPriority {
+    Critical,
+    High,
+    Medium,
+    Low,
+}
+
+// ---------------------------------------------------------------------------
+// Node Types — one struct per Blueprint node kind
+// ---------------------------------------------------------------------------
+
+/// An option considered during a decision.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DecisionOption {
+    pub name: String,
+    pub pros: Vec<String>,
+    pub cons: Vec<String>,
+    pub chosen: bool,
+}
+
+/// A consequence of a decision — positive or negative.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Consequence {
+    pub description: String,
+    /// true = positive, false = negative
+    pub positive: bool,
+}
+
+/// An assumption embedded in a decision.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Assumption {
+    pub description: String,
+    /// high / medium / low
+    pub confidence: String,
+}
+
+/// Architectural decision with rationale (MADR variant).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Decision {
+    pub id: NodeId,
+    pub title: String,
+    pub status: DecisionStatus,
+    pub context: String,
+    pub options: Vec<DecisionOption>,
+    pub consequences: Vec<Consequence>,
+    pub assumptions: Vec<Assumption>,
+    /// Previous decision this replaces, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supersedes: Option<NodeId>,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// A specific technology, framework, library, or tool.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Technology {
+    pub id: NodeId,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    pub category: TechnologyCategory,
+    pub ring: AdoptionRing,
+    pub rationale: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub license: Option<String>,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// A logical building block of the system.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Component {
+    pub id: NodeId,
+    pub name: String,
+    pub component_type: ComponentType,
+    pub description: String,
+    /// APIs/interfaces this component exposes.
+    #[serde(default)]
+    pub provides: Vec<String>,
+    /// APIs/interfaces this component consumes.
+    #[serde(default)]
+    pub consumes: Vec<String>,
+    pub status: ComponentStatus,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// An external force that narrows the solution space.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Constraint {
+    pub id: NodeId,
+    pub title: String,
+    pub constraint_type: ConstraintType,
+    pub description: String,
+    /// Who/what imposed this constraint.
+    pub source: String,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// An architectural pattern or design principle.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Pattern {
+    pub id: NodeId,
+    pub name: String,
+    pub description: String,
+    pub rationale: String,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// A measurable quality attribute the system must satisfy.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QualityRequirement {
+    pub id: NodeId,
+    pub attribute: QualityAttribute,
+    /// Specific, testable scenario.
+    pub scenario: String,
+    pub priority: QualityPriority,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+// ---------------------------------------------------------------------------
+// BlueprintNode — enum wrapper for all node types
+// ---------------------------------------------------------------------------
+
+/// A Blueprint node — one of six architectural element types.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "node_type", rename_all = "snake_case")]
+pub enum BlueprintNode {
+    Decision(Decision),
+    Technology(Technology),
+    Component(Component),
+    Constraint(Constraint),
+    Pattern(Pattern),
+    QualityRequirement(QualityRequirement),
+}
+
+impl BlueprintNode {
+    /// Return the NodeId of this node.
+    pub fn id(&self) -> &NodeId {
+        match self {
+            BlueprintNode::Decision(n) => &n.id,
+            BlueprintNode::Technology(n) => &n.id,
+            BlueprintNode::Component(n) => &n.id,
+            BlueprintNode::Constraint(n) => &n.id,
+            BlueprintNode::Pattern(n) => &n.id,
+            BlueprintNode::QualityRequirement(n) => &n.id,
+        }
+    }
+
+    /// Return the display name of this node.
+    pub fn name(&self) -> &str {
+        match self {
+            BlueprintNode::Decision(n) => &n.title,
+            BlueprintNode::Technology(n) => &n.name,
+            BlueprintNode::Component(n) => &n.name,
+            BlueprintNode::Constraint(n) => &n.title,
+            BlueprintNode::Pattern(n) => &n.name,
+            BlueprintNode::QualityRequirement(n) => &n.scenario,
+        }
+    }
+
+    /// Return the type name as a static string (for filtering/display).
+    pub fn type_name(&self) -> &'static str {
+        match self {
+            BlueprintNode::Decision(_) => "decision",
+            BlueprintNode::Technology(_) => "technology",
+            BlueprintNode::Component(_) => "component",
+            BlueprintNode::Constraint(_) => "constraint",
+            BlueprintNode::Pattern(_) => "pattern",
+            BlueprintNode::QualityRequirement(_) => "quality_requirement",
+        }
+    }
+
+    /// Return updated_at timestamp.
+    pub fn updated_at(&self) -> &str {
+        match self {
+            BlueprintNode::Decision(n) => &n.updated_at,
+            BlueprintNode::Technology(n) => &n.updated_at,
+            BlueprintNode::Component(n) => &n.updated_at,
+            BlueprintNode::Constraint(n) => &n.updated_at,
+            BlueprintNode::Pattern(n) => &n.updated_at,
+            BlueprintNode::QualityRequirement(n) => &n.updated_at,
+        }
+    }
+
+    /// Return tags for this node.
+    pub fn tags(&self) -> &[String] {
+        match self {
+            BlueprintNode::Decision(n) => &n.tags,
+            BlueprintNode::Technology(n) => &n.tags,
+            BlueprintNode::Component(n) => &n.tags,
+            BlueprintNode::Constraint(n) => &n.tags,
+            BlueprintNode::Pattern(n) => &n.tags,
+            BlueprintNode::QualityRequirement(n) => &n.tags,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Impact Analysis types
+// ---------------------------------------------------------------------------
+
+/// What happens to a node during reconvergence.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImpactAction {
+    /// AI work required — re-evaluate the node.
+    Reconverge,
+    /// Metadata change only — no AI work.
+    Update,
+    /// Node is broken by the change — must be addressed.
+    Invalidate,
+    /// New node needs to be created.
+    Add,
+    /// Node should be removed.
+    Remove,
+}
+
+/// Severity of the reconvergence impact.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImpactSeverity {
+    /// Metadata only — status change, description update.
+    Shallow,
+    /// Local reconverge — technology version bump, compatibility check.
+    Medium,
+    /// Full cascade — decision reversal, artifact rebuilds.
+    Deep,
+}
+
+/// A single affected node in an impact report.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImpactEntry {
+    pub node_id: NodeId,
+    pub node_name: String,
+    pub node_type: String,
+    pub action: ImpactAction,
+    pub severity: ImpactSeverity,
+    pub explanation: String,
+}
+
+/// The full impact analysis result from proposing a change to a node.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImpactReport {
+    pub source_node_id: NodeId,
+    pub source_node_name: String,
+    pub change_description: String,
+    pub entries: Vec<ImpactEntry>,
+    /// Counts by action type for the summary line.
+    pub summary: HashMap<String, usize>,
+    pub timestamp: String,
+}
+
+// ---------------------------------------------------------------------------
+// Blueprint — the top-level graph structure
+// ---------------------------------------------------------------------------
+
+/// Node summary for list endpoints (avoids cloning full node data).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NodeSummary {
+    pub id: NodeId,
+    pub name: String,
+    pub node_type: String,
+    pub tags: Vec<String>,
+    pub updated_at: String,
+}
+
+impl From<&BlueprintNode> for NodeSummary {
+    fn from(node: &BlueprintNode) -> Self {
+        NodeSummary {
+            id: node.id().clone(),
+            name: node.name().to_string(),
+            node_type: node.type_name().to_string(),
+            tags: node.tags().to_vec(),
+            updated_at: node.updated_at().to_string(),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn node_id_generation() {
+        let id = NodeId::new("Use MessagePack");
+        assert!(id.0.starts_with("use-messagepack-"));
+        assert!(id.0.len() > "use-messagepack-".len());
+    }
+
+    #[test]
+    fn node_id_with_prefix() {
+        let id = NodeId::with_prefix("DEC", "native CLI LLM");
+        assert!(id.0.starts_with("dec-native-cli-llm-"));
+    }
+
+    #[test]
+    fn node_id_from_raw() {
+        let id = NodeId::from_raw("dec-use-messagepack-a1b2c3d4");
+        assert_eq!(id.as_str(), "dec-use-messagepack-a1b2c3d4");
+    }
+
+    #[test]
+    fn edge_type_display() {
+        assert_eq!(EdgeType::DecidedBy.to_string(), "decided_by");
+        assert_eq!(EdgeType::DependsOn.to_string(), "depends_on");
+        assert_eq!(EdgeType::Satisfies.to_string(), "satisfies");
+    }
+
+    #[test]
+    fn edge_type_all_variants() {
+        assert_eq!(EdgeType::ALL.len(), 8);
+    }
+
+    #[test]
+    fn decision_serde_roundtrip() {
+        let decision = Decision {
+            id: NodeId::from_raw("dec-use-msgpack-a1b2c3d4"),
+            title: "Use MessagePack for disk serialization".into(),
+            status: DecisionStatus::Accepted,
+            context: "CXDB needs a fast, compact disk format".into(),
+            options: vec![
+                DecisionOption {
+                    name: "MessagePack".into(),
+                    pros: vec!["Fast binary".into(), "Compact".into()],
+                    cons: vec!["Not human-readable".into()],
+                    chosen: true,
+                },
+                DecisionOption {
+                    name: "SQLite".into(),
+                    pros: vec!["ACID".into(), "Query capability".into()],
+                    cons: vec!["Heavier runtime".into()],
+                    chosen: false,
+                },
+            ],
+            consequences: vec![
+                Consequence { description: "Minimal deserialization overhead".into(), positive: true },
+                Consequence { description: "Cannot query without full load".into(), positive: false },
+            ],
+            assumptions: vec![
+                Assumption { description: "Data volumes stay small".into(), confidence: "medium".into() },
+            ],
+            supersedes: None,
+            tags: vec!["storage".into(), "core".into()],
+            created_at: "2026-03-01T00:00:00Z".into(),
+            updated_at: "2026-03-01T00:00:00Z".into(),
+        };
+
+        let node = BlueprintNode::Decision(decision);
+
+        // JSON roundtrip
+        let json = serde_json::to_string(&node).unwrap();
+        let decoded: BlueprintNode = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.id().as_str(), "dec-use-msgpack-a1b2c3d4");
+        assert_eq!(decoded.type_name(), "decision");
+
+        // MessagePack roundtrip
+        let bytes = rmp_serde::to_vec(&node).unwrap();
+        let decoded_mp: BlueprintNode = rmp_serde::from_slice(&bytes).unwrap();
+        assert_eq!(decoded_mp.name(), "Use MessagePack for disk serialization");
+    }
+
+    #[test]
+    fn technology_serde_roundtrip() {
+        let tech = Technology {
+            id: NodeId::from_raw("tech-rust-e5f6a7b8"),
+            name: "Rust".into(),
+            version: Some("1.82".into()),
+            category: TechnologyCategory::Language,
+            ring: AdoptionRing::Adopt,
+            rationale: "Memory safety without GC".into(),
+            license: Some("MIT/Apache-2.0".into()),
+            tags: vec!["core".into()],
+            created_at: "2026-03-01T00:00:00Z".into(),
+            updated_at: "2026-03-01T00:00:00Z".into(),
+        };
+
+        let node = BlueprintNode::Technology(tech);
+        let json = serde_json::to_string(&node).unwrap();
+        let decoded: BlueprintNode = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.type_name(), "technology");
+        assert_eq!(decoded.name(), "Rust");
+    }
+
+    #[test]
+    fn component_serde_roundtrip() {
+        let comp = Component {
+            id: NodeId::from_raw("comp-cxdb-c1d2e3f4"),
+            name: "CXDB".into(),
+            component_type: ComponentType::Store,
+            description: "Conversation Experience Database".into(),
+            provides: vec!["TurnStore API".into()],
+            consumes: vec!["MessagePack serialization".into()],
+            status: ComponentStatus::Shipped,
+            tags: vec!["storage".into()],
+            created_at: "2026-03-01T00:00:00Z".into(),
+            updated_at: "2026-03-01T00:00:00Z".into(),
+        };
+
+        let node = BlueprintNode::Component(comp);
+        let bytes = rmp_serde::to_vec(&node).unwrap();
+        let decoded: BlueprintNode = rmp_serde::from_slice(&bytes).unwrap();
+        assert_eq!(decoded.name(), "CXDB");
+        assert_eq!(decoded.type_name(), "component");
+    }
+
+    #[test]
+    fn constraint_serde_roundtrip() {
+        let con = Constraint {
+            id: NodeId::from_raw("con-no-api-keys-d4e5f6a7"),
+            title: "No HTTP API keys for LLM access".into(),
+            constraint_type: ConstraintType::Philosophical,
+            description: "LLM clients must use native CLIs".into(),
+            source: "user directive".into(),
+            tags: vec!["llm".into()],
+            created_at: "2026-03-01T00:00:00Z".into(),
+            updated_at: "2026-03-01T00:00:00Z".into(),
+        };
+
+        let node = BlueprintNode::Constraint(con);
+        let json = serde_json::to_string(&node).unwrap();
+        assert!(json.contains("constraint"));
+        let decoded: BlueprintNode = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.type_name(), "constraint");
+    }
+
+    #[test]
+    fn quality_requirement_serde_roundtrip() {
+        let qr = QualityRequirement {
+            id: NodeId::from_raw("qr-crash-safe-f7a8b9c0"),
+            attribute: QualityAttribute::Reliability,
+            scenario: "Session recovery on restart completes within 2s for 1000 sessions".into(),
+            priority: QualityPriority::Critical,
+            tags: vec!["persistence".into()],
+            created_at: "2026-03-01T00:00:00Z".into(),
+            updated_at: "2026-03-01T00:00:00Z".into(),
+        };
+
+        let node = BlueprintNode::QualityRequirement(qr);
+        let json = serde_json::to_string(&node).unwrap();
+        let decoded: BlueprintNode = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.type_name(), "quality_requirement");
+    }
+
+    #[test]
+    fn pattern_serde_roundtrip() {
+        let pat = Pattern {
+            id: NodeId::from_raw("pat-event-sourcing-b2c3d4e5"),
+            name: "Event Sourcing".into(),
+            description: "Store events, reconstruct state on demand".into(),
+            rationale: "Full audit trail, time-travel debugging".into(),
+            tags: vec!["persistence".into()],
+            created_at: "2026-03-01T00:00:00Z".into(),
+            updated_at: "2026-03-01T00:00:00Z".into(),
+        };
+
+        let node = BlueprintNode::Pattern(pat);
+        let bytes = rmp_serde::to_vec(&node).unwrap();
+        let decoded: BlueprintNode = rmp_serde::from_slice(&bytes).unwrap();
+        assert_eq!(decoded.name(), "Event Sourcing");
+    }
+
+    #[test]
+    fn edge_serde_roundtrip() {
+        let edge = Edge {
+            source: NodeId::from_raw("comp-cxdb-c1d2e3f4"),
+            target: NodeId::from_raw("tech-rust-e5f6a7b8"),
+            edge_type: EdgeType::Uses,
+            metadata: Some("primary language".into()),
+        };
+
+        let json = serde_json::to_string(&edge).unwrap();
+        let decoded: Edge = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.edge_type, EdgeType::Uses);
+        assert_eq!(decoded.metadata.as_deref(), Some("primary language"));
+    }
+
+    #[test]
+    fn impact_report_structure() {
+        let report = ImpactReport {
+            source_node_id: NodeId::from_raw("dec-use-msgpack-a1b2c3d4"),
+            source_node_name: "Use MessagePack".into(),
+            change_description: "Switch to SQLite".into(),
+            entries: vec![
+                ImpactEntry {
+                    node_id: NodeId::from_raw("comp-cxdb-c1d2e3f4"),
+                    node_name: "CXDB".into(),
+                    node_type: "component".into(),
+                    action: ImpactAction::Reconverge,
+                    severity: ImpactSeverity::Deep,
+                    explanation: "Storage implementation must be rewritten".into(),
+                },
+                ImpactEntry {
+                    node_id: NodeId::from_raw("tech-rmp-serde-a2b3c4d5"),
+                    node_name: "rmp-serde".into(),
+                    node_type: "technology".into(),
+                    action: ImpactAction::Remove,
+                    severity: ImpactSeverity::Medium,
+                    explanation: "No longer needed".into(),
+                },
+            ],
+            summary: {
+                let mut m = HashMap::new();
+                m.insert("reconverge".into(), 1);
+                m.insert("remove".into(), 1);
+                m
+            },
+            timestamp: "2026-03-05T12:00:00Z".into(),
+        };
+
+        let json = serde_json::to_string(&report).unwrap();
+        let decoded: ImpactReport = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.entries.len(), 2);
+        assert_eq!(decoded.entries[0].action, ImpactAction::Reconverge);
+        assert_eq!(decoded.entries[0].severity, ImpactSeverity::Deep);
+    }
+
+    #[test]
+    fn node_summary_from_blueprint_node() {
+        let node = BlueprintNode::Technology(Technology {
+            id: NodeId::from_raw("tech-tokio-a1a1a1a1"),
+            name: "Tokio".into(),
+            version: Some("1.38".into()),
+            category: TechnologyCategory::Runtime,
+            ring: AdoptionRing::Adopt,
+            rationale: "Async runtime for Rust".into(),
+            license: Some("MIT".into()),
+            tags: vec!["async".into(), "core".into()],
+            created_at: "2026-03-01T00:00:00Z".into(),
+            updated_at: "2026-03-02T00:00:00Z".into(),
+        });
+
+        let summary = NodeSummary::from(&node);
+        assert_eq!(summary.name, "Tokio");
+        assert_eq!(summary.node_type, "technology");
+        assert_eq!(summary.tags, vec!["async", "core"]);
+    }
+}

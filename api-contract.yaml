@@ -1,0 +1,744 @@
+openapi: "3.1.0"
+info:
+  title: Planner v2 API
+  version: "0.1.0"
+  description: |
+    REST API for Planner v2 — Socratic AI Development Partner.
+    
+    ## Authentication
+    Protected endpoints require a Bearer JWT from Auth0.
+    In dev mode (no AUTH0_DOMAIN set), auth is bypassed and user_id defaults to "dev|local".
+    
+    ## WebSocket Endpoints
+    WebSocket upgrades are available at `/api/sessions/{id}/ws` and
+    `/api/sessions/{id}/socratic/ws`. These are not documented in this spec
+    but follow standard Upgrade protocol.
+
+servers:
+  - url: http://localhost:3100/api
+    description: Local development
+  - url: http://localhost:3100/api/v1
+    description: Local development (versioned)
+
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Health check
+      description: Public endpoint. Returns server status, active sessions, LLM provider availability, and persistence state.
+      tags: [System]
+      responses:
+        "200":
+          description: Server health
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  /admin/status:
+    get:
+      operationId: getAdminStatus
+      summary: Admin status
+      description: Public admin endpoint. Returns uptime, session stats, and provider availability.
+      tags: [Admin]
+      responses:
+        "200":
+          description: Admin status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminStatusResponse"
+
+  /admin/events:
+    get:
+      operationId: getAdminEvents
+      summary: Admin events
+      description: Public admin endpoint. Returns aggregated events across all sessions.
+      tags: [Admin]
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 100, maximum: 1000 }
+        - name: level
+          in: query
+          schema: { type: string, enum: [info, warn, error] }
+        - name: session_id
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Events list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminEventsResponse"
+
+  /models:
+    get:
+      operationId: getModels
+      summary: List available LLM models
+      tags: [Models]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Model list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelsResponse"
+
+  /sessions:
+    get:
+      operationId: listSessions
+      summary: List sessions for the current user
+      description: Returns lightweight session summaries (no full message/event payloads).
+      tags: [Sessions]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Session list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListSessionsResponse"
+    post:
+      operationId: createSession
+      summary: Create a new planning session
+      tags: [Sessions]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "201":
+          description: Session created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateSessionResponse"
+
+  /sessions/{id}:
+    get:
+      operationId: getSession
+      summary: Get full session state
+      tags: [Sessions]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: Session state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GetSessionResponse"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /sessions/{id}/message:
+    post:
+      operationId: sendMessage
+      summary: Send a message to a session
+      description: |
+        Sends a user message. If the pipeline is not running, this triggers it.
+        If the pipeline is already running, a "busy" response is returned.
+      tags: [Sessions]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendMessageRequest"
+      responses:
+        "200":
+          description: Message sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SendMessageResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /sessions/{id}/events:
+    get:
+      operationId: getSessionEvents
+      summary: Get session event log
+      tags: [Sessions]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - name: level
+          in: query
+          schema: { type: string, enum: [info, warn, error] }
+        - name: source
+          in: query
+          schema: { type: string, enum: [socratic, llm, pipeline, factory, system] }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 500 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0 }
+      responses:
+        "200":
+          description: Events
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionEventsResponse"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /sessions/{id}/turns:
+    get:
+      operationId: listTurns
+      summary: List CXDB turns for a session
+      description: Returns empty until durable CXDB store is wired.
+      tags: [CXDB]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: Turns list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListTurnsResponse"
+
+  /sessions/{id}/runs:
+    get:
+      operationId: listRuns
+      summary: List pipeline runs for a session
+      description: Returns empty until durable CXDB store is wired.
+      tags: [CXDB]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: Run list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RunListResponse"
+
+  /sessions/{id}/socratic:
+    post:
+      operationId: startSocratic
+      summary: Start a Socratic interview
+      tags: [Socratic]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StartSocraticRequest"
+      responses:
+        "200":
+          description: Interview started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StartSocraticResponse"
+
+  /sessions/{id}/belief-state:
+    get:
+      operationId: getBeliefState
+      summary: Get Socratic interview belief state
+      tags: [Socratic]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: Belief state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BeliefStateResponse"
+
+  # ---------------------------------------------------------------------------
+  # Blueprint API
+  # ---------------------------------------------------------------------------
+
+  /blueprint:
+    get:
+      operationId: getBlueprint
+      summary: Get the full Blueprint graph
+      description: Returns all nodes, edges, and counts for the project's Living System Blueprint.
+      tags: [Blueprint]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Full Blueprint
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BlueprintResponse"
+
+  /blueprint/nodes:
+    get:
+      operationId: listBlueprintNodes
+      summary: List Blueprint node summaries
+      tags: [Blueprint]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: type
+          in: query
+          description: Filter by node type
+          schema:
+            type: string
+            enum: [decision, technology, component, constraint, pattern, quality_requirement]
+      responses:
+        "200":
+          description: Node summaries
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeListResponse"
+    post:
+      operationId: createBlueprintNode
+      summary: Create a new Blueprint node
+      tags: [Blueprint]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BlueprintNodePayload"
+      responses:
+        "201":
+          description: Node created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BlueprintNodePayload"
+
+  /blueprint/nodes/{nodeId}:
+    get:
+      operationId: getBlueprintNode
+      summary: Get a single Blueprint node
+      tags: [Blueprint]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: nodeId
+          in: path
+          required: true
+          schema: { type: string }
+          example: "dec-use-msgpack-a1b2c3d4"
+      responses:
+        "200":
+          description: Node details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BlueprintNodePayload"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: updateBlueprintNode
+      summary: Update a Blueprint node
+      description: Partial update. Only provided fields are changed.
+      tags: [Blueprint]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: nodeId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BlueprintNodePayload"
+      responses:
+        "200":
+          description: Node updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BlueprintNodePayload"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteBlueprintNode
+      summary: Delete a Blueprint node
+      description: Removes the node and all incident edges.
+      tags: [Blueprint]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: nodeId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: Node deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /blueprint/edges:
+    post:
+      operationId: createBlueprintEdge
+      summary: Add a Blueprint edge
+      tags: [Blueprint]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EdgePayload"
+      responses:
+        "201":
+          description: Edge created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EdgePayload"
+
+  /blueprint/impact-preview:
+    post:
+      operationId: impactPreview
+      summary: Preview the impact of a proposed node change
+      description: |
+        Traverses the dependency graph downstream from the specified node
+        and returns an impact report classifying each affected node by
+        action (reconverge/update/invalidate/add/remove) and severity
+        (shallow/medium/deep).
+      tags: [Blueprint]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImpactPreviewRequest"
+      responses:
+        "200":
+          description: Impact report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImpactReport"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Auth0 JWT. Not required in dev mode.
+
+  parameters:
+    SessionId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Forbidden:
+      description: Access denied
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+        code: { type: string }
+
+    HealthResponse:
+      type: object
+      required: [status, version, sessions_active, llm_providers, persistence_enabled]
+      properties:
+        status: { type: string, enum: [ok, degraded] }
+        version: { type: string }
+        sessions_active: { type: integer }
+        llm_providers: { type: array, items: { type: string } }
+        persistence_enabled: { type: boolean }
+
+    AdminStatusResponse:
+      type: object
+      properties:
+        status: { type: string }
+        version: { type: string }
+        uptime_secs: { type: integer }
+        sessions: { $ref: "#/components/schemas/AdminSessionStats" }
+        providers: { type: array, items: { $ref: "#/components/schemas/AdminProviderInfo" } }
+
+    AdminSessionStats:
+      type: object
+      properties:
+        active: { type: integer }
+        total_events: { type: integer }
+
+    AdminProviderInfo:
+      type: object
+      properties:
+        name: { type: string }
+        binary: { type: string }
+        available: { type: boolean }
+
+    AdminEventsResponse:
+      type: object
+      properties:
+        events: { type: array, items: { $ref: "#/components/schemas/AdminEventEntry" } }
+        total: { type: integer }
+
+    AdminEventEntry:
+      type: object
+      properties:
+        id: { type: string }
+        timestamp: { type: string, format: date-time }
+        level: { type: string, enum: [info, warn, error] }
+        source: { type: string }
+        session_id: { type: string, format: uuid }
+        step: { type: string }
+        message: { type: string }
+        duration_ms: { type: integer }
+        metadata: { type: object }
+
+    ModelsResponse:
+      type: object
+      properties:
+        models: { type: array, items: { $ref: "#/components/schemas/ModelInfo" } }
+
+    ModelInfo:
+      type: object
+      properties:
+        id: { type: string }
+        provider: { type: string }
+        cli_binary: { type: string }
+        role: { type: string }
+
+    SessionSummary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        user_id: { type: string }
+        created_at: { type: string, format: date-time }
+        last_accessed: { type: string, format: date-time }
+        pipeline_running: { type: boolean }
+        intake_phase: { type: string, enum: [waiting, interviewing, pipeline_running, complete] }
+        project_description: { type: string }
+        message_count: { type: integer }
+        event_count: { type: integer }
+        current_step: { type: string }
+        error_message: { type: string }
+
+    ListSessionsResponse:
+      type: object
+      properties:
+        sessions: { type: array, items: { $ref: "#/components/schemas/SessionSummary" } }
+
+    CreateSessionResponse:
+      type: object
+      properties:
+        session: { $ref: "#/components/schemas/Session" }
+
+    GetSessionResponse:
+      type: object
+      properties:
+        session: { $ref: "#/components/schemas/Session" }
+
+    Session:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        user_id: { type: string }
+        created_at: { type: string, format: date-time }
+        last_accessed: { type: string, format: date-time }
+        messages: { type: array, items: { $ref: "#/components/schemas/SessionMessage" } }
+        stages: { type: array, items: { $ref: "#/components/schemas/PipelineStageInfo" } }
+        pipeline_running: { type: boolean }
+        project_description: { type: string }
+        intake_phase: { type: string }
+        events: { type: array, items: { type: object } }
+        current_step: { type: string }
+        error_message: { type: string }
+
+    SessionMessage:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        role: { type: string, enum: [user, planner, system] }
+        content: { type: string }
+        timestamp: { type: string, format: date-time }
+
+    PipelineStageInfo:
+      type: object
+      properties:
+        name: { type: string }
+        status: { type: string, enum: [pending, running, complete, failed] }
+
+    SendMessageRequest:
+      type: object
+      required: [content]
+      properties:
+        content: { type: string, minLength: 1 }
+
+    SendMessageResponse:
+      type: object
+      properties:
+        user_message: { $ref: "#/components/schemas/SessionMessage" }
+        planner_message: { $ref: "#/components/schemas/SessionMessage" }
+        session: { $ref: "#/components/schemas/Session" }
+
+    SessionEventsResponse:
+      type: object
+      properties:
+        session_id: { type: string }
+        events: { type: array, items: { type: object } }
+        count: { type: integer }
+
+    ListTurnsResponse:
+      type: object
+      properties:
+        turns: { type: array, items: { $ref: "#/components/schemas/TurnResponse" } }
+        count: { type: integer }
+
+    TurnResponse:
+      type: object
+      properties:
+        turn_id: { type: string }
+        type_id: { type: string }
+        timestamp: { type: string, format: date-time }
+        produced_by: { type: string }
+
+    RunListResponse:
+      type: object
+      properties:
+        runs: { type: array, items: { type: string } }
+
+    StartSocraticRequest:
+      type: object
+      required: [description]
+      properties:
+        description: { type: string }
+
+    StartSocraticResponse:
+      type: object
+      properties:
+        session_id: { type: string }
+        ws_url: { type: string }
+
+    BeliefStateResponse:
+      type: object
+      properties:
+        session_id: { type: string }
+        intake_phase: { type: string }
+        belief_state: { type: object }
+
+    # -----------------------------------------------------------------------
+    # Blueprint schemas
+    # -----------------------------------------------------------------------
+
+    BlueprintResponse:
+      type: object
+      properties:
+        nodes: { type: array, items: { $ref: "#/components/schemas/NodeSummary" } }
+        edges: { type: array, items: { $ref: "#/components/schemas/EdgePayload" } }
+        counts:
+          type: object
+          additionalProperties: { type: integer }
+          example: { decision: 6, technology: 6, component: 7, constraint: 3, pattern: 3, quality_requirement: 2 }
+        total_nodes: { type: integer }
+        total_edges: { type: integer }
+
+    NodeSummary:
+      type: object
+      properties:
+        id: { type: string, example: "dec-use-msgpack-a1b2c3d4" }
+        name: { type: string }
+        node_type: { type: string, enum: [decision, technology, component, constraint, pattern, quality_requirement] }
+        tags: { type: array, items: { type: string } }
+        updated_at: { type: string, format: date-time }
+
+    BlueprintNodePayload:
+      type: object
+      description: |
+        A tagged union. The `node_type` field determines which fields are present.
+        Discriminator: `node_type`.
+      required: [node_type]
+      properties:
+        node_type:
+          type: string
+          enum: [decision, technology, component, constraint, pattern, quality_requirement]
+      discriminator:
+        propertyName: node_type
+
+    EdgePayload:
+      type: object
+      required: [source, target, edge_type]
+      properties:
+        source: { type: string, description: NodeId }
+        target: { type: string, description: NodeId }
+        edge_type:
+          type: string
+          enum: [decided_by, supersedes, depends_on, uses, constrains, implements, satisfies, affects]
+        metadata: { type: string }
+
+    ImpactPreviewRequest:
+      type: object
+      required: [node_id, change_description]
+      properties:
+        node_id: { type: string }
+        change_description: { type: string }
+
+    ImpactReport:
+      type: object
+      properties:
+        source_node_id: { type: string }
+        source_node_name: { type: string }
+        change_description: { type: string }
+        entries: { type: array, items: { $ref: "#/components/schemas/ImpactEntry" } }
+        summary:
+          type: object
+          additionalProperties: { type: integer }
+        timestamp: { type: string, format: date-time }
+
+    ImpactEntry:
+      type: object
+      properties:
+        node_id: { type: string }
+        node_name: { type: string }
+        node_type: { type: string }
+        action: { type: string, enum: [reconverge, update, invalidate, add, remove] }
+        severity: { type: string, enum: [shallow, medium, deep] }
+        explanation: { type: string }

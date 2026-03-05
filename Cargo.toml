@@ -31,3 +31,4 @@ tokio-tungstenite = "0.26"
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "fs"] }
 jsonwebtoken = "9"
+parking_lot = "0.12"

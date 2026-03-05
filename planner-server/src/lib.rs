@@ -18,6 +18,8 @@ use session::SessionStore;
 pub struct AppState {
     /// Active planning sessions.
     pub sessions: SessionStore,
+    /// Living System Blueprint graph store.
+    pub blueprints: planner_core::blueprint::BlueprintStore,
     /// Auth0 JWT config. None = dev mode (auth bypassed).
     pub auth_config: Option<AuthConfig>,
     /// Filesystem-backed event store. None if persistence is unavailable.

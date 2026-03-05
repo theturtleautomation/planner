@@ -27,5 +27,5 @@ serde_json = { workspace = true }
 chrono = { workspace = true }
 jsonwebtoken = { workspace = true }
 rmp-serde = { workspace = true }
-parking_lot = "0.12"
+parking_lot = { workspace = true }
 async-trait = { workspace = true }

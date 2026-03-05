@@ -29,6 +29,7 @@ pub struct HealthResponse {
     pub version: String,
     pub sessions_active: usize,
     pub llm_providers: Vec<String>,
+    pub persistence_enabled: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -38,7 +39,7 @@ pub struct CreateSessionResponse {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ListSessionsResponse {
-    pub sessions: Vec<Session>,
+    pub sessions: Vec<crate::session::SessionSummary>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -74,6 +75,8 @@ pub struct ModelInfo {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ErrorResponse {
     pub error: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -143,6 +146,46 @@ pub struct EventsQuery {
     pub source: Option<String>,
     pub limit: Option<usize>,
     pub offset: Option<usize>,
+}
+
+// ---------------------------------------------------------------------------
+// Blueprint API request/response types
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BlueprintResponse {
+    pub nodes: Vec<planner_schemas::artifacts::blueprint::NodeSummary>,
+    pub edges: Vec<EdgePayload>,
+    pub counts: std::collections::HashMap<String, usize>,
+    pub total_nodes: usize,
+    pub total_edges: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct NodeListResponse {
+    pub nodes: Vec<planner_schemas::artifacts::blueprint::NodeSummary>,
+    pub count: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct EdgePayload {
+    pub source: String,
+    pub target: String,
+    pub edge_type: planner_schemas::artifacts::blueprint::EdgeType,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct NodesQuery {
+    #[serde(rename = "type")]
+    pub node_type: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ImpactPreviewRequest {
+    pub node_id: String,
+    pub change_description: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -220,10 +263,17 @@ pub fn routes(state: Arc<AppState>) -> Router {
         .route("/sessions/{id}/turns", get(list_turns))
         .route("/sessions/{id}/runs", get(list_runs))
         .route("/sessions/{id}/events", get(get_session_events))
+        // Blueprint API — Living System Blueprint graph management
+        .route("/blueprint", get(get_blueprint))
+        .route("/blueprint/nodes", get(list_blueprint_nodes).post(create_blueprint_node))
+        .route("/blueprint/nodes/{nodeId}", get(get_blueprint_node).patch(update_blueprint_node).delete(delete_blueprint_node))
+        .route("/blueprint/edges", post(create_blueprint_edge))
+        .route("/blueprint/impact-preview", post(impact_preview))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             auth_middleware,
         ))
+        .layer(axum::extract::DefaultBodyLimit::max(1024 * 1024)) // 1 MB
         .with_state(state);
 
     public.merge(protected)
@@ -243,6 +293,7 @@ async fn health(State(state): State<Arc<AppState>>) -> Json<HealthResponse> {
         version: "0.1.0".into(),
         sessions_active: state.sessions.count(),
         llm_providers: providers,
+        persistence_enabled: state.sessions.is_persistent(),
     })
 }
 
@@ -299,7 +350,7 @@ async fn admin_events(
             Some(uuid::Uuid::parse_str(raw).map_err(|_| {
                 (
                     StatusCode::BAD_REQUEST,
-                    Json(ErrorResponse { error: "Invalid session_id: not a valid UUID".into() }),
+                    Json(ErrorResponse { error: "Invalid session_id: not a valid UUID".into(), code: None }),
                 )
             })?)
         }
@@ -420,7 +471,7 @@ async fn list_sessions(
     State(state): State<Arc<AppState>>,
     claims: Claims,
 ) -> Json<ListSessionsResponse> {
-    let sessions = state.sessions.list_for_user(&claims.sub);
+    let sessions = state.sessions.list_summaries_for_user(&claims.sub);
     Json(ListSessionsResponse { sessions })
 }
 
@@ -446,11 +497,11 @@ async fn get_session(
         Ok(session) => Ok(Json(GetSessionResponse { session })),
         Err(Some(())) => Err((
             StatusCode::FORBIDDEN,
-            Json(ErrorResponse { error: "Access denied".into() }),
+            Json(ErrorResponse { error: "Access denied".into(), code: None }),
         )),
         Err(None) => Err((
             StatusCode::NOT_FOUND,
-            Json(ErrorResponse { error: format!("Session not found: {}", id) }),
+            Json(ErrorResponse { error: format!("Session not found: {}", id), code: None }),
         )),
     }
 }
@@ -467,20 +518,32 @@ async fn send_message(
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse {
                 error: "Message content cannot be empty".into(),
+                code: None,
             }),
         ));
     }
 
-    // Single atomic update: ownership check + pipeline check + mutation.
-    // No separate get() calls — eliminates TOCTOU race.
+    // Ownership check first (read-only — no dirty marking).
+    match state.sessions.get_if_owned(id, &claims.sub) {
+        Ok(_) => {}
+        Err(Some(())) => {
+            return Err((
+                StatusCode::FORBIDDEN,
+                Json(ErrorResponse { error: "Access denied".into(), code: None }),
+            ));
+        }
+        Err(None) => {
+            return Err((
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse { error: format!("Session not found: {}", id), code: None }),
+            ));
+        }
+    }
+
+    // Now update — ownership is verified, no wasted dirty marking.
     let mut should_spawn_pipeline = false;
 
     let result = state.sessions.update(id, |session| {
-        // Ownership check inside the lock.
-        if session.user_id != claims.sub {
-            return;  // We'll detect this after by checking the returned session.
-        }
-
         session.add_message("user", &content);
 
         if !session.pipeline_running {
@@ -510,15 +573,6 @@ async fn send_message(
 
     match result {
         Some(session) => {
-            // Verify ownership: if the session's user_id doesn't match,
-            // the closure above was a no-op (no messages were added).
-            if session.user_id != claims.sub {
-                return Err((
-                    StatusCode::FORBIDDEN,
-                    Json(ErrorResponse { error: "Access denied".into() }),
-                ));
-            }
-
             // Touch to extend expiry after a real user interaction.
             state.sessions.touch(id);
 
@@ -558,6 +612,7 @@ async fn send_message(
             StatusCode::NOT_FOUND,
             Json(ErrorResponse {
                 error: format!("Session not found: {}", id),
+                code: None,
             }),
         )),
     }
@@ -660,13 +715,13 @@ async fn list_turns(
         Err(Some(())) => {
             return Err((
                 StatusCode::FORBIDDEN,
-                Json(ErrorResponse { error: "Access denied".into() }),
+                Json(ErrorResponse { error: "Access denied".into(), code: None }),
             ));
         }
         Err(None) => {
             return Err((
                 StatusCode::NOT_FOUND,
-                Json(ErrorResponse { error: format!("Session not found: {}", id) }),
+                Json(ErrorResponse { error: format!("Session not found: {}", id), code: None }),
             ));
         }
     }
@@ -690,13 +745,13 @@ async fn list_runs(
         Err(Some(())) => {
             return Err((
                 StatusCode::FORBIDDEN,
-                Json(ErrorResponse { error: "Access denied".into() }),
+                Json(ErrorResponse { error: "Access denied".into(), code: None }),
             ));
         }
         Err(None) => {
             return Err((
                 StatusCode::NOT_FOUND,
-                Json(ErrorResponse { error: format!("Session not found: {}", id) }),
+                Json(ErrorResponse { error: format!("Session not found: {}", id), code: None }),
             ));
         }
     }
@@ -720,7 +775,7 @@ async fn get_session_events(
     axum::extract::Query(query): axum::extract::Query<EventsQuery>,
 ) -> Result<Json<SessionEventsResponse>, (StatusCode, Json<ErrorResponse>)> {
     let session_id = Uuid::parse_str(&id).map_err(|_| {
-        (StatusCode::BAD_REQUEST, Json(ErrorResponse { error: "Invalid session ID".into() }))
+        (StatusCode::BAD_REQUEST, Json(ErrorResponse { error: "Invalid session ID".into(), code: None }))
     })?;
 
     let session = match state.sessions.get_if_owned(session_id, &claims.sub) {
@@ -729,11 +784,11 @@ async fn get_session_events(
             // Allow dev|local sessions to be read by anyone (dev mode compat).
             match state.sessions.get(session_id) {
                 Some(s) if s.user_id == "dev|local" => s,
-                _ => return Err((StatusCode::FORBIDDEN, Json(ErrorResponse { error: "Not your session".into() }))),
+                _ => return Err((StatusCode::FORBIDDEN, Json(ErrorResponse { error: "Not your session".into(), code: None }))),
             }
         }
         Err(None) => {
-            return Err((StatusCode::NOT_FOUND, Json(ErrorResponse { error: "Session not found".into() })));
+            return Err((StatusCode::NOT_FOUND, Json(ErrorResponse { error: "Session not found".into(), code: None })));
         }
     };
 
@@ -826,13 +881,13 @@ async fn start_socratic(
         Err(Some(())) => {
             return Err((
                 StatusCode::FORBIDDEN,
-                Json(ErrorResponse { error: "Access denied".into() }),
+                Json(ErrorResponse { error: "Access denied".into(), code: None }),
             ));
         }
         Err(None) => {
             return Err((
                 StatusCode::NOT_FOUND,
-                Json(ErrorResponse { error: format!("Session not found: {}", id) }),
+                Json(ErrorResponse { error: format!("Session not found: {}", id), code: None }),
             ));
         }
     }
@@ -895,11 +950,180 @@ async fn get_belief_state(
         }
         Err(Some(())) => Err((
             StatusCode::FORBIDDEN,
-            Json(ErrorResponse { error: "Access denied".into() }),
+            Json(ErrorResponse { error: "Access denied".into(), code: None }),
         )),
         Err(None) => Err((
             StatusCode::NOT_FOUND,
-            Json(ErrorResponse { error: format!("Session not found: {}", id) }),
+            Json(ErrorResponse { error: format!("Session not found: {}", id), code: None }),
+        )),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Blueprint API handlers
+// ---------------------------------------------------------------------------
+
+/// GET /blueprint — Full blueprint graph summary.
+async fn get_blueprint(
+    State(state): State<Arc<AppState>>,
+    _claims: Claims,
+) -> Json<BlueprintResponse> {
+    let bp = state.blueprints.snapshot();
+    let edges: Vec<EdgePayload> = bp.edges.iter().map(|e| EdgePayload {
+        source: e.source.0.clone(),
+        target: e.target.0.clone(),
+        edge_type: e.edge_type,
+        metadata: e.metadata.clone(),
+    }).collect();
+
+    let counts: std::collections::HashMap<String, usize> = bp.counts_by_type()
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v))
+        .collect();
+
+    Json(BlueprintResponse {
+        nodes: bp.list_summaries(),
+        total_nodes: bp.nodes.len(),
+        total_edges: bp.edges.len(),
+        edges,
+        counts,
+    })
+}
+
+/// GET /blueprint/nodes?type=decision — List blueprint nodes, optionally filtered.
+async fn list_blueprint_nodes(
+    State(state): State<Arc<AppState>>,
+    _claims: Claims,
+    Query(query): Query<NodesQuery>,
+) -> Json<NodeListResponse> {
+    let summaries = match query.node_type.as_deref() {
+        Some(t) => state.blueprints.list_by_type(t),
+        None => state.blueprints.list_summaries(),
+    };
+    let count = summaries.len();
+    Json(NodeListResponse { nodes: summaries, count })
+}
+
+/// POST /blueprint/nodes — Create a new blueprint node.
+async fn create_blueprint_node(
+    State(state): State<Arc<AppState>>,
+    _claims: Claims,
+    Json(node): Json<planner_schemas::artifacts::blueprint::BlueprintNode>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    let id = node.id().0.clone();
+    state.blueprints.upsert_node(node.clone());
+    tracing::info!("Blueprint node created: {}", id);
+    (StatusCode::CREATED, Json(serde_json::to_value(&node).unwrap_or_default()))
+}
+
+/// GET /blueprint/nodes/{nodeId} — Get a single blueprint node.
+async fn get_blueprint_node(
+    State(state): State<Arc<AppState>>,
+    _claims: Claims,
+    Path(node_id): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
+    match state.blueprints.get_node(&node_id) {
+        Some(node) => Ok(Json(serde_json::to_value(&node).unwrap_or_default())),
+        None => Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse { error: format!("Blueprint node not found: {}", node_id), code: Some("NODE_NOT_FOUND".into()) }),
+        )),
+    }
+}
+
+/// PATCH /blueprint/nodes/{nodeId} — Replace a node (full replacement under its ID).
+///
+/// For v1, PATCH does a full replacement of the node at the given ID.
+/// The incoming payload must be a complete BlueprintNode with the same ID.
+async fn update_blueprint_node(
+    State(state): State<Arc<AppState>>,
+    _claims: Claims,
+    Path(node_id): Path<String>,
+    Json(node): Json<planner_schemas::artifacts::blueprint::BlueprintNode>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
+    // Verify the node exists before upserting.
+    if state.blueprints.get_node(&node_id).is_none() {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse { error: format!("Blueprint node not found: {}", node_id), code: Some("NODE_NOT_FOUND".into()) }),
+        ));
+    }
+    state.blueprints.upsert_node(node.clone());
+    tracing::info!("Blueprint node updated: {}", node_id);
+    Ok(Json(serde_json::to_value(&node).unwrap_or_default()))
+}
+
+/// DELETE /blueprint/nodes/{nodeId} — Delete a node and incident edges.
+async fn delete_blueprint_node(
+    State(state): State<Arc<AppState>>,
+    _claims: Claims,
+    Path(node_id): Path<String>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    match state.blueprints.remove_node(&node_id) {
+        Some(_) => {
+            tracing::info!("Blueprint node deleted: {}", node_id);
+            Ok(StatusCode::NO_CONTENT)
+        }
+        None => Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse { error: format!("Blueprint node not found: {}", node_id), code: Some("NODE_NOT_FOUND".into()) }),
+        )),
+    }
+}
+
+/// POST /blueprint/edges — Add an edge between two nodes.
+async fn create_blueprint_edge(
+    State(state): State<Arc<AppState>>,
+    _claims: Claims,
+    Json(payload): Json<EdgePayload>,
+) -> Result<(StatusCode, Json<EdgePayload>), (StatusCode, Json<ErrorResponse>)> {
+    use planner_schemas::artifacts::blueprint::{Edge, NodeId};
+
+    // Validate both endpoints exist.
+    if state.blueprints.get_node(&payload.source).is_none() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: format!("Source node not found: {}", payload.source),
+                code: Some("SOURCE_NOT_FOUND".into()),
+            }),
+        ));
+    }
+    if state.blueprints.get_node(&payload.target).is_none() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: format!("Target node not found: {}", payload.target),
+                code: Some("TARGET_NOT_FOUND".into()),
+            }),
+        ));
+    }
+
+    let edge = Edge {
+        source: NodeId::from_raw(&payload.source),
+        target: NodeId::from_raw(&payload.target),
+        edge_type: payload.edge_type,
+        metadata: payload.metadata.clone(),
+    };
+    state.blueprints.add_edge(edge);
+    tracing::info!("Blueprint edge created: {} -[{}]-> {}", payload.source, payload.edge_type, payload.target);
+    Ok((StatusCode::CREATED, Json(payload)))
+}
+
+/// POST /blueprint/impact-preview — Analyze downstream impact of a node change.
+async fn impact_preview(
+    State(state): State<Arc<AppState>>,
+    _claims: Claims,
+    Json(req): Json<ImpactPreviewRequest>,
+) -> Result<Json<planner_schemas::artifacts::blueprint::ImpactReport>, (StatusCode, Json<ErrorResponse>)> {
+    match state.blueprints.impact_analysis(&req.node_id, &req.change_description) {
+        Some(report) => Ok(Json(report)),
+        None => Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: format!("Blueprint node not found: {}", req.node_id),
+                code: Some("NODE_NOT_FOUND".into()),
+            }),
         )),
     }
 }
@@ -921,6 +1145,7 @@ mod tests {
     fn test_state() -> Arc<AppState> {
         Arc::new(AppState {
             sessions: SessionStore::new(),
+            blueprints: planner_core::blueprint::BlueprintStore::new(),
             auth_config: None, // dev mode for tests
             event_store: None,
             started_at: std::time::Instant::now(),
@@ -951,6 +1176,7 @@ mod tests {
         // Health endpoint must work with no token even when auth is configured
         let state = Arc::new(AppState {
             sessions: SessionStore::new(),
+            blueprints: planner_core::blueprint::BlueprintStore::new(),
             auth_config: Some(AuthConfig {
                 domain: "test.auth0.com".into(),
                 audience: "test".into(),
@@ -1175,6 +1401,7 @@ mod tests {
         // When auth_config is set, missing token should return 401
         let state = Arc::new(AppState {
             sessions: SessionStore::new(),
+            blueprints: planner_core::blueprint::BlueprintStore::new(),
             auth_config: Some(AuthConfig {
                 domain: "test.auth0.com".into(),
                 audience: "test".into(),
@@ -1415,5 +1642,485 @@ mod tests {
 
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    // -----------------------------------------------------------------------
+    // Blueprint API tests
+    // -----------------------------------------------------------------------
+
+    fn sample_decision_json() -> serde_json::Value {
+        serde_json::json!({
+            "node_type": "decision",
+            "id": "dec-use-msgpack-a1b2c3d4",
+            "title": "Use MessagePack for disk serialization",
+            "status": "accepted",
+            "context": "CXDB needs a fast, compact disk format",
+            "options": [
+                {
+                    "name": "MessagePack",
+                    "pros": ["Fast binary", "Compact"],
+                    "cons": ["Not human-readable"],
+                    "chosen": true
+                }
+            ],
+            "consequences": [],
+            "assumptions": [],
+            "tags": ["storage", "performance"],
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-01-01T00:00:00Z"
+        })
+    }
+
+    fn sample_technology_json() -> serde_json::Value {
+        serde_json::json!({
+            "node_type": "technology",
+            "id": "tech-rust-b2c3d4e5",
+            "name": "Rust",
+            "version": "1.79.0",
+            "category": "language",
+            "ring": "adopt",
+            "rationale": "Memory safety without GC",
+            "tags": ["core"],
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-01-01T00:00:00Z"
+        })
+    }
+
+    #[tokio::test]
+    async fn test_get_blueprint_empty() {
+        let state = test_state();
+        let app = routes(state);
+
+        let req = Request::builder()
+            .uri("/blueprint")
+            .body(Body::empty())
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let bp: BlueprintResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(bp.total_nodes, 0);
+        assert_eq!(bp.total_edges, 0);
+        assert!(bp.nodes.is_empty());
+        assert!(bp.edges.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_create_blueprint_node() {
+        let state = test_state();
+        let app = routes(state);
+
+        let json_body = serde_json::to_string(&sample_decision_json()).unwrap();
+        let req = Request::builder()
+            .method("POST")
+            .uri("/blueprint/nodes")
+            .header("content-type", "application/json")
+            .body(Body::from(json_body))
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::CREATED);
+
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let node: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(node["node_type"], "decision");
+        assert_eq!(node["id"], "dec-use-msgpack-a1b2c3d4");
+    }
+
+    #[tokio::test]
+    async fn test_get_blueprint_node() {
+        let state = test_state();
+
+        // Pre-insert a node.
+        let node: planner_schemas::artifacts::blueprint::BlueprintNode =
+            serde_json::from_value(sample_decision_json()).unwrap();
+        state.blueprints.upsert_node(node);
+
+        let app = routes(state);
+
+        let req = Request::builder()
+            .uri("/blueprint/nodes/dec-use-msgpack-a1b2c3d4")
+            .body(Body::empty())
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let returned: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(returned["title"], "Use MessagePack for disk serialization");
+    }
+
+    #[tokio::test]
+    async fn test_get_blueprint_node_not_found() {
+        let state = test_state();
+        let app = routes(state);
+
+        let req = Request::builder()
+            .uri("/blueprint/nodes/nonexistent-node")
+            .body(Body::empty())
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_list_blueprint_nodes() {
+        let state = test_state();
+
+        // Insert two nodes of different types.
+        let dec: planner_schemas::artifacts::blueprint::BlueprintNode =
+            serde_json::from_value(sample_decision_json()).unwrap();
+        let tech: planner_schemas::artifacts::blueprint::BlueprintNode =
+            serde_json::from_value(sample_technology_json()).unwrap();
+        state.blueprints.upsert_node(dec);
+        state.blueprints.upsert_node(tech);
+
+        let app = routes(state);
+
+        // Unfiltered list.
+        let req = Request::builder()
+            .uri("/blueprint/nodes")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let list: NodeListResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(list.count, 2);
+    }
+
+    #[tokio::test]
+    async fn test_list_blueprint_nodes_filtered() {
+        let state = test_state();
+
+        let dec: planner_schemas::artifacts::blueprint::BlueprintNode =
+            serde_json::from_value(sample_decision_json()).unwrap();
+        let tech: planner_schemas::artifacts::blueprint::BlueprintNode =
+            serde_json::from_value(sample_technology_json()).unwrap();
+        state.blueprints.upsert_node(dec);
+        state.blueprints.upsert_node(tech);
+
+        let app = routes(state);
+
+        // Filter by decision only.
+        let req = Request::builder()
+            .uri("/blueprint/nodes?type=decision")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let list: NodeListResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(list.count, 1);
+        assert_eq!(list.nodes[0].node_type, "decision");
+    }
+
+    #[tokio::test]
+    async fn test_update_blueprint_node() {
+        let state = test_state();
+
+        // Insert original.
+        let node: planner_schemas::artifacts::blueprint::BlueprintNode =
+            serde_json::from_value(sample_decision_json()).unwrap();
+        state.blueprints.upsert_node(node);
+
+        // Update via PATCH (full replacement).
+        let mut updated_json = sample_decision_json();
+        updated_json["title"] = serde_json::json!("Use MessagePack v2");
+
+        let app = routes(state);
+
+        let req = Request::builder()
+            .method("PATCH")
+            .uri("/blueprint/nodes/dec-use-msgpack-a1b2c3d4")
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_string(&updated_json).unwrap()))
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let returned: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(returned["title"], "Use MessagePack v2");
+    }
+
+    #[tokio::test]
+    async fn test_update_blueprint_node_not_found() {
+        let state = test_state();
+        let app = routes(state);
+
+        let json_body = serde_json::to_string(&sample_decision_json()).unwrap();
+        let req = Request::builder()
+            .method("PATCH")
+            .uri("/blueprint/nodes/nonexistent")
+            .header("content-type", "application/json")
+            .body(Body::from(json_body))
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_delete_blueprint_node() {
+        let state = test_state();
+
+        let node: planner_schemas::artifacts::blueprint::BlueprintNode =
+            serde_json::from_value(sample_decision_json()).unwrap();
+        state.blueprints.upsert_node(node);
+
+        let app = routes(state.clone());
+
+        let req = Request::builder()
+            .method("DELETE")
+            .uri("/blueprint/nodes/dec-use-msgpack-a1b2c3d4")
+            .body(Body::empty())
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+
+        // Verify it's actually gone.
+        assert!(state.blueprints.get_node("dec-use-msgpack-a1b2c3d4").is_none());
+    }
+
+    #[tokio::test]
+    async fn test_delete_blueprint_node_not_found() {
+        let state = test_state();
+        let app = routes(state);
+
+        let req = Request::builder()
+            .method("DELETE")
+            .uri("/blueprint/nodes/nonexistent")
+            .body(Body::empty())
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_create_blueprint_edge() {
+        let state = test_state();
+
+        // Insert two nodes first.
+        let dec: planner_schemas::artifacts::blueprint::BlueprintNode =
+            serde_json::from_value(sample_decision_json()).unwrap();
+        let tech: planner_schemas::artifacts::blueprint::BlueprintNode =
+            serde_json::from_value(sample_technology_json()).unwrap();
+        state.blueprints.upsert_node(dec);
+        state.blueprints.upsert_node(tech);
+
+        let app = routes(state);
+
+        let edge_json = serde_json::json!({
+            "source": "tech-rust-b2c3d4e5",
+            "target": "dec-use-msgpack-a1b2c3d4",
+            "edge_type": "decided_by"
+        });
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/blueprint/edges")
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_string(&edge_json).unwrap()))
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::CREATED);
+    }
+
+    #[tokio::test]
+    async fn test_create_blueprint_edge_source_missing() {
+        let state = test_state();
+
+        // Only insert target.
+        let dec: planner_schemas::artifacts::blueprint::BlueprintNode =
+            serde_json::from_value(sample_decision_json()).unwrap();
+        state.blueprints.upsert_node(dec);
+
+        let app = routes(state);
+
+        let edge_json = serde_json::json!({
+            "source": "nonexistent-source",
+            "target": "dec-use-msgpack-a1b2c3d4",
+            "edge_type": "depends_on"
+        });
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/blueprint/edges")
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_string(&edge_json).unwrap()))
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_impact_preview() {
+        let state = test_state();
+
+        // Build a small graph: dec -> tech (via affects edge).
+        let dec: planner_schemas::artifacts::blueprint::BlueprintNode =
+            serde_json::from_value(sample_decision_json()).unwrap();
+        let tech: planner_schemas::artifacts::blueprint::BlueprintNode =
+            serde_json::from_value(sample_technology_json()).unwrap();
+        state.blueprints.upsert_node(dec);
+        state.blueprints.upsert_node(tech);
+
+        state.blueprints.add_edge(planner_schemas::artifacts::blueprint::Edge {
+            source: planner_schemas::artifacts::blueprint::NodeId::from_raw("dec-use-msgpack-a1b2c3d4"),
+            target: planner_schemas::artifacts::blueprint::NodeId::from_raw("tech-rust-b2c3d4e5"),
+            edge_type: planner_schemas::artifacts::blueprint::EdgeType::Affects,
+            metadata: None,
+        });
+
+        let app = routes(state);
+
+        let impact_req = serde_json::json!({
+            "node_id": "dec-use-msgpack-a1b2c3d4",
+            "change_description": "Switch to CBOR instead of MessagePack"
+        });
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/blueprint/impact-preview")
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_string(&impact_req).unwrap()))
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let report: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(report["source_node_id"], "dec-use-msgpack-a1b2c3d4");
+        // tech-rust should be affected.
+        let entries = report["entries"].as_array().unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0]["node_id"], "tech-rust-b2c3d4e5");
+    }
+
+    #[tokio::test]
+    async fn test_impact_preview_node_not_found() {
+        let state = test_state();
+        let app = routes(state);
+
+        let impact_req = serde_json::json!({
+            "node_id": "nonexistent",
+            "change_description": "Some change"
+        });
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/blueprint/impact-preview")
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_string(&impact_req).unwrap()))
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_blueprint_full_lifecycle() {
+        // E2E lifecycle: create nodes -> list -> create edges -> impact preview -> delete -> verify.
+        let state = test_state();
+
+        // 1. Create Decision node.
+        let app = routes(state.clone());
+        let req = Request::builder()
+            .method("POST")
+            .uri("/blueprint/nodes")
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_string(&sample_decision_json()).unwrap()))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::CREATED);
+
+        // 2. Create Technology node.
+        let app = routes(state.clone());
+        let req = Request::builder()
+            .method("POST")
+            .uri("/blueprint/nodes")
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_string(&sample_technology_json()).unwrap()))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::CREATED);
+
+        // 3. Verify full blueprint shows 2 nodes.
+        let app = routes(state.clone());
+        let req = Request::builder()
+            .uri("/blueprint")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let bp: BlueprintResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(bp.total_nodes, 2);
+
+        // 4. Create edge: decision affects technology.
+        let app = routes(state.clone());
+        let edge = serde_json::json!({
+            "source": "dec-use-msgpack-a1b2c3d4",
+            "target": "tech-rust-b2c3d4e5",
+            "edge_type": "affects"
+        });
+        let req = Request::builder()
+            .method("POST")
+            .uri("/blueprint/edges")
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_string(&edge).unwrap()))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::CREATED);
+
+        // 5. Impact preview — decision change affects technology.
+        let app = routes(state.clone());
+        let impact = serde_json::json!({
+            "node_id": "dec-use-msgpack-a1b2c3d4",
+            "change_description": "Switch serialization format"
+        });
+        let req = Request::builder()
+            .method("POST")
+            .uri("/blueprint/impact-preview")
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_string(&impact).unwrap()))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let report: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(!report["entries"].as_array().unwrap().is_empty());
+
+        // 6. Delete the decision node (should also remove the edge).
+        let app = routes(state.clone());
+        let req = Request::builder()
+            .method("DELETE")
+            .uri("/blueprint/nodes/dec-use-msgpack-a1b2c3d4")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+
+        // 7. Verify: blueprint now has 1 node, 0 edges.
+        let app = routes(state.clone());
+        let req = Request::builder()
+            .uri("/blueprint")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let bp: BlueprintResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(bp.total_nodes, 1);
+        assert_eq!(bp.total_edges, 0);
     }
 }
