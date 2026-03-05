@@ -6,6 +6,7 @@ import './index.css';
 import App from './App.tsx';
 import Auth0ProviderWithNavigate from './auth/Auth0ProviderWithNavigate.tsx';
 import { AUTH0_ENABLED } from './config.ts';
+import { ThemeProvider } from './hooks/useTheme.tsx';
 
 // ─── Error Boundary ───────────────────────────────────────────────────────────
 
@@ -37,28 +38,30 @@ class ErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryStat
           alignItems: 'center',
           justifyContent: 'center',
           height: '100vh',
-          background: '#0a0a0f',
-          color: '#ff4444',
-          fontFamily: 'monospace',
+          background: '#111110',
+          color: '#d163a7',
+          fontFamily: "'Inter', system-ui, sans-serif",
           gap: '16px',
           padding: '24px',
         }}>
-          <div style={{ fontSize: '18px' }}>[ FATAL ERROR ]</div>
-          <div style={{ color: '#e0e0e8', fontSize: '13px', maxWidth: '600px', textAlign: 'center' }}>
+          <div style={{ fontSize: '16px', fontWeight: 600 }}>Something went wrong</div>
+          <div style={{ color: '#cdccca', fontSize: '13px', maxWidth: '600px', textAlign: 'center' }}>
             {this.state.error?.message ?? 'An unexpected error occurred.'}
           </div>
           <button
             onClick={() => window.location.reload()}
             style={{
               background: 'transparent',
-              border: '1px solid #ff4444',
-              color: '#ff4444',
+              border: '1px solid #d163a7',
+              color: '#d163a7',
               padding: '8px 20px',
               cursor: 'pointer',
-              fontFamily: 'monospace',
+              fontFamily: "'Inter', system-ui, sans-serif",
+              borderRadius: '6px',
+              fontSize: '13px',
             }}
           >
-            reload
+            Reload
           </button>
         </div>
       );
@@ -75,15 +78,17 @@ if (!rootEl) throw new Error('Root element not found');
 createRoot(rootEl).render(
   <StrictMode>
     <ErrorBoundary>
-      <BrowserRouter>
-        {AUTH0_ENABLED ? (
-          <Auth0ProviderWithNavigate>
+      <ThemeProvider>
+        <BrowserRouter>
+          {AUTH0_ENABLED ? (
+            <Auth0ProviderWithNavigate>
+              <App />
+            </Auth0ProviderWithNavigate>
+          ) : (
             <App />
-          </Auth0ProviderWithNavigate>
-        ) : (
-          <App />
-        )}
-      </BrowserRouter>
+          )}
+        </BrowserRouter>
+      </ThemeProvider>
     </ErrorBoundary>
   </StrictMode>,
 );

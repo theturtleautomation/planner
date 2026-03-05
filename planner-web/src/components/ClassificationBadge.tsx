@@ -23,8 +23,8 @@ export default function ClassificationBadge({ classification }: ClassificationBa
         display: 'inline-flex',
         flexDirection: 'column',
         gap: '3px',
-        background: 'var(--bg-tertiary)',
-        border: '1px solid var(--border)',
+        background: 'var(--color-surface-2)',
+        border: '1px solid var(--color-border)',
         borderRadius: '3px',
         padding: '8px 12px',
       }}
@@ -35,18 +35,18 @@ export default function ClassificationBadge({ classification }: ClassificationBa
         <span
           style={{
             fontSize: '12px',
-            color: 'var(--accent-cyan)',
+            color: 'var(--color-primary)',
             fontWeight: 700,
             letterSpacing: '0.02em',
           }}
         >
           {classification.project_type}
         </span>
-        <span style={{ color: 'var(--border)', fontSize: '12px' }}>·</span>
+        <span style={{ color: 'var(--color-border)', fontSize: '12px' }}>·</span>
         <span
           style={{
             fontSize: '11px',
-            color: 'var(--text-secondary)',
+            color: 'var(--color-text-muted)',
             textTransform: 'capitalize',
           }}
         >
@@ -58,13 +58,13 @@ export default function ClassificationBadge({ classification }: ClassificationBa
       <div
         style={{
           fontSize: '10px',
-          color: 'var(--text-secondary)',
+          color: 'var(--color-text-muted)',
           letterSpacing: '0.04em',
           textTransform: 'uppercase',
         }}
       >
         Complexity:{' '}
-        <span style={{ color: 'var(--text-primary)', textTransform: 'capitalize' }}>
+        <span style={{ color: 'var(--color-text)', textTransform: 'capitalize' }}>
           {classification.complexity}
         </span>
       </div>

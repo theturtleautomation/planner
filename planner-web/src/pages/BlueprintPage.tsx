@@ -1,21 +1,40 @@
-import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import Layout from '../components/Layout.tsx';
 import BlueprintGraph from '../components/BlueprintGraph.tsx';
-import NodeDetailPanel from '../components/NodeDetailPanel.tsx';
+import TableView from '../components/TableView.tsx';
+import RadarView from '../components/RadarView.tsx';
+import DetailDrawer from '../components/DetailDrawer.tsx';
+import ImpactPreviewModal from '../components/ImpactPreviewModal.tsx';
 import { createApiClient } from '../api/client.ts';
 import { useGetAccessToken } from '../auth/useAuthenticatedFetch.ts';
-import type { BlueprintResponse, NodeType, NodeSummary } from '../types/blueprint.ts';
+import type { BlueprintResponse, NodeType, NodeSummary, ImpactReport } from '../types/blueprint.ts';
+
+// ─── View types ─────────────────────────────────────────────────────────────
+
+type ViewMode = 'graph' | 'table' | 'radar';
 
 // ─── Node type filter config ────────────────────────────────────────────────
 
-const NODE_TYPES: { value: NodeType | null; label: string; color: string }[] = [
-  { value: null,                  label: 'All',       color: 'var(--text-primary)' },
-  { value: 'decision',           label: 'Decision',   color: '#4f98a3' },
-  { value: 'technology',         label: 'Technology',  color: '#6daa45' },
-  { value: 'component',          label: 'Component',   color: '#5591c7' },
-  { value: 'constraint',         label: 'Constraint',  color: '#bb653b' },
-  { value: 'pattern',            label: 'Pattern',     color: '#a86fdf' },
-  { value: 'quality_requirement', label: 'Quality',    color: '#e8af34' },
+const NODE_TYPES: { value: NodeType | null; label: string; icon: string }[] = [
+  { value: null,                  label: 'All Nodes',    icon: '◎' },
+  { value: 'decision',           label: 'Decisions',     icon: '◆' },
+  { value: 'technology',         label: 'Technologies',  icon: '⬡' },
+  { value: 'component',          label: 'Components',    icon: '▪' },
+  { value: 'constraint',         label: 'Constraints',   icon: '◇' },
+  { value: 'pattern',            label: 'Patterns',      icon: '◉' },
+  { value: 'quality_requirement', label: 'Quality',      icon: '⛨' },
+];
+
+// ─── Edge type labels ───────────────────────────────────────────────────────
+
+const EDGE_STYLES: { type: string; label: string; dash: string }[] = [
+  { type: 'depends_on',  label: 'depends on', dash: '' },
+  { type: 'decided_by',  label: 'decided by', dash: '8,4' },
+  { type: 'constrains',  label: 'constrains', dash: '3,3' },
+  { type: 'uses',        label: 'uses',       dash: '' },
+  { type: 'implements',  label: 'implements', dash: '2,4' },
+  { type: 'satisfies',   label: 'satisfies',  dash: '8,3,2,3' },
+  { type: 'affects',     label: 'affects',     dash: '6,4' },
 ];
 
 // ─── BlueprintPage ──────────────────────────────────────────────────────────
@@ -24,21 +43,24 @@ export default function BlueprintPage() {
   const getToken = useGetAccessToken();
   const api = useMemo(() => createApiClient(getToken), [getToken]);
 
-  // Data
+  // Data state
   const [blueprint, setBlueprint] = useState<BlueprintResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
 
   // UI state
+  const [viewMode, setViewMode] = useState<ViewMode>('graph');
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [filterType, setFilterType] = useState<NodeType | null>(null);
 
-  // Container sizing
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
+  // Impact preview state
+  const [impactNodeId, setImpactNodeId] = useState<string | null>(null);
+  const [impactReport, setImpactReport] = useState<ImpactReport | null>(null);
+  const [impactLoading, setImpactLoading] = useState(false);
 
-  // Fetch blueprint
+  // ─── Data fetching ──────────────────────────────────────────────────────
+
   const loadBlueprint = useCallback(async () => {
     setLoading(true);
     setFetchError(null);
@@ -56,289 +78,312 @@ export default function BlueprintPage() {
     void loadBlueprint();
   }, [loadBlueprint]);
 
-  // Resize observer
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
+  // ─── Impact preview ─────────────────────────────────────────────────────
 
-    const observer = new ResizeObserver(entries => {
-      for (const entry of entries) {
-        const { width, height } = entry.contentRect;
-        setDimensions({ width: Math.floor(width), height: Math.floor(height) });
-      }
-    });
-    observer.observe(container);
-    return () => observer.disconnect();
+  const handleImpactPreview = useCallback(async (nodeId: string) => {
+    setImpactNodeId(nodeId);
+    setImpactLoading(true);
+    setImpactReport(null);
+    try {
+      const report = await api.impactPreview(nodeId, 'Proposed change impact analysis');
+      setImpactReport(report);
+    } catch {
+      // Still show modal, just without data
+      setImpactReport(null);
+    } finally {
+      setImpactLoading(false);
+    }
+  }, [api]);
+
+  const handleImpactClose = useCallback(() => {
+    setImpactNodeId(null);
+    setImpactReport(null);
+    setImpactLoading(false);
   }, []);
 
-  // Filtered node counts for chips
-  const filteredCounts = useMemo(() => {
-    if (!blueprint) return {};
-    return blueprint.counts;
-  }, [blueprint]);
+  const handleImpactApply = useCallback(() => {
+    // Future: apply reconvergence
+    handleImpactClose();
+  }, [handleImpactClose]);
 
-  // Graph dimensions account for detail panel
-  const detailPanelWidth = 340;
-  const graphWidth = selectedNodeId
-    ? Math.max(dimensions.width - detailPanelWidth, 300)
-    : dimensions.width;
+  // ─── Node selection / navigation ────────────────────────────────────────
 
-  // Hovered node info for tooltip
+  const handleSelectNode = useCallback((nodeId: string | null) => {
+    setSelectedNodeId(nodeId);
+  }, []);
+
+  const handleNavigateNode = useCallback((nodeId: string) => {
+    setSelectedNodeId(nodeId);
+  }, []);
+
+  // ─── Hover info ─────────────────────────────────────────────────────────
+
   const hoveredNode: NodeSummary | null = useMemo(() => {
     if (!hoveredNodeId || !blueprint) return null;
     return blueprint.nodes.find(n => n.id === hoveredNodeId) ?? null;
   }, [hoveredNodeId, blueprint]);
 
+  // ─── Node counts for sidebar ────────────────────────────────────────────
+
+  const nodeCounts = useMemo(() => {
+    if (!blueprint) return {} as Record<string, number>;
+    return blueprint.counts;
+  }, [blueprint]);
+
+  // ─── Render ─────────────────────────────────────────────────────────────
+
   return (
     <Layout>
-      <div style={{
-        flex: 1,
-        display: 'flex',
-        flexDirection: 'column',
-        overflow: 'hidden',
-      }}>
-        {/* Toolbar */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '8px 16px',
-          borderBottom: '1px solid var(--border)',
-          background: 'var(--bg-secondary)',
-          flexShrink: 0,
-          gap: '12px',
-          flexWrap: 'wrap',
-        }}>
-          {/* Left: title + counts */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <a
-              href="/"
-              style={{
-                color: 'var(--text-secondary)',
-                fontSize: '11px',
-                textDecoration: 'none',
-                opacity: 0.7,
-              }}
-            >
-              ← sessions
-            </a>
-            <span style={{
-              fontSize: '13px',
-              fontWeight: 600,
-              color: 'var(--text-primary)',
-              letterSpacing: '0.02em',
-            }}>
-              blueprint
-            </span>
+      <div className="main">
+        {/* Topbar */}
+        <div className="topbar">
+          <div className="topbar-left">
+            <div className="topbar-title">Blueprint</div>
             {blueprint && (
-              <span style={{
-                fontSize: '10px',
-                color: 'var(--text-secondary)',
-                fontFamily: 'monospace',
-              }}>
+              <div className="topbar-subtitle">
                 {blueprint.total_nodes} nodes · {blueprint.total_edges} edges
-              </span>
+              </div>
             )}
           </div>
 
-          {/* Right: type filter chips */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
-            {NODE_TYPES.map(t => {
-              const isActive = filterType === t.value;
-              const count = t.value === null
-                ? (blueprint?.total_nodes ?? 0)
-                : (filteredCounts[t.value] ?? 0);
-              return (
+          <div className="topbar-right">
+            {/* View tabs */}
+            <div className="view-tabs">
+              {(['graph', 'table', 'radar'] as ViewMode[]).map(v => (
                 <button
-                  key={t.label}
-                  onClick={() => setFilterType(isActive && t.value !== null ? null : t.value)}
-                  style={{
-                    background: isActive ? `${t.color}18` : 'transparent',
-                    border: `1px solid ${isActive ? t.color : 'var(--border)'}`,
-                    color: isActive ? t.color : 'var(--text-secondary)',
-                    padding: '3px 8px',
-                    fontSize: '10px',
-                    fontWeight: isActive ? 600 : 400,
-                    letterSpacing: '0.04em',
-                    borderRadius: '10px',
-                    cursor: 'pointer',
-                    fontFamily: 'inherit',
-                    transition: 'all 180ms ease',
-                    whiteSpace: 'nowrap',
-                  }}
+                  key={v}
+                  className={`view-tab${viewMode === v ? ' active' : ''}`}
+                  onClick={() => setViewMode(v)}
                 >
-                  {t.label}
-                  {count > 0 && (
-                    <span style={{ marginLeft: '4px', opacity: 0.6 }}>{count}</span>
+                  {v === 'graph' && (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                      <circle cx="6" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><circle cx="18" cy="6" r="3"/>
+                      <path d="M8.5 8.5l7 7M8.5 6h7"/>
+                    </svg>
                   )}
+                  {v === 'table' && (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                      <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/>
+                    </svg>
+                  )}
+                  {v === 'radar' && (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                      <circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>
+                      <path d="M12 2v4M12 18v4"/>
+                    </svg>
+                  )}
+                  {v.charAt(0).toUpperCase() + v.slice(1)}
                 </button>
-              );
-            })}
+              ))}
+            </div>
 
             {/* Refresh */}
             <button
+              className="btn btn-ghost"
               onClick={() => void loadBlueprint()}
               title="Refresh blueprint data"
-              style={{
-                background: 'transparent',
-                border: '1px solid var(--border)',
-                color: 'var(--text-secondary)',
-                padding: '3px 8px',
-                fontSize: '10px',
-                borderRadius: '10px',
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-              }}
             >
-              ↻
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M21 2v6h-6M3 12a9 9 0 0 1 15-6.7L21 8M3 22v-6h6M21 12a9 9 0 0 1-15 6.7L3 16"/>
+              </svg>
+            </button>
+
+            {/* Impact button */}
+            <button
+              className="btn btn-ghost"
+              onClick={() => {
+                if (selectedNodeId) handleImpactPreview(selectedNodeId);
+              }}
+              title="Impact preview"
+              disabled={!selectedNodeId}
+              style={{ opacity: selectedNodeId ? 1 : 0.4 }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+              </svg>
+              Impact
             </button>
           </div>
         </div>
 
-        {/* Main content area */}
-        <div style={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative' }}>
-          {/* Graph container */}
-          <div
-            ref={containerRef}
-            style={{
-              flex: 1,
-              overflow: 'hidden',
-              position: 'relative',
-              background: 'var(--bg-primary)',
-            }}
-          >
+        {/* Content area */}
+        <div className="content" style={{ display: 'flex' }}>
+          {/* Sidebar filter (inside content, not app-level sidebar) */}
+          <div style={{
+            width: '200px', flexShrink: 0,
+            borderRight: '1px solid var(--color-divider)',
+            background: 'var(--color-surface)',
+            display: 'flex', flexDirection: 'column',
+            padding: 'var(--space-3) 0',
+            overflowY: 'auto', overscrollBehavior: 'contain',
+          }}>
+            <div className="sidebar-label" style={{ padding: 'var(--space-1) var(--space-4)' }}>
+              Node Types
+            </div>
+            {NODE_TYPES.map(t => {
+              const isActive = filterType === t.value;
+              const count = t.value === null
+                ? (blueprint?.total_nodes ?? 0)
+                : (nodeCounts[t.value] ?? 0);
+              return (
+                <button
+                  key={t.label}
+                  className={`sidebar-item${isActive ? ' active' : ''}`}
+                  onClick={() => setFilterType(isActive && t.value !== null ? null : t.value)}
+                  style={{ padding: 'var(--space-1) var(--space-4)' }}
+                >
+                  <span className="icon">{t.icon}</span>
+                  {t.label}
+                  <span className="count">{count}</span>
+                </button>
+              );
+            })}
+
+            {/* Edge legend (only when graph is active) */}
+            {viewMode === 'graph' && (
+              <>
+                <div style={{ margin: 'var(--space-4) 0 var(--space-1)', borderTop: '1px solid var(--color-divider)' }} />
+                <div className="sidebar-label" style={{ padding: 'var(--space-1) var(--space-4)' }}>
+                  Edge Types
+                </div>
+                {EDGE_STYLES.map(e => (
+                  <div
+                    key={e.type}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 'var(--space-2)',
+                      padding: '2px var(--space-4)', fontSize: 'var(--text-xs)',
+                      color: 'var(--color-text-faint)',
+                    }}
+                  >
+                    <svg width="24" height="8" style={{ flexShrink: 0 }}>
+                      <line
+                        x1="0" y1="4" x2="24" y2="4"
+                        stroke="var(--color-text-faint)" strokeWidth="1.2"
+                        strokeDasharray={e.dash || 'none'}
+                      />
+                    </svg>
+                    <span>{e.label}</span>
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
+
+          {/* Main view area */}
+          <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
+            {/* Loading state */}
             {loading && (
               <div style={{
-                position: 'absolute',
-                inset: 0,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: 'var(--text-secondary)',
-                fontSize: '13px',
-                zIndex: 2,
+                position: 'absolute', inset: 0, display: 'flex',
+                alignItems: 'center', justifyContent: 'center',
+                background: 'var(--color-bg)', zIndex: 3,
               }}>
-                loading blueprint…
+                <div className="skeleton-pulse" />
               </div>
             )}
 
+            {/* Error state */}
             {fetchError && (
               <div style={{
-                position: 'absolute',
-                inset: 0,
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '12px',
-                zIndex: 2,
+                position: 'absolute', inset: 0, display: 'flex',
+                flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                gap: '12px', zIndex: 2,
               }}>
-                <div style={{ color: 'var(--accent-red)', fontSize: '13px' }}>
+                <div style={{ color: 'var(--color-error)', fontSize: 'var(--text-sm)' }}>
                   failed to load blueprint
                 </div>
-                <div style={{ color: 'var(--text-secondary)', fontSize: '11px', maxWidth: '400px', textAlign: 'center' }}>
+                <div style={{
+                  color: 'var(--color-text-faint)', fontSize: 'var(--text-xs)',
+                  maxWidth: '400px', textAlign: 'center',
+                }}>
                   {fetchError}
                 </div>
                 <button
+                  className="btn btn-outline"
                   onClick={() => void loadBlueprint()}
-                  style={{
-                    background: 'transparent',
-                    border: '1px solid var(--accent-cyan)',
-                    color: 'var(--accent-cyan)',
-                    padding: '6px 16px',
-                    fontSize: '11px',
-                    cursor: 'pointer',
-                    borderRadius: '3px',
-                    fontFamily: 'inherit',
-                  }}
                 >
                   retry
                 </button>
               </div>
             )}
 
+            {/* Graph view */}
             {!loading && !fetchError && blueprint && (
-              <BlueprintGraph
-                nodes={blueprint.nodes}
-                edges={blueprint.edges}
-                selectedNodeId={selectedNodeId}
-                onSelectNode={setSelectedNodeId}
-                onHoverNode={setHoveredNodeId}
-                width={graphWidth}
-                height={dimensions.height}
-                filterType={filterType}
-              />
-            )}
-
-            {/* Hover tooltip */}
-            {hoveredNode && !selectedNodeId && (
               <div style={{
-                position: 'absolute',
-                bottom: '16px',
-                left: '16px',
-                background: 'var(--bg-secondary)',
-                border: '1px solid var(--border)',
-                borderRadius: '3px',
-                padding: '8px 12px',
-                fontSize: '11px',
-                color: 'var(--text-primary)',
-                pointerEvents: 'none',
-                zIndex: 10,
-                maxWidth: '280px',
-                boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+                width: '100%', height: '100%',
+                display: viewMode === 'graph' ? 'block' : 'none',
+                position: 'absolute', inset: 0,
               }}>
-                <div style={{ fontWeight: 600, marginBottom: '2px' }}>{hoveredNode.name}</div>
-                <div style={{ color: 'var(--text-secondary)', fontSize: '10px' }}>
-                  {hoveredNode.node_type}
-                  {hoveredNode.tags.length > 0 && ` · ${hoveredNode.tags.join(', ')}`}
-                </div>
+                <BlueprintGraph
+                  nodes={blueprint.nodes}
+                  edges={blueprint.edges}
+                  selectedNodeId={selectedNodeId}
+                  onSelectNode={handleSelectNode}
+                  onHoverNode={setHoveredNodeId}
+                  filterType={filterType}
+                />
+
+                {/* Hover tooltip */}
+                {hoveredNode && !selectedNodeId && (
+                  <div style={{
+                    position: 'absolute', bottom: '16px', left: '16px',
+                    background: 'var(--color-surface)', border: '1px solid var(--color-border)',
+                    borderRadius: 'var(--radius-md)', padding: 'var(--space-2) var(--space-3)',
+                    fontSize: 'var(--text-xs)', color: 'var(--color-text)',
+                    pointerEvents: 'none', zIndex: 10, maxWidth: '280px',
+                    boxShadow: 'var(--shadow-md)',
+                  }}>
+                    <div style={{ fontWeight: 600, marginBottom: '2px' }}>{hoveredNode.name}</div>
+                    <div style={{ color: 'var(--color-text-faint)', fontSize: '0.625rem' }}>
+                      {hoveredNode.node_type}
+                      {hoveredNode.tags.length > 0 && ` · ${hoveredNode.tags.join(', ')}`}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
-            {/* Legend */}
-            <div style={{
-              position: 'absolute',
-              top: '12px',
-              right: selectedNodeId ? `${detailPanelWidth + 16}px` : '12px',
-              background: 'var(--bg-secondary)',
-              border: '1px solid var(--border)',
-              borderRadius: '3px',
-              padding: '8px 12px',
-              fontSize: '10px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '3px',
-              opacity: 0.85,
-              transition: 'right 200ms ease',
-            }}>
-              {NODE_TYPES.filter(t => t.value !== null).map(t => (
-                <div key={t.label} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={{
-                    width: '8px', height: '8px', borderRadius: '2px',
-                    background: t.color, display: 'inline-block', flexShrink: 0,
-                  }} />
-                  <span style={{ color: 'var(--text-secondary)' }}>{t.label}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Detail panel (slides in when a node is selected) */}
-          {selectedNodeId && blueprint && (
-            <div style={{
-              width: `${detailPanelWidth}px`,
-              flexShrink: 0,
-              overflow: 'hidden',
-            }}>
-              <NodeDetailPanel
-                nodeId={selectedNodeId}
+            {/* Table view */}
+            {!loading && !fetchError && blueprint && viewMode === 'table' && (
+              <TableView
+                nodes={blueprint.nodes}
                 edges={blueprint.edges}
-                api={api}
-                onClose={() => setSelectedNodeId(null)}
+                filterType={filterType}
+                onSelectNode={(id) => handleSelectNode(id)}
               />
-            </div>
-          )}
+            )}
+
+            {/* Radar view */}
+            {!loading && !fetchError && blueprint && viewMode === 'radar' && (
+              <div style={{ width: '100%', height: '100%' }}>
+                <RadarView
+                  nodes={blueprint.nodes}
+                  onSelectNode={(id) => handleSelectNode(id)}
+                />
+              </div>
+            )}
+          </div>
         </div>
+
+        {/* Detail drawer */}
+        <DetailDrawer
+          nodeId={selectedNodeId}
+          allNodes={blueprint?.nodes ?? []}
+          edges={blueprint?.edges ?? []}
+          api={api}
+          onClose={() => handleSelectNode(null)}
+          onNavigateNode={handleNavigateNode}
+          onImpactPreview={handleImpactPreview}
+        />
+
+        {/* Impact preview modal */}
+        <ImpactPreviewModal
+          isOpen={impactNodeId !== null}
+          report={impactReport}
+          loading={impactLoading}
+          onClose={handleImpactClose}
+          onApply={handleImpactApply}
+        />
       </div>
     </Layout>
   );

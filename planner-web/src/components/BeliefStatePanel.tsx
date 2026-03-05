@@ -55,7 +55,7 @@ function Section({ title, accentColor, count, children }: SectionProps) {
   return (
     <div
       style={{
-        borderTop: '1px solid var(--border)',
+        borderTop: '1px solid var(--color-border)',
         paddingTop: '8px',
       }}
     >
@@ -89,9 +89,9 @@ function Section({ title, accentColor, count, children }: SectionProps) {
         <span
           style={{
             fontSize: '10px',
-            color: 'var(--text-secondary)',
-            background: 'var(--bg-tertiary)',
-            border: '1px solid var(--border)',
+            color: 'var(--color-text-muted)',
+            background: 'var(--color-surface-2)',
+            border: '1px solid var(--color-border)',
             borderRadius: '2px',
             padding: '0px 5px',
             fontFamily: 'inherit',
@@ -103,7 +103,7 @@ function Section({ title, accentColor, count, children }: SectionProps) {
           style={{
             marginLeft: 'auto',
             fontSize: '10px',
-            color: 'var(--text-secondary)',
+            color: 'var(--color-text-muted)',
             fontFamily: 'inherit',
           }}
         >
@@ -165,8 +165,8 @@ function DimensionEditor({
     <div
       style={{
         padding: '6px 8px',
-        background: 'var(--bg-tertiary)',
-        border: '1px solid var(--accent-cyan)',
+        background: 'var(--color-surface-2)',
+        border: '1px solid var(--color-primary)',
         borderRadius: '3px',
         display: 'flex',
         flexDirection: 'column',
@@ -177,7 +177,7 @@ function DimensionEditor({
         style={{
           fontSize: '10px',
           fontWeight: 700,
-          color: 'var(--accent-cyan)',
+          color: 'var(--color-primary)',
           letterSpacing: '0.06em',
           textTransform: 'uppercase',
         }}
@@ -192,10 +192,10 @@ function DimensionEditor({
           onKeyDown={handleKeyDown}
           style={{
             flex: 1,
-            background: 'var(--bg-primary)',
-            border: '1px solid var(--border)',
+            background: 'var(--color-bg)',
+            border: '1px solid var(--color-border)',
             borderRadius: '2px',
-            color: 'var(--text-primary)',
+            color: 'var(--color-text)',
             fontSize: '12px',
             padding: '4px 8px',
             fontFamily: 'inherit',
@@ -209,10 +209,10 @@ function DimensionEditor({
             else onCancel();
           }}
           style={{
-            background: 'var(--accent-cyan)',
+            background: 'var(--color-primary)',
             border: 'none',
             borderRadius: '2px',
-            color: 'var(--bg-primary)',
+            color: 'var(--color-bg)',
             fontSize: '10px',
             fontWeight: 700,
             padding: '4px 10px',
@@ -226,9 +226,9 @@ function DimensionEditor({
           onClick={onCancel}
           style={{
             background: 'transparent',
-            border: '1px solid var(--border)',
+            border: '1px solid var(--color-border)',
             borderRadius: '2px',
-            color: 'var(--text-secondary)',
+            color: 'var(--color-text-muted)',
             fontSize: '10px',
             padding: '4px 10px',
             cursor: 'pointer',
@@ -238,7 +238,7 @@ function DimensionEditor({
           Cancel
         </button>
       </div>
-      <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>
+      <span style={{ fontSize: '10px', color: 'var(--color-text-muted)' }}>
         Enter to save, Escape to cancel
       </span>
     </div>
@@ -307,7 +307,7 @@ export default function BeliefStatePanel({
       <div
         style={{
           flex: 1,
-          background: 'var(--bg-secondary)',
+          background: 'var(--color-surface)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -316,7 +316,7 @@ export default function BeliefStatePanel({
       >
         <span
           style={{
-            color: 'var(--text-secondary)',
+            color: 'var(--color-text-muted)',
             fontSize: '12px',
             textAlign: 'center',
             fontStyle: 'italic',
@@ -337,7 +337,7 @@ export default function BeliefStatePanel({
     <div
       style={{
         flex: 1,
-        background: 'var(--bg-secondary)',
+        background: 'var(--color-surface)',
         overflowY: 'auto',
         padding: '12px 14px',
         display: 'flex',
@@ -356,7 +356,7 @@ export default function BeliefStatePanel({
       {contradictions.length > 0 && (
         <Section
           title="! Contradictions"
-          accentColor="var(--accent-red)"
+          accentColor="var(--color-error)"
           count={contradictions.length}
         >
           {contradictions.map((c, i) => (
@@ -374,25 +374,25 @@ export default function BeliefStatePanel({
               }}
             >
               <div style={{ display: 'flex', gap: '6px', alignItems: 'baseline' }}>
-                <span style={{ color: 'var(--accent-red)', flexShrink: 0, fontWeight: 700 }}>!</span>
+                <span style={{ color: 'var(--color-error)', flexShrink: 0, fontWeight: 700 }}>!</span>
                 <span>
-                  <span style={{ fontWeight: 700, color: 'var(--accent-red)' }}>
+                  <span style={{ fontWeight: 700, color: 'var(--color-error)' }}>
                     {c.dimension_a}
                   </span>
-                  <span style={{ color: 'var(--text-secondary)', margin: '0 4px' }}>=</span>
-                  <span style={{ color: 'var(--text-primary)' }}>"{c.value_a}"</span>
-                  <span style={{ color: 'var(--text-secondary)', margin: '0 6px' }}>vs</span>
-                  <span style={{ fontWeight: 700, color: 'var(--accent-red)' }}>
+                  <span style={{ color: 'var(--color-text-muted)', margin: '0 4px' }}>=</span>
+                  <span style={{ color: 'var(--color-text)' }}>"{c.value_a}"</span>
+                  <span style={{ color: 'var(--color-text-muted)', margin: '0 6px' }}>vs</span>
+                  <span style={{ fontWeight: 700, color: 'var(--color-error)' }}>
                     {c.dimension_b}
                   </span>
-                  <span style={{ color: 'var(--text-secondary)', margin: '0 4px' }}>=</span>
-                  <span style={{ color: 'var(--text-primary)' }}>"{c.value_b}"</span>
+                  <span style={{ color: 'var(--color-text-muted)', margin: '0 4px' }}>=</span>
+                  <span style={{ color: 'var(--color-text)' }}>"{c.value_b}"</span>
                 </span>
               </div>
               <div
                 style={{
                   fontSize: '11px',
-                  color: 'var(--text-secondary)',
+                  color: 'var(--color-text-muted)',
                   paddingLeft: '18px',
                   lineHeight: '1.4',
                 }}
@@ -407,11 +407,11 @@ export default function BeliefStatePanel({
       {/* Filled */}
       <Section
         title="✓ Filled"
-        accentColor="var(--accent-green)"
+        accentColor="var(--color-success)"
         count={filledEntries.length}
       >
         {filledEntries.length === 0 ? (
-          <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
+          <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
             none yet
           </span>
         ) : (
@@ -432,7 +432,7 @@ export default function BeliefStatePanel({
                 title={canEdit ? 'Click to edit' : slot.source_quote ?? undefined}
                 style={{
                   fontSize: '12px',
-                  color: 'var(--accent-green)',
+                  color: 'var(--color-success)',
                   cursor: canEdit || onDimensionClick ? 'pointer' : 'default',
                   padding: '2px 0',
                   display: 'flex',
@@ -443,12 +443,12 @@ export default function BeliefStatePanel({
                 <span style={{ flexShrink: 0 }}>✓</span>
                 <span>
                   <span style={{ fontWeight: 700 }}>{toDisplayString(dim)}</span>
-                  <span style={{ color: 'var(--text-secondary)', margin: '0 4px' }}>:</span>
-                  <span style={{ color: 'var(--text-primary)' }}>{toDisplayString(slot.value)}</span>
+                  <span style={{ color: 'var(--color-text-muted)', margin: '0 4px' }}>:</span>
+                  <span style={{ color: 'var(--color-text)' }}>{toDisplayString(slot.value)}</span>
                   {slot.source_quote && (
                     <span
                       style={{
-                        color: 'var(--text-secondary)',
+                        color: 'var(--color-text-muted)',
                         fontSize: '10px',
                         marginLeft: '6px',
                         fontStyle: 'italic',
@@ -467,11 +467,11 @@ export default function BeliefStatePanel({
       {/* Uncertain */}
       <Section
         title="? Uncertain"
-        accentColor="var(--accent-yellow)"
+        accentColor="var(--color-gold)"
         count={uncertainEntries.length}
       >
         {uncertainEntries.length === 0 ? (
-          <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
+          <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
             none
           </span>
         ) : (
@@ -492,7 +492,7 @@ export default function BeliefStatePanel({
                 title={canEdit ? 'Click to edit' : undefined}
                 style={{
                   fontSize: '12px',
-                  color: 'var(--accent-yellow)',
+                  color: 'var(--color-gold)',
                   cursor: canEdit || onDimensionClick ? 'pointer' : 'default',
                   padding: '2px 0',
                   display: 'flex',
@@ -503,13 +503,13 @@ export default function BeliefStatePanel({
                 <span style={{ flexShrink: 0 }}>?</span>
                 <span>
                   <span style={{ fontWeight: 700 }}>{toDisplayString(dim)}</span>
-                  <span style={{ color: 'var(--text-secondary)', margin: '0 4px' }}>:</span>
-                  <span style={{ color: 'var(--text-primary)' }}>
+                  <span style={{ color: 'var(--color-text-muted)', margin: '0 4px' }}>:</span>
+                  <span style={{ color: 'var(--color-text)' }}>
                     {getSlotDisplayValue(slot.value)}
                   </span>
                   <span
                     style={{
-                      color: 'var(--text-secondary)',
+                      color: 'var(--color-text-muted)',
                       fontSize: '10px',
                       marginLeft: '4px',
                     }}
@@ -526,11 +526,11 @@ export default function BeliefStatePanel({
       {/* Missing */}
       <Section
         title="○ Missing"
-        accentColor="var(--text-secondary)"
+        accentColor="var(--color-text-muted)"
         count={beliefState.missing.length}
       >
         {beliefState.missing.length === 0 ? (
-          <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
+          <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
             none
           </span>
         ) : (
@@ -540,7 +540,7 @@ export default function BeliefStatePanel({
               onClick={() => handleDimensionClick(toDisplayString(dim))}
               style={{
                 fontSize: '12px',
-                color: 'var(--text-secondary)',
+                color: 'var(--color-text-muted)',
                 cursor: canEdit || onDimensionClick ? 'pointer' : 'default',
                 padding: '2px 0',
                 display: 'flex',
@@ -558,11 +558,11 @@ export default function BeliefStatePanel({
       {/* Out of Scope */}
       <Section
         title="✗ Out of Scope"
-        accentColor="var(--border)"
+        accentColor="var(--color-border)"
         count={beliefState.out_of_scope.length}
       >
         {beliefState.out_of_scope.length === 0 ? (
-          <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
+          <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
             none
           </span>
         ) : (
@@ -571,7 +571,7 @@ export default function BeliefStatePanel({
               key={toDisplayString(dim)}
               style={{
                 fontSize: '12px',
-                color: 'var(--border)',
+                color: 'var(--color-border)',
                 padding: '2px 0',
                 display: 'flex',
                 gap: '6px',

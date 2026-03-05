@@ -33,12 +33,12 @@ function statusDotColor(
   events: PlannerEvent[],
   isError: boolean,
 ): string {
-  if (isError) return 'var(--accent-red)';
+  if (isError) return 'var(--color-error)';
   const hasError = events.some((e) => e.level === 'error');
-  if (hasError) return 'var(--accent-red)';
+  if (hasError) return 'var(--color-error)';
   const hasWarn = events.some((e) => e.level === 'warn');
-  if (hasWarn) return 'var(--accent-yellow)';
-  return 'var(--accent-green)';
+  if (hasWarn) return 'var(--color-gold)';
+  return 'var(--color-success)';
 }
 
 /** Format elapsed milliseconds as a short human string: "0s", "12s", "2m 5s" */
@@ -86,8 +86,8 @@ export default function SessionStatusHeader({
     <div
       style={{
         height: '28px',
-        background: 'var(--bg-secondary)',
-        borderBottom: '1px solid var(--border)',
+        background: 'var(--color-surface)',
+        borderBottom: '1px solid var(--color-border)',
         display: 'flex',
         alignItems: 'center',
         flexShrink: 0,
@@ -109,7 +109,7 @@ export default function SessionStatusHeader({
       >
         {/* Status dot */}
         <span
-          title={isError ? 'Error' : dotColor === 'var(--accent-yellow)' ? 'Warning' : 'OK'}
+          title={isError ? 'Error' : dotColor === 'var(--color-gold)' ? 'Warning' : 'OK'}
           style={{
             width: '6px',
             height: '6px',
@@ -126,7 +126,7 @@ export default function SessionStatusHeader({
           <span
             style={{
               fontSize: '11px',
-              color: 'var(--accent-red)',
+              color: 'var(--color-error)',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
@@ -142,7 +142,7 @@ export default function SessionStatusHeader({
               <span
                 style={{
                   fontSize: '11px',
-                  color: 'var(--text-secondary)',
+                  color: 'var(--color-text-muted)',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap',
@@ -152,7 +152,7 @@ export default function SessionStatusHeader({
                 <span
                   style={{
                     fontWeight: 700,
-                    color: 'var(--accent-cyan)',
+                    color: 'var(--color-primary)',
                     marginRight: '3px',
                   }}
                 >
@@ -163,7 +163,7 @@ export default function SessionStatusHeader({
               <span
                 style={{
                   fontSize: '11px',
-                  color: 'var(--text-secondary)',
+                  color: 'var(--color-text-muted)',
                   fontStyle: 'italic',
                   opacity: 0.6,
                 }}
@@ -177,7 +177,7 @@ export default function SessionStatusHeader({
               <span
                 style={{
                   fontSize: '10px',
-                  color: 'var(--text-secondary)',
+                  color: 'var(--color-text-muted)',
                   opacity: 0.55,
                   flexShrink: 0,
                 }}
@@ -201,14 +201,14 @@ export default function SessionStatusHeader({
         <span
           style={{
             fontSize: '10px',
-            color: llmCalls > 0 ? 'var(--text-secondary)' : 'var(--text-secondary)',
+            color: llmCalls > 0 ? 'var(--color-text-muted)' : 'var(--color-text-muted)',
             opacity: llmCalls > 0 ? 0.9 : 0.4,
           }}
         >
           <span
             style={{
               fontWeight: 700,
-              color: llmCalls > 0 ? 'var(--accent-cyan)' : 'var(--text-secondary)',
+              color: llmCalls > 0 ? 'var(--color-primary)' : 'var(--color-text-muted)',
               marginRight: '2px',
             }}
           >

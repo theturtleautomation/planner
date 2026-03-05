@@ -1,6 +1,8 @@
 import { lazy, Suspense } from 'react';
 import type { ReactNode } from 'react';
+import { useLocation, Link } from 'react-router-dom';
 import { AUTH0_ENABLED } from '../config.ts';
+import { useTheme } from '../hooks/useTheme.tsx';
 
 interface LayoutProps {
   children: ReactNode;
@@ -8,24 +10,21 @@ interface LayoutProps {
   isConnected?: boolean;
 }
 
-// ─── Auth0 header user info ───────────────────────────────────────────────────
-// Lazy-load the Auth0-dependent component so the @auth0/auth0-react module
-// is never imported when AUTH0_ENABLED is false. This avoids React 19
-// context/hook edge cases when the Auth0Provider is absent.
+// Lazy-load Auth0-dependent component
 const UserInfoAuth0 = lazy(() => import('./UserInfoAuth0.tsx'));
 
 function UserInfoDev() {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
       <span style={{
-        width: '28px', height: '28px', borderRadius: '50%',
-        background: 'var(--bg-tertiary)', border: '1px solid var(--border)',
+        width: '24px', height: '24px', borderRadius: '50%',
+        background: 'var(--color-surface-dynamic)', border: '1px solid var(--color-border)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: '11px', color: 'var(--accent-yellow)', fontWeight: 700,
+        fontSize: '10px', color: 'var(--color-gold)', fontWeight: 700,
       }}>
         D
       </span>
-      <span style={{ fontSize: '12px', color: 'var(--accent-yellow)' }}>dev mode</span>
+      <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-gold)' }}>dev</span>
     </div>
   );
 }
@@ -33,7 +32,7 @@ function UserInfoDev() {
 function UserInfo() {
   if (AUTH0_ENABLED) {
     return (
-      <Suspense fallback={<span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>…</span>}>
+      <Suspense fallback={<span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>…</span>}>
         <UserInfoAuth0 />
       </Suspense>
     );
@@ -41,93 +40,121 @@ function UserInfo() {
   return <UserInfoDev />;
 }
 
-// ─── ASCII Banner ────────────────────────────────────────────────────────────
-const ASCII_BANNER = `
- ██████╗ ██╗      █████╗ ███╗   ██╗███╗   ██╗███████╗██████╗
- ██╔══██╗██║     ██╔══██╗████╗  ██║████╗  ██║██╔════╝██╔══██╗
- ██████╔╝██║     ███████║██╔██╗ ██║██╔██╗ ██║█████╗  ██████╔╝
- ██╔═══╝ ██║     ██╔══██║██║╚██╗██║██║╚██╗██║██╔══╝  ██╔══██╗
- ██║     ███████╗██║  ██║██║ ╚████║██║ ╚████║███████╗██║  ██║
- ╚═╝     ╚══════╝╚═╝  ╚═╝╚═╝  ╚═══╝╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝`.trimStart();
+// Sidebar navigation items
+const REGISTRY_ITEMS = [
+  { label: 'Sessions', path: '/', icon: 'clock' },
+  { label: 'Blueprint', path: '/blueprint', icon: 'globe' },
+  { label: 'Admin', path: '/admin', icon: 'terminal' },
+];
 
-// ─── Layout ───────────────────────────────────────────────────────────────────
-export default function Layout({ children, sessionId, isConnected }: LayoutProps) {
+function SidebarIcon({ name }: { name: string }) {
+  const stroke = 'currentColor';
+  const props = { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke, strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
+
+  switch (name) {
+    case 'clock':
+      return <svg {...props}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>;
+    case 'globe':
+      return <svg {...props}><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 000 20M2 12h20"/></svg>;
+    case 'terminal':
+      return <svg {...props}><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>;
+    default:
+      return <svg {...props}><circle cx="12" cy="12" r="4"/></svg>;
+  }
+}
+
+function ThemeToggle() {
+  const { theme, toggleTheme } = useTheme();
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--bg-primary)' }}>
-      {/* ── Banner ── */}
-      <header
-        role="banner"
-        style={{
-          borderBottom: '1px solid var(--border)',
-          background: 'var(--bg-secondary)',
-          flexShrink: 0,
-        }}
-      >
-        {/* ASCII art — centered */}
-        <pre
-          aria-label="Planner"
-          style={{
-            color: 'var(--accent-cyan)',
-            textAlign: 'center',
-            fontSize: 'clamp(5px, 1.3vw, 12px)',
-            lineHeight: 1.2,
-            margin: '12px 0 4px 0',
-            padding: 0,
-            userSelect: 'none',
-            overflow: 'hidden',
-          }}
-        >
-          {ASCII_BANNER}
-        </pre>
+    <button
+      className="theme-toggle"
+      onClick={toggleTheme}
+      aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+    >
+      {theme === 'dark' ? (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <circle cx="12" cy="12" r="5"/>
+          <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+        </svg>
+      ) : (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+        </svg>
+      )}
+    </button>
+  );
+}
 
-        {/* Status bar */}
-        <div
-          style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            padding: '0 20px', height: '32px',
-            borderTop: '1px solid var(--border)',
-          }}
-        >
-          {/* Left — subtitle + session */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <span style={{ color: 'var(--text-secondary)', fontSize: '11px', letterSpacing: '0.08em' }}>
-              SOCRATIC LOBBY
-            </span>
-            <span style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>v2</span>
-            {sessionId && (
-              <span style={{
-                color: 'var(--text-secondary)', fontSize: '11px',
-                background: 'var(--bg-tertiary)', padding: '2px 8px',
-                borderRadius: '2px', border: '1px solid var(--border)',
-              }}>
-                session: {sessionId.slice(0, 8)}…
-              </span>
-            )}
-          </div>
+export default function Layout({ children, sessionId, isConnected }: LayoutProps) {
+  const location = useLocation();
 
-          {/* Right — connection + user */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            {sessionId !== undefined && (
-              <span
-                aria-label="Connection status"
-                role="status"
-                style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-secondary)' }}
+  return (
+    <div className="app-shell">
+      {/* Sidebar */}
+      <aside className="sidebar">
+        <div className="sidebar-brand">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-label="Planner logo">
+            <rect x="2" y="2" width="20" height="20" rx="4" stroke="currentColor" strokeWidth="1.5"/>
+            <path d="M7 8h10M7 12h7M7 16h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+            <circle cx="18" cy="16" r="2" fill="var(--color-primary)"/>
+          </svg>
+          <span className="sidebar-wordmark">Planner</span>
+        </div>
+
+        <div className="sidebar-section">
+          <div className="sidebar-label">Navigation</div>
+          {REGISTRY_ITEMS.map(item => {
+            const isActive = location.pathname === item.path ||
+              (item.path === '/' && location.pathname.startsWith('/session'));
+            return (
+              <Link
+                key={item.path}
+                to={item.path}
+                className={`sidebar-item${isActive ? ' active' : ''}`}
+                style={{ textDecoration: 'none' }}
               >
-                <span style={{
-                  width: '8px', height: '8px', borderRadius: '50%', display: 'inline-block',
-                  background: isConnected ? 'var(--accent-green)' : 'var(--accent-red)',
-                  ...(isConnected ? {} : { animation: 'blink 1.5s ease infinite' }),
-                }} />
+                <span className="icon">
+                  <SidebarIcon name={item.icon} />
+                </span>
+                {item.label}
+              </Link>
+            );
+          })}
+        </div>
+
+        <div className="sidebar-spacer" />
+
+        {/* Bottom: status + user info + theme toggle */}
+        <div className="sidebar-section" style={{ marginTop: 0 }}>
+          {sessionId !== undefined && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 'var(--space-2)',
+              padding: 'var(--space-1) var(--space-2)',
+              marginBottom: 'var(--space-2)',
+            }}>
+              <span style={{
+                width: '8px', height: '8px', borderRadius: '50%', display: 'inline-block',
+                background: isConnected ? 'var(--color-success)' : 'var(--color-error)',
+                ...(isConnected ? {} : { animation: 'blink 1.5s ease infinite' }),
+              }} />
+              <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>
                 {isConnected ? 'connected' : 'disconnected'}
               </span>
-            )}
+            </div>
+          )}
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: 'var(--space-1) var(--space-2)',
+          }}>
             <UserInfo />
+            <ThemeToggle />
           </div>
         </div>
-      </header>
+      </aside>
 
-      {/* ── Main content ── */}
-      <main style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      {/* Main content */}
+      <main style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {children}
       </main>
     </div>

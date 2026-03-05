@@ -59,16 +59,16 @@ function relativeTime(isoTimestamp: string): string {
 
 /** Level badge color. */
 function levelColor(level: string): string {
-  if (level === 'error') return 'var(--accent-red)';
-  if (level === 'warn') return 'var(--accent-yellow)';
-  return 'var(--text-secondary)';
+  if (level === 'error') return 'var(--color-error)';
+  if (level === 'warn') return 'var(--color-gold)';
+  return 'var(--color-text-muted)';
 }
 
 /** Row text color — info rows are dim, warn are yellow, error are red. */
 function rowTextColor(level: string): string {
-  if (level === 'error') return 'var(--accent-red)';
-  if (level === 'warn') return 'var(--accent-yellow)';
-  return 'var(--text-secondary)';
+  if (level === 'error') return 'var(--color-error)';
+  if (level === 'warn') return 'var(--color-gold)';
+  return 'var(--color-text-muted)';
 }
 
 /** Format source label cleanly. */
@@ -86,8 +86,8 @@ function MetadataView({ metadata }: { metadata: Record<string, unknown> }) {
       style={{
         marginTop: '6px',
         padding: '6px 8px',
-        background: 'var(--bg-primary)',
-        border: '1px solid var(--border)',
+        background: 'var(--color-bg)',
+        border: '1px solid var(--color-border)',
         borderRadius: '2px',
         display: 'flex',
         flexDirection: 'column',
@@ -96,10 +96,10 @@ function MetadataView({ metadata }: { metadata: Record<string, unknown> }) {
     >
       {entries.map(([key, val]) => (
         <div key={key} style={{ display: 'flex', gap: '6px', fontSize: '10px', lineHeight: '1.5' }}>
-          <span style={{ color: 'var(--text-secondary)', flexShrink: 0, minWidth: '80px' }}>
+          <span style={{ color: 'var(--color-text-muted)', flexShrink: 0, minWidth: '80px' }}>
             {key}
           </span>
-          <span style={{ color: 'var(--text-primary)', wordBreak: 'break-all' }}>
+          <span style={{ color: 'var(--color-text)', wordBreak: 'break-all' }}>
             {typeof val === 'string' ? val : JSON.stringify(val)}
           </span>
         </div>
@@ -128,7 +128,7 @@ function EventRow({ event, relTs }: EventRowProps) {
       onClick={() => hasDetails && setExpanded((v) => !v)}
       style={{
         padding: '5px 12px',
-        borderBottom: '1px solid var(--border)',
+        borderBottom: '1px solid var(--color-border)',
         cursor: hasDetails ? 'pointer' : 'default',
         background: expanded ? 'rgba(255,255,255,0.02)' : 'transparent',
         transition: 'background 0.15s',
@@ -148,7 +148,7 @@ function EventRow({ event, relTs }: EventRowProps) {
         {/* Relative timestamp */}
         <span
           style={{
-            color: 'var(--text-secondary)',
+            color: 'var(--color-text-muted)',
             flexShrink: 0,
             minWidth: '52px',
             fontSize: '10px',
@@ -180,7 +180,7 @@ function EventRow({ event, relTs }: EventRowProps) {
         <span
           style={{
             flexShrink: 0,
-            color: 'var(--text-secondary)',
+            color: 'var(--color-text-muted)',
             fontSize: '10px',
             opacity: 0.75,
             minWidth: '80px',
@@ -194,7 +194,7 @@ function EventRow({ event, relTs }: EventRowProps) {
           <span
             style={{
               flexShrink: 0,
-              color: 'var(--accent-cyan)',
+              color: 'var(--color-primary)',
               fontSize: '10px',
               opacity: 0.8,
               maxWidth: '120px',
@@ -227,7 +227,7 @@ function EventRow({ event, relTs }: EventRowProps) {
           <span
             style={{
               flexShrink: 0,
-              color: 'var(--text-secondary)',
+              color: 'var(--color-text-muted)',
               fontSize: '9px',
               opacity: 0.5,
             }}
@@ -244,11 +244,11 @@ function EventRow({ event, relTs }: EventRowProps) {
             <div
               style={{
                 fontSize: '10px',
-                color: 'var(--text-secondary)',
+                color: 'var(--color-text-muted)',
                 marginBottom: '2px',
               }}
             >
-              duration: <span style={{ color: 'var(--accent-cyan)' }}>{event.duration_ms}ms</span>
+              duration: <span style={{ color: 'var(--color-primary)' }}>{event.duration_ms}ms</span>
             </div>
           )}
           <MetadataView metadata={event.metadata} />
@@ -311,9 +311,9 @@ function ExpandedEventLog({ events }: { events: PlannerEvent[] }) {
           alignItems: 'center',
           gap: '6px',
           padding: '5px 12px',
-          borderBottom: '1px solid var(--border)',
+          borderBottom: '1px solid var(--color-border)',
           flexShrink: 0,
-          background: 'var(--bg-secondary)',
+          background: 'var(--color-surface)',
         }}
       >
         <span
@@ -322,7 +322,7 @@ function ExpandedEventLog({ events }: { events: PlannerEvent[] }) {
             fontWeight: 700,
             letterSpacing: '0.1em',
             textTransform: 'uppercase',
-            color: 'var(--text-secondary)',
+            color: 'var(--color-text-muted)',
             marginRight: '4px',
           }}
         >
@@ -339,10 +339,10 @@ function ExpandedEventLog({ events }: { events: PlannerEvent[] }) {
                 userScrolledRef.current = false;
               }}
               style={{
-                background: active ? 'var(--accent-cyan)' : 'transparent',
-                border: `1px solid ${active ? 'var(--accent-cyan)' : 'var(--border)'}`,
+                background: active ? 'var(--color-primary)' : 'transparent',
+                border: `1px solid ${active ? 'var(--color-primary)' : 'var(--color-border)'}`,
                 borderRadius: '2px',
-                color: active ? 'var(--bg-primary)' : 'var(--text-secondary)',
+                color: active ? 'var(--color-bg)' : 'var(--color-text-muted)',
                 fontSize: '10px',
                 fontWeight: active ? 700 : 400,
                 fontFamily: 'inherit',
@@ -373,7 +373,7 @@ function ExpandedEventLog({ events }: { events: PlannerEvent[] }) {
           style={{
             marginLeft: 'auto',
             fontSize: '10px',
-            color: 'var(--text-secondary)',
+            color: 'var(--color-text-muted)',
             opacity: 0.6,
           }}
         >
@@ -406,7 +406,7 @@ function ExpandedEventLog({ events }: { events: PlannerEvent[] }) {
             <span
               style={{
                 fontSize: '11px',
-                color: 'var(--text-secondary)',
+                color: 'var(--color-text-muted)',
                 fontStyle: 'italic',
                 textAlign: 'center',
               }}
@@ -447,8 +447,8 @@ export default function EventLogPanel({ events }: EventLogPanelProps) {
   return (
     <div
       style={{
-        borderTop: '1px solid var(--border)',
-        background: 'var(--bg-secondary)',
+        borderTop: '1px solid var(--color-border)',
+        background: 'var(--color-surface)',
         display: 'flex',
         flexDirection: 'column',
         flexShrink: 0,
@@ -469,7 +469,7 @@ export default function EventLogPanel({ events }: EventLogPanelProps) {
           height: '28px',
           flexShrink: 0,
           cursor: 'pointer',
-          borderBottom: expanded ? '1px solid var(--border)' : 'none',
+          borderBottom: expanded ? '1px solid var(--color-border)' : 'none',
           transition: 'background 0.15s',
         }}
         onMouseEnter={(e) => {
@@ -484,7 +484,7 @@ export default function EventLogPanel({ events }: EventLogPanelProps) {
         <span
           style={{
             fontSize: '9px',
-            color: 'var(--text-secondary)',
+            color: 'var(--color-text-muted)',
             opacity: 0.6,
             flexShrink: 0,
             transition: 'transform 0.2s',
@@ -501,7 +501,7 @@ export default function EventLogPanel({ events }: EventLogPanelProps) {
             fontWeight: 700,
             letterSpacing: '0.08em',
             textTransform: 'uppercase',
-            color: 'var(--text-secondary)',
+            color: 'var(--color-text-muted)',
           }}
         >
           Events
@@ -509,7 +509,7 @@ export default function EventLogPanel({ events }: EventLogPanelProps) {
         <span
           style={{
             fontSize: '10px',
-            color: 'var(--text-secondary)',
+            color: 'var(--color-text-muted)',
             opacity: 0.7,
           }}
         >
@@ -522,8 +522,8 @@ export default function EventLogPanel({ events }: EventLogPanelProps) {
             style={{
               fontSize: '9px',
               fontWeight: 700,
-              color: 'var(--accent-red)',
-              border: '1px solid var(--accent-red)',
+              color: 'var(--color-error)',
+              border: '1px solid var(--color-error)',
               borderRadius: '2px',
               padding: '0 4px',
               letterSpacing: '0.04em',
@@ -537,8 +537,8 @@ export default function EventLogPanel({ events }: EventLogPanelProps) {
             style={{
               fontSize: '9px',
               fontWeight: 700,
-              color: 'var(--accent-yellow)',
-              border: '1px solid var(--accent-yellow)',
+              color: 'var(--color-gold)',
+              border: '1px solid var(--color-gold)',
               borderRadius: '2px',
               padding: '0 4px',
               letterSpacing: '0.04em',

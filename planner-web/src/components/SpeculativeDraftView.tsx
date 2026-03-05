@@ -60,10 +60,10 @@ function CorrectionInput({
         autoFocus
         style={{
           flex: 1,
-          background: 'var(--bg-primary)',
-          border: '1px solid var(--accent-yellow)',
+          background: 'var(--color-bg)',
+          border: '1px solid var(--color-gold)',
           borderRadius: '2px',
-          color: 'var(--text-primary)',
+          color: 'var(--color-text)',
           fontSize: '12px',
           padding: '6px 8px',
           fontFamily: 'inherit',
@@ -77,10 +77,10 @@ function CorrectionInput({
           onClick={() => value.trim() && onSubmit(value.trim())}
           disabled={!value.trim()}
           style={{
-            background: value.trim() ? 'var(--accent-yellow)' : 'transparent',
-            border: `1px solid ${value.trim() ? 'var(--accent-yellow)' : 'var(--border)'}`,
+            background: value.trim() ? 'var(--color-gold)' : 'transparent',
+            border: `1px solid ${value.trim() ? 'var(--color-gold)' : 'var(--color-border)'}`,
             borderRadius: '2px',
-            color: value.trim() ? 'var(--bg-primary)' : 'var(--text-secondary)',
+            color: value.trim() ? 'var(--color-bg)' : 'var(--color-text-muted)',
             fontSize: '10px',
             fontWeight: 700,
             padding: '4px 10px',
@@ -94,9 +94,9 @@ function CorrectionInput({
           onClick={onCancel}
           style={{
             background: 'transparent',
-            border: '1px solid var(--border)',
+            border: '1px solid var(--color-border)',
             borderRadius: '2px',
-            color: 'var(--text-secondary)',
+            color: 'var(--color-text-muted)',
             fontSize: '10px',
             padding: '4px 10px',
             cursor: 'pointer',
@@ -146,7 +146,7 @@ export default function SpeculativeDraftView({ draft, onBack, onReact, confirmed
     <div
       style={{
         flex: 1,
-        background: 'var(--bg-secondary)',
+        background: 'var(--color-surface)',
         overflowY: 'auto',
         display: 'flex',
         flexDirection: 'column',
@@ -159,9 +159,9 @@ export default function SpeculativeDraftView({ draft, onBack, onReact, confirmed
           alignItems: 'center',
           justifyContent: 'space-between',
           padding: '10px 16px',
-          borderBottom: '1px solid var(--border)',
+          borderBottom: '1px solid var(--color-border)',
           flexShrink: 0,
-          background: 'var(--bg-secondary)',
+          background: 'var(--color-surface)',
           position: 'sticky',
           top: 0,
           zIndex: 1,
@@ -173,13 +173,13 @@ export default function SpeculativeDraftView({ draft, onBack, onReact, confirmed
             fontWeight: 700,
             letterSpacing: '0.08em',
             textTransform: 'uppercase',
-            color: 'var(--accent-cyan)',
+            color: 'var(--color-primary)',
           }}
         >
           Draft Spec
           <span
             style={{
-              color: 'var(--text-secondary)',
+              color: 'var(--color-text-muted)',
               fontWeight: 400,
               marginLeft: '8px',
               textTransform: 'none',
@@ -193,10 +193,10 @@ export default function SpeculativeDraftView({ draft, onBack, onReact, confirmed
         <button
           onClick={onBack}
           style={{
-            background: 'var(--bg-tertiary)',
-            border: '1px solid var(--border)',
+            background: 'var(--color-surface-2)',
+            border: '1px solid var(--color-border)',
             borderRadius: '3px',
-            color: 'var(--text-secondary)',
+            color: 'var(--color-text-muted)',
             fontSize: '11px',
             fontFamily: 'inherit',
             letterSpacing: '0.04em',
@@ -205,12 +205,12 @@ export default function SpeculativeDraftView({ draft, onBack, onReact, confirmed
             transition: 'border-color 0.15s ease, color 0.15s ease',
           }}
           onMouseEnter={(e) => {
-            (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--accent-cyan)';
-            (e.currentTarget as HTMLButtonElement).style.color = 'var(--accent-cyan)';
+            (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--color-primary)';
+            (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-primary)';
           }}
           onMouseLeave={(e) => {
-            (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border)';
-            (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-secondary)';
+            (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--color-border)';
+            (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-text-muted)';
           }}
         >
           ← Back to State
@@ -255,7 +255,7 @@ export default function SpeculativeDraftView({ draft, onBack, onReact, confirmed
                   style={{
                     fontSize: '12px',
                     fontWeight: 700,
-                    color: 'var(--accent-cyan)',
+                    color: 'var(--color-primary)',
                     letterSpacing: '0.04em',
                     textTransform: 'uppercase',
                   }}
@@ -270,9 +270,9 @@ export default function SpeculativeDraftView({ draft, onBack, onReact, confirmed
                       onClick={() => handleCorrect(target)}
                       style={{
                         background: 'transparent',
-                        border: '1px solid var(--accent-green)',
+                        border: '1px solid var(--color-success)',
                         borderRadius: '2px',
-                        color: 'var(--accent-green)',
+                        color: 'var(--color-success)',
                         fontSize: '10px',
                         fontFamily: 'inherit',
                         padding: '2px 8px',
@@ -286,9 +286,9 @@ export default function SpeculativeDraftView({ draft, onBack, onReact, confirmed
                       onClick={() => handleFix(target)}
                       style={{
                         background: 'transparent',
-                        border: '1px solid var(--accent-yellow)',
+                        border: '1px solid var(--color-gold)',
                         borderRadius: '2px',
-                        color: 'var(--accent-yellow)',
+                        color: 'var(--color-gold)',
                         fontSize: '10px',
                         fontFamily: 'inherit',
                         padding: '2px 8px',
@@ -302,7 +302,7 @@ export default function SpeculativeDraftView({ draft, onBack, onReact, confirmed
                 )}
 
                 {isReacted && (
-                  <span style={{ fontSize: '10px', color: 'var(--accent-green)' }}>
+                  <span style={{ fontSize: '10px', color: 'var(--color-success)' }}>
                     ✓ reviewed
                   </span>
                 )}
@@ -311,10 +311,10 @@ export default function SpeculativeDraftView({ draft, onBack, onReact, confirmed
               <div
                 style={{
                   fontSize: '13px',
-                  color: 'var(--text-primary)',
+                  color: 'var(--color-text)',
                   lineHeight: '1.7',
                   paddingLeft: '10px',
-                  borderLeft: '2px solid var(--border)',
+                  borderLeft: '2px solid var(--color-border)',
                   whiteSpace: 'pre-wrap',
                   wordBreak: 'break-word',
                 }}
@@ -336,7 +336,7 @@ export default function SpeculativeDraftView({ draft, onBack, onReact, confirmed
         {draft.assumptions.length > 0 && (
           <div
             style={{
-              borderTop: '1px solid var(--border)',
+              borderTop: '1px solid var(--color-border)',
               paddingTop: '14px',
               display: 'flex',
               flexDirection: 'column',
@@ -358,7 +358,7 @@ export default function SpeculativeDraftView({ draft, onBack, onReact, confirmed
                   fontWeight: 700,
                   letterSpacing: '0.08em',
                   textTransform: 'uppercase',
-                  color: 'var(--accent-yellow)',
+                  color: 'var(--color-gold)',
                 }}
               >
                 Assumptions (unconfirmed):
@@ -371,9 +371,9 @@ export default function SpeculativeDraftView({ draft, onBack, onReact, confirmed
                     onClick={handleConfirmAllAssumptions}
                     style={{
                       background: 'transparent',
-                      border: '1px solid var(--accent-green)',
+                      border: '1px solid var(--color-success)',
                       borderRadius: '2px',
-                      color: 'var(--accent-green)',
+                      color: 'var(--color-success)',
                       fontSize: '10px',
                       fontFamily: 'inherit',
                       padding: '2px 8px',
@@ -387,9 +387,9 @@ export default function SpeculativeDraftView({ draft, onBack, onReact, confirmed
                     onClick={handleFixAssumptions}
                     style={{
                       background: 'transparent',
-                      border: '1px solid var(--accent-yellow)',
+                      border: '1px solid var(--color-gold)',
                       borderRadius: '2px',
-                      color: 'var(--accent-yellow)',
+                      color: 'var(--color-gold)',
                       fontSize: '10px',
                       fontFamily: 'inherit',
                       padding: '2px 8px',
@@ -403,7 +403,7 @@ export default function SpeculativeDraftView({ draft, onBack, onReact, confirmed
               )}
 
               {confirmedSections.has('assumptions') && (
-                <span style={{ fontSize: '10px', color: 'var(--accent-green)' }}>
+                <span style={{ fontSize: '10px', color: 'var(--color-success)' }}>
                   ✓ reviewed
                 </span>
               )}
@@ -421,7 +421,7 @@ export default function SpeculativeDraftView({ draft, onBack, onReact, confirmed
                   key={i}
                   style={{
                     fontSize: '12px',
-                    color: 'var(--accent-yellow)',
+                    color: 'var(--color-gold)',
                     display: 'flex',
                     gap: '6px',
                     alignItems: 'baseline',
@@ -430,8 +430,8 @@ export default function SpeculativeDraftView({ draft, onBack, onReact, confirmed
                   <span style={{ flexShrink: 0 }}>?</span>
                   <span>
                     <span style={{ fontWeight: 700 }}>{toDisplayString(a.dimension)}</span>
-                    <span style={{ color: 'var(--text-secondary)', margin: '0 6px' }}>—</span>
-                    <span style={{ color: 'var(--text-primary)', fontWeight: 400 }}>
+                    <span style={{ color: 'var(--color-text-muted)', margin: '0 6px' }}>—</span>
+                    <span style={{ color: 'var(--color-text)', fontWeight: 400 }}>
                       {a.assumption}
                     </span>
                   </span>
@@ -452,7 +452,7 @@ export default function SpeculativeDraftView({ draft, onBack, onReact, confirmed
         {draft.not_discussed.length > 0 && (
           <div
             style={{
-              borderTop: '1px solid var(--border)',
+              borderTop: '1px solid var(--color-border)',
               paddingTop: '14px',
               display: 'flex',
               flexDirection: 'column',
@@ -465,7 +465,7 @@ export default function SpeculativeDraftView({ draft, onBack, onReact, confirmed
                 fontWeight: 700,
                 letterSpacing: '0.08em',
                 textTransform: 'uppercase',
-                color: 'var(--text-secondary)',
+                color: 'var(--color-text-muted)',
               }}
             >
               Not yet discussed:
@@ -482,9 +482,9 @@ export default function SpeculativeDraftView({ draft, onBack, onReact, confirmed
                   key={i}
                   style={{
                     fontSize: '11px',
-                    color: 'var(--text-secondary)',
-                    background: 'var(--bg-tertiary)',
-                    border: '1px solid var(--border)',
+                    color: 'var(--color-text-muted)',
+                    background: 'var(--color-surface-2)',
+                    border: '1px solid var(--color-border)',
                     borderRadius: '3px',
                     padding: '3px 8px',
                   }}

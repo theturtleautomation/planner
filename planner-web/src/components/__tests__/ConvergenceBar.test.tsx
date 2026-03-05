@@ -35,7 +35,7 @@ describe('ConvergenceBar', () => {
     // The progress fill bar is inside the container; check its style
     const fillBar = container.querySelector('[style*="width: 85%"]') as HTMLElement | null;
     expect(fillBar).not.toBeNull();
-    expect(fillBar!.style.background).toBe('var(--accent-green)');
+    expect(fillBar!.style.background).toBe('var(--color-success)');
   });
 
   it('shows yellow color (accent-yellow) when pct >= 50 but < 80', () => {
@@ -44,7 +44,7 @@ describe('ConvergenceBar', () => {
     );
     const fillBar = container.querySelector('[style*="width: 60%"]') as HTMLElement | null;
     expect(fillBar).not.toBeNull();
-    expect(fillBar!.style.background).toBe('var(--accent-yellow)');
+    expect(fillBar!.style.background).toBe('var(--color-gold)');
   });
 
   it('shows "Analyzing project…" when no classification provided', () => {

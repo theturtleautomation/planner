@@ -107,8 +107,8 @@ export default function MessageInput({
   return (
     <div style={{
       padding: '12px 16px',
-      background: 'var(--bg-secondary)',
-      borderTop: '1px solid var(--border)',
+      background: 'var(--color-surface)',
+      borderTop: '1px solid var(--color-border)',
       flexShrink: 0,
     }}>
       {/* Quick options above the textarea */}
@@ -125,8 +125,8 @@ export default function MessageInput({
         display: 'flex',
         gap: '10px',
         alignItems: 'flex-end',
-        background: 'var(--bg-tertiary)',
-        border: `1px solid ${isBlocked ? 'var(--border)' : 'var(--accent-cyan)'}`,
+        background: 'var(--color-surface-2)',
+        border: `1px solid ${isBlocked ? 'var(--color-border)' : 'var(--color-primary)'}`,
         borderRadius: '3px',
         padding: '8px 12px',
         transition: 'border-color 0.18s',
@@ -145,7 +145,7 @@ export default function MessageInput({
             background: 'transparent',
             border: 'none',
             outline: 'none',
-            color: isBlocked ? 'var(--text-secondary)' : 'var(--text-primary)',
+            color: isBlocked ? 'var(--color-text-muted)' : 'var(--color-text)',
             fontSize: '13px',
             lineHeight: '1.5',
             resize: 'none',
@@ -161,9 +161,9 @@ export default function MessageInput({
           disabled={isBlocked || !value.trim()}
           aria-label="Send message"
           style={{
-            background: isBlocked || !value.trim() ? 'transparent' : 'var(--accent-cyan)',
-            border: `1px solid ${isBlocked || !value.trim() ? 'var(--border)' : 'var(--accent-cyan)'}`,
-            color: isBlocked || !value.trim() ? 'var(--text-secondary)' : 'var(--bg-primary)',
+            background: isBlocked || !value.trim() ? 'transparent' : 'var(--color-primary)',
+            border: `1px solid ${isBlocked || !value.trim() ? 'var(--color-border)' : 'var(--color-primary)'}`,
+            color: isBlocked || !value.trim() ? 'var(--color-text-muted)' : 'var(--color-bg)',
             padding: '5px 14px',
             fontSize: '12px',
             cursor: isBlocked || !value.trim() ? 'not-allowed' : 'pointer',
@@ -191,9 +191,9 @@ export default function MessageInput({
               aria-label="Skip question"
               style={{
                 background: 'transparent',
-                border: '1px solid var(--border)',
+                border: '1px solid var(--color-border)',
                 borderRadius: '3px',
-                color: 'var(--text-secondary)',
+                color: 'var(--color-text-muted)',
                 fontSize: '11px',
                 fontFamily: 'inherit',
                 letterSpacing: '0.04em',
@@ -202,12 +202,12 @@ export default function MessageInput({
                 transition: 'border-color 0.15s ease, color 0.15s ease',
               }}
               onMouseEnter={(e) => {
-                (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--text-secondary)';
-                (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-primary)';
+                (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--color-text-muted)';
+                (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-text)';
               }}
               onMouseLeave={(e) => {
-                (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border)';
-                (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-secondary)';
+                (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--color-border)';
+                (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-text-muted)';
               }}
             >
               Skip
@@ -220,9 +220,9 @@ export default function MessageInput({
               aria-label="Done with interview"
               style={{
                 background: 'transparent',
-                border: '1px solid var(--accent-green)',
+                border: '1px solid var(--color-success)',
                 borderRadius: '3px',
-                color: 'var(--accent-green)',
+                color: 'var(--color-success)',
                 fontSize: '11px',
                 fontFamily: 'inherit',
                 letterSpacing: '0.04em',
@@ -248,7 +248,7 @@ export default function MessageInput({
         <div style={{
           marginTop: '6px',
           fontSize: '11px',
-          color: 'var(--accent-yellow)',
+          color: 'var(--color-gold)',
           paddingLeft: '2px',
         }}>
           pipeline running — input will re-enable when complete

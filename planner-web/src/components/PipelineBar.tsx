@@ -5,10 +5,10 @@ interface PipelineBarProps {
 }
 
 const STATUS_COLORS: Record<StageStatus, string> = {
-  pending: 'var(--text-secondary)',
-  running: 'var(--accent-yellow)',
-  complete: 'var(--accent-green)',
-  failed: 'var(--accent-red)',
+  pending: 'var(--color-text-muted)',
+  running: 'var(--color-gold)',
+  complete: 'var(--color-success)',
+  failed: 'var(--color-error)',
 };
 
 const STATUS_BG: Record<StageStatus, string> = {
@@ -24,8 +24,8 @@ export default function PipelineBar({ stages }: PipelineBarProps) {
       display: 'flex',
       alignItems: 'stretch',
       padding: '0 12px',
-      background: 'var(--bg-secondary)',
-      borderTop: '1px solid var(--border)',
+      background: 'var(--color-surface)',
+      borderTop: '1px solid var(--color-border)',
       height: '48px',
       flexShrink: 0,
       overflowX: 'auto',
@@ -35,7 +35,7 @@ export default function PipelineBar({ stages }: PipelineBarProps) {
           <StageChip stage={stage} />
           {i < stages.length - 1 && (
             <span style={{
-              color: 'var(--border)',
+              color: 'var(--color-border)',
               fontSize: '12px',
               margin: '0 2px',
               userSelect: 'none',

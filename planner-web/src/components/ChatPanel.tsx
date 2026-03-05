@@ -47,7 +47,7 @@ export default function ChatPanel({ messages }: ChatPanelProps) {
         alignItems: 'center',
         justifyContent: 'center',
       }}>
-        <span style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
+        <span style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>
           no messages yet — send one to begin
         </span>
       </div>
@@ -99,7 +99,7 @@ function CollapsibleEvent({ content }: { content: string }) {
 
   return (
     <div style={{
-      borderLeft: '2px solid var(--accent-yellow)',
+      borderLeft: '2px solid var(--color-gold)',
       borderRadius: '0 3px 3px 0',
       background: 'rgba(255,215,0,0.04)',
     }}>
@@ -119,7 +119,7 @@ function CollapsibleEvent({ content }: { content: string }) {
         <span
           style={{
             fontSize: '10px',
-            color: 'var(--accent-yellow)',
+            color: 'var(--color-gold)',
             flexShrink: 0,
             transition: 'transform 0.15s',
             transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)',
@@ -130,7 +130,7 @@ function CollapsibleEvent({ content }: { content: string }) {
         </span>
         <span style={{
           fontSize: '11px',
-          color: 'var(--accent-yellow)',
+          color: 'var(--color-gold)',
           opacity: 0.85,
           overflow: 'hidden',
           textOverflow: 'ellipsis',
@@ -144,7 +144,7 @@ function CollapsibleEvent({ content }: { content: string }) {
       {expanded && (
         <div style={{
           padding: '4px 8px 6px 22px',
-          color: 'var(--text-primary)',
+          color: 'var(--color-text)',
           fontSize: '11px',
           lineHeight: '1.5',
           whiteSpace: 'pre-wrap',
@@ -161,13 +161,13 @@ function CollapsibleEvent({ content }: { content: string }) {
 
 function MessageItem({ msg }: { msg: ChatMessage }) {
   const roleColors: Record<string, string> = {
-    system: 'var(--text-secondary)',
-    user: 'var(--accent-green)',
-    planner: 'var(--accent-cyan)',
-    event: 'var(--accent-yellow)',
+    system: 'var(--color-text-muted)',
+    user: 'var(--color-success)',
+    planner: 'var(--color-primary)',
+    event: 'var(--color-gold)',
   };
 
-  const labelColor = roleColors[msg.role] ?? 'var(--text-secondary)';
+  const labelColor = roleColors[msg.role] ?? 'var(--color-text-muted)';
 
   return (
     <div style={{
@@ -186,7 +186,7 @@ function MessageItem({ msg }: { msg: ChatMessage }) {
         }}>
           {msg.role}
         </span>
-        <span style={{ color: 'var(--text-secondary)', fontSize: '10px' }}>
+        <span style={{ color: 'var(--color-text-muted)', fontSize: '10px' }}>
           {formatTime(msg.timestamp)}
         </span>
       </div>
@@ -194,11 +194,11 @@ function MessageItem({ msg }: { msg: ChatMessage }) {
       {/* Content */}
       {msg.role === 'planner' ? (
         <div style={{
-          color: 'var(--text-primary)',
+          color: 'var(--color-text)',
           fontSize: '13px',
           lineHeight: '1.7',
           paddingLeft: '8px',
-          borderLeft: '2px solid var(--accent-cyan)',
+          borderLeft: '2px solid var(--color-primary)',
         }}>
           <ReactMarkdown
             rehypePlugins={[rehypeSanitize]}
@@ -206,8 +206,8 @@ function MessageItem({ msg }: { msg: ChatMessage }) {
               p: ({ children }) => <p style={{ margin: '0 0 8px 0' }}>{children}</p>,
               code: ({ children }) => (
                 <code style={{
-                  background: 'var(--bg-tertiary)',
-                  color: 'var(--accent-yellow)',
+                  background: 'var(--color-surface-2)',
+                  color: 'var(--color-gold)',
                   padding: '1px 5px',
                   borderRadius: '2px',
                   fontSize: '12px',
@@ -217,8 +217,8 @@ function MessageItem({ msg }: { msg: ChatMessage }) {
               ),
               pre: ({ children }) => (
                 <pre style={{
-                  background: 'var(--bg-tertiary)',
-                  border: '1px solid var(--border)',
+                  background: 'var(--color-surface-2)',
+                  border: '1px solid var(--color-border)',
                   padding: '10px 14px',
                   borderRadius: '3px',
                   overflow: 'auto',
@@ -231,7 +231,7 @@ function MessageItem({ msg }: { msg: ChatMessage }) {
               ul: ({ children }) => <ul style={{ paddingLeft: '20px', margin: '4px 0' }}>{children}</ul>,
               ol: ({ children }) => <ol style={{ paddingLeft: '20px', margin: '4px 0' }}>{children}</ol>,
               li: ({ children }) => <li style={{ margin: '2px 0' }}>{children}</li>,
-              strong: ({ children }) => <strong style={{ color: 'var(--accent-cyan)' }}>{children}</strong>,
+              strong: ({ children }) => <strong style={{ color: 'var(--color-primary)' }}>{children}</strong>,
             }}
           >
             {msg.content}
@@ -241,7 +241,7 @@ function MessageItem({ msg }: { msg: ChatMessage }) {
         <CollapsibleEvent content={msg.content} />
       ) : msg.role === 'system' ? (
         <div style={{
-          color: 'var(--text-secondary)',
+          color: 'var(--color-text-muted)',
           fontSize: '12px',
           fontStyle: 'italic',
           paddingLeft: '8px',
@@ -250,10 +250,10 @@ function MessageItem({ msg }: { msg: ChatMessage }) {
         </div>
       ) : (
         <div style={{
-          color: 'var(--text-primary)',
+          color: 'var(--color-text)',
           fontSize: '13px',
           paddingLeft: '8px',
-          borderLeft: '2px solid var(--accent-green)',
+          borderLeft: '2px solid var(--color-success)',
           whiteSpace: 'pre-wrap',
           wordBreak: 'break-word',
         }}>

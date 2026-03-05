@@ -25,7 +25,7 @@ const sectionHeaderStyle: React.CSSProperties = {
   fontWeight: 600,
   letterSpacing: '0.08em',
   textTransform: 'uppercase' as const,
-  color: 'var(--text-secondary)',
+  color: 'var(--color-text-muted)',
   marginBottom: '6px',
 };
 
@@ -34,9 +34,9 @@ const tagStyle: React.CSSProperties = {
   padding: '1px 6px',
   fontSize: '10px',
   borderRadius: '2px',
-  border: '1px solid var(--border)',
-  background: 'var(--bg-tertiary)',
-  color: 'var(--text-secondary)',
+  border: '1px solid var(--color-border)',
+  background: 'var(--color-surface-2)',
+  color: 'var(--color-text-muted)',
   fontFamily: 'monospace',
 };
 
@@ -60,7 +60,7 @@ function DecisionDetail({ node }: { node: BlueprintNode & { node_type: 'decision
       <StatusBadge status={node.status} />
 
       <div style={{ ...sectionHeaderStyle, marginTop: '12px' }}>context</div>
-      <p style={{ fontSize: '12px', color: 'var(--text-primary)', lineHeight: 1.6, margin: 0 }}>
+      <p style={{ fontSize: '12px', color: 'var(--color-text)', lineHeight: 1.6, margin: 0 }}>
         {node.context}
       </p>
 
@@ -70,15 +70,15 @@ function DecisionDetail({ node }: { node: BlueprintNode & { node_type: 'decision
           {node.options.map((opt, i) => (
             <div key={i} style={{
               padding: '8px 10px',
-              background: 'var(--bg-primary)',
-              border: '1px solid var(--border)',
+              background: 'var(--color-bg)',
+              border: '1px solid var(--color-border)',
               borderRadius: '3px',
               marginBottom: '6px',
             }}>
-              <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '4px' }}>
+              <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text)', marginBottom: '4px' }}>
                 {opt.name}
               </div>
-              <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '4px' }}>
+              <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginBottom: '4px' }}>
                 {opt.description}
               </div>
               {opt.pros.length > 0 && (
@@ -101,11 +101,11 @@ function DecisionDetail({ node }: { node: BlueprintNode & { node_type: 'decision
           <div style={{ ...sectionHeaderStyle, marginTop: '12px' }}>consequences</div>
           {node.consequences.map((c, i) => (
             <div key={i} style={{
-              fontSize: '11px', color: 'var(--text-primary)', padding: '4px 0',
-              borderBottom: '1px solid var(--border)',
+              fontSize: '11px', color: 'var(--color-text)', padding: '4px 0',
+              borderBottom: '1px solid var(--color-border)',
             }}>
               <span style={{
-                color: c.type === 'positive' ? '#6daa45' : c.type === 'negative' ? '#bb653b' : 'var(--text-secondary)',
+                color: c.type === 'positive' ? '#6daa45' : c.type === 'negative' ? '#bb653b' : 'var(--color-text-muted)',
                 fontWeight: 600,
                 marginRight: '6px',
               }}>
@@ -129,7 +129,7 @@ function TechnologyDetail({ node }: { node: BlueprintNode & { node_type: 'techno
         {node.version && <span style={tagStyle}>v{node.version}</span>}
       </div>
       <div style={sectionHeaderStyle}>rationale</div>
-      <p style={{ fontSize: '12px', color: 'var(--text-primary)', lineHeight: 1.6, margin: 0 }}>
+      <p style={{ fontSize: '12px', color: 'var(--color-text)', lineHeight: 1.6, margin: 0 }}>
         {node.rationale}
       </p>
     </>
@@ -140,7 +140,7 @@ function ComponentDetail({ node }: { node: BlueprintNode & { node_type: 'compone
   return (
     <>
       <div style={sectionHeaderStyle}>description</div>
-      <p style={{ fontSize: '12px', color: 'var(--text-primary)', lineHeight: 1.6, margin: 0 }}>
+      <p style={{ fontSize: '12px', color: 'var(--color-text)', lineHeight: 1.6, margin: 0 }}>
         {node.description}
       </p>
 
@@ -149,7 +149,7 @@ function ComponentDetail({ node }: { node: BlueprintNode & { node_type: 'compone
           <div style={{ ...sectionHeaderStyle, marginTop: '12px' }}>responsibilities</div>
           <ul style={{ margin: 0, paddingLeft: '16px' }}>
             {node.responsibilities.map((r, i) => (
-              <li key={i} style={{ fontSize: '11px', color: 'var(--text-primary)', padding: '2px 0' }}>{r}</li>
+              <li key={i} style={{ fontSize: '11px', color: 'var(--color-text)', padding: '2px 0' }}>{r}</li>
             ))}
           </ul>
         </>
@@ -160,11 +160,11 @@ function ComponentDetail({ node }: { node: BlueprintNode & { node_type: 'compone
           <div style={{ ...sectionHeaderStyle, marginTop: '12px' }}>interfaces</div>
           {node.interfaces.map((iface, i) => (
             <div key={i} style={{
-              padding: '6px 8px', background: 'var(--bg-primary)',
-              border: '1px solid var(--border)', borderRadius: '3px', marginBottom: '4px',
+              padding: '6px 8px', background: 'var(--color-bg)',
+              border: '1px solid var(--color-border)', borderRadius: '3px', marginBottom: '4px',
             }}>
-              <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-primary)' }}>{iface.name}</span>
-              <span style={{ fontSize: '10px', color: 'var(--text-secondary)', marginLeft: '6px' }}>
+              <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--color-text)' }}>{iface.name}</span>
+              <span style={{ fontSize: '10px', color: 'var(--color-text-muted)', marginLeft: '6px' }}>
                 {iface.direction} · {iface.protocol}
               </span>
             </div>
@@ -189,7 +189,7 @@ function ConstraintDetail({ node }: { node: BlueprintNode & { node_type: 'constr
         </span>
       </div>
       <div style={sectionHeaderStyle}>description</div>
-      <p style={{ fontSize: '12px', color: 'var(--text-primary)', lineHeight: 1.6, margin: 0 }}>
+      <p style={{ fontSize: '12px', color: 'var(--color-text)', lineHeight: 1.6, margin: 0 }}>
         {node.description}
       </p>
     </>
@@ -201,7 +201,7 @@ function PatternDetail({ node }: { node: BlueprintNode & { node_type: 'pattern' 
     <>
       <span style={tagStyle}>{node.scope}</span>
       <div style={{ ...sectionHeaderStyle, marginTop: '10px' }}>description</div>
-      <p style={{ fontSize: '12px', color: 'var(--text-primary)', lineHeight: 1.6, margin: 0 }}>
+      <p style={{ fontSize: '12px', color: 'var(--color-text)', lineHeight: 1.6, margin: 0 }}>
         {node.description}
       </p>
     </>
@@ -212,17 +212,17 @@ function QualityDetail({ node }: { node: BlueprintNode & { node_type: 'quality_r
   return (
     <>
       <div style={sectionHeaderStyle}>attribute</div>
-      <p style={{ fontSize: '12px', color: 'var(--text-primary)', margin: '0 0 8px' }}>{node.attribute}</p>
+      <p style={{ fontSize: '12px', color: 'var(--color-text)', margin: '0 0 8px' }}>{node.attribute}</p>
 
       <div style={sectionHeaderStyle}>scenario</div>
-      <p style={{ fontSize: '12px', color: 'var(--text-primary)', lineHeight: 1.6, margin: '0 0 8px' }}>
+      <p style={{ fontSize: '12px', color: 'var(--color-text)', lineHeight: 1.6, margin: '0 0 8px' }}>
         {node.scenario}
       </p>
 
       <div style={{ display: 'flex', gap: '12px' }}>
         <div>
           <div style={sectionHeaderStyle}>measure</div>
-          <span style={{ fontSize: '11px', color: 'var(--text-primary)' }}>{node.measure}</span>
+          <span style={{ fontSize: '11px', color: 'var(--color-text)' }}>{node.measure}</span>
         </div>
         <div>
           <div style={sectionHeaderStyle}>target</div>
@@ -274,7 +274,7 @@ function RingBadge({ ring }: { ring: string }) {
 function ImpactPreviewSection({ report }: { report: ImpactReport }) {
   if (report.entries.length === 0) {
     return (
-      <div style={{ fontSize: '11px', color: 'var(--text-secondary)', padding: '8px 0' }}>
+      <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', padding: '8px 0' }}>
         no downstream impact detected
       </div>
     );
@@ -319,13 +319,13 @@ function ImpactPreviewSection({ report }: { report: ImpactReport }) {
                 {entry.severity}
               </span>
             </div>
-            <div style={{ fontSize: '11px', color: 'var(--text-primary)', fontWeight: 600 }}>
+            <div style={{ fontSize: '11px', color: 'var(--color-text)', fontWeight: 600 }}>
               {entry.node_name}
-              <span style={{ fontWeight: 400, color: 'var(--text-secondary)', marginLeft: '6px', fontSize: '10px' }}>
+              <span style={{ fontWeight: 400, color: 'var(--color-text-muted)', marginLeft: '6px', fontSize: '10px' }}>
                 {entry.node_type}
               </span>
             </div>
-            <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px', lineHeight: 1.5 }}>
+            <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '2px', lineHeight: 1.5 }}>
               {entry.explanation}
             </div>
           </div>
@@ -392,8 +392,8 @@ export default function NodeDetailPanel({ nodeId, edges, api, onClose }: NodeDet
   if (loading) {
     return (
       <div style={panelStyle}>
-        <PanelHeader onClose={onClose} title="loading…" color="var(--text-secondary)" />
-        <div style={{ padding: '20px', color: 'var(--text-secondary)', fontSize: '12px' }}>
+        <PanelHeader onClose={onClose} title="loading…" color="var(--color-text-muted)" />
+        <div style={{ padding: '20px', color: 'var(--color-text-muted)', fontSize: '12px' }}>
           fetching node details…
         </div>
       </div>
@@ -403,8 +403,8 @@ export default function NodeDetailPanel({ nodeId, edges, api, onClose }: NodeDet
   if (error || !node) {
     return (
       <div style={panelStyle}>
-        <PanelHeader onClose={onClose} title="error" color="var(--accent-red)" />
-        <div style={{ padding: '12px', color: 'var(--accent-red)', fontSize: '12px' }}>
+        <PanelHeader onClose={onClose} title="error" color="var(--color-error)" />
+        <div style={{ padding: '12px', color: 'var(--color-error)', fontSize: '12px' }}>
           {error ?? 'node not found'}
         </div>
       </div>
@@ -449,12 +449,12 @@ export default function NodeDetailPanel({ nodeId, edges, api, onClose }: NodeDet
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
               {connectedEdges.map((e, i) => (
                 <div key={i} style={{
-                  fontSize: '10px', color: 'var(--text-secondary)', fontFamily: 'monospace',
-                  padding: '3px 6px', background: 'var(--bg-primary)', borderRadius: '2px',
-                  border: '1px solid var(--border)',
+                  fontSize: '10px', color: 'var(--color-text-muted)', fontFamily: 'monospace',
+                  padding: '3px 6px', background: 'var(--color-bg)', borderRadius: '2px',
+                  border: '1px solid var(--color-border)',
                 }}>
                   {e.source === nodeId ? '→' : '←'}{' '}
-                  <span style={{ color: 'var(--text-primary)' }}>
+                  <span style={{ color: 'var(--color-text)' }}>
                     {e.source === nodeId ? e.target : e.source}
                   </span>
                   {' '}
@@ -478,12 +478,12 @@ export default function NodeDetailPanel({ nodeId, edges, api, onClose }: NodeDet
             onKeyDown={e => { if (e.key === 'Enter') void handleImpactPreview(); }}
             style={{
               flex: 1,
-              background: 'var(--bg-primary)',
-              border: '1px solid var(--border)',
+              background: 'var(--color-bg)',
+              border: '1px solid var(--color-border)',
               borderRadius: '3px',
               padding: '6px 8px',
               fontSize: '11px',
-              color: 'var(--text-primary)',
+              color: 'var(--color-text)',
               outline: 'none',
               fontFamily: 'inherit',
             }}
@@ -514,7 +514,7 @@ export default function NodeDetailPanel({ nodeId, edges, api, onClose }: NodeDet
         {impactReport && <ImpactPreviewSection report={impactReport} />}
 
         {/* Timestamps */}
-        <div style={{ marginTop: '16px', fontSize: '10px', color: 'var(--text-secondary)', opacity: 0.6 }}>
+        <div style={{ marginTop: '16px', fontSize: '10px', color: 'var(--color-text-muted)', opacity: 0.6 }}>
           {'created_at' in node && <div>created: {(node as { created_at: string }).created_at}</div>}
           {'updated_at' in node && <div>updated: {(node as { updated_at: string }).updated_at}</div>}
         </div>
@@ -532,7 +532,7 @@ function PanelHeader({ onClose, title, color, subtitle }: { onClose: () => void;
       alignItems: 'center',
       justifyContent: 'space-between',
       padding: '10px 14px',
-      borderBottom: '1px solid var(--border)',
+      borderBottom: '1px solid var(--color-border)',
       flexShrink: 0,
     }}>
       <div style={{ minWidth: 0, flex: 1 }}>
@@ -543,7 +543,7 @@ function PanelHeader({ onClose, title, color, subtitle }: { onClose: () => void;
           {title}
         </div>
         {subtitle && (
-          <div style={{ fontSize: '10px', color: 'var(--text-secondary)', letterSpacing: '0.06em', textTransform: 'uppercase' as const }}>
+          <div style={{ fontSize: '10px', color: 'var(--color-text-muted)', letterSpacing: '0.06em', textTransform: 'uppercase' as const }}>
             {subtitle}
           </div>
         )}
@@ -553,7 +553,7 @@ function PanelHeader({ onClose, title, color, subtitle }: { onClose: () => void;
         style={{
           background: 'transparent',
           border: 'none',
-          color: 'var(--text-secondary)',
+          color: 'var(--color-text-muted)',
           fontSize: '16px',
           cursor: 'pointer',
           padding: '4px 8px',
@@ -574,7 +574,7 @@ const panelStyle: React.CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
   height: '100%',
-  background: 'var(--bg-secondary)',
-  borderLeft: '1px solid var(--border)',
+  background: 'var(--color-surface)',
+  borderLeft: '1px solid var(--color-border)',
   overflow: 'hidden',
 };

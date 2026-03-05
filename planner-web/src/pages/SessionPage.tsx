@@ -174,8 +174,8 @@ export default function SessionPage() {
           gap: '12px',
           padding: '24px',
         }}>
-          <span style={{ color: 'var(--accent-red)', fontSize: '14px' }}>[ ERROR ]</span>
-          <span style={{ color: 'var(--text-secondary)', fontSize: '13px', textAlign: 'center', maxWidth: '500px' }}>
+          <span style={{ color: 'var(--color-error)', fontSize: '14px' }}>[ ERROR ]</span>
+          <span style={{ color: 'var(--color-text-muted)', fontSize: '13px', textAlign: 'center', maxWidth: '500px' }}>
             {is404 ? 'Session not found.' : initError}
           </span>
           <button
@@ -183,8 +183,8 @@ export default function SessionPage() {
             style={{
               marginTop: '8px',
               background: 'transparent',
-              border: '1px solid var(--border)',
-              color: 'var(--text-secondary)',
+              border: '1px solid var(--color-border)',
+              color: 'var(--color-text-muted)',
               padding: '7px 16px',
               fontSize: '12px',
               cursor: 'pointer',
@@ -208,7 +208,7 @@ export default function SessionPage() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          color: 'var(--text-secondary)',
+          color: 'var(--color-text-muted)',
           fontSize: '13px',
         }}>
           initializing session…
@@ -222,8 +222,8 @@ export default function SessionPage() {
     <div style={{
       padding: '8px 16px',
       background: 'rgba(255,68,68,0.10)',
-      borderBottom: '1px solid var(--accent-red)',
-      color: 'var(--accent-red)',
+      borderBottom: '1px solid var(--color-error)',
+      color: 'var(--color-error)',
       fontSize: '12px',
       textAlign: 'center',
       flexShrink: 0,
@@ -256,8 +256,8 @@ export default function SessionPage() {
             <div style={{
               width: '100%',
               maxWidth: '600px',
-              background: 'var(--bg-secondary)',
-              border: '1px solid var(--border)',
+              background: 'var(--color-surface)',
+              border: '1px solid var(--color-border)',
               borderRadius: '4px',
               padding: '28px 32px',
               display: 'flex',
@@ -271,7 +271,7 @@ export default function SessionPage() {
                   fontWeight: 700,
                   letterSpacing: '0.1em',
                   textTransform: 'uppercase',
-                  color: 'var(--accent-cyan)',
+                  color: 'var(--color-primary)',
                 }}>
                   Planner v2
                 </span>
@@ -279,7 +279,7 @@ export default function SessionPage() {
                   margin: 0,
                   fontSize: '18px',
                   fontWeight: 700,
-                  color: 'var(--text-primary)',
+                  color: 'var(--color-text)',
                   fontFamily: 'inherit',
                 }}>
                   Describe your project
@@ -287,7 +287,7 @@ export default function SessionPage() {
                 <p style={{
                   margin: 0,
                   fontSize: '13px',
-                  color: 'var(--text-secondary)',
+                  color: 'var(--color-text-muted)',
                   lineHeight: '1.5',
                 }}>
                   Give a brief overview — what you want to build, who it's for, and any important constraints. We'll ask focused questions to fill in the details.
@@ -296,8 +296,8 @@ export default function SessionPage() {
 
               {/* Textarea */}
               <div style={{
-                background: 'var(--bg-tertiary)',
-                border: `1px solid ${description.trim() ? 'var(--accent-cyan)' : 'var(--border)'}`,
+                background: 'var(--color-surface-2)',
+                border: `1px solid ${description.trim() ? 'var(--color-primary)' : 'var(--color-border)'}`,
                 borderRadius: '3px',
                 padding: '10px 14px',
                 transition: 'border-color 0.18s',
@@ -321,7 +321,7 @@ export default function SessionPage() {
                     background: 'transparent',
                     border: 'none',
                     outline: 'none',
-                    color: isStarting ? 'var(--text-secondary)' : 'var(--text-primary)',
+                    color: isStarting ? 'var(--color-text-muted)' : 'var(--color-text)',
                     fontSize: '13px',
                     lineHeight: '1.6',
                     resize: 'none',
@@ -343,12 +343,12 @@ export default function SessionPage() {
               }}>
                 <span style={{
                   fontSize: '11px',
-                  color: description.length > 2000 ? 'var(--accent-red)' : 'var(--text-secondary)',
+                  color: description.length > 2000 ? 'var(--color-error)' : 'var(--color-text-muted)',
                 }}>
                   {description.length} chars
                   {description.length > 2000 && ' — try to keep it concise'}
                 </span>
-                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>
                   Enter to submit
                 </span>
               </div>
@@ -358,9 +358,9 @@ export default function SessionPage() {
                 <div style={{
                   padding: '8px 12px',
                   background: 'rgba(255,68,68,0.10)',
-                  border: '1px solid var(--accent-red)',
+                  border: '1px solid var(--color-error)',
                   borderRadius: '3px',
-                  color: 'var(--accent-red)',
+                  color: 'var(--color-error)',
                   fontSize: '12px',
                 }}>
                   {startError}
@@ -375,13 +375,13 @@ export default function SessionPage() {
                   alignSelf: 'flex-end',
                   background: !description.trim() || isStarting
                     ? 'transparent'
-                    : 'var(--accent-cyan)',
+                    : 'var(--color-primary)',
                   border: `1px solid ${!description.trim() || isStarting
-                    ? 'var(--border)'
-                    : 'var(--accent-cyan)'}`,
+                    ? 'var(--color-border)'
+                    : 'var(--color-primary)'}`,
                   color: !description.trim() || isStarting
-                    ? 'var(--text-secondary)'
-                    : 'var(--bg-primary)',
+                    ? 'var(--color-text-muted)'
+                    : 'var(--color-bg)',
                   padding: '8px 20px',
                   fontSize: '13px',
                   fontWeight: 700,
@@ -432,8 +432,8 @@ export default function SessionPage() {
           <div style={{
             padding: '12px 16px',
             background: 'rgba(255,68,68,0.10)',
-            borderBottom: '1px solid var(--accent-red)',
-            color: 'var(--accent-red)',
+            borderBottom: '1px solid var(--color-error)',
+            color: 'var(--color-error)',
             fontSize: '12px',
             textAlign: 'center',
             flexShrink: 0,
@@ -447,9 +447,9 @@ export default function SessionPage() {
               onClick={() => void navigate('/')}
               style={{
                 background: 'transparent',
-                border: '1px solid var(--accent-red)',
+                border: '1px solid var(--color-error)',
                 borderRadius: '3px',
-                color: 'var(--accent-red)',
+                color: 'var(--color-error)',
                 fontSize: '11px',
                 fontFamily: 'inherit',
                 padding: '4px 12px',
@@ -493,8 +493,8 @@ export default function SessionPage() {
               <div style={{
                 padding: '12px 16px',
                 background: 'rgba(0,255,136,0.06)',
-                borderTop: '1px solid var(--accent-green)',
-                color: 'var(--accent-green)',
+                borderTop: '1px solid var(--color-success)',
+                color: 'var(--color-success)',
                 fontSize: '12px',
                 flexShrink: 0,
                 lineHeight: '1.5',
@@ -524,8 +524,8 @@ export default function SessionPage() {
                 display: 'flex',
                 alignItems: 'center',
                 gap: '0',
-                borderBottom: '1px solid var(--border)',
-                background: 'var(--bg-secondary)',
+                borderBottom: '1px solid var(--color-border)',
+                background: 'var(--color-surface)',
                 flexShrink: 0,
               }}
             >
@@ -535,8 +535,8 @@ export default function SessionPage() {
                 style={{
                   background: 'transparent',
                   border: 'none',
-                  borderBottom: rightTab === 'belief' ? '2px solid var(--accent-cyan)' : '2px solid transparent',
-                  color: rightTab === 'belief' ? 'var(--accent-cyan)' : 'var(--text-secondary)',
+                  borderBottom: rightTab === 'belief' ? '2px solid var(--color-primary)' : '2px solid transparent',
+                  color: rightTab === 'belief' ? 'var(--color-primary)' : 'var(--color-text-muted)',
                   fontSize: '11px',
                   fontWeight: rightTab === 'belief' ? 700 : 400,
                   fontFamily: 'inherit',
@@ -557,12 +557,12 @@ export default function SessionPage() {
                 style={{
                   background: 'transparent',
                   border: 'none',
-                  borderBottom: rightTab === 'draft' ? '2px solid var(--accent-cyan)' : '2px solid transparent',
+                  borderBottom: rightTab === 'draft' ? '2px solid var(--color-primary)' : '2px solid transparent',
                   color: !socratic.speculativeDraft
-                    ? 'var(--text-secondary)'
+                    ? 'var(--color-text-muted)'
                     : rightTab === 'draft'
-                    ? 'var(--accent-cyan)'
-                    : 'var(--text-secondary)',
+                    ? 'var(--color-primary)'
+                    : 'var(--color-text-muted)',
                   fontSize: '11px',
                   fontWeight: rightTab === 'draft' ? 700 : 400,
                   fontFamily: 'inherit',
@@ -582,7 +582,7 @@ export default function SessionPage() {
                       width: '5px',
                       height: '5px',
                       borderRadius: '50%',
-                      background: 'var(--accent-cyan)',
+                      background: 'var(--color-primary)',
                       verticalAlign: 'middle',
                       marginBottom: '1px',
                     }}

@@ -67,17 +67,17 @@ export default function Dashboard() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          borderBottom: '1px solid var(--border)',
+          borderBottom: '1px solid var(--color-border)',
           paddingBottom: '12px',
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <span style={{ color: 'var(--text-primary)', fontSize: '14px', fontWeight: 600 }}>
+            <span style={{ color: 'var(--color-text)', fontSize: '14px', fontWeight: 600 }}>
               sessions
             </span>
             <a
               href="/blueprint"
               style={{
-                color: 'var(--accent-cyan)',
+                color: 'var(--color-primary)',
                 fontSize: '11px',
                 textDecoration: 'none',
                 opacity: 0.75,
@@ -95,7 +95,7 @@ export default function Dashboard() {
             <a
               href="/admin"
               style={{
-                color: 'var(--text-secondary)',
+                color: 'var(--color-text-muted)',
                 fontSize: '11px',
                 textDecoration: 'none',
                 opacity: 0.6,
@@ -111,9 +111,9 @@ export default function Dashboard() {
           <button
             onClick={handleNewSession}
             style={{
-              background: 'var(--accent-cyan)',
+              background: 'var(--color-primary)',
               border: 'none',
-              color: 'var(--bg-primary)',
+              color: 'var(--color-bg)',
               padding: '7px 18px',
               fontSize: '12px',
               fontWeight: 700,
@@ -138,7 +138,7 @@ export default function Dashboard() {
             alignItems: 'center',
             justifyContent: 'center',
             padding: '40px 24px',
-            color: 'var(--text-secondary)',
+            color: 'var(--color-text-muted)',
             fontSize: '13px',
           }}>
             loading sessions…
@@ -149,10 +149,10 @@ export default function Dashboard() {
         {!loading && fetchError && (
           <div style={{
             padding: '16px',
-            border: '1px solid var(--accent-red)',
+            border: '1px solid var(--color-error)',
             borderRadius: '3px',
             background: 'rgba(255,68,68,0.06)',
-            color: 'var(--accent-red)',
+            color: 'var(--color-error)',
             fontSize: '13px',
           }}>
             <span style={{ fontWeight: 600 }}>Error loading sessions: </span>
@@ -168,14 +168,14 @@ export default function Dashboard() {
             alignItems: 'center',
             justifyContent: 'center',
             padding: '60px 24px',
-            border: '1px dashed var(--border)',
+            border: '1px dashed var(--color-border)',
             borderRadius: '3px',
             gap: '12px',
           }}>
-            <span style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
+            <span style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>
               no sessions yet
             </span>
-            <span style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>
+            <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>
               create a new session to start planning
             </span>
             <button
@@ -183,8 +183,8 @@ export default function Dashboard() {
               style={{
                 marginTop: '8px',
                 background: 'transparent',
-                border: '1px solid var(--accent-cyan)',
-                color: 'var(--accent-cyan)',
+                border: '1px solid var(--color-primary)',
+                color: 'var(--color-primary)',
                 padding: '8px 20px',
                 fontSize: '12px',
                 cursor: 'pointer',
@@ -232,14 +232,14 @@ export default function Dashboard() {
         {/* Info box */}
         <div style={{
           padding: '14px 16px',
-          background: 'var(--bg-secondary)',
-          border: '1px solid var(--border)',
+          background: 'var(--color-surface)',
+          border: '1px solid var(--color-border)',
           borderRadius: '3px',
           fontSize: '12px',
-          color: 'var(--text-secondary)',
+          color: 'var(--color-text-muted)',
           lineHeight: 1.7,
         }}>
-          <span style={{ color: 'var(--accent-cyan)', fontWeight: 600 }}>TIP</span>
+          <span style={{ color: 'var(--color-primary)', fontWeight: 600 }}>TIP</span>
           {' '}— Each session maintains its own conversation history and pipeline state.
           Sessions are isolated and can be resumed at any time.
         </div>
@@ -260,45 +260,45 @@ const PHASE_CONFIG: Record<
 > = {
   waiting: {
     label: 'waiting',
-    color: 'var(--text-secondary)',
+    color: 'var(--color-text-muted)',
     bg: 'rgba(136,136,160,0.12)',
     borderColor: 'rgba(136,136,160,0.3)',
   },
   interviewing: {
     label: 'interviewing',
-    color: 'var(--accent-cyan)',
+    color: 'var(--color-primary)',
     bg: 'rgba(0,212,255,0.08)',
-    borderColor: 'var(--accent-cyan)',
+    borderColor: 'var(--color-primary)',
     className: 'phase-interviewing',
   },
   pipeline_running: {
     label: 'building',
-    color: 'var(--accent-yellow)',
+    color: 'var(--color-gold)',
     bg: 'rgba(255,215,0,0.08)',
     borderColor: 'rgba(255,215,0,0.5)',
   },
   complete: {
     label: 'complete',
-    color: 'var(--accent-green)',
+    color: 'var(--color-success)',
     bg: 'rgba(0,255,136,0.08)',
     borderColor: 'rgba(0,255,136,0.4)',
   },
   error: {
     label: 'error',
-    color: 'var(--accent-red)',
+    color: 'var(--color-error)',
     bg: 'rgba(255,68,68,0.10)',
-    borderColor: 'var(--accent-red)',
+    borderColor: 'var(--color-error)',
   },
 };
 
 /** Maps an intake phase to its status-dot color. */
 function getStatusDotColor(phase: string): string {
   switch (phase) {
-    case 'complete':         return 'var(--accent-green)';
-    case 'interviewing':     return 'var(--accent-cyan)';
-    case 'pipeline_running': return 'var(--accent-yellow)';
-    case 'error':            return 'var(--accent-red)';
-    default:                 return 'var(--text-secondary)'; // waiting / unknown
+    case 'complete':         return 'var(--color-success)';
+    case 'interviewing':     return 'var(--color-primary)';
+    case 'pipeline_running': return 'var(--color-gold)';
+    case 'error':            return 'var(--color-error)';
+    default:                 return 'var(--color-text-muted)'; // waiting / unknown
   }
 }
 
@@ -379,19 +379,19 @@ function SessionCard({ session, onClick }: SessionCardProps) {
         flexDirection: 'column',
         gap: '6px',
         padding: '12px 16px',
-        background: 'var(--bg-secondary)',
-        border: '1px solid var(--border)',
+        background: 'var(--color-surface)',
+        border: '1px solid var(--color-border)',
         borderRadius: '3px',
         cursor: 'pointer',
         transition: 'border-color 0.18s, background 0.18s',
       }}
       onMouseEnter={(e) => {
-        (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--accent-cyan)';
-        (e.currentTarget as HTMLDivElement).style.background = 'var(--bg-tertiary)';
+        (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--color-primary)';
+        (e.currentTarget as HTMLDivElement).style.background = 'var(--color-surface-2)';
       }}
       onMouseLeave={(e) => {
-        (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--border)';
-        (e.currentTarget as HTMLDivElement).style.background = 'var(--bg-secondary)';
+        (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--color-border)';
+        (e.currentTarget as HTMLDivElement).style.background = 'var(--color-surface)';
       }}
     >
       {/* Row 1: session ID (left) | intake phase badge + convergence (right) */}
@@ -405,7 +405,7 @@ function SessionCard({ session, onClick }: SessionCardProps) {
         {/* Session ID + timestamp */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1px', minWidth: 0 }}>
           <span style={{
-            color: 'var(--accent-cyan)',
+            color: 'var(--color-primary)',
             fontSize: '12px',
             fontWeight: 600,
             letterSpacing: '0.04em',
@@ -413,7 +413,7 @@ function SessionCard({ session, onClick }: SessionCardProps) {
           }}>
             {session.id.slice(0, 8)}…
           </span>
-          <span style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>
+          <span style={{ color: 'var(--color-text-muted)', fontSize: '11px' }}>
             {createdAt}
           </span>
         </div>
@@ -422,7 +422,7 @@ function SessionCard({ session, onClick }: SessionCardProps) {
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
           {hasConvergence && (
             <span style={{
-              color: 'var(--text-secondary)',
+              color: 'var(--color-text-muted)',
               fontSize: '10px',
               fontFamily: 'monospace',
             }}>
@@ -440,8 +440,8 @@ function SessionCard({ session, onClick }: SessionCardProps) {
               padding: '0 4px',
               borderRadius: '8px',
               background: 'rgba(255,68,68,0.18)',
-              border: '1px solid var(--accent-red)',
-              color: 'var(--accent-red)',
+              border: '1px solid var(--color-error)',
+              color: 'var(--color-error)',
               fontSize: '9px',
               fontWeight: 700,
               fontFamily: 'monospace',
@@ -485,7 +485,7 @@ function SessionCard({ session, onClick }: SessionCardProps) {
                 width: '6px',
                 height: '6px',
                 borderRadius: '50%',
-                background: 'var(--accent-red)',
+                background: 'var(--color-error)',
                 flexShrink: 0,
               }} />
             )}
@@ -493,7 +493,7 @@ function SessionCard({ session, onClick }: SessionCardProps) {
           {/* Current step label */}
           {currentStep && (
             <span style={{
-              color: 'var(--text-secondary)',
+              color: 'var(--color-text-muted)',
               fontSize: '10px',
               fontFamily: 'monospace',
               opacity: 0.7,
@@ -515,7 +515,7 @@ function SessionCard({ session, onClick }: SessionCardProps) {
       }}>
         {/* Description snippet */}
         <span style={{
-          color: 'var(--text-secondary)',
+          color: 'var(--color-text-muted)',
           fontSize: '11px',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
@@ -530,7 +530,7 @@ function SessionCard({ session, onClick }: SessionCardProps) {
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
           {classificationText && (
             <span style={{
-              color: 'var(--text-secondary)',
+              color: 'var(--color-text-muted)',
               fontSize: '10px',
               fontFamily: 'monospace',
               opacity: 0.75,
@@ -539,12 +539,12 @@ function SessionCard({ session, onClick }: SessionCardProps) {
               {classificationText}
             </span>
           )}
-          <span style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>
+          <span style={{ color: 'var(--color-text-muted)', fontSize: '11px' }}>
             {messageCount} {messageCount === 1 ? 'msg' : 'msgs'}
             {durationText && (
               <span style={{
                 marginLeft: '5px',
-                color: 'var(--text-secondary)',
+                color: 'var(--color-text-muted)',
                 opacity: 0.65,
                 fontSize: '10px',
                 fontFamily: 'monospace',
@@ -553,7 +553,7 @@ function SessionCard({ session, onClick }: SessionCardProps) {
               </span>
             )}
           </span>
-          <span style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>→</span>
+          <span style={{ color: 'var(--color-text-muted)', fontSize: '11px' }}>→</span>
         </div>
       </div>
     </div>

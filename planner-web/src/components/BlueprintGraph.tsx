@@ -1,90 +1,93 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useMemo } from 'react';
 import * as d3 from 'd3';
-import type { GraphNode, GraphLink, NodeSummary, EdgePayload, NodeType } from '../types/blueprint.ts';
+import type { GraphNode, GraphLink, NodeSummary, EdgePayload, NodeType, EdgeType } from '../types/blueprint.ts';
 
 // ─── Node type → visual config ──────────────────────────────────────────────
 
-const NODE_CONFIG: Record<string, { color: string; shape: 'circle' | 'diamond' | 'rect' | 'hexagon'; label: string }> = {
-  decision:            { color: '#4f98a3', shape: 'diamond', label: 'Decision' },
-  technology:          { color: '#6daa45', shape: 'circle',  label: 'Technology' },
-  component:           { color: '#5591c7', shape: 'rect',    label: 'Component' },
-  constraint:          { color: '#bb653b', shape: 'hexagon', label: 'Constraint' },
-  pattern:             { color: '#a86fdf', shape: 'circle',  label: 'Pattern' },
-  quality_requirement: { color: '#e8af34', shape: 'rect',    label: 'Quality Req.' },
+const NODE_COLORS: Record<string, string> = {
+  decision:            'var(--color-primary)',
+  technology:          'var(--color-success)',
+  component:           'var(--color-blue)',
+  constraint:          'var(--color-warning)',
+  pattern:             'var(--color-purple)',
+  quality_requirement: 'var(--color-gold)',
 };
 
-const EDGE_COLORS: Record<string, string> = {
-  decided_by:  '#4f98a3',
-  supersedes:  '#bb653b',
-  depends_on:  '#5591c7',
-  uses:        '#6daa45',
-  constrains:  '#bb653b',
-  implements:  '#a86fdf',
-  satisfies:   '#e8af34',
-  affects:     '#d163a7',
+const NODE_SIZES: Record<string, { w: number; h: number }> = {
+  decision:            { w: 185, h: 38 },
+  technology:          { w: 160, h: 34 },
+  component:           { w: 175, h: 36 },
+  constraint:          { w: 170, h: 34 },
+  pattern:             { w: 175, h: 34 },
+  quality_requirement: { w: 185, h: 36 },
 };
 
-function getNodeConfig(nodeType: string) {
-  return NODE_CONFIG[nodeType] ?? { color: '#8a8987', shape: 'circle' as const, label: nodeType };
+const TYPE_PREFIX: Record<string, string> = {
+  decision: 'DEC',
+  technology: 'TECH',
+  component: 'COMP',
+  constraint: 'CON',
+  pattern: 'PAT',
+  quality_requirement: 'QUAL',
+};
+
+// ─── Edge styling ───────────────────────────────────────────────────────────
+
+function edgeColor(type: EdgeType | string): string {
+  switch (type) {
+    case 'depends_on':  return 'var(--color-purple)';
+    case 'decided_by':  return 'var(--color-blue)';
+    case 'constrains':  return 'var(--color-warning)';
+    case 'uses':        return 'var(--color-blue)';
+    case 'implements':  return 'var(--color-success)';
+    case 'satisfies':   return 'var(--color-gold)';
+    case 'affects':     return 'var(--color-purple-hover, #bf8ef0)';
+    case 'supersedes':  return 'var(--color-warning)';
+    default:            return 'var(--color-text-faint)';
+  }
 }
 
-// ─── Shape rendering ────────────────────────────────────────────────────────
+function edgeDash(type: string): string {
+  switch (type) {
+    case 'decided_by':  return '8,4';
+    case 'constrains':  return '3,3';
+    case 'implements':  return '2,4';
+    case 'satisfies':   return '8,3,2,3';
+    case 'affects':     return '6,4';
+    default:            return 'none';
+  }
+}
 
-function drawNodeShape(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  shape: string,
-  radius: number,
-  color: string,
-  isSelected: boolean,
-  isHovered: boolean,
-) {
-  ctx.beginPath();
-  const r = isSelected ? radius * 1.3 : isHovered ? radius * 1.15 : radius;
+function edgeWidth(type: string): number {
+  if (type === 'depends_on') return 1.8;
+  if (type === 'uses') return 1;
+  return 1.2;
+}
 
-  switch (shape) {
-    case 'diamond':
-      ctx.moveTo(x, y - r);
-      ctx.lineTo(x + r, y);
-      ctx.lineTo(x, y + r);
-      ctx.lineTo(x - r, y);
-      ctx.closePath();
-      break;
-    case 'rect':
-      ctx.rect(x - r * 0.85, y - r * 0.7, r * 1.7, r * 1.4);
-      break;
-    case 'hexagon': {
-      const a = (Math.PI * 2) / 6;
-      for (let i = 0; i < 6; i++) {
-        const px = x + r * Math.cos(a * i - Math.PI / 6);
-        const py = y + r * Math.sin(a * i - Math.PI / 6);
-        if (i === 0) ctx.moveTo(px, py);
-        else ctx.lineTo(px, py);
-      }
-      ctx.closePath();
-      break;
+// ─── Shape path generators ──────────────────────────────────────────────────
+
+function getNodeShapePath(type: string, w: number, h: number): string | null {
+  const hw = w / 2;
+  const hh = h / 2;
+  switch (type) {
+    case 'technology': {
+      // Hexagon
+      const inset = hh * 0.85;
+      return `M${-hw + inset},${-hh} L${hw - inset},${-hh} L${hw},0 L${hw - inset},${hh} L${-hw + inset},${hh} L${-hw},0 Z`;
     }
-    default: // circle
-      ctx.arc(x, y, r, 0, Math.PI * 2);
-      break;
+    case 'constraint': {
+      // Diamond
+      return `M0,${-hh} L${hw},0 L0,${hh} L${-hw},0 Z`;
+    }
+    case 'quality_requirement': {
+      // Shield
+      const sw = hw * 0.95;
+      const sh = hh;
+      return `M${-sw},${-sh * 0.7} L0,${-sh} L${sw},${-sh * 0.7} L${sw},${sh * 0.2} Q${sw},${sh * 0.7} 0,${sh} Q${-sw},${sh * 0.7} ${-sw},${sh * 0.2} Z`;
+    }
+    default:
+      return null; // Use rect/ellipse directly
   }
-
-  // Fill
-  if (isSelected) {
-    ctx.fillStyle = color;
-    ctx.globalAlpha = 0.35;
-  } else {
-    ctx.fillStyle = color;
-    ctx.globalAlpha = 0.18;
-  }
-  ctx.fill();
-  ctx.globalAlpha = 1;
-
-  // Stroke
-  ctx.strokeStyle = color;
-  ctx.lineWidth = isSelected ? 2.5 : isHovered ? 2 : 1.2;
-  ctx.stroke();
 }
 
 // ─── Component ──────────────────────────────────────────────────────────────
@@ -95,8 +98,6 @@ interface BlueprintGraphProps {
   selectedNodeId: string | null;
   onSelectNode: (nodeId: string | null) => void;
   onHoverNode: (nodeId: string | null) => void;
-  width: number;
-  height: number;
   filterType: NodeType | null;
 }
 
@@ -106,19 +107,18 @@ export default function BlueprintGraph({
   selectedNodeId,
   onSelectNode,
   onHoverNode,
-  width,
-  height,
   filterType,
 }: BlueprintGraphProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
   const simRef = useRef<d3.Simulation<GraphNode, GraphLink> | null>(null);
-  const nodesRef = useRef<GraphNode[]>([]);
-  const linksRef = useRef<GraphLink[]>([]);
-  const hoveredRef = useRef<string | null>(null);
-  const transformRef = useRef(d3.zoomIdentity);
+  const gRef = useRef<d3.Selection<SVGGElement, unknown, null, undefined> | null>(null);
+  const linkSelRef = useRef<d3.Selection<SVGLineElement, GraphLink, SVGGElement, unknown> | null>(null);
+  const nodeSelRef = useRef<d3.Selection<SVGGElement, GraphNode, SVGGElement, unknown> | null>(null);
+  const zoomRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
+  const initializedRef = useRef(false);
 
-  // Convert props to graph data
-  const buildGraphData = useCallback(() => {
+  // Build graph data from props
+  const graphData = useMemo(() => {
     const filteredNodes = filterType
       ? nodes.filter(n => n.node_type === filterType)
       : nodes;
@@ -126,23 +126,7 @@ export default function BlueprintGraph({
     const nodeIds = new Set(filteredNodes.map(n => n.id));
     const filteredEdges = edges.filter(e => nodeIds.has(e.source) && nodeIds.has(e.target));
 
-    // Preserve positions for nodes that still exist
-    const existingPositions = new Map<string, { x: number; y: number }>();
-    for (const n of nodesRef.current) {
-      if (n.x !== undefined && n.y !== undefined) {
-        existingPositions.set(n.id, { x: n.x, y: n.y });
-      }
-    }
-
-    const graphNodes: GraphNode[] = filteredNodes.map(n => {
-      const pos = existingPositions.get(n.id);
-      return {
-        ...n,
-        x: pos?.x ?? (width / 2 + (Math.random() - 0.5) * 200),
-        y: pos?.y ?? (height / 2 + (Math.random() - 0.5) * 200),
-      };
-    });
-
+    const graphNodes: GraphNode[] = filteredNodes.map(n => ({ ...n }));
     const graphLinks: GraphLink[] = filteredEdges.map(e => ({
       source: e.source,
       target: e.target,
@@ -151,223 +135,344 @@ export default function BlueprintGraph({
     }));
 
     return { graphNodes, graphLinks };
-  }, [nodes, edges, filterType, width, height]);
+  }, [nodes, edges, filterType]);
 
-  // Hit test: find node under mouse
-  const hitTest = useCallback((mx: number, my: number): GraphNode | null => {
-    const t = transformRef.current;
-    const x = (mx - t.x) / t.k;
-    const y = (my - t.y) / t.k;
-    const r = 16;
-    // Check in reverse order (topmost first)
-    for (let i = nodesRef.current.length - 1; i >= 0; i--) {
-      const n = nodesRef.current[i];
-      if (n.x !== undefined && n.y !== undefined) {
-        const dx = x - n.x;
-        const dy = y - n.y;
-        if (dx * dx + dy * dy < r * r) return n;
-      }
-    }
-    return null;
+  // Truncate name for display
+  const displayName = useCallback((name: string): string => {
+    if (name.length > 20) return name.slice(0, 19) + '\u2026';
+    return name;
   }, []);
 
-  // Render loop
-  const render = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+  // Render the shape for each node type
+  const renderNodeShape = useCallback((sel: d3.Selection<SVGGElement, GraphNode, SVGGElement, unknown>) => {
+    sel.each(function (d) {
+      const g = d3.select(this);
+      const s = NODE_SIZES[d.node_type] || NODE_SIZES.decision;
+      const color = NODE_COLORS[d.node_type] || 'var(--color-text-faint)';
 
-    const dpr = window.devicePixelRatio || 1;
-    ctx.save();
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.scale(dpr, dpr);
-
-    const t = transformRef.current;
-    ctx.translate(t.x, t.y);
-    ctx.scale(t.k, t.k);
-
-    // Draw edges
-    for (const link of linksRef.current) {
-      const src = link.source as GraphNode;
-      const tgt = link.target as GraphNode;
-      if (src.x === undefined || src.y === undefined || tgt.x === undefined || tgt.y === undefined) continue;
-
-      const edgeColor = EDGE_COLORS[link.edge_type] ?? '#5a5957';
-      const isConnected = selectedNodeId && (src.id === selectedNodeId || tgt.id === selectedNodeId);
-
-      ctx.beginPath();
-      ctx.moveTo(src.x, src.y);
-      ctx.lineTo(tgt.x, tgt.y);
-      ctx.strokeStyle = edgeColor;
-      ctx.globalAlpha = isConnected ? 0.9 : selectedNodeId ? 0.15 : 0.4;
-      ctx.lineWidth = isConnected ? 2 : 1;
-      ctx.stroke();
-      ctx.globalAlpha = 1;
-
-      // Arrowhead
-      const angle = Math.atan2(tgt.y - src.y, tgt.x - src.x);
-      const arrLen = 8;
-      const midX = (src.x + tgt.x) / 2 + (tgt.x - src.x) * 0.15;
-      const midY = (src.y + tgt.y) / 2 + (tgt.y - src.y) * 0.15;
-      ctx.beginPath();
-      ctx.moveTo(midX, midY);
-      ctx.lineTo(midX - arrLen * Math.cos(angle - 0.4), midY - arrLen * Math.sin(angle - 0.4));
-      ctx.lineTo(midX - arrLen * Math.cos(angle + 0.4), midY - arrLen * Math.sin(angle + 0.4));
-      ctx.closePath();
-      ctx.fillStyle = edgeColor;
-      ctx.globalAlpha = isConnected ? 0.9 : selectedNodeId ? 0.15 : 0.4;
-      ctx.fill();
-      ctx.globalAlpha = 1;
-    }
-
-    // Draw nodes
-    for (const node of nodesRef.current) {
-      if (node.x === undefined || node.y === undefined) continue;
-      const config = getNodeConfig(node.node_type);
-      const isSelected = node.id === selectedNodeId;
-      const isHovered = node.id === hoveredRef.current;
-
-      // Dim non-connected nodes when something is selected
-      if (selectedNodeId && !isSelected) {
-        const isConnected = linksRef.current.some(l => {
-          const src = (l.source as GraphNode).id;
-          const tgt = (l.target as GraphNode).id;
-          return (src === selectedNodeId && tgt === node.id) || (tgt === selectedNodeId && src === node.id);
-        });
-        if (!isConnected) {
-          ctx.globalAlpha = 0.25;
+      switch (d.node_type) {
+        case 'decision': {
+          // Rounded rect
+          g.append('rect')
+            .attr('class', 'node-shape')
+            .attr('rx', 6).attr('ry', 6)
+            .attr('width', s.w).attr('height', s.h)
+            .attr('x', -s.w / 2).attr('y', -s.h / 2)
+            .attr('fill', color).attr('fill-opacity', 0.12)
+            .attr('stroke', color).attr('stroke-width', 1.5).attr('stroke-opacity', 0.5);
+          break;
+        }
+        case 'component': {
+          // Square rect with sharp corners
+          g.append('rect')
+            .attr('class', 'node-shape')
+            .attr('rx', 2).attr('ry', 2)
+            .attr('width', s.w).attr('height', s.h)
+            .attr('x', -s.w / 2).attr('y', -s.h / 2)
+            .attr('fill', color).attr('fill-opacity', 0.12)
+            .attr('stroke', color).attr('stroke-width', 1.5).attr('stroke-opacity', 0.5);
+          break;
+        }
+        case 'pattern': {
+          // Ellipse
+          g.append('ellipse')
+            .attr('class', 'node-shape')
+            .attr('rx', s.w / 2).attr('ry', s.h / 2)
+            .attr('cx', 0).attr('cy', 0)
+            .attr('fill', color).attr('fill-opacity', 0.12)
+            .attr('stroke', color).attr('stroke-width', 1.5).attr('stroke-opacity', 0.5);
+          break;
+        }
+        case 'technology':
+        case 'constraint':
+        case 'quality_requirement': {
+          // Path-based shapes (hexagon, diamond, shield)
+          const pathD = getNodeShapePath(d.node_type, s.w, s.h);
+          if (pathD) {
+            g.append('path')
+              .attr('class', 'node-shape')
+              .attr('d', pathD)
+              .attr('fill', color).attr('fill-opacity', 0.12)
+              .attr('stroke', color).attr('stroke-width', 1.5).attr('stroke-opacity', 0.5);
+          }
+          break;
         }
       }
+    });
+  }, []);
 
-      drawNodeShape(ctx, node.x, node.y, config.shape, 14, config.color, isSelected, isHovered);
+  // Initialize the SVG graph
+  useEffect(() => {
+    const svgEl = svgRef.current;
+    if (!svgEl || graphData.graphNodes.length === 0) return;
 
-      // Label
-      ctx.font = '500 10px "Inter", system-ui, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'top';
-      ctx.fillStyle = isSelected ? config.color : '#cdccca';
-      ctx.globalAlpha = ctx.globalAlpha < 1 ? ctx.globalAlpha : (isSelected || isHovered ? 1 : 0.85);
+    const svg = d3.select(svgEl);
+    const width = svgEl.clientWidth;
+    const height = svgEl.clientHeight;
 
-      // Truncate name
-      const maxLen = 18;
-      const label = node.name.length > maxLen ? node.name.slice(0, maxLen - 1) + '\u2026' : node.name;
-      ctx.fillText(label, node.x, node.y + 18);
-
-      ctx.globalAlpha = 1;
+    // Clean up previous simulation
+    if (simRef.current) {
+      simRef.current.stop();
+      simRef.current = null;
     }
 
-    ctx.restore();
-  }, [selectedNodeId]);
+    // Clear SVG
+    svg.selectAll('*').remove();
 
-  // Initialize simulation
-  useEffect(() => {
-    if (width === 0 || height === 0) return;
+    // Arrow marker defs
+    const defs = svg.append('defs');
+    const allEdgeTypes: string[] = ['depends_on', 'decided_by', 'constrains', 'uses', 'implements', 'satisfies', 'affects', 'supersedes'];
+    allEdgeTypes.forEach(type => {
+      const mSize = type === 'uses' ? 6 : 8;
+      defs.append('marker')
+        .attr('id', `arrow-${type}`)
+        .attr('viewBox', '0 0 10 6')
+        .attr('refX', 10)
+        .attr('refY', 3)
+        .attr('markerWidth', mSize)
+        .attr('markerHeight', mSize * 0.75)
+        .attr('orient', 'auto')
+        .append('path')
+        .attr('d', 'M0,0 L10,3 L0,6 Z')
+        .attr('fill', edgeColor(type));
+    });
 
-    const { graphNodes, graphLinks } = buildGraphData();
-    nodesRef.current = graphNodes;
-    linksRef.current = graphLinks;
+    // Root group for zoom/pan
+    const g = svg.append('g');
+    gRef.current = g;
 
-    const sim = d3.forceSimulation(graphNodes)
-      .force('link', d3.forceLink<GraphNode, GraphLink>(graphLinks)
+    // Zoom behavior
+    const zoom = d3.zoom<SVGSVGElement, unknown>()
+      .scaleExtent([0.2, 4])
+      .on('zoom', (event: d3.D3ZoomEvent<SVGSVGElement, unknown>) => {
+        g.attr('transform', event.transform.toString());
+      });
+    zoomRef.current = zoom;
+    svg.call(zoom);
+
+    // Initial centering
+    svg.call(zoom.transform, d3.zoomIdentity.translate(width / 2 - 40, height / 2 - 30).scale(0.7));
+
+    // Copy data for mutation
+    const simNodes = graphData.graphNodes.map(d => ({ ...d }));
+    const simLinks = graphData.graphLinks.map(d => ({ ...d }));
+
+    // Render edges
+    const edgeGroup = g.append('g').attr('class', 'edges');
+    const linkSel = edgeGroup.selectAll<SVGLineElement, GraphLink>('line')
+      .data(simLinks)
+      .join('line')
+      .attr('class', 'edge-line')
+      .attr('stroke', d => edgeColor(d.edge_type))
+      .attr('stroke-width', d => edgeWidth(d.edge_type))
+      .attr('stroke-dasharray', d => edgeDash(d.edge_type))
+      .attr('opacity', 0.55)
+      .attr('marker-end', d => `url(#arrow-${d.edge_type})`);
+    linkSelRef.current = linkSel;
+
+    // Render nodes
+    const nodeGroup = g.append('g').attr('class', 'nodes');
+    const nodeSel = nodeGroup.selectAll<SVGGElement, GraphNode>('g')
+      .data(simNodes)
+      .join('g')
+      .attr('class', 'node-group')
+      .attr('tabindex', '0')
+      .attr('role', 'button')
+      .style('cursor', 'pointer');
+    nodeSelRef.current = nodeSel;
+
+    // Render distinct shapes per type
+    renderNodeShape(nodeSel);
+
+    // Type prefix text
+    nodeSel.append('text')
+      .attr('class', 'node-prefix')
+      .attr('x', d => {
+        const s = NODE_SIZES[d.node_type] || NODE_SIZES.decision;
+        if (d.node_type === 'constraint' || d.node_type === 'quality_requirement') return -s.w / 2 + 22;
+        return -s.w / 2 + 10;
+      })
+      .attr('y', 1)
+      .attr('dominant-baseline', 'middle')
+      .attr('fill', d => NODE_COLORS[d.node_type] || 'var(--color-text-faint)')
+      .attr('font-size', '9px')
+      .attr('font-weight', '700')
+      .attr('font-family', 'var(--font-mono)')
+      .attr('letter-spacing', '0.06em')
+      .text(d => TYPE_PREFIX[d.node_type] || '');
+
+    // Node name text
+    nodeSel.append('text')
+      .attr('class', 'node-label')
+      .attr('x', d => {
+        const s = NODE_SIZES[d.node_type] || NODE_SIZES.decision;
+        if (d.node_type === 'constraint' || d.node_type === 'quality_requirement') return -s.w / 2 + 52;
+        return -s.w / 2 + 44;
+      })
+      .attr('y', 1)
+      .attr('dominant-baseline', 'middle')
+      .attr('fill', 'var(--color-text)')
+      .attr('font-size', '11px')
+      .attr('font-weight', '500')
+      .attr('font-family', 'var(--font-body)')
+      .text(d => displayName(d.name));
+
+    // Hover interactions
+    nodeSel
+      .on('mouseenter', function (_event, d) {
+        onHoverNode(d.id);
+        d3.select(this).select('.node-shape')
+          .attr('stroke-opacity', 1)
+          .attr('fill-opacity', 0.2);
+        // Highlight connected edges
+        linkSel
+          .attr('opacity', e => {
+            const src = typeof e.source === 'string' ? e.source : (e.source as GraphNode).id;
+            const tgt = typeof e.target === 'string' ? e.target : (e.target as GraphNode).id;
+            return (src === d.id || tgt === d.id) ? 0.95 : 0.06;
+          })
+          .attr('stroke-width', e => {
+            const src = typeof e.source === 'string' ? e.source : (e.source as GraphNode).id;
+            const tgt = typeof e.target === 'string' ? e.target : (e.target as GraphNode).id;
+            return (src === d.id || tgt === d.id) ? 2.5 : 1;
+          });
+      })
+      .on('mouseleave', function () {
+        onHoverNode(null);
+        d3.select(this).select('.node-shape')
+          .attr('stroke-opacity', 0.5)
+          .attr('fill-opacity', 0.12);
+        linkSel
+          .attr('opacity', 0.55)
+          .attr('stroke-width', e => edgeWidth(e.edge_type));
+      })
+      .on('click', function (event, d) {
+        event.stopPropagation();
+        onSelectNode(d.id);
+      });
+
+    // Keyboard nav
+    nodeSel.on('keydown', function (event: KeyboardEvent, d: GraphNode) {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        event.stopPropagation();
+        onSelectNode(d.id);
+      }
+    });
+
+    // Click background to deselect
+    svg.on('click', () => {
+      onSelectNode(null);
+    });
+
+    // Drag behavior
+    function dragBehavior(sim: d3.Simulation<GraphNode, GraphLink>) {
+      return d3.drag<SVGGElement, GraphNode>()
+        .on('start', (event, d) => {
+          if (!event.active) sim.alphaTarget(0.3).restart();
+          d.fx = d.x;
+          d.fy = d.y;
+        })
+        .on('drag', (event, d) => {
+          d.fx = event.x;
+          d.fy = event.y;
+        })
+        .on('end', (event, d) => {
+          if (!event.active) sim.alphaTarget(0);
+          d.fx = null;
+          d.fy = null;
+        });
+    }
+
+    // Type-based positioning forces (spreads node types into zones)
+    const typeX: Record<string, number> = {
+      decision: -180, technology: 350, component: 80,
+      constraint: -420, pattern: 420, quality_requirement: 500,
+    };
+    const typeY: Record<string, number> = {
+      decision: -60, technology: -40, component: 140,
+      constraint: -280, pattern: 280, quality_requirement: 100,
+    };
+
+    // Force simulation
+    const sim = d3.forceSimulation(simNodes)
+      .force('link', d3.forceLink<GraphNode, GraphLink>(simLinks)
         .id(d => d.id)
-        .distance(100)
-        .strength(0.4))
-      .force('charge', d3.forceManyBody().strength(-300).distanceMax(400))
-      .force('center', d3.forceCenter(width / 2, height / 2).strength(0.05))
-      .force('collision', d3.forceCollide<GraphNode>().radius(28))
-      .alphaDecay(0.02)
-      .on('tick', render);
+        .distance(220)
+        .strength(0.35))
+      .force('charge', d3.forceManyBody().strength(-1400))
+      .force('center', d3.forceCenter(0, 0))
+      .force('collision', d3.forceCollide<GraphNode>().radius(d => {
+        const s = NODE_SIZES[d.node_type] || NODE_SIZES.decision;
+        return Math.max(s.w, s.h) / 2 + 20;
+      }))
+      .force('x', d3.forceX<GraphNode>(d => typeX[d.node_type] || 0).strength(0.15))
+      .force('y', d3.forceY<GraphNode>(d => typeY[d.node_type] || 0).strength(0.15));
+
+    sim.on('tick', () => {
+      linkSel
+        .attr('x1', d => (d.source as GraphNode).x ?? 0)
+        .attr('y1', d => (d.source as GraphNode).y ?? 0)
+        .attr('x2', d => (d.target as GraphNode).x ?? 0)
+        .attr('y2', d => (d.target as GraphNode).y ?? 0);
+
+      nodeSel.attr('transform', d => `translate(${d.x ?? 0},${d.y ?? 0})`);
+    });
 
     simRef.current = sim;
+    nodeSel.call(dragBehavior(sim));
+    initializedRef.current = true;
 
     return () => {
       sim.stop();
     };
-  }, [nodes, edges, filterType, width, height, buildGraphData, render]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [graphData, renderNodeShape, displayName]);
 
-  // Canvas setup + zoom + interaction
+  // Apply filter opacity
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!nodeSelRef.current || !linkSelRef.current) return;
+    if (filterType) {
+      nodeSelRef.current.attr('opacity', d => d.node_type === filterType ? 1 : 0.15);
+      linkSelRef.current.attr('opacity', 0.06);
+    } else {
+      nodeSelRef.current.attr('opacity', 1);
+      linkSelRef.current.attr('opacity', 0.55);
+    }
+  }, [filterType]);
 
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = width * dpr;
-    canvas.height = height * dpr;
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
+  // Resize handler
+  useEffect(() => {
+    const svgEl = svgRef.current;
+    if (!svgEl) return;
 
-    // Zoom
-    const zoomBehavior = d3.zoom<HTMLCanvasElement, unknown>()
-      .scaleExtent([0.2, 4])
-      .on('zoom', (event: d3.D3ZoomEvent<HTMLCanvasElement, unknown>) => {
-        transformRef.current = event.transform;
-        render();
-      });
-
-    const sel = d3.select(canvas);
-    sel.call(zoomBehavior);
-
-    // Drag
-    sel.call(
-      d3.drag<HTMLCanvasElement, unknown>()
-        .container(canvas)
-        .subject((event: d3.D3DragEvent<HTMLCanvasElement, unknown, GraphNode>) => {
-          const node = hitTest(event.x, event.y);
-          return node ?? undefined;
-        })
-        .on('start', (event: d3.D3DragEvent<HTMLCanvasElement, unknown, GraphNode>) => {
-          if (!event.active) simRef.current?.alphaTarget(0.3).restart();
-          event.subject.fx = event.subject.x;
-          event.subject.fy = event.subject.y;
-        })
-        .on('drag', (event: d3.D3DragEvent<HTMLCanvasElement, unknown, GraphNode>) => {
-          const t = transformRef.current;
-          event.subject.fx = (event.sourceEvent.offsetX - t.x) / t.k;
-          event.subject.fy = (event.sourceEvent.offsetY - t.y) / t.k;
-        })
-        .on('end', (event: d3.D3DragEvent<HTMLCanvasElement, unknown, GraphNode>) => {
-          if (!event.active) simRef.current?.alphaTarget(0);
-          event.subject.fx = null;
-          event.subject.fy = null;
-        })
-    );
-
-    // Click
-    canvas.addEventListener('click', (e: MouseEvent) => {
-      const node = hitTest(e.offsetX, e.offsetY);
-      onSelectNode(node?.id ?? null);
+    const observer = new ResizeObserver(() => {
+      if (!initializedRef.current || !zoomRef.current) return;
+      const width = svgEl.clientWidth;
+      const height = svgEl.clientHeight;
+      const svg = d3.select(svgEl);
+      svg.call(
+        zoomRef.current.transform,
+        d3.zoomIdentity.translate(width / 2 - 40, height / 2 - 30).scale(0.7),
+      );
     });
-
-    // Hover
-    canvas.addEventListener('mousemove', (e: MouseEvent) => {
-      const node = hitTest(e.offsetX, e.offsetY);
-      const newHovered = node?.id ?? null;
-      if (newHovered !== hoveredRef.current) {
-        hoveredRef.current = newHovered;
-        onHoverNode(newHovered);
-        canvas.style.cursor = newHovered ? 'pointer' : 'grab';
-        render();
-      }
-    });
-  }, [width, height, render, hitTest, onSelectNode, onHoverNode]);
+    observer.observe(svgEl);
+    return () => observer.disconnect();
+  }, []);
 
   // Empty state
   if (nodes.length === 0) {
     return (
       <div style={{
-        width, height,
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: '12px',
-        color: 'var(--text-secondary)',
-        fontSize: '13px',
+        width: '100%', height: '100%',
+        display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center',
+        gap: '12px', color: 'var(--color-text-faint)',
+        fontSize: 'var(--text-sm)',
       }}>
         <span style={{ fontSize: '28px', opacity: 0.3 }}>◇</span>
         <span>no blueprint nodes yet</span>
-        <span style={{ fontSize: '11px', opacity: 0.65 }}>
+        <span style={{ fontSize: 'var(--text-xs)', opacity: 0.65 }}>
           nodes are created as the planner builds your system
         </span>
       </div>
@@ -375,13 +480,9 @@ export default function BlueprintGraph({
   }
 
   return (
-    <canvas
-      ref={canvasRef}
-      style={{
-        width: `${width}px`,
-        height: `${height}px`,
-        background: 'transparent',
-      }}
+    <svg
+      ref={svgRef}
+      style={{ width: '100%', height: '100%', background: 'transparent' }}
     />
   );
 }

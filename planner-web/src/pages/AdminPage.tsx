@@ -60,7 +60,7 @@ function StatusDot({ ok }: StatusDotProps) {
       width: '9px',
       height: '9px',
       borderRadius: '50%',
-      background: ok ? 'var(--accent-green)' : 'var(--accent-yellow)',
+      background: ok ? 'var(--color-success)' : 'var(--color-gold)',
       flexShrink: 0,
       boxShadow: ok
         ? '0 0 6px rgba(0,255,136,0.45)'
@@ -104,7 +104,7 @@ function SourceBadge({ source }: SourceBadgeProps) {
       borderRadius: '9px',
       border: '1px solid rgba(136,136,160,0.25)',
       background: 'rgba(136,136,160,0.07)',
-      color: 'var(--text-secondary)',
+      color: 'var(--color-text-muted)',
       fontSize: '10px',
       fontWeight: 600,
       letterSpacing: '0.04em',
@@ -133,8 +133,8 @@ function FilterBtn({ label, active, color, onClick }: FilterBtnProps) {
       onClick={onClick}
       style={{
         background: active ? `${color}22` : 'transparent',
-        border: active ? `1px solid ${color}` : '1px solid var(--border)',
-        color: active ? color : 'var(--text-secondary)',
+        border: active ? `1px solid ${color}` : '1px solid var(--color-border)',
+        color: active ? color : 'var(--color-text-muted)',
         padding: '3px 12px',
         fontSize: '11px',
         fontWeight: 600,
@@ -166,7 +166,7 @@ function EventRow({ event }: EventRowProps) {
     }}>
       {/* Timestamp */}
       <span style={{
-        color: 'var(--text-secondary)',
+        color: 'var(--color-text-muted)',
         fontSize: '11px',
         fontFamily: 'monospace',
         whiteSpace: 'nowrap',
@@ -188,7 +188,7 @@ function EventRow({ event }: EventRowProps) {
         <Link
           to={`/session/${event.session_id}`}
           style={{
-            color: 'var(--accent-cyan)',
+            color: 'var(--color-primary)',
             fontSize: '11px',
             fontFamily: 'monospace',
             textDecoration: 'none',
@@ -207,7 +207,7 @@ function EventRow({ event }: EventRowProps) {
       {/* Step */}
       {event.step && (
         <span style={{
-          color: 'var(--text-secondary)',
+          color: 'var(--color-text-muted)',
           fontSize: '11px',
           fontFamily: 'monospace',
           whiteSpace: 'nowrap',
@@ -221,7 +221,7 @@ function EventRow({ event }: EventRowProps) {
 
       {/* Message */}
       <span style={{
-        color: 'var(--text-primary)',
+        color: 'var(--color-text)',
         fontSize: '12px',
         flex: 1,
         minWidth: 0,
@@ -233,7 +233,7 @@ function EventRow({ event }: EventRowProps) {
       {/* Duration */}
       {event.duration_ms !== undefined && event.duration_ms !== null && (
         <span style={{
-          color: 'var(--text-secondary)',
+          color: 'var(--color-text-muted)',
           fontSize: '11px',
           fontFamily: 'monospace',
           whiteSpace: 'nowrap',
@@ -338,12 +338,12 @@ export default function AdminPage() {
           display: 'flex',
           alignItems: 'baseline',
           justifyContent: 'space-between',
-          borderBottom: '1px solid var(--border)',
+          borderBottom: '1px solid var(--color-border)',
           paddingBottom: '12px',
           gap: '16px',
         }}>
           <span style={{
-            color: 'var(--accent-cyan)',
+            color: 'var(--color-primary)',
             fontSize: '14px',
             fontWeight: 700,
             fontFamily: 'monospace',
@@ -354,15 +354,15 @@ export default function AdminPage() {
           <a
             href="/"
             style={{
-              color: 'var(--text-secondary)',
+              color: 'var(--color-text-muted)',
               fontSize: '12px',
               textDecoration: 'none',
               fontFamily: 'monospace',
               transition: 'color 0.18s',
               flexShrink: 0,
             }}
-            onMouseEnter={(e) => { (e.currentTarget as HTMLAnchorElement).style.color = 'var(--accent-cyan)'; }}
-            onMouseLeave={(e) => { (e.currentTarget as HTMLAnchorElement).style.color = 'var(--text-secondary)'; }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLAnchorElement).style.color = 'var(--color-primary)'; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLAnchorElement).style.color = 'var(--color-text-muted)'; }}
           >
             ← dashboard
           </a>
@@ -370,8 +370,8 @@ export default function AdminPage() {
 
         {/* ── System Health Card ── */}
         <div style={{
-          background: 'var(--bg-secondary)',
-          border: '1px solid var(--border)',
+          background: 'var(--color-surface)',
+          border: '1px solid var(--color-border)',
           borderRadius: '3px',
           padding: '16px 20px',
           display: 'flex',
@@ -382,14 +382,14 @@ export default function AdminPage() {
             display: 'flex',
             alignItems: 'center',
             gap: '8px',
-            borderBottom: '1px solid var(--border)',
+            borderBottom: '1px solid var(--color-border)',
             paddingBottom: '10px',
           }}>
-            <span style={{ color: 'var(--text-secondary)', fontSize: '11px', letterSpacing: '0.08em', fontFamily: 'monospace' }}>
+            <span style={{ color: 'var(--color-text-muted)', fontSize: '11px', letterSpacing: '0.08em', fontFamily: 'monospace' }}>
               system health
             </span>
             {statusUpdatedAt && (
-              <span style={{ color: 'var(--text-secondary)', fontSize: '10px', opacity: 0.5, marginLeft: 'auto', fontFamily: 'monospace' }}>
+              <span style={{ color: 'var(--color-text-muted)', fontSize: '10px', opacity: 0.5, marginLeft: 'auto', fontFamily: 'monospace' }}>
                 updated {secsAgo(statusUpdatedAt)}
               </span>
             )}
@@ -397,7 +397,7 @@ export default function AdminPage() {
 
           {statusError && (
             <div style={{
-              color: 'var(--accent-red)',
+              color: 'var(--color-error)',
               fontSize: '12px',
               fontFamily: 'monospace',
               padding: '8px 12px',
@@ -410,18 +410,18 @@ export default function AdminPage() {
           )}
 
           {!status && !statusError && (
-            <span style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>loading…</span>
+            <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>loading…</span>
           )}
 
           {status && (
             <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: '20px 40px' }}>
               {/* Status */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <span style={{ color: 'var(--text-secondary)', fontSize: '10px', letterSpacing: '0.06em', fontFamily: 'monospace' }}>status</span>
+                <span style={{ color: 'var(--color-text-muted)', fontSize: '10px', letterSpacing: '0.06em', fontFamily: 'monospace' }}>status</span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
                   <StatusDot ok={status.status === 'ok'} />
                   <span style={{
-                    color: status.status === 'ok' ? 'var(--accent-green)' : 'var(--accent-yellow)',
+                    color: status.status === 'ok' ? 'var(--color-success)' : 'var(--color-gold)',
                     fontSize: '13px',
                     fontFamily: 'monospace',
                     fontWeight: 700,
@@ -433,32 +433,32 @@ export default function AdminPage() {
 
               {/* Version */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <span style={{ color: 'var(--text-secondary)', fontSize: '10px', letterSpacing: '0.06em', fontFamily: 'monospace' }}>version</span>
-                <span style={{ color: 'var(--text-primary)', fontSize: '13px', fontFamily: 'monospace', fontWeight: 600 }}>
+                <span style={{ color: 'var(--color-text-muted)', fontSize: '10px', letterSpacing: '0.06em', fontFamily: 'monospace' }}>version</span>
+                <span style={{ color: 'var(--color-text)', fontSize: '13px', fontFamily: 'monospace', fontWeight: 600 }}>
                   {status.version}
                 </span>
               </div>
 
               {/* Uptime */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <span style={{ color: 'var(--text-secondary)', fontSize: '10px', letterSpacing: '0.06em', fontFamily: 'monospace' }}>uptime</span>
-                <span style={{ color: 'var(--text-primary)', fontSize: '13px', fontFamily: 'monospace', fontWeight: 600 }}>
+                <span style={{ color: 'var(--color-text-muted)', fontSize: '10px', letterSpacing: '0.06em', fontFamily: 'monospace' }}>uptime</span>
+                <span style={{ color: 'var(--color-text)', fontSize: '13px', fontFamily: 'monospace', fontWeight: 600 }}>
                   {formatUptime(status.uptime_secs)}
                 </span>
               </div>
 
               {/* Active sessions */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <span style={{ color: 'var(--text-secondary)', fontSize: '10px', letterSpacing: '0.06em', fontFamily: 'monospace' }}>active sessions</span>
-                <span style={{ color: 'var(--text-primary)', fontSize: '13px', fontFamily: 'monospace', fontWeight: 600 }}>
+                <span style={{ color: 'var(--color-text-muted)', fontSize: '10px', letterSpacing: '0.06em', fontFamily: 'monospace' }}>active sessions</span>
+                <span style={{ color: 'var(--color-text)', fontSize: '13px', fontFamily: 'monospace', fontWeight: 600 }}>
                   {status.sessions.active}
                 </span>
               </div>
 
               {/* Total events */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <span style={{ color: 'var(--text-secondary)', fontSize: '10px', letterSpacing: '0.06em', fontFamily: 'monospace' }}>total events</span>
-                <span style={{ color: 'var(--text-primary)', fontSize: '13px', fontFamily: 'monospace', fontWeight: 600 }}>
+                <span style={{ color: 'var(--color-text-muted)', fontSize: '10px', letterSpacing: '0.06em', fontFamily: 'monospace' }}>total events</span>
+                <span style={{ color: 'var(--color-text)', fontSize: '13px', fontFamily: 'monospace', fontWeight: 600 }}>
                   {status.sessions.total_events}
                 </span>
               </div>
@@ -469,7 +469,7 @@ export default function AdminPage() {
         {/* ── Provider Cards ── */}
         {status && status.providers && status.providers.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <span style={{ color: 'var(--text-secondary)', fontSize: '11px', letterSpacing: '0.08em', fontFamily: 'monospace' }}>
+            <span style={{ color: 'var(--color-text-muted)', fontSize: '11px', letterSpacing: '0.08em', fontFamily: 'monospace' }}>
               llm providers
             </span>
             <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' as const }}>
@@ -477,7 +477,7 @@ export default function AdminPage() {
                 <div
                   key={provider.name}
                   style={{
-                    background: 'var(--bg-secondary)',
+                    background: 'var(--color-surface)',
                     border: provider.available
                       ? '1px solid rgba(0,255,136,0.25)'
                       : '1px solid rgba(255,68,68,0.25)',
@@ -493,7 +493,7 @@ export default function AdminPage() {
                 >
                   {/* Provider name */}
                   <span style={{
-                    color: 'var(--text-primary)',
+                    color: 'var(--color-text)',
                     fontSize: '13px',
                     fontFamily: 'monospace',
                     fontWeight: 700,
@@ -504,7 +504,7 @@ export default function AdminPage() {
 
                   {/* Binary */}
                   <span style={{
-                    color: 'var(--text-secondary)',
+                    color: 'var(--color-text-muted)',
                     fontSize: '11px',
                     fontFamily: 'monospace',
                     opacity: 0.75,
@@ -516,13 +516,13 @@ export default function AdminPage() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
                     <span style={{
                       fontSize: '14px',
-                      color: provider.available ? 'var(--accent-green)' : 'var(--accent-red)',
+                      color: provider.available ? 'var(--color-success)' : 'var(--color-error)',
                       lineHeight: 1,
                     }}>
                       {provider.available ? '✓' : '✗'}
                     </span>
                     <span style={{
-                      color: provider.available ? 'var(--accent-green)' : 'var(--accent-red)',
+                      color: provider.available ? 'var(--color-success)' : 'var(--color-error)',
                       fontSize: '11px',
                       fontFamily: 'monospace',
                       fontWeight: 600,
@@ -553,12 +553,12 @@ export default function AdminPage() {
             flexWrap: 'wrap' as const,
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span style={{ color: 'var(--text-secondary)', fontSize: '11px', letterSpacing: '0.08em', fontFamily: 'monospace' }}>
+              <span style={{ color: 'var(--color-text-muted)', fontSize: '11px', letterSpacing: '0.08em', fontFamily: 'monospace' }}>
                 event log
               </span>
               {eventsData && (
                 <span style={{
-                  color: 'var(--text-secondary)',
+                  color: 'var(--color-text-muted)',
                   fontSize: '10px',
                   fontFamily: 'monospace',
                   opacity: 0.55,
@@ -567,7 +567,7 @@ export default function AdminPage() {
                 </span>
               )}
               {eventsUpdatedAt && (
-                <span style={{ color: 'var(--text-secondary)', fontSize: '10px', opacity: 0.45, fontFamily: 'monospace' }}>
+                <span style={{ color: 'var(--color-text-muted)', fontSize: '10px', opacity: 0.45, fontFamily: 'monospace' }}>
                   · updated {secsAgo(eventsUpdatedAt)}
                 </span>
               )}
@@ -575,7 +575,7 @@ export default function AdminPage() {
 
             {/* Filter buttons */}
             <div style={{ display: 'flex', gap: '6px' }}>
-              <FilterBtn label="all" active={levelFilter === 'all'} color="var(--text-secondary)" onClick={() => setLevelFilter('all')} />
+              <FilterBtn label="all" active={levelFilter === 'all'} color="var(--color-text-muted)" onClick={() => setLevelFilter('all')} />
               <FilterBtn label="error" active={levelFilter === 'error'} color="#ff4444" onClick={() => setLevelFilter('error')} />
               <FilterBtn label="warn" active={levelFilter === 'warn'} color="#ffd700" onClick={() => setLevelFilter('warn')} />
               <FilterBtn label="info" active={levelFilter === 'info'} color="#00d4ff" onClick={() => setLevelFilter('info')} />
@@ -585,7 +585,7 @@ export default function AdminPage() {
           {/* Error banner */}
           {eventsError && (
             <div style={{
-              color: 'var(--accent-red)',
+              color: 'var(--color-error)',
               fontSize: '12px',
               fontFamily: 'monospace',
               padding: '8px 12px',
@@ -599,21 +599,21 @@ export default function AdminPage() {
 
           {/* Scrollable list */}
           <div style={{
-            background: 'var(--bg-secondary)',
-            border: '1px solid var(--border)',
+            background: 'var(--color-surface)',
+            border: '1px solid var(--color-border)',
             borderRadius: '3px',
             overflow: 'auto',
             maxHeight: '480px',
             fontFamily: 'monospace',
           }}>
             {!eventsData && !eventsError && (
-              <div style={{ padding: '24px', color: 'var(--text-secondary)', fontSize: '12px', textAlign: 'center' }}>
+              <div style={{ padding: '24px', color: 'var(--color-text-muted)', fontSize: '12px', textAlign: 'center' }}>
                 loading events…
               </div>
             )}
 
             {eventsData && filteredEvents.length === 0 && (
-              <div style={{ padding: '32px', color: 'var(--text-secondary)', fontSize: '12px', textAlign: 'center' }}>
+              <div style={{ padding: '32px', color: 'var(--color-text-muted)', fontSize: '12px', textAlign: 'center' }}>
                 no events{levelFilter !== 'all' ? ` matching "${levelFilter}"` : ''}
               </div>
             )}

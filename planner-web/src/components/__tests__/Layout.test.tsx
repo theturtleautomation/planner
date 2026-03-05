@@ -1,84 +1,87 @@
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect } from 'vitest';
+import { MemoryRouter } from 'react-router-dom';
 import Layout from '../Layout';
 
-// AUTH0_ENABLED is false in test environment (no env vars set),
-// so UserInfo renders the dev mode component (no useAuth0 calls needed beyond mock)
+// Helper: wraps Layout with MemoryRouter so useLocation/Link work
+function renderLayout(props: { sessionId?: string; isConnected?: boolean; children?: React.ReactNode }, route = '/') {
+  return render(
+    <MemoryRouter initialEntries={[route]}>
+      <Layout {...props}>{props.children ?? <span />}</Layout>
+    </MemoryRouter>
+  );
+}
+
 describe('Layout', () => {
   it('renders children', () => {
-    render(<Layout><div>Child content</div></Layout>);
+    renderLayout({ children: <div>Child content</div> });
     expect(screen.getByText('Child content')).toBeInTheDocument();
   });
 
-  it('renders ASCII banner with Planner aria-label', () => {
-    render(<Layout><span /></Layout>);
-    expect(screen.getByLabelText('Planner')).toBeInTheDocument();
+  it('renders Planner logo with aria-label', () => {
+    renderLayout({});
+    expect(screen.getByLabelText('Planner logo')).toBeInTheDocument();
   });
 
-  it('renders the Socratic Lobby subtitle', () => {
-    render(<Layout><span /></Layout>);
-    expect(screen.getByText('SOCRATIC LOBBY')).toBeInTheDocument();
+  it('renders Planner wordmark', () => {
+    renderLayout({});
+    expect(screen.getByText('Planner')).toBeInTheDocument();
   });
 
-  it('renders v2 label', () => {
-    render(<Layout><span /></Layout>);
-    expect(screen.getByText('v2')).toBeInTheDocument();
-  });
-
-  it('header has role="banner"', () => {
-    render(<Layout><span /></Layout>);
-    expect(screen.getByRole('banner')).toBeInTheDocument();
+  it('renders sidebar navigation links', () => {
+    renderLayout({});
+    expect(screen.getByText('Sessions')).toBeInTheDocument();
+    expect(screen.getByText('Blueprint')).toBeInTheDocument();
+    expect(screen.getByText('Admin')).toBeInTheDocument();
   });
 
   it('renders main element for content area', () => {
-    render(<Layout><span>main child</span></Layout>);
+    renderLayout({ children: <span>main child</span> });
     expect(screen.getByRole('main')).toBeInTheDocument();
     expect(screen.getByText('main child')).toBeInTheDocument();
   });
 
-  it('shows session id when sessionId is provided', () => {
-    render(<Layout sessionId="abcdef1234567890"><span /></Layout>);
-    expect(screen.getByText(/session: abcdef12/i)).toBeInTheDocument();
+  it('highlights active nav item based on current route', () => {
+    renderLayout({}, '/blueprint');
+    const blueprintLink = screen.getByText('Blueprint').closest('a');
+    expect(blueprintLink?.className).toContain('active');
   });
 
-  it('does not show session id when sessionId is not provided', () => {
-    render(<Layout><span /></Layout>);
-    expect(screen.queryByText(/session:/i)).not.toBeInTheDocument();
+  it('highlights Sessions for session sub-routes', () => {
+    renderLayout({}, '/session/abc123');
+    const sessionsLink = screen.getByText('Sessions').closest('a');
+    expect(sessionsLink?.className).toContain('active');
   });
 
-  it('shows connection status indicator when sessionId is provided', () => {
-    render(<Layout sessionId="abc" isConnected={true}><span /></Layout>);
-    expect(screen.getByRole('status', { name: /connection status/i })).toBeInTheDocument();
-  });
-
-  it('shows "connected" text when isConnected is true', () => {
-    render(<Layout sessionId="abc" isConnected={true}><span /></Layout>);
+  it('shows connection status when sessionId is provided and connected', () => {
+    renderLayout({ sessionId: 'abc', isConnected: true });
     expect(screen.getByText('connected')).toBeInTheDocument();
   });
 
-  it('shows "disconnected" text when isConnected is false', () => {
-    render(<Layout sessionId="abc" isConnected={false}><span /></Layout>);
+  it('shows disconnected status when isConnected is false', () => {
+    renderLayout({ sessionId: 'abc', isConnected: false });
     expect(screen.getByText('disconnected')).toBeInTheDocument();
   });
 
-  it('does NOT show connection status indicator when sessionId is undefined', () => {
-    render(<Layout><span /></Layout>);
-    expect(screen.queryByRole('status', { name: /connection status/i })).not.toBeInTheDocument();
+  it('does NOT show connection status when sessionId is undefined', () => {
+    renderLayout({});
+    expect(screen.queryByText('connected')).not.toBeInTheDocument();
+    expect(screen.queryByText('disconnected')).not.toBeInTheDocument();
   });
 
-  it('connection status indicator has correct aria-label', () => {
-    render(<Layout sessionId="test-id" isConnected={true}><span /></Layout>);
-    const indicator = screen.getByRole('status');
-    expect(indicator).toHaveAttribute('aria-label', 'Connection status');
+  it('renders theme toggle button', () => {
+    renderLayout({});
+    // Theme toggle has aria-label "Switch to light mode" or "Switch to dark mode"
+    expect(screen.getByRole('button', { name: /switch to/i })).toBeInTheDocument();
   });
 });
 
 // Test the Auth0-enabled variant by mocking config
-describe('Layout with Auth0 enabled (user info)', () => {
-  it('shows dev mode label in dev mode', () => {
+describe('Layout with Auth0 disabled (dev mode)', () => {
+  it('shows dev label in dev mode', () => {
     // AUTH0_ENABLED is determined by env vars; in test environment it's false
-    // so UserInfoDev renders "dev mode" label.
-    render(<Layout><span /></Layout>);
-    expect(screen.getByText('dev mode')).toBeInTheDocument();
+    // so UserInfoDev renders "dev" label.
+    renderLayout({});
+    expect(screen.getByText('dev')).toBeInTheDocument();
   });
 });

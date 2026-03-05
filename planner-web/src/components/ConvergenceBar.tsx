@@ -10,10 +10,10 @@ export default function ConvergenceBar({ convergencePct, classification }: Conve
 
   const fillColor =
     pct >= 80
-      ? 'var(--accent-green)'
+      ? 'var(--color-success)'
       : pct >= 50
-      ? 'var(--accent-yellow)'
-      : 'var(--text-secondary)';
+      ? 'var(--color-gold)'
+      : 'var(--color-text-muted)';
 
   const rightText = classification
     ? `${pct}% · ${classification.project_type} · ${classification.complexity}`
@@ -24,8 +24,8 @@ export default function ConvergenceBar({ convergencePct, classification }: Conve
       className={pct >= 80 ? 'convergence-high' : undefined}
       style={{
         height: '36px',
-        background: 'var(--bg-secondary)',
-        borderBottom: '1px solid var(--border)',
+        background: 'var(--color-surface)',
+        borderBottom: '1px solid var(--color-border)',
         display: 'flex',
         alignItems: 'center',
         flexShrink: 0,
@@ -63,7 +63,7 @@ export default function ConvergenceBar({ convergencePct, classification }: Conve
             fontSize: '10px',
             letterSpacing: '0.08em',
             textTransform: 'uppercase',
-            color: 'var(--text-secondary)',
+            color: 'var(--color-text-muted)',
             fontWeight: 700,
           }}
         >
@@ -87,7 +87,7 @@ export default function ConvergenceBar({ convergencePct, classification }: Conve
           <span
             style={{
               fontSize: '11px',
-              color: 'var(--text-secondary)',
+              color: 'var(--color-text-muted)',
               fontStyle: 'italic',
             }}
           >
