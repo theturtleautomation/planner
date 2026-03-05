@@ -1,9 +1,23 @@
-//! # Session Store — In-Memory Planning Session Management
+//! # Session Store — Memory-First, Disk-Backed Session Management
 //!
 //! Tracks active Socratic planning sessions with their chat history
-//! and pipeline state.
+//! and pipeline state. Sessions live in memory for fast access and
+//! are periodically flushed to disk as MessagePack for crash safety.
+//!
+//! ## Persistence Model
+//!
+//! - **Hot path**: All reads/writes go through an in-memory `HashMap` behind
+//!   a `RwLock`. Zero overhead compared to the previous in-memory-only store.
+//! - **Dirty tracking**: Mutations mark sessions dirty via a `HashSet<Uuid>`.
+//! - **Background flush**: A Tokio task runs every 5 seconds, writing dirty
+//!   sessions to `{data_dir}/sessions/{id}.msgpack` with atomic rename.
+//! - **Startup load**: `SessionStore::open()` reads all `.msgpack` files from
+//!   the sessions directory back into memory.
+//! - **Atomic writes**: Each flush writes to a `.tmp` file then renames,
+//!   ensuring a crash mid-write never corrupts the on-disk copy.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -159,16 +173,97 @@ impl Session {
 // Session Store
 // ---------------------------------------------------------------------------
 
-/// Thread-safe in-memory store for planning sessions.
+/// Thread-safe, memory-first, disk-backed store for planning sessions.
+///
+/// All operations hit the in-memory HashMap directly. Mutations mark sessions
+/// dirty; a background task periodically flushes dirty sessions to disk as
+/// MessagePack with atomic rename for crash safety.
 pub struct SessionStore {
     pub(crate) sessions: RwLock<HashMap<Uuid, Session>>,
+    dirty: RwLock<HashSet<Uuid>>,
+    sessions_dir: Option<PathBuf>,
 }
 
 impl SessionStore {
+    /// Create a purely in-memory store with no disk backing.
+    /// Used in tests or when persistence is not needed.
     pub fn new() -> Self {
         SessionStore {
             sessions: RwLock::new(HashMap::new()),
+            dirty: RwLock::new(HashSet::new()),
+            sessions_dir: None,
         }
+    }
+
+    /// Open a disk-backed store, loading existing sessions from `data_dir/sessions/`.
+    ///
+    /// Creates the sessions directory if it doesn't exist. Any `.msgpack` files
+    /// in the directory are deserialized into memory on startup.
+    pub fn open(data_dir: &Path) -> std::io::Result<Self> {
+        let sessions_dir = data_dir.join("sessions");
+        std::fs::create_dir_all(&sessions_dir)?;
+
+        let mut sessions = HashMap::new();
+        let mut load_errors = 0u32;
+
+        for entry in std::fs::read_dir(&sessions_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+
+            if !name.ends_with(".msgpack") {
+                continue;
+            }
+
+            let id_str = match name.strip_suffix(".msgpack") {
+                Some(s) => s,
+                None => continue,
+            };
+
+            let id = match Uuid::parse_str(id_str) {
+                Ok(id) => id,
+                Err(_) => {
+                    tracing::warn!("Skipping non-UUID session file: {}", name);
+                    continue;
+                }
+            };
+
+            match std::fs::read(&path) {
+                Ok(bytes) => {
+                    match rmp_serde::from_slice::<Session>(&bytes) {
+                        Ok(session) => {
+                            tracing::debug!("Loaded session {} from disk", id);
+                            sessions.insert(id, session);
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to decode session {}: {}", id, e);
+                            load_errors += 1;
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Failed to read session file {}: {}", name, e);
+                    load_errors += 1;
+                }
+            }
+        }
+
+        let count = sessions.len();
+        if load_errors > 0 {
+            tracing::warn!(
+                "Session store: loaded {} sessions, {} files had errors",
+                count, load_errors,
+            );
+        } else if count > 0 {
+            tracing::info!("Session store: loaded {} sessions from disk", count);
+        }
+
+        Ok(SessionStore {
+            sessions: RwLock::new(sessions),
+            dirty: RwLock::new(HashSet::new()),
+            sessions_dir: Some(sessions_dir),
+        })
     }
 
     /// Create a new session owned by `user_id` and return it.
@@ -176,6 +271,7 @@ impl SessionStore {
         let session = Session::new(user_id);
         let id = session.id;
         self.sessions.write().insert(id, session.clone());
+        self.mark_dirty(id);
         session
     }
 
@@ -184,6 +280,7 @@ impl SessionStore {
         let mut sessions = self.sessions.write();
         if let Some(session) = sessions.get_mut(&id) {
             session.last_accessed = Utc::now().to_rfc3339();
+            self.mark_dirty(id);
             Some(session.clone())
         } else {
             None
@@ -199,6 +296,7 @@ impl SessionStore {
         if let Some(session) = sessions.get_mut(&id) {
             f(session);
             session.last_accessed = Utc::now().to_rfc3339();
+            self.mark_dirty(id);
             Some(session.clone())
         } else {
             None
@@ -226,23 +324,146 @@ impl SessionStore {
     }
 
     /// Remove sessions that have not been accessed within `max_age_secs` seconds.
+    /// Also removes their on-disk files.
     pub fn cleanup_expired(&self, max_age_secs: u64) {
         let now = Utc::now();
         let mut sessions = self.sessions.write();
         let before = sessions.len();
-        sessions.retain(|_id, session| {
-            // Parse last_accessed; if unparseable, keep the session.
+
+        let mut removed_ids = Vec::new();
+        sessions.retain(|id, session| {
             if let Ok(last) = chrono::DateTime::parse_from_rfc3339(&session.last_accessed) {
                 let age = now.signed_duration_since(last).num_seconds();
-                age < max_age_secs as i64
-            } else {
-                true
+                if age >= max_age_secs as i64 {
+                    removed_ids.push(*id);
+                    return false;
+                }
             }
+            true
         });
+
         let removed = before - sessions.len();
+        // Drop the lock before doing I/O.
+        drop(sessions);
+
+        // Clean up dirty set and disk files for removed sessions.
+        if !removed_ids.is_empty() {
+            let mut dirty = self.dirty.write();
+            for id in &removed_ids {
+                dirty.remove(id);
+                self.delete_from_disk(*id);
+            }
+        }
+
         if removed > 0 {
             tracing::info!("Session cleanup: removed {} expired session(s)", removed);
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // Persistence internals
+    // -----------------------------------------------------------------------
+
+    /// Mark a session as needing a flush to disk.
+    fn mark_dirty(&self, id: Uuid) {
+        if self.sessions_dir.is_some() {
+            self.dirty.write().insert(id);
+        }
+    }
+
+    /// Flush all dirty sessions to disk. Called by the background flush task.
+    ///
+    /// Uses atomic write-then-rename: data goes to `{id}.msgpack.tmp` first,
+    /// then is renamed to `{id}.msgpack`. This means a crash mid-write leaves
+    /// the previous good copy intact.
+    pub fn flush_dirty(&self) -> (usize, usize) {
+        let sessions_dir = match &self.sessions_dir {
+            Some(d) => d,
+            None => return (0, 0),
+        };
+
+        // Snapshot and clear dirty set.
+        let dirty_ids: Vec<Uuid> = {
+            let mut dirty = self.dirty.write();
+            let ids: Vec<Uuid> = dirty.drain().collect();
+            ids
+        };
+
+        if dirty_ids.is_empty() {
+            return (0, 0);
+        }
+
+        let mut flushed = 0usize;
+        let mut errors = 0usize;
+
+        // Read-lock to snapshot sessions.
+        let sessions = self.sessions.read();
+
+        for id in &dirty_ids {
+            let session = match sessions.get(id) {
+                Some(s) => s,
+                None => continue, // Session was deleted between mark and flush.
+            };
+
+            let final_path = sessions_dir.join(format!("{}.msgpack", id));
+            let tmp_path = sessions_dir.join(format!("{}.msgpack.tmp", id));
+
+            match rmp_serde::to_vec(session) {
+                Ok(bytes) => {
+                    if let Err(e) = std::fs::write(&tmp_path, &bytes) {
+                        tracing::error!("Failed to write tmp session {}: {}", id, e);
+                        // Re-mark as dirty so we retry next cycle.
+                        self.dirty.write().insert(*id);
+                        errors += 1;
+                        continue;
+                    }
+                    if let Err(e) = std::fs::rename(&tmp_path, &final_path) {
+                        tracing::error!("Failed to rename session {}: {}", id, e);
+                        self.dirty.write().insert(*id);
+                        errors += 1;
+                        continue;
+                    }
+                    flushed += 1;
+                }
+                Err(e) => {
+                    tracing::error!("Failed to encode session {}: {}", id, e);
+                    errors += 1;
+                }
+            }
+        }
+
+        if flushed > 0 || errors > 0 {
+            tracing::debug!("Session flush: {} written, {} errors", flushed, errors);
+        }
+
+        (flushed, errors)
+    }
+
+    /// Delete a session's file from disk.
+    fn delete_from_disk(&self, id: Uuid) {
+        if let Some(dir) = &self.sessions_dir {
+            let path = dir.join(format!("{}.msgpack", id));
+            if path.exists() {
+                if let Err(e) = std::fs::remove_file(&path) {
+                    tracing::warn!("Failed to delete session file {}: {}", id, e);
+                }
+            }
+            // Also clean up any lingering tmp file.
+            let tmp = dir.join(format!("{}.msgpack.tmp", id));
+            if tmp.exists() {
+                let _ = std::fs::remove_file(&tmp);
+            }
+        }
+    }
+
+    /// Returns true if this store has disk backing enabled.
+    pub fn is_persistent(&self) -> bool {
+        self.sessions_dir.is_some()
+    }
+
+    /// Number of sessions currently marked dirty.
+    pub fn dirty_count(&self) -> usize {
+        self.dirty.read().len()
     }
 
 } // impl SessionStore
@@ -428,9 +649,298 @@ mod tests {
         store.cleanup_expired(3600);
 
         // s1 should be removed, s2 should remain
-        // (Note: count() acquires a write lock via get(), so we use read count)
         assert_eq!(store.sessions.read().len(), 1);
         assert!(store.sessions.read().get(&s1.id).is_none());
         assert!(store.sessions.read().get(&s2.id).is_some());
+    }
+
+    // -----------------------------------------------------------------------
+    // Persistence tests — real disk I/O, simulates server restart
+    // -----------------------------------------------------------------------
+
+    fn temp_data_dir() -> PathBuf {
+        std::env::temp_dir().join(format!("planner_session_test_{}", Uuid::new_v4()))
+    }
+
+    #[test]
+    fn disk_backed_store_persists_across_restart() {
+        let data_dir = temp_data_dir();
+
+        let session_id;
+        let user_msg_content = "Build a CLI tool for managing Docker containers";
+
+        // --- First "server lifetime" ---
+        {
+            let store = SessionStore::open(&data_dir).unwrap();
+            assert!(store.is_persistent());
+            assert_eq!(store.count(), 0);
+
+            let session = store.create("dev|local");
+            session_id = session.id;
+
+            // Add real messages simulating a Socratic interview.
+            store.update(session_id, |s| {
+                s.add_message("user", user_msg_content);
+                s.add_message("planner", "What programming language would you prefer?");
+                s.add_message("user", "Rust, obviously.");
+                s.project_description = Some("Docker CLI manager".into());
+                s.intake_phase = "interviewing".into();
+            });
+
+            // Record an event.
+            store.update(session_id, |s| {
+                let event = planner_core::observability::PlannerEvent::info(
+                    planner_core::observability::EventSource::SocraticEngine,
+                    "socratic.question.asked",
+                    "Asked about programming language preference",
+                );
+                s.record_event(event);
+            });
+
+            assert_eq!(store.count(), 1);
+            assert_eq!(store.dirty_count(), 1);
+
+            // Flush to disk.
+            let (flushed, errors) = store.flush_dirty();
+            assert_eq!(flushed, 1);
+            assert_eq!(errors, 0);
+            assert_eq!(store.dirty_count(), 0);
+        }
+        // Store dropped here — simulates server shutdown.
+
+        // --- Second "server lifetime" ---
+        {
+            let store = SessionStore::open(&data_dir).unwrap();
+
+            // Verify the session survived the "restart".
+            assert_eq!(store.count(), 1);
+
+            let session = store.get(session_id).expect("session should survive restart");
+            assert_eq!(session.user_id, "dev|local");
+            assert_eq!(session.project_description.as_deref(), Some("Docker CLI manager"));
+            assert_eq!(session.intake_phase, "interviewing");
+
+            // 1 system welcome + 3 user/planner messages = 4 total
+            assert_eq!(session.messages.len(), 4);
+            assert_eq!(session.messages[1].content, user_msg_content);
+            assert_eq!(session.messages[1].role, "user");
+            assert_eq!(session.messages[2].content, "What programming language would you prefer?");
+            assert_eq!(session.messages[3].content, "Rust, obviously.");
+
+            // Event survived too.
+            assert_eq!(session.events.len(), 1);
+            assert_eq!(session.events[0].step.as_deref(), Some("socratic.question.asked"));
+
+            // IDs list works.
+            let ids = store.list_ids();
+            assert_eq!(ids.len(), 1);
+            assert!(ids.contains(&session_id));
+        }
+
+        // Cleanup.
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    fn disk_backed_store_multiple_sessions_multiple_flushes() {
+        let data_dir = temp_data_dir();
+
+        let id_a;
+        let id_b;
+
+        {
+            let store = SessionStore::open(&data_dir).unwrap();
+
+            let sa = store.create("user_alpha");
+            let sb = store.create("user_beta");
+            id_a = sa.id;
+            id_b = sb.id;
+
+            store.update(id_a, |s| {
+                s.add_message("user", "Hello from alpha");
+            });
+
+            // First flush — both dirty.
+            let (flushed, _) = store.flush_dirty();
+            assert_eq!(flushed, 2);
+
+            // Now only update B.
+            store.update(id_b, |s| {
+                s.add_message("user", "Hello from beta");
+                s.pipeline_running = true;
+            });
+
+            // Second flush — only B is dirty.
+            let (flushed, _) = store.flush_dirty();
+            assert_eq!(flushed, 1);
+        }
+
+        // Reload.
+        {
+            let store = SessionStore::open(&data_dir).unwrap();
+            assert_eq!(store.count(), 2);
+
+            let sa = store.get(id_a).unwrap();
+            assert_eq!(sa.user_id, "user_alpha");
+            assert_eq!(sa.messages.len(), 2); // system + 1 user msg
+
+            let sb = store.get(id_b).unwrap();
+            assert_eq!(sb.user_id, "user_beta");
+            assert_eq!(sb.messages.len(), 2);
+            assert!(sb.pipeline_running);
+        }
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    fn disk_backed_store_cleanup_removes_files() {
+        let data_dir = temp_data_dir();
+
+        let expired_id;
+        let fresh_id;
+
+        {
+            let store = SessionStore::open(&data_dir).unwrap();
+
+            let expired = store.create("user_old");
+            let fresh = store.create("user_new");
+            expired_id = expired.id;
+            fresh_id = fresh.id;
+
+            // Flush both to disk.
+            store.flush_dirty();
+
+            // Back-date the expired session.
+            {
+                let old_time = (chrono::Utc::now() - chrono::Duration::seconds(7200)).to_rfc3339();
+                store.sessions.write().get_mut(&expired_id).unwrap().last_accessed = old_time;
+            }
+
+            // Run cleanup.
+            store.cleanup_expired(3600);
+
+            assert_eq!(store.count(), 1);
+
+            // Verify the file was deleted.
+            let expired_path = data_dir.join("sessions").join(format!("{}.msgpack", expired_id));
+            assert!(!expired_path.exists(), "expired session file should be deleted");
+        }
+
+        // Reload — only fresh session should exist.
+        {
+            let store = SessionStore::open(&data_dir).unwrap();
+            assert_eq!(store.count(), 1);
+            assert!(store.get(fresh_id).is_some());
+            assert!(store.get(expired_id).is_none());
+        }
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    fn disk_backed_store_atomic_write_safety() {
+        // Verify that .tmp files don't interfere with loading.
+        let data_dir = temp_data_dir();
+        let sessions_dir = data_dir.join("sessions");
+        std::fs::create_dir_all(&sessions_dir).unwrap();
+
+        // Write a valid session.
+        let mut session = Session::new("dev|test_atomic");
+        session.add_message("user", "Testing atomicity");
+        let bytes = rmp_serde::to_vec(&session).unwrap();
+        std::fs::write(sessions_dir.join(format!("{}.msgpack", session.id)), &bytes).unwrap();
+
+        // Write a stale .tmp file (should be ignored on load).
+        std::fs::write(
+            sessions_dir.join(format!("{}.msgpack.tmp", Uuid::new_v4())),
+            b"garbage data",
+        ).unwrap();
+
+        let store = SessionStore::open(&data_dir).unwrap();
+        assert_eq!(store.count(), 1);
+        let loaded = store.get(session.id).unwrap();
+        assert_eq!(loaded.messages.len(), 2);
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    fn disk_backed_store_handles_corrupt_file_gracefully() {
+        let data_dir = temp_data_dir();
+        let sessions_dir = data_dir.join("sessions");
+        std::fs::create_dir_all(&sessions_dir).unwrap();
+
+        // Write a valid session.
+        let valid = Session::new("dev|valid");
+        let valid_bytes = rmp_serde::to_vec(&valid).unwrap();
+        std::fs::write(sessions_dir.join(format!("{}.msgpack", valid.id)), &valid_bytes).unwrap();
+
+        // Write a corrupt file.
+        let corrupt_id = Uuid::new_v4();
+        std::fs::write(
+            sessions_dir.join(format!("{}.msgpack", corrupt_id)),
+            b"this is not messagepack",
+        ).unwrap();
+
+        // Store should load the valid session and skip the corrupt one.
+        let store = SessionStore::open(&data_dir).unwrap();
+        assert_eq!(store.count(), 1);
+        assert!(store.get(valid.id).is_some());
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    fn messagepack_round_trip_fidelity() {
+        // Verify that MessagePack encoding preserves all session fields
+        // with the same fidelity as JSON (which is already tested elsewhere).
+        use planner_core::observability::{PlannerEvent, EventSource};
+
+        let mut session = Session::new("auth0|roundtrip");
+        session.add_message("user", "Build me something complex");
+        session.project_description = Some("A complex system".into());
+        session.intake_phase = "interviewing".into();
+        session.pipeline_running = true;
+
+        let event = PlannerEvent::info(EventSource::LlmRouter, "llm.call.complete", "Done")
+            .with_duration(456)
+            .with_metadata(serde_json::json!({"model": "gemini-2.5-pro", "tokens": 1500}));
+        session.record_event(event);
+
+        let error_event = PlannerEvent::error(EventSource::Pipeline, "pipeline.fail", "Timeout");
+        session.record_event(error_event);
+
+        // Encode → decode via MessagePack.
+        let bytes = rmp_serde::to_vec(&session).unwrap();
+        let decoded: Session = rmp_serde::from_slice(&bytes).unwrap();
+
+        assert_eq!(decoded.id, session.id);
+        assert_eq!(decoded.user_id, "auth0|roundtrip");
+        assert_eq!(decoded.project_description.as_deref(), Some("A complex system"));
+        assert_eq!(decoded.intake_phase, "interviewing");
+        assert!(decoded.pipeline_running);
+        assert_eq!(decoded.messages.len(), 2);
+        assert_eq!(decoded.events.len(), 2);
+        assert_eq!(decoded.events[0].duration_ms, Some(456));
+        assert_eq!(decoded.events[0].metadata["model"], "gemini-2.5-pro");
+        assert_eq!(decoded.events[0].metadata["tokens"], 1500);
+        assert_eq!(decoded.events[1].level, planner_core::observability::EventLevel::Error);
+        assert_eq!(decoded.error_message.as_deref(), Some("Timeout"));
+        assert_eq!(decoded.current_step.as_deref(), Some("pipeline.fail"));
+        assert_eq!(decoded.stages.len(), 12);
+    }
+
+    #[test]
+    fn in_memory_store_has_no_persistence() {
+        let store = SessionStore::new();
+        assert!(!store.is_persistent());
+
+        store.create("dev|local");
+        assert_eq!(store.dirty_count(), 0); // Not tracked when no disk backing.
+
+        let (flushed, errors) = store.flush_dirty();
+        assert_eq!(flushed, 0);
+        assert_eq!(errors, 0);
     }
 }

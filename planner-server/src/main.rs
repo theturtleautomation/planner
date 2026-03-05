@@ -70,8 +70,23 @@ async fn main() {
         tracing::warn!("Auth0 not configured — running in dev mode (no auth)");
     }
 
-    // Initialize event persistence
+    // Initialize session store — disk-backed, loads existing sessions on startup.
     let data_dir = std::env::var("PLANNER_DATA_DIR").unwrap_or_else(|_| "./data".to_string());
+    let session_store = match SessionStore::open(std::path::Path::new(&data_dir)) {
+        Ok(store) => {
+            tracing::info!(
+                "Session persistence enabled: {}/sessions/ ({} sessions loaded)",
+                data_dir, store.count(),
+            );
+            store
+        }
+        Err(e) => {
+            tracing::warn!("Session persistence unavailable ({}), falling back to in-memory only", e);
+            SessionStore::new()
+        }
+    };
+
+    // Initialize event persistence
     let event_store = match planner_core::observability::EventStore::new(std::path::Path::new(&data_dir)) {
         Ok(store) => {
             tracing::info!("Event persistence enabled: {}/events/", data_dir);
@@ -85,7 +100,7 @@ async fn main() {
 
     // Create shared state
     let state = Arc::new(AppState {
-        sessions: SessionStore::new(),
+        sessions: session_store,
         auth_config,
         event_store,
         started_at: std::time::Instant::now(),
@@ -122,6 +137,21 @@ async fn main() {
             rate_limit::rate_limit_middleware,
         ))
         .layer(cors);
+
+    // Start background session flush task (runs every 5 seconds)
+    {
+        let flush_state = state.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
+            loop {
+                interval.tick().await;
+                let (flushed, errors) = flush_state.sessions.flush_dirty();
+                if errors > 0 {
+                    tracing::warn!("Session flush: {} written, {} errors", flushed, errors);
+                }
+            }
+        });
+    }
 
     // Start background session cleanup task (runs every 5 minutes)
     {
