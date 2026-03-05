@@ -258,8 +258,7 @@ pub fn routes(state: Arc<AppState>) -> Router {
         .route("/sessions/{id}/socratic", post(start_socratic))
         .route("/sessions/{id}/socratic/ws", get(socratic_ws_handler))
         .route("/sessions/{id}/belief-state", get(get_belief_state))
-        // CXDB read API — Phase 6 wiring (Change 4)
-        // Returns empty arrays until pipeline runner is wired to durable CxdbEngine store.
+        // CXDB read API — returns real data from durable CXDB storage
         .route("/sessions/{id}/turns", get(list_turns))
         .route("/sessions/{id}/runs", get(list_runs))
         .route("/sessions/{id}/events", get(get_session_events))
@@ -644,54 +643,124 @@ pub async fn run_pipeline_for_session(state: Arc<AppState>, session_id: Uuid, de
             }
         };
 
-    let config =
-        planner_core::pipeline::PipelineConfig::<planner_core::cxdb::CxdbEngine> {
-            router: &router,
-            store: None,
-            dtu_registry: None,
-            blueprints: Some(&state.blueprints),
-        };
     let project_id = Uuid::new_v4();
 
-    match planner_core::pipeline::run_full_pipeline(
-        &config,
-        &worker,
-        project_id,
-        &description,
-    )
-    .await
-    {
-        Ok(output) => {
-            state.sessions.update(session_id, |s| {
-                for stage in &mut s.stages {
-                    stage.status = "complete".into();
+    // Store the project_id in the session so list_turns/list_runs can query it.
+    state.sessions.update(session_id, |s| {
+        s.cxdb_project_id = Some(project_id);
+    });
+
+    // Build PipelineConfig with durable storage if available.
+    // We branch on whether CXDB is available to avoid holding a borrow
+    // across the async pipeline call.
+    let cxdb_ref = state.cxdb.as_ref();
+
+    match cxdb_ref {
+        Some(engine) => {
+            // Register this run in CXDB.
+            let run_id = Uuid::new_v4();
+            if let Err(e) = engine.register_run(project_id, run_id) {
+                tracing::warn!("CXDB: failed to register run: {}", e);
+            }
+
+            let config = planner_core::pipeline::PipelineConfig {
+                router: &router,
+                store: Some(engine),
+                dtu_registry: None,
+                blueprints: Some(&state.blueprints),
+            };
+
+            match planner_core::pipeline::run_full_pipeline(
+                &config,
+                &worker,
+                project_id,
+                &description,
+            )
+            .await
+            {
+                Ok(output) => {
+                    state.sessions.update(session_id, |s| {
+                        for stage in &mut s.stages {
+                            stage.status = "complete".into();
+                        }
+                        s.add_message(
+                            "planner",
+                            &format!(
+                                "Pipeline complete!\n\nProject: {}\nSpecs: {} chunk(s)\nFactory: {:?}",
+                                output.front_office.intake.project_name,
+                                output.front_office.specs.len(),
+                                output.factory_output.build_status,
+                            ),
+                        );
+                        s.pipeline_running = false;
+                    });
+                    tracing::info!("Session {}: pipeline complete", session_id);
                 }
-                s.add_message(
-                    "planner",
-                    &format!(
-                        "Pipeline complete!\n\nProject: {}\nSpecs: {} chunk(s)\nFactory: {:?}",
-                        output.front_office.intake.project_name,
-                        output.front_office.specs.len(),
-                        output.factory_output.build_status,
-                    ),
-                );
-                s.pipeline_running = false;
-            });
-            tracing::info!("Session {}: pipeline complete", session_id);
+                Err(e) => {
+                    state.sessions.update(session_id, |s| {
+                        s.add_message("planner", &format!("Pipeline failed: {}", e));
+                        for stage in &mut s.stages {
+                            if stage.status == "running" {
+                                stage.status = "failed".into();
+                                break;
+                            }
+                        }
+                        s.pipeline_running = false;
+                    });
+                    tracing::warn!("Session {}: pipeline failed: {}", session_id, e);
+                }
+            }
         }
-        Err(e) => {
-            state.sessions.update(session_id, |s| {
-                s.add_message("planner", &format!("Pipeline failed: {}", e));
-                // Mark the first running stage as failed
-                for stage in &mut s.stages {
-                    if stage.status == "running" {
-                        stage.status = "failed".into();
-                        break;
-                    }
+        None => {
+            // No durable storage — run with in-memory CxdbEngine (store: None).
+            let config =
+                planner_core::pipeline::PipelineConfig::<planner_core::cxdb::CxdbEngine> {
+                    router: &router,
+                    store: None,
+                    dtu_registry: None,
+                    blueprints: Some(&state.blueprints),
+                };
+
+            match planner_core::pipeline::run_full_pipeline(
+                &config,
+                &worker,
+                project_id,
+                &description,
+            )
+            .await
+            {
+                Ok(output) => {
+                    state.sessions.update(session_id, |s| {
+                        for stage in &mut s.stages {
+                            stage.status = "complete".into();
+                        }
+                        s.add_message(
+                            "planner",
+                            &format!(
+                                "Pipeline complete!\n\nProject: {}\nSpecs: {} chunk(s)\nFactory: {:?}",
+                                output.front_office.intake.project_name,
+                                output.front_office.specs.len(),
+                                output.factory_output.build_status,
+                            ),
+                        );
+                        s.pipeline_running = false;
+                    });
+                    tracing::info!("Session {}: pipeline complete", session_id);
                 }
-                s.pipeline_running = false;
-            });
-            tracing::warn!("Session {}: pipeline failed: {}", session_id, e);
+                Err(e) => {
+                    state.sessions.update(session_id, |s| {
+                        s.add_message("planner", &format!("Pipeline failed: {}", e));
+                        for stage in &mut s.stages {
+                            if stage.status == "running" {
+                                stage.status = "failed".into();
+                                break;
+                            }
+                        }
+                        s.pipeline_running = false;
+                    });
+                    tracing::warn!("Session {}: pipeline failed: {}", session_id, e);
+                }
+            }
         }
     }
 }
@@ -702,19 +771,16 @@ pub async fn run_pipeline_for_session(state: Arc<AppState>, session_id: Uuid, de
 
 /// List all Turns for a session (metadata only).
 ///
-/// Currently returns an empty list because the server uses
-/// `PipelineConfig::minimal` (no durable storage attached).
-///
-/// When the pipeline runner is updated to accept a persistent CxdbEngine
-/// store, this handler will query `store.list_turns_for_session`.
+/// Queries the durable CXDB engine using the session's stored project_id.
+/// Returns an empty list if no CXDB is configured or no pipeline has run.
 async fn list_turns(
     State(state): State<Arc<AppState>>,
     claims: Claims,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ListTurnsResponse>, (StatusCode, Json<ErrorResponse>)> {
     // Verify session exists and belongs to the requesting user (read-only).
-    match state.sessions.get_if_owned(id, &claims.sub) {
-        Ok(_) => {}
+    let session = match state.sessions.get_if_owned(id, &claims.sub) {
+        Ok(s) => s,
         Err(Some(())) => {
             return Err((
                 StatusCode::FORBIDDEN,
@@ -727,24 +793,41 @@ async fn list_turns(
                 Json(ErrorResponse { error: format!("Session not found: {}", id), code: None }),
             ));
         }
-    }
+    };
 
-    // Returns empty until durable CXDB store is wired into pipeline runner.
-    Ok(Json(ListTurnsResponse { turns: vec![], count: 0 }))
+    // Query CXDB for turns belonging to this session's project.
+    let turns = match (&state.cxdb, session.cxdb_project_id) {
+        (Some(engine), Some(project_id)) => {
+            engine
+                .list_turn_metadata_for_project(project_id)
+                .into_iter()
+                .map(|m| TurnResponse {
+                    turn_id: m.turn_id,
+                    type_id: m.type_id,
+                    timestamp: m.timestamp,
+                    produced_by: m.produced_by,
+                })
+                .collect::<Vec<_>>()
+        }
+        _ => Vec::new(),
+    };
+
+    let count = turns.len();
+    Ok(Json(ListTurnsResponse { turns, count }))
 }
 
 /// List all pipeline run IDs for a session.
 ///
-/// Currently returns an empty list — same durable-storage caveat as
-/// `list_turns`. Will be populated once storage is wired into the pipeline runner.
+/// Queries the durable CXDB engine using the session's stored project_id.
+/// Returns an empty list if no CXDB is configured or no pipeline has run.
 async fn list_runs(
     State(state): State<Arc<AppState>>,
     claims: Claims,
     Path(id): Path<Uuid>,
 ) -> Result<Json<RunListResponse>, (StatusCode, Json<ErrorResponse>)> {
     // Verify session exists and belongs to the requesting user (read-only).
-    match state.sessions.get_if_owned(id, &claims.sub) {
-        Ok(_) => {}
+    let session = match state.sessions.get_if_owned(id, &claims.sub) {
+        Ok(s) => s,
         Err(Some(())) => {
             return Err((
                 StatusCode::FORBIDDEN,
@@ -757,10 +840,21 @@ async fn list_runs(
                 Json(ErrorResponse { error: format!("Session not found: {}", id), code: None }),
             ));
         }
-    }
+    };
 
-    // Returns empty until durable CXDB store is wired into pipeline runner.
-    Ok(Json(RunListResponse { runs: vec![] }))
+    // Query CXDB for runs belonging to this session's project.
+    let runs = match (&state.cxdb, session.cxdb_project_id) {
+        (Some(engine), Some(project_id)) => {
+            engine
+                .list_runs(project_id)
+                .into_iter()
+                .map(|r| r.to_string())
+                .collect::<Vec<_>>()
+        }
+        _ => Vec::new(),
+    };
+
+    Ok(Json(RunListResponse { runs }))
 }
 
 // ---------------------------------------------------------------------------
@@ -1151,6 +1245,7 @@ mod tests {
             blueprints: planner_core::blueprint::BlueprintStore::new(),
             auth_config: None, // dev mode for tests
             event_store: None,
+            cxdb: None, // no durable storage in unit tests
             started_at: std::time::Instant::now(),
         })
     }
@@ -1186,6 +1281,7 @@ mod tests {
                 decoding_key: None,
             }),
             event_store: None,
+            cxdb: None,
             started_at: std::time::Instant::now(),
         });
         let app = routes(state);
@@ -1411,6 +1507,7 @@ mod tests {
                 decoding_key: None,
             }),
             event_store: None,
+            cxdb: None,
             started_at: std::time::Instant::now(),
         });
         let app = routes(state);

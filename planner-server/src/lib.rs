@@ -24,6 +24,9 @@ pub struct AppState {
     pub auth_config: Option<AuthConfig>,
     /// Filesystem-backed event store. None if persistence is unavailable.
     pub event_store: Option<planner_core::observability::EventStore>,
+    /// Durable CXDB engine for persisting pipeline Turn records.
+    /// None if CXDB initialization failed (pipeline runs without persistence).
+    pub cxdb: Option<planner_core::cxdb::durable::DurableCxdbEngine>,
     /// Server start time for uptime calculation.
     pub started_at: std::time::Instant,
 }

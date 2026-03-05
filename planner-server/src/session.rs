@@ -82,6 +82,11 @@ pub struct Session {
 
     /// Last error message (for quick display without scanning events).
     pub error_message: Option<String>,
+
+    /// CXDB project ID for this session's pipeline run(s).
+    /// Set when the pipeline starts; used by list_turns/list_runs.
+    #[serde(default)]
+    pub cxdb_project_id: Option<Uuid>,
 }
 
 impl Session {
@@ -121,6 +126,7 @@ impl Session {
             events: Vec::new(),
             current_step: None,
             error_message: None,
+            cxdb_project_id: None,
         }
     }
 

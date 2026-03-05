@@ -366,6 +366,33 @@ impl DurableCxdbEngine {
         }
     }
 
+    /// List all turn metadata for a given project ID.
+    ///
+    /// Iterates all runs belonging to the project and collects turn metadata
+    /// from the in-memory cache. Returns lightweight metadata without
+    /// deserializing blob payloads.
+    pub fn list_turn_metadata_for_project(&self, project_id: Uuid) -> Vec<TurnMetadataView> {
+        let runs = self.list_runs(project_id);
+        if runs.is_empty() {
+            return Vec::new();
+        }
+
+        let cache = self.turn_cache.read().unwrap();
+        let run_set: std::collections::HashSet<String> =
+            runs.iter().map(|r| r.to_string()).collect();
+
+        cache
+            .values()
+            .filter(|record| run_set.contains(&record.run_id))
+            .map(|record| TurnMetadataView {
+                turn_id: record.turn_id.clone(),
+                type_id: record.type_id.clone(),
+                timestamp: record.created_at.clone(),
+                produced_by: record.produced_by.clone(),
+            })
+            .collect()
+    }
+
     fn count_files_recursive(dir: &Path) -> usize {
         if !dir.is_dir() {
             return 0;
@@ -391,6 +418,17 @@ pub struct DurableCxdbStats {
     pub total_turns: usize,
     pub total_blobs: usize,
     pub root_path: String,
+}
+
+/// Lightweight turn metadata view for list endpoints.
+/// Does not include the deserialized payload — just enough to populate
+/// the REST API response.
+#[derive(Debug, Clone)]
+pub struct TurnMetadataView {
+    pub turn_id: String,
+    pub type_id: String,
+    pub timestamp: String,
+    pub produced_by: String,
 }
 
 // ---------------------------------------------------------------------------

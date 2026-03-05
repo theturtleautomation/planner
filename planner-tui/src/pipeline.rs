@@ -272,12 +272,24 @@ pub fn spawn_socratic_interview(
     tokio::spawn(async move {
         let router = planner_core::llm::providers::LlmRouter::from_env();
 
-        // We pass `None` for the TurnStore — persistence can be wired in later.
-        let result = planner_core::pipeline::steps::socratic::run_interview::<
-            TuiSocraticIO,
-            planner_core::cxdb::CxdbEngine,
-        >(&router, &*io, None::<&planner_core::cxdb::CxdbEngine>, &initial_message)
-        .await;
+        // Open durable CXDB for persisting Socratic turns.
+        let cxdb = open_tui_cxdb();
+        let result = match &cxdb {
+            Some(engine) => {
+                planner_core::pipeline::steps::socratic::run_interview::<
+                    TuiSocraticIO,
+                    planner_core::cxdb::durable::DurableCxdbEngine,
+                >(&router, &*io, Some(engine), &initial_message)
+                .await
+            }
+            None => {
+                planner_core::pipeline::steps::socratic::run_interview::<
+                    TuiSocraticIO,
+                    planner_core::cxdb::CxdbEngine,
+                >(&router, &*io, None::<&planner_core::cxdb::CxdbEngine>, &initial_message)
+                .await
+            }
+        };
 
         match result {
             Ok(_session) => {
@@ -335,20 +347,39 @@ pub fn spawn_pipeline(description: String) -> PipelineReceiver {
             }
         };
 
-        let config =
-            planner_core::pipeline::PipelineConfig::<planner_core::cxdb::CxdbEngine>::minimal(
-                &router,
-            );
         let project_id = uuid::Uuid::new_v4();
 
-        match planner_core::pipeline::run_full_pipeline(
-            &config,
-            &worker,
-            project_id,
-            &description,
-        )
-        .await
-        {
+        // Open durable CXDB for persisting pipeline turns.
+        let cxdb = open_tui_cxdb();
+
+        let pipeline_result = match &cxdb {
+            Some(engine) => {
+                let run_id = uuid::Uuid::new_v4();
+                if let Err(e) = engine.register_run(project_id, run_id) {
+                    tracing::warn!("CXDB: failed to register run: {}", e);
+                }
+                let config = planner_core::pipeline::PipelineConfig {
+                    router: &router,
+                    store: Some(engine),
+                    dtu_registry: None,
+                    blueprints: None,
+                };
+                planner_core::pipeline::run_full_pipeline(
+                    &config, &worker, project_id, &description,
+                ).await
+            }
+            None => {
+                let config =
+                    planner_core::pipeline::PipelineConfig::<planner_core::cxdb::CxdbEngine>::minimal(
+                        &router,
+                    );
+                planner_core::pipeline::run_full_pipeline(
+                    &config, &worker, project_id, &description,
+                ).await
+            }
+        };
+
+        match pipeline_result {
             Ok(output) => {
                 // Emit StepComplete events for each stage so the TUI progress
                 // tracker advances stage-by-stage on success.
@@ -379,4 +410,32 @@ pub fn spawn_pipeline(description: String) -> PipelineReceiver {
     });
 
     rx
+}
+
+// ---------------------------------------------------------------------------
+// Shared CXDB helper
+// ---------------------------------------------------------------------------
+
+/// Open a DurableCxdbEngine for TUI sessions.
+///
+/// Reads `PLANNER_DATA_DIR` (falling back to `~/.planner/`) and opens
+/// `<data_dir>/cxdb/`. Returns `None` on any failure so callers can
+/// gracefully degrade to in-memory operation.
+fn open_tui_cxdb() -> Option<planner_core::cxdb::durable::DurableCxdbEngine> {
+    let data_dir = std::env::var("PLANNER_DATA_DIR").unwrap_or_else(|_| {
+        std::env::var("HOME")
+            .map(|h| format!("{}/.planner", h))
+            .unwrap_or_else(|_| "./data".to_string())
+    });
+    let cxdb_path = std::path::Path::new(&data_dir).join("cxdb");
+    match planner_core::cxdb::durable::DurableCxdbEngine::open(&cxdb_path) {
+        Ok(engine) => {
+            tracing::info!("TUI CXDB persistence: {}", cxdb_path.display());
+            Some(engine)
+        }
+        Err(e) => {
+            tracing::warn!("TUI CXDB unavailable ({}), running without persistence", e);
+            None
+        }
+    }
 }

@@ -439,13 +439,26 @@ pub async fn handle_socratic_ws(
     // Spawn the interview engine as a background task.
     let sink = event_sink.clone();
     let engine_handle = tokio::spawn(async move {
-        let result = planner_core::pipeline::steps::socratic::run_interview::<WsSocraticIO, planner_core::cxdb::CxdbEngine>(
-            &router,
-            &*io,
-            None::<&planner_core::cxdb::CxdbEngine>,
-            &initial_description,
-        )
-        .await;
+        let result = match state_for_engine.cxdb.as_ref() {
+            Some(engine) => {
+                planner_core::pipeline::steps::socratic::run_interview::<
+                    WsSocraticIO,
+                    planner_core::cxdb::durable::DurableCxdbEngine,
+                >(
+                    &router, &*io, Some(engine), &initial_description,
+                )
+                .await
+            }
+            None => {
+                planner_core::pipeline::steps::socratic::run_interview::<
+                    WsSocraticIO,
+                    planner_core::cxdb::CxdbEngine,
+                >(
+                    &router, &*io, None::<&planner_core::cxdb::CxdbEngine>, &initial_description,
+                )
+                .await
+            }
+        };
 
         match result {
             Ok(session) => {

@@ -114,12 +114,30 @@ async fn main() {
         }
     };
 
+    // Initialize durable CXDB engine for pipeline Turn persistence.
+    let cxdb_path = std::path::Path::new(&data_dir).join("cxdb");
+    let cxdb = match planner_core::cxdb::durable::DurableCxdbEngine::open(&cxdb_path) {
+        Ok(engine) => {
+            let stats = engine.stats();
+            tracing::info!(
+                "CXDB persistence enabled: {} ({} turns, {} blobs)",
+                cxdb_path.display(), stats.total_turns, stats.total_blobs,
+            );
+            Some(engine)
+        }
+        Err(e) => {
+            tracing::warn!("CXDB persistence unavailable ({}), pipeline runs without durable storage", e);
+            None
+        }
+    };
+
     // Create shared state
     let state = Arc::new(AppState {
         sessions: session_store,
         blueprints: blueprint_store,
         auth_config,
         event_store,
+        cxdb,
         started_at: std::time::Instant::now(),
     });
 
