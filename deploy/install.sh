@@ -112,11 +112,18 @@ setup_cli_isolation() {
     mkdir -p "${cli_home}/gemini/.gemini"
 
     # Write a locked-down Gemini settings file.
-    # NOTE: We no longer restrict tools via settings.json (the old
-    # tools.core / tools.exclude keys caused Gemini API 400 errors).
-    # Tool restriction is now handled by the Policy Engine TOML below.
+    # tools.core: [] is an empty allowlist — prevents the CLI from declaring
+    # ANY built-in tools in the API request. Without this, the CLI sends
+    # malformed tool_type protos to the Gemini API causing 400 errors
+    # ("tools[0].tool_type: required one_of 'tool_type' must have one
+    # initialized field"). This is a CLI bug in v0.32.x.
+    # NOTE: Do NOT add tools.exclude: ["*"] — that caused a different 400.
+    # The Policy Engine TOML below is belt-and-suspenders for runtime denial.
     cat > "${cli_home}/gemini/settings.json" << 'GEMINI_SETTINGS'
 {
+  "tools": {
+    "core": []
+  },
   "security": {
     "disableYoloMode": true,
     "blockGitExtensions": true,
