@@ -6,10 +6,10 @@ import type { GraphNode, GraphLink, NodeSummary, EdgePayload, NodeType, EdgeType
 
 const NODE_COLORS: Record<string, string> = {
   decision:            'var(--color-primary)',
-  technology:          'var(--color-success)',
-  component:           'var(--color-blue)',
+  technology:          'var(--color-blue)',
+  component:           'var(--color-purple)',
   constraint:          'var(--color-warning)',
-  pattern:             'var(--color-purple)',
+  pattern:             'var(--color-success)',
   quality_requirement: 'var(--color-gold)',
 };
 
@@ -137,11 +137,8 @@ export default function BlueprintGraph({
     return { graphNodes, graphLinks };
   }, [nodes, edges, filterType]);
 
-  // Truncate name for display
-  const displayName = useCallback((name: string): string => {
-    if (name.length > 20) return name.slice(0, 19) + '\u2026';
-    return name;
-  }, []);
+  // Display name as-is — mockup spec: no truncation
+  const displayName = useCallback((name: string): string => name, []);
 
   // Render the shape for each node type
   const renderNodeShape = useCallback((sel: d3.Selection<SVGGElement, GraphNode, SVGGElement, unknown>) => {

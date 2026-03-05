@@ -34,6 +34,7 @@ export interface NodeSummary {
   id: string;
   name: string;
   node_type: string;
+  status: string;
   tags: string[];
   updated_at: string;
 }

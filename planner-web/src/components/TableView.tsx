@@ -19,7 +19,7 @@ interface TableViewProps {
   onSelectNode: (nodeId: string) => void;
 }
 
-type SortCol = 'name' | 'type' | 'id';
+type SortCol = 'name' | 'type' | 'status' | 'id';
 type SortDir = 'asc' | 'desc';
 
 export default function TableView({ nodes, edges, filterType, onSelectNode }: TableViewProps) {
@@ -37,6 +37,7 @@ export default function TableView({ nodes, edges, filterType, onSelectNode }: Ta
       switch (sortCol) {
         case 'name': va = a.name.toLowerCase(); vb = b.name.toLowerCase(); break;
         case 'type': va = a.node_type; vb = b.node_type; break;
+        case 'status': va = (a.status ?? '').toLowerCase(); vb = (b.status ?? '').toLowerCase(); break;
         case 'id': va = a.id; vb = b.id; break;
         default: va = ''; vb = '';
       }
@@ -98,6 +99,12 @@ export default function TableView({ nodes, edges, filterType, onSelectNode }: Ta
               Type <span className="sort-arrow">↕</span>
             </th>
             <th
+              onClick={() => handleSort('status')}
+              className={sortCol === 'status' ? 'sorted' : ''}
+            >
+              Status <span className="sort-arrow">↕</span>
+            </th>
+            <th
               onClick={() => handleSort('id')}
               className={sortCol === 'id' ? 'sorted' : ''}
             >
@@ -117,6 +124,7 @@ export default function TableView({ nodes, edges, filterType, onSelectNode }: Ta
             >
               <td style={{ fontWeight: 500, color: 'var(--color-text)' }}>{n.name}</td>
               <td><span className={`badge badge-${n.node_type}`}>{TYPE_LABELS[n.node_type] ?? n.node_type}</span></td>
+              <td><span className={`status-badge status-${(n.status ?? '').toLowerCase().replace(/\s+/g, '-')}`}>{n.status ?? ''}</span></td>
               <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.6875rem', color: 'var(--color-text-faint)' }}>{n.id}</td>
               <td style={{ fontVariantNumeric: 'tabular-nums', color: 'var(--color-text-faint)' }}>{getConnections(n.id)}</td>
             </tr>

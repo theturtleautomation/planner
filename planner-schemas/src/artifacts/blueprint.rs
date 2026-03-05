@@ -452,6 +452,46 @@ impl BlueprintNode {
             BlueprintNode::QualityRequirement(n) => &n.tags,
         }
     }
+
+    /// Return a normalized status string for display.
+    ///
+    /// Each node type has a different lifecycle field; this maps them all
+    /// to a single human-readable string for table/filter UIs.
+    pub fn status(&self) -> String {
+        match self {
+            BlueprintNode::Decision(n) => match n.status {
+                DecisionStatus::Proposed => "Proposed".into(),
+                DecisionStatus::Accepted => "Accepted".into(),
+                DecisionStatus::Superseded => "Superseded".into(),
+                DecisionStatus::Deprecated => "Deprecated".into(),
+            },
+            BlueprintNode::Technology(n) => match n.ring {
+                AdoptionRing::Adopt => "Adopt".into(),
+                AdoptionRing::Trial => "Trial".into(),
+                AdoptionRing::Assess => "Assess".into(),
+                AdoptionRing::Hold => "Hold".into(),
+            },
+            BlueprintNode::Component(n) => match n.status {
+                ComponentStatus::Planned => "Planned".into(),
+                ComponentStatus::InProgress => "In Progress".into(),
+                ComponentStatus::Shipped => "Shipped".into(),
+                ComponentStatus::Deprecated => "Deprecated".into(),
+            },
+            BlueprintNode::Constraint(n) => match n.constraint_type {
+                ConstraintType::Technical => "Technical".into(),
+                ConstraintType::Organizational => "Organizational".into(),
+                ConstraintType::Philosophical => "Philosophical".into(),
+                ConstraintType::Regulatory => "Regulatory".into(),
+            },
+            BlueprintNode::Pattern(_) => "Active".into(),
+            BlueprintNode::QualityRequirement(n) => match n.priority {
+                QualityPriority::Critical => "Critical".into(),
+                QualityPriority::High => "High".into(),
+                QualityPriority::Medium => "Medium".into(),
+                QualityPriority::Low => "Low".into(),
+            },
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -519,6 +559,8 @@ pub struct NodeSummary {
     pub id: NodeId,
     pub name: String,
     pub node_type: String,
+    /// Normalized status string derived from each node type's lifecycle field.
+    pub status: String,
     pub tags: Vec<String>,
     pub updated_at: String,
 }
@@ -529,6 +571,7 @@ impl From<&BlueprintNode> for NodeSummary {
             id: node.id().clone(),
             name: node.name().to_string(),
             node_type: node.type_name().to_string(),
+            status: node.status(),
             tags: node.tags().to_vec(),
             updated_at: node.updated_at().to_string(),
         }
@@ -795,6 +838,7 @@ mod tests {
         let summary = NodeSummary::from(&node);
         assert_eq!(summary.name, "Tokio");
         assert_eq!(summary.node_type, "technology");
+        assert_eq!(summary.status, "Adopt");
         assert_eq!(summary.tags, vec!["async", "core"]);
     }
 }

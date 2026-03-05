@@ -131,18 +131,26 @@ export default function RadarView({ nodes, onSelectNode }: RadarViewProps) {
       const escapedName = tech.name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       const escapedId = tech.id.replace(/"/g, '&quot;');
 
-      svg += `<circle cx="${x}" cy="${y}" r="6" fill="${dotColor}" opacity="0.9" style="cursor:pointer" data-tech-id="${escapedId}"/>`;
+      svg += `<circle cx="${x}" cy="${y}" r="6" fill="${dotColor}" opacity="0.9" style="cursor:pointer" tabindex="0" role="button" data-tech-id="${escapedId}"/>`;
       svg += `<text x="${x + 10}" y="${y + 4}" fill="${textColor}" font-size="11" font-family="var(--font-body)" font-weight="500">${escapedName}</text>`;
     });
 
     svg += `</svg>`;
     container.innerHTML = svg;
 
-    // Click handlers
+    // Click and keyboard handlers
     container.querySelectorAll('[data-tech-id]').forEach(el => {
       el.addEventListener('click', () => {
         const id = (el as SVGElement).getAttribute('data-tech-id');
         if (id) onSelectNode(id);
+      });
+      el.addEventListener('keydown', (e) => {
+        const ke = e as KeyboardEvent;
+        if (ke.key === 'Enter' || ke.key === ' ') {
+          ke.preventDefault();
+          const id = (el as SVGElement).getAttribute('data-tech-id');
+          if (id) onSelectNode(id);
+        }
       });
     });
   }, [techs, onSelectNode]);
