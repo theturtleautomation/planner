@@ -33,15 +33,12 @@ export default function SessionPage() {
   const [isStarting, setIsStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
 
-  // Right panel tab: 'belief' | 'draft' | 'logs'
-  type RightPanelTab = 'belief' | 'draft' | 'logs';
+  // Right panel tab: 'belief' | 'draft'
+  type RightPanelTab = 'belief' | 'draft';
   const [rightTab, setRightTab] = useState<RightPanelTab>('belief');
 
   // Helper to switch to draft tab
   const setShowDraft = (v: boolean) => setRightTab(v ? 'draft' : 'belief');
-
-  // Logs panel toggle (via SessionStatusHeader or tab)
-  const [showLogs, setShowLogs] = useState(false);
 
   // Socratic WebSocket hook
   const socratic = useSocraticWebSocket({ sessionId, getToken });
@@ -141,30 +138,8 @@ export default function SessionPage() {
     ? socratic.intakePhase
     : (session?.intake_phase ?? 'waiting');
 
-  // Sync showLogs state into the rightTab system and vice versa
-  // When showLogs is toggled via SessionStatusHeader button, switch to logs tab
-  const handleToggleLogs = useCallback(() => {
-    setShowLogs((v) => {
-      const next = !v;
-      if (next) {
-        setRightTab('logs');
-      } else if (rightTab === 'logs') {
-        setRightTab('belief');
-      }
-      return next;
-    });
-  }, [rightTab]);
-
-  // Keep showLogs in sync when tab changes
-  useEffect(() => {
-    setShowLogs(rightTab === 'logs');
-  }, [rightTab]);
-
   // ── Right panel content ──
   const rightPanelContent = (() => {
-    if (rightTab === 'logs') {
-      return <EventLogPanel events={socratic.events} />;
-    }
     if (rightTab === 'draft' && socratic.speculativeDraft) {
       return (
         <SpeculativeDraftView
@@ -492,8 +467,6 @@ export default function SessionPage() {
             events={socratic.events}
             isError={isError}
             errorMessage={session?.error_message}
-            onToggleLogs={handleToggleLogs}
-            showLogs={showLogs}
           />
         )}
 
@@ -542,7 +515,7 @@ export default function SessionPage() {
             />
           </div>
 
-          {/* Right: tabbed panel — Belief State | Draft | Logs */}
+          {/* Right: tabbed panel — Belief State | Draft — with collapsible Events footer */}
           <div className="pane-right" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             {/* Tab bar */}
             <div
@@ -615,43 +588,19 @@ export default function SessionPage() {
                   />
                 )}
               </button>
-
-              {/* Logs tab */}
-              <button
-                onClick={() => setRightTab('logs')}
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  borderBottom: rightTab === 'logs' ? '2px solid var(--accent-cyan)' : '2px solid transparent',
-                  color: rightTab === 'logs' ? 'var(--accent-cyan)' : 'var(--text-secondary)',
-                  fontSize: '11px',
-                  fontWeight: rightTab === 'logs' ? 700 : 400,
-                  fontFamily: 'inherit',
-                  padding: '7px 14px',
-                  cursor: 'pointer',
-                  letterSpacing: '0.03em',
-                  transition: 'color 0.15s, border-color 0.15s',
-                }}
-              >
-                Logs
-                {socratic.events.length > 0 && (
-                  <span
-                    style={{
-                      marginLeft: '5px',
-                      fontSize: '9px',
-                      color: rightTab === 'logs' ? 'var(--accent-cyan)' : 'var(--text-secondary)',
-                      opacity: 0.75,
-                    }}
-                  >
-                    {socratic.events.length}
-                  </span>
-                )}
-              </button>
             </div>
 
-            {/* Panel content */}
+            {/* Panel content + collapsible events footer */}
             <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-              {rightPanelContent}
+              {/* Main content area (belief state or draft) */}
+              <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                {rightPanelContent}
+              </div>
+
+              {/* Collapsible Events footer — always present when events exist */}
+              {socratic.events.length > 0 && (
+                <EventLogPanel events={socratic.events} />
+              )}
             </div>
           </div>
         </div>

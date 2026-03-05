@@ -1,7 +1,13 @@
 /**
- * EventLogPanel — scrollable list of PlannerEvents with filter chips.
+ * EventLogPanel — collapsible event log with filter chips.
+ *
+ * Defaults COLLAPSED to a single summary bar showing event count and
+ * latest event.  Click the bar to expand and see the full scrollable
+ * event list with filter chips.
  *
  * Features:
+ * - Collapsed mode: thin summary bar (count + last event + error count)
+ * - Expanded mode: filter chips + scrollable event rows
  * - Filter chips: All | Errors | LLM | State
  * - Each row: relative timestamp, level badge, source, step, message
  * - Color-coded by level (info=dim, warn=yellow, error=red)
@@ -262,7 +268,8 @@ function useTick(intervalMs = 10_000): number {
   return tick;
 }
 
-export default function EventLogPanel({ events }: EventLogPanelProps) {
+/** Full expanded event log view with filters. */
+function ExpandedEventLog({ events }: { events: PlannerEvent[] }) {
   const [filter, setFilter] = useState<FilterKey>('all');
   const scrollRef = useRef<HTMLDivElement>(null);
   const userScrolledRef = useRef(false);
@@ -291,7 +298,6 @@ export default function EventLogPanel({ events }: EventLogPanelProps) {
     <div
       style={{
         flex: 1,
-        background: 'var(--bg-secondary)',
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
@@ -304,7 +310,7 @@ export default function EventLogPanel({ events }: EventLogPanelProps) {
           display: 'flex',
           alignItems: 'center',
           gap: '6px',
-          padding: '7px 12px',
+          padding: '5px 12px',
           borderBottom: '1px solid var(--border)',
           flexShrink: 0,
           background: 'var(--bg-secondary)',
@@ -421,6 +427,149 @@ export default function EventLogPanel({ events }: EventLogPanelProps) {
           />
         ))}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Collapsible event log panel.
+ *
+ * Collapsed (default): single 28px summary bar.
+ * Expanded: full filter + event list, capped at 50% of available height.
+ */
+export default function EventLogPanel({ events }: EventLogPanelProps) {
+  const [expanded, setExpanded] = useState(false);
+
+  const errorCount = events.filter((e) => e.level === 'error').length;
+  const warnCount = events.filter((e) => e.level === 'warn').length;
+  const lastEvent = events.length > 0 ? events[events.length - 1] : null;
+
+  return (
+    <div
+      style={{
+        borderTop: '1px solid var(--border)',
+        background: 'var(--bg-secondary)',
+        display: 'flex',
+        flexDirection: 'column',
+        flexShrink: 0,
+        // When expanded, take up to 50% of the right panel
+        ...(expanded ? { flex: 1, maxHeight: '50%', minHeight: '120px' } : {}),
+        overflow: 'hidden',
+        transition: 'max-height 0.2s ease',
+      }}
+    >
+      {/* Summary bar — always visible, acts as toggle */}
+      <div
+        onClick={() => setExpanded((v) => !v)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          padding: '0 12px',
+          height: '28px',
+          flexShrink: 0,
+          cursor: 'pointer',
+          borderBottom: expanded ? '1px solid var(--border)' : 'none',
+          transition: 'background 0.15s',
+        }}
+        onMouseEnter={(e) => {
+          (e.currentTarget as HTMLDivElement).style.background = 'rgba(255,255,255,0.02)';
+        }}
+        onMouseLeave={(e) => {
+          (e.currentTarget as HTMLDivElement).style.background = 'transparent';
+        }}
+        title={expanded ? 'Collapse events' : 'Expand events'}
+      >
+        {/* Toggle indicator */}
+        <span
+          style={{
+            fontSize: '9px',
+            color: 'var(--text-secondary)',
+            opacity: 0.6,
+            flexShrink: 0,
+            transition: 'transform 0.2s',
+            transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)',
+          }}
+        >
+          ▸
+        </span>
+
+        {/* Events label + count */}
+        <span
+          style={{
+            fontSize: '10px',
+            fontWeight: 700,
+            letterSpacing: '0.08em',
+            textTransform: 'uppercase',
+            color: 'var(--text-secondary)',
+          }}
+        >
+          Events
+        </span>
+        <span
+          style={{
+            fontSize: '10px',
+            color: 'var(--text-secondary)',
+            opacity: 0.7,
+          }}
+        >
+          {events.length}
+        </span>
+
+        {/* Error/warn badges */}
+        {errorCount > 0 && (
+          <span
+            style={{
+              fontSize: '9px',
+              fontWeight: 700,
+              color: 'var(--accent-red)',
+              border: '1px solid var(--accent-red)',
+              borderRadius: '2px',
+              padding: '0 4px',
+              letterSpacing: '0.04em',
+            }}
+          >
+            {errorCount} err
+          </span>
+        )}
+        {warnCount > 0 && (
+          <span
+            style={{
+              fontSize: '9px',
+              fontWeight: 700,
+              color: 'var(--accent-yellow)',
+              border: '1px solid var(--accent-yellow)',
+              borderRadius: '2px',
+              padding: '0 4px',
+              letterSpacing: '0.04em',
+            }}
+          >
+            {warnCount} warn
+          </span>
+        )}
+
+        {/* Latest event preview (collapsed only) */}
+        {!expanded && lastEvent && (
+          <span
+            style={{
+              flex: 1,
+              fontSize: '10px',
+              color: rowTextColor(lastEvent.level),
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              opacity: 0.7,
+              marginLeft: '4px',
+            }}
+            title={lastEvent.message}
+          >
+            {lastEvent.message}
+          </span>
+        )}
+      </div>
+
+      {/* Expanded event list */}
+      {expanded && <ExpandedEventLog events={events} />}
     </div>
   );
 }

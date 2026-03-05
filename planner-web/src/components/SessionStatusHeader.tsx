@@ -4,7 +4,6 @@
  * Shows:
  * - Left: status dot (green/yellow/red) + current step + elapsed time since step started
  * - Middle: LLM call count
- * - Right: [Logs] toggle button
  * - Error state: shows error message in red
  */
 
@@ -16,8 +15,6 @@ export interface SessionStatusHeaderProps {
   events: PlannerEvent[];
   isError: boolean;
   errorMessage?: string | null;
-  onToggleLogs: () => void;
-  showLogs: boolean;
 }
 
 /** Number of LLM call completions — events from llm_router with step starting with "llm.call.complete" */
@@ -59,8 +56,6 @@ export default function SessionStatusHeader({
   events,
   isError,
   errorMessage,
-  onToggleLogs,
-  showLogs,
 }: SessionStatusHeaderProps) {
   // Track when the current step last changed so we can show elapsed time
   const stepStartRef = useRef<number>(Date.now());
@@ -194,7 +189,7 @@ export default function SessionStatusHeader({
         )}
       </div>
 
-      {/* ── Middle: LLM call counter ── */}
+      {/* ── Right: LLM call counter ── */}
       <div
         style={{
           flexShrink: 0,
@@ -222,42 +217,6 @@ export default function SessionStatusHeader({
           LLM call{llmCalls !== 1 ? 's' : ''}
         </span>
       </div>
-
-      {/* ── Right: Logs toggle ── */}
-      <button
-        onClick={onToggleLogs}
-        title={showLogs ? 'Hide logs' : 'Show logs'}
-        style={{
-          flexShrink: 0,
-          background: showLogs ? 'var(--accent-cyan)' : 'transparent',
-          border: `1px solid ${showLogs ? 'var(--accent-cyan)' : 'var(--border)'}`,
-          borderRadius: '2px',
-          color: showLogs ? 'var(--bg-primary)' : 'var(--text-secondary)',
-          fontSize: '10px',
-          fontWeight: showLogs ? 700 : 400,
-          fontFamily: 'inherit',
-          padding: '2px 8px',
-          cursor: 'pointer',
-          letterSpacing: '0.04em',
-          transition: 'background 0.15s, border-color 0.15s, color 0.15s',
-          height: '18px',
-          display: 'flex',
-          alignItems: 'center',
-        }}
-      >
-        Logs
-        {events.length > 0 && (
-          <span
-            style={{
-              marginLeft: '4px',
-              fontSize: '9px',
-              opacity: 0.75,
-            }}
-          >
-            {events.length}
-          </span>
-        )}
-      </button>
     </div>
   );
 }

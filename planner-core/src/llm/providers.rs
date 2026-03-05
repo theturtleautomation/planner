@@ -456,6 +456,12 @@ pub async fn run_cli_instrumented(
 // stdin piping, Claude only returns text completions — no file writes
 // or bash commands are executed, so this is safe and non-bypassing.
 //
+// `--skip-git-repo-check` is required because the CLI runs in an
+// isolated sandbox directory (/opt/planner/cli-sandbox) that is NOT
+// a git repository. Without this flag, the Claude CLI refuses to start
+// with: "Not inside a trusted directory". Since we're in `-p` (pipe)
+// mode with no file/shell access, git trust is irrelevant.
+//
 // stream-json format emits one JSON object per line. The final "result"
 // message contains the assistant's response text and token usage.
 
@@ -532,6 +538,7 @@ impl LlmClient for AnthropicCliClient {
             "--output-format",
             "stream-json",
             "--verbose",
+            "--skip-git-repo-check",
             "--model",
             &model_arg,
         ];
@@ -800,6 +807,7 @@ impl LlmClient for OpenAiCliClient {
         let args = vec![
             "exec",
             "--json",
+            "--skip-git-repo-check",
             "--sandbox",
             "workspace-write",
             "-m",
