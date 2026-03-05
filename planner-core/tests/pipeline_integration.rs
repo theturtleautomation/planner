@@ -444,6 +444,7 @@ async fn tier1_full_pipeline_with_mock_and_storage() {
         router: &router,
         store: Some(&store),
         dtu_registry: None,
+        blueprints: None,
     };
 
     // Set up worktree root in temp dir

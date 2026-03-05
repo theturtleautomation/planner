@@ -19,12 +19,14 @@ pub mod pyramid;
 pub mod project;
 pub mod verification;
 pub mod audit;
+pub mod blueprint_emitter;
 
 use uuid::Uuid;
 
 use crate::llm::providers::LlmRouter;
 use crate::cxdb::TurnStore;
 use crate::dtu::DtuRegistry;
+use crate::blueprint::BlueprintStore;
 use planner_schemas::*;
 
 use steps::StepResult;
@@ -52,6 +54,9 @@ pub struct PipelineConfig<'a, S: TurnStore> {
     pub store: Option<&'a S>,
     /// Optional DTU registry — if Some, scenario validation uses DTU clones.
     pub dtu_registry: Option<&'a DtuRegistry>,
+    /// Optional Blueprint store — if Some, pipeline steps emit architectural
+    /// knowledge as Blueprint nodes and edges.
+    pub blueprints: Option<&'a BlueprintStore>,
 }
 
 impl<'a, S: TurnStore> PipelineConfig<'a, S> {
@@ -61,6 +66,7 @@ impl<'a, S: TurnStore> PipelineConfig<'a, S> {
             router,
             store: None,
             dtu_registry: None,
+            blueprints: None,
         }
     }
 
@@ -71,6 +77,43 @@ impl<'a, S: TurnStore> PipelineConfig<'a, S> {
                 tracing::warn!("Storage: failed to persist turn {}: {}", turn.turn_id, e);
             } else {
                 tracing::debug!("Storage: persisted {} (type={})", turn.turn_id, turn.type_id);
+            }
+        }
+    }
+
+    /// Emit Blueprint nodes if a BlueprintStore is configured.
+    pub fn emit_intake_blueprint(&self, intake: &IntakeV1) {
+        if let Some(bp) = self.blueprints {
+            blueprint_emitter::emit_from_intake(bp, intake);
+        }
+    }
+
+    /// Emit Blueprint nodes from a compiled NLSpec.
+    pub fn emit_spec_blueprint(&self, spec: &NLSpecV1) {
+        if let Some(bp) = self.blueprints {
+            blueprint_emitter::emit_from_spec(bp, spec);
+        }
+    }
+
+    /// Emit Blueprint updates from AR findings.
+    pub fn emit_ar_blueprint(&self, reports: &[ArReportV1]) {
+        if let Some(bp) = self.blueprints {
+            blueprint_emitter::emit_from_ar(bp, reports);
+        }
+    }
+
+    /// Emit Blueprint nodes from factory output.
+    pub fn emit_factory_blueprint(&self, output: &FactoryOutputV1) {
+        if let Some(bp) = self.blueprints {
+            blueprint_emitter::emit_from_factory(bp, output);
+        }
+    }
+
+    /// Flush the Blueprint store to disk if configured and dirty.
+    pub fn flush_blueprint(&self) {
+        if let Some(bp) = self.blueprints {
+            if let Err(e) = bp.flush() {
+                tracing::warn!("Blueprint: flush failed: {}", e);
             }
         }
     }
@@ -320,6 +363,9 @@ pub async fn run_phase0_front_office_with_config<S: TurnStore>(
         config.persist(&turn);
     }
 
+    // Emit Blueprint nodes from intake
+    config.emit_intake_blueprint(&intake_result);
+
     // Step 2: Chunk Planning
     tracing::info!("Step 2: Chunk Planner");
     let chunk_plan = chunk_planner::plan_chunks(router, &intake_result, project_id).await?;
@@ -345,6 +391,11 @@ pub async fn run_phase0_front_office_with_config<S: TurnStore>(
     for spec in &specs {
         let turn = Turn::new(spec.clone(), None, run_id, "front-office", "compile-spec");
         config.persist(&turn);
+    }
+
+    // Emit Blueprint nodes from each compiled spec
+    for spec in &specs {
+        config.emit_spec_blueprint(spec);
     }
 
     // Build and log context pack for the root spec (Change 2).
@@ -530,6 +581,9 @@ pub async fn run_phase0_front_office_with_config<S: TurnStore>(
         config.persist(&turn);
     }
 
+    // Emit Blueprint nodes from AR findings
+    config.emit_ar_blueprint(&ar_reports);
+
     // Step 6: AR Refinement — handle blocking findings
     if total_blocking > 0 {
         tracing::info!("Step 6: AR Refinement (blocking findings detected)");
@@ -703,6 +757,9 @@ pub async fn run_phase0_front_office_with_config<S: TurnStore>(
 
     tracing::info!("Phase 6 Front Office: pipeline complete — ready for Kilroy handoff");
 
+    // Flush Blueprint to disk before returning
+    config.flush_blueprint();
+
     Ok(Phase0FrontOfficeOutput {
         intake: intake_result,
         specs,
@@ -859,6 +916,9 @@ pub async fn run_full_pipeline<S: TurnStore>(
             let turn = Turn::new(factory_output.clone(), None, run_id, "factory", "factory-output");
             config.persist(&turn);
         }
+
+        // Emit Blueprint nodes from factory output
+        config.emit_factory_blueprint(&factory_output);
 
         // Track this output path for incremental retry on next attempt.
         previous_output_path = Some(factory_output.output_path.clone());
@@ -1033,6 +1093,9 @@ pub async fn run_full_pipeline<S: TurnStore>(
         let _ = project_registry.update_status(reg_pid, ProjectStatus::Completed);
         tracing::info!("ProjectRegistry: project '{}' marked Completed", feature_slug);
     }
+
+    // Final Blueprint flush
+    config.flush_blueprint();
 
     Ok(Phase0FullOutput {
         front_office,

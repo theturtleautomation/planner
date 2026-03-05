@@ -2151,6 +2151,7 @@ fn e2e_phase6_pipeline_config_persist() {
         router: &router,
         store: Some(&engine),
         dtu_registry: None,
+        blueprints: None,
     };
 
     let project_id = Uuid::new_v4();

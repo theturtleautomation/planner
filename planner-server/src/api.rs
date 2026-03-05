@@ -645,9 +645,12 @@ pub async fn run_pipeline_for_session(state: Arc<AppState>, session_id: Uuid, de
         };
 
     let config =
-        planner_core::pipeline::PipelineConfig::<planner_core::cxdb::CxdbEngine>::minimal(
-            &router,
-        );
+        planner_core::pipeline::PipelineConfig::<planner_core::cxdb::CxdbEngine> {
+            router: &router,
+            store: None,
+            dtu_registry: None,
+            blueprints: Some(&state.blueprints),
+        };
     let project_id = Uuid::new_v4();
 
     match planner_core::pipeline::run_full_pipeline(

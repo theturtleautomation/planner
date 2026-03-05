@@ -1,5 +1,5 @@
-import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import { describe, it, expect } from 'vitest';
 import Layout from '../Layout';
 
 // AUTH0_ENABLED is false in test environment (no env vars set),
@@ -10,14 +10,19 @@ describe('Layout', () => {
     expect(screen.getByText('Child content')).toBeInTheDocument();
   });
 
-  it('renders header with app name PLANNER v2', () => {
+  it('renders ASCII banner with Planner aria-label', () => {
     render(<Layout><span /></Layout>);
-    expect(screen.getByText('PLANNER v2')).toBeInTheDocument();
+    expect(screen.getByLabelText('Planner')).toBeInTheDocument();
   });
 
   it('renders the Socratic Lobby subtitle', () => {
     render(<Layout><span /></Layout>);
-    expect(screen.getByText(/socratic lobby/i)).toBeInTheDocument();
+    expect(screen.getByText('SOCRATIC LOBBY')).toBeInTheDocument();
+  });
+
+  it('renders v2 label', () => {
+    render(<Layout><span /></Layout>);
+    expect(screen.getByText('v2')).toBeInTheDocument();
   });
 
   it('header has role="banner"', () => {
@@ -70,12 +75,10 @@ describe('Layout', () => {
 
 // Test the Auth0-enabled variant by mocking config
 describe('Layout with Auth0 enabled (user info)', () => {
-  it('shows user logout button (via Auth0 mock which is always active)', async () => {
-    // The mock in setup.ts makes useAuth0 always return Test User
+  it('shows dev mode label in dev mode', () => {
     // AUTH0_ENABLED is determined by env vars; in test environment it's false
-    // so UserInfoDev renders. Just verify the overall layout still renders.
+    // so UserInfoDev renders "dev mode" label.
     render(<Layout><span /></Layout>);
-    // Dev mode renders "dev mode" label
     expect(screen.getByText('dev mode')).toBeInTheDocument();
   });
 });

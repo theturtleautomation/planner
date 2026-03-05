@@ -9,13 +9,14 @@ import { useAuth0 } from '@auth0/auth0-react';
 // This means LoginPageDev renders, which navigates on button click.
 
 describe('LoginPage (dev mode - AUTH0_ENABLED=false)', () => {
-  it('renders the PLANNER v2 heading', () => {
+  it('renders the ASCII PLANNER banner', () => {
     render(
       <MemoryRouter>
         <LoginPage />
       </MemoryRouter>,
     );
-    expect(screen.getByText('PLANNER v2')).toBeInTheDocument();
+    // The banner is an ASCII art <pre> with aria-label="Planner"
+    expect(screen.getByLabelText('Planner')).toBeInTheDocument();
   });
 
   it('renders a button', () => {
