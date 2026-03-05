@@ -111,14 +111,13 @@ pub async fn run_interview<IO: SocraticIO, S: TurnStore>(
     }).await;
 
     io.send_message(&format!(
-        "Classified as: {} ({}). I'll ask up to {} questions to understand your requirements.",
+        "Classified as: {} ({}). Let's dig into your requirements.",
         classification.project_type,
         match classification.complexity {
             ComplexityTier::Light => "simple",
             ComplexityTier::Standard => "standard",
             ComplexityTier::Deep => "complex",
         },
-        classification.question_budget,
     )).await;
 
     // --- Phase 2: Initialize State ---
@@ -571,7 +570,6 @@ mod tests {
             project_type: ProjectType::WebApp,
             complexity: ComplexityTier::Standard,
             detected_signals: vec!["web".into()],
-            question_budget: 12,
             required_dimensions: Dimension::required_for(&ProjectType::WebApp),
         };
 

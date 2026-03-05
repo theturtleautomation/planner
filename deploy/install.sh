@@ -111,14 +111,12 @@ setup_cli_isolation() {
     # Gemini
     mkdir -p "${cli_home}/gemini/.gemini"
 
-    # Write a locked-down Gemini system settings file.
-    # System settings have highest precedence and override user/project settings.
+    # Write a locked-down Gemini settings file.
+    # NOTE: We no longer restrict tools via settings.json (the old
+    # tools.core / tools.exclude keys caused Gemini API 400 errors).
+    # Tool restriction is now handled by the Policy Engine TOML below.
     cat > "${cli_home}/gemini/settings.json" << 'GEMINI_SETTINGS'
 {
-  "tools": {
-    "core": [],
-    "exclude": ["*"]
-  },
   "security": {
     "disableYoloMode": true,
     "blockGitExtensions": true,
@@ -134,6 +132,20 @@ setup_cli_isolation() {
   }
 }
 GEMINI_SETTINGS
+
+    # Gemini Policy Engine — deny all tools by default.
+    # Planner invokes `gemini` in non-interactive mode with a specific
+    # prompt; it does not need the CLI to execute tools on its own.
+    # Policy files in ~/.gemini/policies/ are loaded at User tier (priority base 4).
+    mkdir -p "${cli_home}/gemini/.gemini/policies"
+    cat > "${cli_home}/gemini/.gemini/policies/planner-lockdown.toml" << 'GEMINI_POLICY'
+# Planner service lockdown — deny all built-in and MCP tools.
+# The Gemini CLI is used purely for LLM completion, not tool execution.
+[[rule]]
+toolName = "*"
+decision = "deny"
+priority = 999
+GEMINI_POLICY
 
     # Codex
     mkdir -p "${cli_home}/codex/.codex"

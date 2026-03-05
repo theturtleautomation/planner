@@ -342,7 +342,6 @@ mod tests {
             project_type: ProjectType::WebApp,
             complexity: ComplexityTier::Standard,
             detected_signals: vec![],
-            question_budget: 12,
             required_dimensions: Dimension::required_for(&ProjectType::WebApp),
         };
         RequirementsBeliefState::from_classification(&classification)

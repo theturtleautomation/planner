@@ -44,9 +44,8 @@ pub fn should_trigger_draft(
         return true;
     }
 
-    // Condition 3: half budget consumed
-    let half_budget = state.question_budget as u32 / 2;
-    if state.turn_count >= half_budget && state.filled.len() >= 3 {
+    // Condition 3: enough turns have passed
+    if state.turn_count >= 6 && state.filled.len() >= 3 {
         return true;
     }
 
@@ -255,7 +254,6 @@ mod tests {
             contradictions: vec![],
             required_dimensions: vec![],
             turn_count,
-            question_budget: 12,
             classification: None,
         }
     }

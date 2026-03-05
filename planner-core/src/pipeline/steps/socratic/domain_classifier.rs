@@ -24,14 +24,12 @@ Given the user's initial description of what they want to build, classify it int
    - standard: Web app, API, multi-user system
    - deep: Distributed, regulated, multi-tenant, real-time
 3. **detected_signals**: List of specific words/phrases from the description that drove your classification
-4. **question_budget**: Number 5 (light), 12 (standard), or 20 (deep)
 
 Respond with ONLY a JSON object (no markdown fences):
 {
   "project_type": "web_app",
   "complexity": "standard",
-  "detected_signals": ["web", "users", "dashboard"],
-  "question_budget": 12
+  "detected_signals": ["web", "users", "dashboard"]
 }
 
 Signals to look for:
@@ -78,8 +76,6 @@ struct ClassifyJson {
     project_type: String,
     complexity: String,
     detected_signals: Vec<String>,
-    #[allow(dead_code)] // Deserialized for validation; budget derived from complexity tier
-    question_budget: u8,
 }
 
 fn parse_classification(content: &str) -> StepResult<DomainClassification> {
@@ -114,13 +110,11 @@ fn parse_classification(content: &str) -> StepResult<DomainClassification> {
     };
 
     let required_dimensions = Dimension::required_for(&project_type);
-    let question_budget = complexity.question_budget();
 
     Ok(DomainClassification {
         project_type,
         complexity,
         detected_signals: json.detected_signals,
-        question_budget,
         required_dimensions,
     })
 }
@@ -135,26 +129,24 @@ mod tests {
 
     #[test]
     fn parse_web_app_classification() {
-        let json = r#"{"project_type":"web_app","complexity":"standard","detected_signals":["dashboard","users","login"],"question_budget":12}"#;
+        let json = r#"{"project_type":"web_app","complexity":"standard","detected_signals":["dashboard","users","login"]}"#;
         let result = parse_classification(json).unwrap();
         assert_eq!(result.project_type, ProjectType::WebApp);
         assert_eq!(result.complexity, ComplexityTier::Standard);
-        assert_eq!(result.question_budget, 12);
         assert!(result.required_dimensions.contains(&Dimension::Auth));
     }
 
     #[test]
     fn parse_cli_tool_classification() {
-        let json = r#"{"project_type":"cli_tool","complexity":"light","detected_signals":["command-line","csv","parse"],"question_budget":5}"#;
+        let json = r#"{"project_type":"cli_tool","complexity":"light","detected_signals":["command-line","csv","parse"]}"#;
         let result = parse_classification(json).unwrap();
         assert_eq!(result.project_type, ProjectType::CliTool);
         assert_eq!(result.complexity, ComplexityTier::Light);
-        assert_eq!(result.question_budget, 5);
     }
 
     #[test]
     fn parse_with_code_fences() {
-        let json = "```json\n{\"project_type\":\"api_backend\",\"complexity\":\"deep\",\"detected_signals\":[\"HIPAA\",\"microservices\"],\"question_budget\":20}\n```";
+        let json = "```json\n{\"project_type\":\"api_backend\",\"complexity\":\"deep\",\"detected_signals\":[\"HIPAA\",\"microservices\"]}\n```";
         let result = parse_classification(json).unwrap();
         assert_eq!(result.project_type, ProjectType::ApiBackend);
         assert_eq!(result.complexity, ComplexityTier::Deep);
@@ -162,7 +154,7 @@ mod tests {
 
     #[test]
     fn parse_unknown_type_defaults_to_hybrid() {
-        let json = r#"{"project_type":"unknown_thing","complexity":"standard","detected_signals":[],"question_budget":12}"#;
+        let json = r#"{"project_type":"unknown_thing","complexity":"standard","detected_signals":[]}"#;
         let result = parse_classification(json).unwrap();
         assert_eq!(result.project_type, ProjectType::Hybrid);
     }

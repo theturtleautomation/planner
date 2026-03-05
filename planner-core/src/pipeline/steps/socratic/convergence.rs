@@ -1,13 +1,12 @@
 //! # Convergence Decider — Multi-Criteria Stopping Logic
 //!
 //! Determines when to stop asking and start building.
-//! Uses 5 overlapping criteria (any triggers "done"):
+//! Uses 4 overlapping criteria (any triggers "done"):
 //!
 //! 1. Completeness gate — all required dimensions resolved
 //! 2. Confidence threshold — no uncertain dimension below threshold
 //! 3. Diminishing returns — last N questions produced no new info
-//! 4. Budget exhaustion — hit the question budget
-//! 5. User signal — user explicitly says "just build it"
+//! 4. User signal — user explicitly says "just build it"
 
 use planner_schemas::*;
 
@@ -29,20 +28,11 @@ pub fn check_convergence(
 ) -> ConvergenceResult {
     let convergence_pct = state.convergence_pct();
 
-    // Criterion 5: User signal — always respected
+    // Criterion 4: User signal — always respected
     if user_wants_to_stop {
         return ConvergenceResult {
             is_done: true,
             reason: StoppingReason::UserSignal,
-            convergence_pct,
-        };
-    }
-
-    // Criterion 4: Budget exhaustion
-    if state.turn_count >= state.question_budget as u32 {
-        return ConvergenceResult {
-            is_done: true,
-            reason: StoppingReason::BudgetExhausted,
             convergence_pct,
         };
     }
@@ -152,7 +142,7 @@ mod tests {
         InterviewerConstitution::default_constitution()
     }
 
-    fn make_state_with_budget(budget: u8) -> RequirementsBeliefState {
+    fn make_test_state() -> RequirementsBeliefState {
         RequirementsBeliefState {
             filled: HashMap::new(),
             uncertain: HashMap::new(),
@@ -161,12 +151,10 @@ mod tests {
             contradictions: vec![],
             required_dimensions: vec![Dimension::Goal, Dimension::CoreFeatures],
             turn_count: 0,
-            question_budget: budget,
             classification: Some(DomainClassification {
                 project_type: ProjectType::CliTool,
                 complexity: ComplexityTier::Light,
                 detected_signals: vec![],
-                question_budget: budget,
                 required_dimensions: vec![Dimension::Goal, Dimension::CoreFeatures],
             }),
         }
@@ -174,7 +162,7 @@ mod tests {
 
     #[test]
     fn user_signal_always_stops() {
-        let state = make_state_with_budget(12);
+        let state = make_test_state();
         let c = make_constitution();
 
         let result = check_convergence(&state, &c, true, 0);
@@ -183,19 +171,8 @@ mod tests {
     }
 
     #[test]
-    fn budget_exhaustion_stops() {
-        let mut state = make_state_with_budget(5);
-        state.turn_count = 5;
-        let c = make_constitution();
-
-        let result = check_convergence(&state, &c, false, 0);
-        assert!(result.is_done);
-        assert!(matches!(result.reason, StoppingReason::BudgetExhausted));
-    }
-
-    #[test]
     fn completeness_gate_when_all_filled() {
-        let mut state = make_state_with_budget(12);
+        let mut state = make_test_state();
         // Fill all required dimensions
         state.fill(Dimension::Goal, SlotValue {
             value: "test".into(), source_turn: 1, source_quote: None,
@@ -223,7 +200,7 @@ mod tests {
 
     #[test]
     fn diminishing_returns_stops() {
-        let mut state = make_state_with_budget(12);
+        let mut state = make_test_state();
         state.turn_count = 6;
         let c = make_constitution();
 
@@ -234,7 +211,7 @@ mod tests {
 
     #[test]
     fn continue_when_nothing_triggers() {
-        let state = make_state_with_budget(12);
+        let state = make_test_state();
         let c = make_constitution();
 
         let result = check_convergence(&state, &c, false, 0);

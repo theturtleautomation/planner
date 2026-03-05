@@ -223,7 +223,6 @@ mod tests {
             contradictions: vec![],
             required_dimensions: vec![Dimension::Goal, Dimension::CoreFeatures],
             turn_count: 0,
-            question_budget: 12,
             classification: None,
         }
     }

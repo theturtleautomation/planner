@@ -48,12 +48,12 @@ impl std::fmt::Display for ProjectType {
     }
 }
 
-/// Complexity tier — determines interview depth and question budget.
+/// Complexity tier — determines interview depth.
 ///
 /// Derived from Adaptive-RAG patterns:
-/// - **Light**: CLI, script, prototype → 3–5 questions
-/// - **Standard**: Web app, API, multi-user → 8–12 questions
-/// - **Deep**: Distributed, regulated, multi-tenant → 15–20 questions
+/// - **Light**: CLI, script, prototype → shallow interview
+/// - **Standard**: Web app, API, multi-user → standard interview
+/// - **Deep**: Distributed, regulated, multi-tenant → thorough interview
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ComplexityTier {
@@ -63,15 +63,6 @@ pub enum ComplexityTier {
 }
 
 impl ComplexityTier {
-    /// Maximum number of questions for this tier.
-    pub fn question_budget(&self) -> u8 {
-        match self {
-            ComplexityTier::Light => 5,
-            ComplexityTier::Standard => 12,
-            ComplexityTier::Deep => 20,
-        }
-    }
-
     /// Confidence threshold — dimensions below this are considered too uncertain.
     pub fn confidence_threshold(&self) -> f32 {
         match self {
@@ -91,8 +82,6 @@ pub struct DomainClassification {
     pub complexity: ComplexityTier,
     /// Signals that drove the classification (for transparency).
     pub detected_signals: Vec<String>,
-    /// Maximum questions before acting (from complexity tier).
-    pub question_budget: u8,
     /// Required dimensions for this project type.
     pub required_dimensions: Vec<Dimension>,
 }
@@ -388,9 +377,6 @@ pub struct RequirementsBeliefState {
     /// Current turn count.
     pub turn_count: u32,
 
-    /// Question budget (from domain classification).
-    pub question_budget: u8,
-
     /// Domain classification that produced this state.
     pub classification: Option<DomainClassification>,
 }
@@ -406,7 +392,6 @@ impl RequirementsBeliefState {
             contradictions: Vec::new(),
             required_dimensions: classification.required_dimensions.clone(),
             turn_count: 0,
-            question_budget: classification.question_budget,
             classification: Some(classification.clone()),
         }
     }
@@ -593,8 +578,6 @@ pub enum StoppingReason {
     ConfidenceThreshold,
     /// Last N questions produced no new information.
     DiminishingReturns { stale_turns: u32 },
-    /// Question budget exhausted.
-    BudgetExhausted,
     /// User explicitly said "just build it."
     UserSignal,
     /// Still more to ask — interview continues.
@@ -854,10 +837,10 @@ mod tests {
     }
 
     #[test]
-    fn complexity_budgets() {
-        assert_eq!(ComplexityTier::Light.question_budget(), 5);
-        assert_eq!(ComplexityTier::Standard.question_budget(), 12);
-        assert_eq!(ComplexityTier::Deep.question_budget(), 20);
+    fn complexity_thresholds() {
+        assert!((ComplexityTier::Light.confidence_threshold() - 0.5).abs() < f32::EPSILON);
+        assert!((ComplexityTier::Standard.confidence_threshold() - 0.6).abs() < f32::EPSILON);
+        assert!((ComplexityTier::Deep.confidence_threshold() - 0.7).abs() < f32::EPSILON);
     }
 
     #[test]
@@ -866,7 +849,6 @@ mod tests {
             project_type: ProjectType::WebApp,
             complexity: ComplexityTier::Standard,
             detected_signals: vec!["web".into(), "users".into()],
-            question_budget: 12,
             required_dimensions: Dimension::required_for(&ProjectType::WebApp),
         };
 
@@ -905,7 +887,6 @@ mod tests {
             project_type: ProjectType::CliTool,
             complexity: ComplexityTier::Light,
             detected_signals: vec![],
-            question_budget: 5,
             required_dimensions: vec![Dimension::Goal, Dimension::CoreFeatures, Dimension::OutOfScope],
         };
 
@@ -973,7 +954,6 @@ mod tests {
             project_type: ProjectType::WebApp,
             complexity: ComplexityTier::Standard,
             detected_signals: vec![],
-            question_budget: 12,
             required_dimensions: Dimension::required_for(&ProjectType::WebApp),
         };
 
