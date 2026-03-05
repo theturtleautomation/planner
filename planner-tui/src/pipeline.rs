@@ -174,14 +174,13 @@ impl planner_core::pipeline::steps::socratic::SocraticIO for TuiSocraticIO {
                 EventSource::SocraticEngine,
                 "socratic.classify.complete",
                 format!(
-                    "Domain classified: {} ({}), budget: {} questions",
+                    "Domain classified: {} ({})",
                     classification.project_type,
                     match classification.complexity {
                         planner_schemas::ComplexityTier::Light => "light",
                         planner_schemas::ComplexityTier::Standard => "standard",
                         planner_schemas::ComplexityTier::Deep => "deep",
                     },
-                    classification.question_budget,
                 ),
             )
             .with_session(self.session_id)
@@ -192,7 +191,6 @@ impl planner_core::pipeline::steps::socratic::SocraticIO for TuiSocraticIO {
                     planner_schemas::ComplexityTier::Standard => "standard",
                     planner_schemas::ComplexityTier::Deep => "deep",
                 },
-                "question_budget": classification.question_budget,
             })),
         );
     }

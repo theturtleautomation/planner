@@ -831,19 +831,22 @@ impl App {
         match event {
             SocraticEvent::Classified { classification } => {
                 self.status_message = format!(
-                    "{} project — up to {} questions",
-                    classification.project_type,
-                    classification.question_budget
-                );
-                self.add_planner_message(&format!(
-                    "Classified as: {} ({}). I'll ask up to {} questions.",
+                    "{} project ({})",
                     classification.project_type,
                     match classification.complexity {
                         planner_schemas::ComplexityTier::Light => "simple",
                         planner_schemas::ComplexityTier::Standard => "standard",
                         planner_schemas::ComplexityTier::Deep => "complex",
-                    },
-                    classification.question_budget
+                    }
+                );
+                self.add_planner_message(&format!(
+                    "Classified as: {} ({}).",
+                    classification.project_type,
+                    match classification.complexity {
+                        planner_schemas::ComplexityTier::Light => "simple",
+                        planner_schemas::ComplexityTier::Standard => "standard",
+                        planner_schemas::ComplexityTier::Deep => "complex",
+                    }
                 ));
                 self.classification = Some(classification);
             }
@@ -1306,7 +1309,6 @@ mod tests {
             project_type: ProjectType::WebApp,
             complexity: ComplexityTier::Standard,
             detected_signals: vec!["web".into()],
-            question_budget: 12,
             required_dimensions: Dimension::required_for(&ProjectType::WebApp),
         };
 
@@ -1315,7 +1317,7 @@ mod tests {
 
         assert!(had_events);
         assert!(app.classification.is_some());
-        assert!(app.status_message.contains("12"));
+        assert!(app.status_message.contains("Web App"));
     }
 
     #[tokio::test]
@@ -1333,7 +1335,6 @@ mod tests {
             project_type: ProjectType::CliTool,
             complexity: ComplexityTier::Light,
             detected_signals: vec![],
-            question_budget: 5,
             required_dimensions: Dimension::required_for(&ProjectType::CliTool),
         };
         let belief_state = RequirementsBeliefState::from_classification(&classification);

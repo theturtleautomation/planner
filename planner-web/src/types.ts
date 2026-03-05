@@ -96,7 +96,6 @@ export interface BeliefState {
 export interface Classification {
   project_type: string;
   complexity: string;
-  question_budget: number;
 }
 
 /** A speculative draft for user review. */
@@ -226,7 +225,7 @@ export type ServerWsMessage =
   | { type: 'pipeline_complete'; success: boolean; summary: string }
   | { type: 'error'; message: string }
   // Socratic interview messages
-  | { type: 'classified'; project_type: string; complexity: string; question_budget: number }
+  | { type: 'classified'; project_type: string; complexity: string }
   | { type: 'belief_state_update'; filled: Record<string, unknown>; uncertain: Record<string, unknown>; missing: string[]; out_of_scope: string[]; convergence_pct: number }
   | { type: 'question'; text: string; target_dimension: string; quick_options: QuickOption[]; allow_skip: boolean }
   | { type: 'speculative_draft'; sections: DraftSection[]; assumptions: DraftAssumption[]; not_discussed: string[] }

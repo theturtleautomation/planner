@@ -54,7 +54,7 @@ export default function ClassificationBadge({ classification }: ClassificationBa
         </span>
       </div>
 
-      {/* Bottom row: budget */}
+      {/* Bottom row: complexity */}
       <div
         style={{
           fontSize: '10px',
@@ -63,9 +63,9 @@ export default function ClassificationBadge({ classification }: ClassificationBa
           textTransform: 'uppercase',
         }}
       >
-        Budget:{' '}
-        <span style={{ color: 'var(--text-primary)' }}>
-          ~{classification.question_budget} questions
+        Complexity:{' '}
+        <span style={{ color: 'var(--text-primary)', textTransform: 'capitalize' }}>
+          {classification.complexity}
         </span>
       </div>
     </div>

@@ -5,7 +5,6 @@ import ConvergenceBar from '../ConvergenceBar';
 const mockClassification = {
   project_type: 'Web App',
   complexity: 'medium',
-  question_budget: 10,
 };
 
 describe('ConvergenceBar', () => {

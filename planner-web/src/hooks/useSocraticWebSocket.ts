@@ -166,13 +166,12 @@ export function useSocraticWebSocket({
         setClassification({
           project_type: msg.project_type,
           complexity: msg.complexity,
-          question_budget: msg.question_budget,
         });
         // Add a planner message for the chat
         setMessages((prev) => [...prev, {
           id: uuidv4(),
           role: 'planner',
-          content: `Classified as: **${msg.project_type}** (${msg.complexity}). I'll ask up to ${msg.question_budget} questions.`,
+          content: `Classified as: **${msg.project_type}** (${msg.complexity}).`,
           timestamp: new Date().toISOString(),
         }]);
         break;

@@ -406,14 +406,13 @@ fn draw_belief_state(frame: &mut Frame, area: Rect, app: &App) {
     // --- Domain badge ---
     let domain_text = if let Some(ref cls) = app.classification {
         format!(
-            " {} | {} | budget: {} q",
+            " {} | {} ",
             cls.project_type,
             match cls.complexity {
                 ComplexityTier::Light    => "Light",
                 ComplexityTier::Standard => "Standard",
                 ComplexityTier::Deep     => "Deep",
-            },
-            cls.question_budget
+            }
         )
     } else {
         " Classifying…".to_string()
@@ -886,7 +885,6 @@ mod tests {
             project_type: ProjectType::WebApp,
             complexity: ComplexityTier::Standard,
             detected_signals: vec!["web".into()],
-            question_budget: 12,
             required_dimensions: Dimension::required_for(&ProjectType::WebApp),
         };
         app.classification = Some(cls.clone());
@@ -1055,7 +1053,6 @@ mod tests {
             project_type: ProjectType::ApiBackend,
             complexity: ComplexityTier::Deep,
             detected_signals: vec![],
-            question_budget: 20,
             required_dimensions: Dimension::required_for(&ProjectType::ApiBackend),
         };
         app.classification = Some(cls.clone());

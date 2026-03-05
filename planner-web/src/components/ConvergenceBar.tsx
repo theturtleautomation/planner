@@ -15,12 +15,8 @@ export default function ConvergenceBar({ convergencePct, classification }: Conve
       ? 'var(--accent-yellow)'
       : 'var(--text-secondary)';
 
-  const questionsLeft = classification
-    ? Math.max(0, Math.round(classification.question_budget * (1 - pct / 100)))
-    : null;
-
   const rightText = classification
-    ? `${pct}% · ${classification.project_type} · ${classification.complexity} · ~${questionsLeft} question${questionsLeft === 1 ? '' : 's'} left`
+    ? `${pct}% · ${classification.project_type} · ${classification.complexity}`
     : null;
 
   return (

@@ -240,7 +240,6 @@ impl planner_core::pipeline::steps::socratic::SocraticIO for WsSocraticIO {
                 planner_schemas::ComplexityTier::Standard => "standard".into(),
                 planner_schemas::ComplexityTier::Deep => "deep".into(),
             },
-            question_budget: classification.question_budget,
         });
 
         if let Some(ref sink) = self.event_sink {
@@ -249,14 +248,13 @@ impl planner_core::pipeline::steps::socratic::SocraticIO for WsSocraticIO {
                     planner_core::observability::EventSource::SocraticEngine,
                     "socratic.classify.complete",
                     format!(
-                        "Domain classified: {} ({}), budget: {} questions",
+                        "Domain classified: {} ({})",
                         classification.project_type,
                         match classification.complexity {
                             planner_schemas::ComplexityTier::Light => "light",
                             planner_schemas::ComplexityTier::Standard => "standard",
                             planner_schemas::ComplexityTier::Deep => "deep",
                         },
-                        classification.question_budget,
                     ),
                 )
                 .with_session(self.session_id)
@@ -267,7 +265,6 @@ impl planner_core::pipeline::steps::socratic::SocraticIO for WsSocraticIO {
                         planner_schemas::ComplexityTier::Standard => "standard",
                         planner_schemas::ComplexityTier::Deep => "deep",
                     },
-                    "question_budget": classification.question_budget,
                 })),
             );
         }
@@ -800,7 +797,6 @@ mod tests {
             project_type: ProjectType::WebApp,
             complexity: ComplexityTier::Standard,
             detected_signals: vec!["web".into()],
-            question_budget: 12,
             required_dimensions: Dimension::required_for(&ProjectType::WebApp),
         };
 
@@ -809,10 +805,9 @@ mod tests {
 
         let msg = event_rx.try_recv().unwrap();
         match msg {
-            ServerMessage::Classified { project_type, complexity, question_budget } => {
+            ServerMessage::Classified { project_type, complexity } => {
                 assert_eq!(project_type, "Web App");
                 assert_eq!(complexity, "standard");
-                assert_eq!(question_budget, 12);
             }
             _ => panic!("expected Classified, got {:?}", msg),
         }

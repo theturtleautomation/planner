@@ -73,7 +73,6 @@ pub enum ServerMessage {
     Classified {
         project_type: String,
         complexity: String,
-        question_budget: u8,
     },
 
     /// Belief state update.

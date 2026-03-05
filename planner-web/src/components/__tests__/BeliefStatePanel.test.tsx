@@ -6,7 +6,6 @@ import type { BeliefState, Classification } from '../../types';
 const mockClassification: Classification = {
   project_type: 'Web App',
   complexity: 'medium',
-  question_budget: 10,
 };
 
 const makeBeliefState = (overrides: Partial<BeliefState> = {}): BeliefState => ({
