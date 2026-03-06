@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useMemo } from 'react';
+import { useEffect, useRef, useCallback, useMemo, useState } from 'react';
 import * as d3 from 'd3';
 import type { GraphNode, GraphLink, NodeSummary, EdgePayload, NodeType, EdgeType } from '../types/blueprint.ts';
 
@@ -116,6 +116,28 @@ export default function BlueprintGraph({
   const nodeSelRef = useRef<d3.Selection<SVGGElement, GraphNode, SVGGElement, unknown> | null>(null);
   const zoomRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
   const initializedRef = useRef(false);
+  const minimapNodesRef = useRef<d3.Selection<SVGCircleElement, GraphNode, SVGGElement, unknown> | null>(null);
+  const minimapViewportRef = useRef<d3.Selection<SVGRectElement, unknown, null, undefined> | null>(null);
+  const simNodesRef = useRef<GraphNode[]>([]);
+  const minimapScaleRef = useRef<{ minX: number; minY: number; scale: number; ox: number; oy: number; mmW: number; mmH: number } | null>(null);
+
+  // Neighborhood focus state (E.4)
+  const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
+
+  // Minimap viewport updater (called from zoom handler)
+  const updateMinimapViewport = useCallback((transform: d3.ZoomTransform, svgW: number, svgH: number) => {
+    const vr = minimapViewportRef.current;
+    const sc = minimapScaleRef.current;
+    if (!vr || !sc) return;
+    // Invert the viewport corners from SVG coords to graph coords
+    const inv = transform.invert([0, 0]);
+    const inv2 = transform.invert([svgW, svgH]);
+    const vx = sc.ox + (inv[0] - sc.minX) * sc.scale;
+    const vy = sc.oy + (inv[1] - sc.minY) * sc.scale;
+    const vw = (inv2[0] - inv[0]) * sc.scale;
+    const vh = (inv2[1] - inv[1]) * sc.scale;
+    vr.attr('x', vx).attr('y', vy).attr('width', Math.max(0, vw)).attr('height', Math.max(0, vh));
+  }, []);
 
   // Build graph data from props
   const graphData = useMemo(() => {
@@ -238,11 +260,14 @@ export default function BlueprintGraph({
     const g = svg.append('g');
     gRef.current = g;
 
-    // Zoom behavior
+    // Zoom behavior (filter out dblclick to allow neighborhood focus)
     const zoom = d3.zoom<SVGSVGElement, unknown>()
       .scaleExtent([0.2, 4])
+      .filter((event: Event) => !(event.type === 'dblclick'))
       .on('zoom', (event: d3.D3ZoomEvent<SVGSVGElement, unknown>) => {
         g.attr('transform', event.transform.toString());
+        // Update minimap viewport indicator
+        updateMinimapViewport(event.transform, width, height);
       });
     zoomRef.current = zoom;
     svg.call(zoom);
@@ -253,6 +278,7 @@ export default function BlueprintGraph({
     // Copy data for mutation
     const simNodes = graphData.graphNodes.map(d => ({ ...d }));
     const simLinks = graphData.graphLinks.map(d => ({ ...d }));
+    simNodesRef.current = simNodes;
 
     // Render edges
     const edgeGroup = g.append('g').attr('class', 'edges');
@@ -346,6 +372,11 @@ export default function BlueprintGraph({
       .on('click', function (event, d) {
         event.stopPropagation();
         onSelectNode(d.id);
+      })
+      .on('dblclick', function (event, d) {
+        event.stopPropagation();
+        event.preventDefault();
+        setFocusedNodeId(prev => prev === d.id ? null : d.id);
       });
 
     // Keyboard nav
@@ -357,9 +388,10 @@ export default function BlueprintGraph({
       }
     });
 
-    // Click background to deselect
+    // Click background to deselect + clear focus
     svg.on('click', () => {
       onSelectNode(null);
+      setFocusedNodeId(null);
     });
 
     // Drag behavior
@@ -391,20 +423,42 @@ export default function BlueprintGraph({
       constraint: -280, pattern: 280, quality_requirement: 100,
     };
 
+    // ─── Adaptive force parameters based on graph size (E.2) ─────────────
+    const nodeCount = simNodes.length;
+    const chargeStrength = nodeCount <= 8 ? -1200 : nodeCount <= 20 ? -1400 : nodeCount <= 50 ? -1800 : -2400;
+    const linkDistance = nodeCount <= 8 ? 180 : nodeCount <= 20 ? 220 : 260;
+    const typeForceStrength = nodeCount <= 8 ? 0.12 : 0.15;
+
     // Force simulation
     const sim = d3.forceSimulation(simNodes)
       .force('link', d3.forceLink<GraphNode, GraphLink>(simLinks)
         .id(d => d.id)
-        .distance(220)
+        .distance(linkDistance)
         .strength(0.35))
-      .force('charge', d3.forceManyBody().strength(-1400))
+      .force('charge', d3.forceManyBody().strength(chargeStrength))
       .force('center', d3.forceCenter(0, 0))
       .force('collision', d3.forceCollide<GraphNode>().radius(d => {
         const s = NODE_SIZES[d.node_type] || NODE_SIZES.decision;
         return Math.max(s.w, s.h) / 2 + 20;
       }))
-      .force('x', d3.forceX<GraphNode>(d => typeX[d.node_type] || 0).strength(0.15))
-      .force('y', d3.forceY<GraphNode>(d => typeY[d.node_type] || 0).strength(0.15));
+      .force('x', d3.forceX<GraphNode>(d => typeX[d.node_type] || 0).strength(typeForceStrength))
+      .force('y', d3.forceY<GraphNode>(d => typeY[d.node_type] || 0).strength(typeForceStrength));
+
+    // ─── Pre-bake: run simulation to near-equilibrium before first paint (E.1) ─
+    sim.stop();
+    const preBakeTicks = Math.min(300, 100 + nodeCount * 8);
+    sim.tick(preBakeTicks);
+
+    // Position nodes + edges at pre-baked positions immediately
+    linkSel
+      .attr('x1', d => (d.source as GraphNode).x ?? 0)
+      .attr('y1', d => (d.source as GraphNode).y ?? 0)
+      .attr('x2', d => (d.target as GraphNode).x ?? 0)
+      .attr('y2', d => (d.target as GraphNode).y ?? 0);
+    nodeSel.attr('transform', d => `translate(${d.x ?? 0},${d.y ?? 0})`);
+
+    // Now restart with low alpha for interactive settling + drag
+    sim.alpha(0.1).restart();
 
     sim.on('tick', () => {
       linkSel
@@ -419,6 +473,62 @@ export default function BlueprintGraph({
     simRef.current = sim;
     nodeSel.call(dragBehavior(sim));
     initializedRef.current = true;
+
+    // ─── Minimap (E.3) ─────────────────────────────────────────────────────
+    const MM_W = 160;
+    const MM_H = 110;
+    const MM_PAD = 12;
+    const mmGroup = svg.append('g')
+      .attr('class', 'minimap')
+      .attr('transform', `translate(${width - MM_W - MM_PAD}, ${MM_PAD})`);
+    // Background
+    mmGroup.append('rect')
+      .attr('width', MM_W).attr('height', MM_H)
+      .attr('rx', 4)
+      .attr('fill', 'var(--color-surface)').attr('fill-opacity', 0.85)
+      .attr('stroke', 'var(--color-border)').attr('stroke-width', 1);
+    // Node dots
+    const mmNodeGroup = mmGroup.append('g').attr('class', 'mm-nodes');
+    const mmNodes = mmNodeGroup.selectAll<SVGCircleElement, GraphNode>('circle')
+      .data(simNodes)
+      .join('circle')
+      .attr('r', 2.5)
+      .attr('fill', d => NODE_COLORS[d.node_type] || 'var(--color-text-faint)')
+      .attr('fill-opacity', 0.8);
+    minimapNodesRef.current = mmNodes;
+    // Viewport rect
+    const mmViewport = mmGroup.append('rect')
+      .attr('class', 'mm-viewport')
+      .attr('fill', 'var(--color-primary)').attr('fill-opacity', 0.08)
+      .attr('stroke', 'var(--color-primary)').attr('stroke-width', 1).attr('stroke-opacity', 0.4)
+      .attr('rx', 2);
+    minimapViewportRef.current = mmViewport;
+
+    // Minimap update function
+    function updateMinimap() {
+      if (!simNodesRef.current.length) return;
+      const ns = simNodesRef.current;
+      const xs = ns.map(n => n.x ?? 0);
+      const ys = ns.map(n => n.y ?? 0);
+      const pad = 60;
+      const minX = Math.min(...xs) - pad;
+      const maxX = Math.max(...xs) + pad;
+      const minY = Math.min(...ys) - pad;
+      const maxY = Math.max(...ys) + pad;
+      const gw = maxX - minX || 1;
+      const gh = maxY - minY || 1;
+      const mmScale = Math.min((MM_W - 8) / gw, (MM_H - 8) / gh);
+      const ox = (MM_W - gw * mmScale) / 2;
+      const oy = (MM_H - gh * mmScale) / 2;
+      minimapScaleRef.current = { minX, minY, scale: mmScale, ox, oy, mmW: MM_W, mmH: MM_H };
+      mmNodes
+        .attr('cx', d => ox + ((d.x ?? 0) - minX) * mmScale)
+        .attr('cy', d => oy + ((d.y ?? 0) - minY) * mmScale);
+    }
+    // Initial minimap positions
+    updateMinimap();
+    // Also update minimap on tick
+    sim.on('tick.minimap', updateMinimap);
 
     return () => {
       sim.stop();
@@ -437,6 +547,39 @@ export default function BlueprintGraph({
       linkSelRef.current.attr('opacity', 0.55);
     }
   }, [filterType]);
+
+  // Neighborhood focus mode (E.4): dim non-neighbor nodes on dblclick
+  useEffect(() => {
+    if (!nodeSelRef.current || !linkSelRef.current) return;
+    if (focusedNodeId) {
+      // Build 1-hop neighbor set from edges
+      const neighborIds = new Set<string>([focusedNodeId]);
+      graphData.graphLinks.forEach(e => {
+        const src = typeof e.source === 'string' ? e.source : (e.source as GraphNode).id;
+        const tgt = typeof e.target === 'string' ? e.target : (e.target as GraphNode).id;
+        if (src === focusedNodeId) neighborIds.add(tgt);
+        if (tgt === focusedNodeId) neighborIds.add(src);
+      });
+      nodeSelRef.current.attr('opacity', d => neighborIds.has(d.id) ? 1 : 0.08);
+      linkSelRef.current
+        .attr('opacity', e => {
+          const src = typeof e.source === 'string' ? e.source : (e.source as GraphNode).id;
+          const tgt = typeof e.target === 'string' ? e.target : (e.target as GraphNode).id;
+          return (src === focusedNodeId || tgt === focusedNodeId) ? 0.85 : 0.03;
+        })
+        .attr('stroke-width', e => {
+          const src = typeof e.source === 'string' ? e.source : (e.source as GraphNode).id;
+          const tgt = typeof e.target === 'string' ? e.target : (e.target as GraphNode).id;
+          return (src === focusedNodeId || tgt === focusedNodeId) ? 2.5 : 1;
+        });
+    } else if (!filterType) {
+      // Reset to default (only if no filter is active)
+      nodeSelRef.current.attr('opacity', 1);
+      linkSelRef.current
+        .attr('opacity', 0.55)
+        .attr('stroke-width', e => edgeWidth(e.edge_type));
+    }
+  }, [focusedNodeId, graphData.graphLinks, filterType]);
 
   // Resize handler
   useEffect(() => {

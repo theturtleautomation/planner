@@ -1,7 +1,7 @@
 # Blueprint Implementation — Status Tracker
 
 **Started:** March 5, 2026
-**Last Updated:** March 5, 2026 (Phase D complete)
+**Last Updated:** March 5, 2026 (Phase E complete)
 
 ## Research Documents (committed to repo)
 - `docs/blueprint-research/BLUEPRINT_DEEP_DIVE.md` — Decision audit, spec vs. code gap analysis
@@ -145,7 +145,29 @@
   - State: `reconResult`, `reconLoading`, `reconVisible`
 - [x] D.5 — Verification: `tsc --noEmit` clean, 166/166 vitest passing, Vite build succeeds
   - Cargo check/test deferred to CI (no Rust toolchain in sandbox)
-### Phase E: Graph UX Polish — PENDING
+### Phase E: Graph & Visualization Polish [COMPLETE]
+- [x] E.1 — Pre-bake simulation
+  - Run `sim.tick(N)` before first render (N = min(300, 100 + nodeCount*8))
+  - Positions nodes + edges at pre-baked coordinates immediately
+  - Restart with low alpha (0.1) for interactive settling + drag
+  - Result: graph appears stable on first paint instead of animating from origin
+- [x] E.2 — Adaptive charge strength
+  - Scale repulsion based on node count: ≤8 nodes → -1200, ≤20 → -1400, ≤50 → -1800, >50 → -2400
+  - Link distance scales: ≤8 → 180px, ≤20 → 220px, else 260px
+  - Type-force strength scales: ≤8 → 0.12, else 0.15
+- [x] E.3 — Minimap
+  - 160×110px overview in top-right corner with semi-transparent background
+  - Color-coded dots for each node (matches node type colors)
+  - Viewport rectangle showing current zoom/pan extent
+  - Updates on every simulation tick and zoom event
+  - Scale-to-fit with 60px padding, centered within minimap bounds
+- [x] E.4 — Neighborhood focus mode
+  - Double-click node to show only 1-hop neighbors (all others fade to 8% opacity)
+  - Connected edges highlighted at 85% opacity, others at 3%
+  - Double-click again or click background to clear focus
+  - Disabled d3 dblclick-to-zoom to prevent conflict
+  - Coexists with type filter (focus takes priority when active)
+- [x] E.5 — Verification: `tsc --noEmit` clean, 166/166 vitest passing, Vite build succeeds
 ### Phase F: Lifecycle & History — PENDING
 ### Phase G: Automated Discovery — PENDING
 ### Phase H: TUI Blueprint Table — PENDING
@@ -219,6 +241,10 @@
   with status icons, severity badges, approve/skip controls, optimistic state
 - `planner-web/src/pages/BlueprintPage.tsx` — Wired reconvergence: `handleImpactApply` calls API,
   `reconResult`/`reconLoading`/`reconVisible` state, renders ReconvergencePanel
+
+### Phase E — TypeScript (frontend)
+- `planner-web/src/components/BlueprintGraph.tsx` — Pre-bake simulation (E.1), adaptive charge (E.2),
+  minimap with viewport rect (E.3), neighborhood focus dblclick mode (E.4)
 
 ## Test Results
 - Frontend: 166/166 tests passing (11 test files)
