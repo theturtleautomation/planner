@@ -5,9 +5,11 @@ import TableView from '../components/TableView.tsx';
 import RadarView from '../components/RadarView.tsx';
 import DetailDrawer from '../components/DetailDrawer.tsx';
 import ImpactPreviewModal from '../components/ImpactPreviewModal.tsx';
+import CreateNodeModal from '../components/CreateNodeModal.tsx';
+import DeleteNodeDialog from '../components/DeleteNodeDialog.tsx';
 import { createApiClient } from '../api/client.ts';
 import { useGetAccessToken } from '../auth/useAuthenticatedFetch.ts';
-import type { BlueprintResponse, NodeType, NodeSummary, ImpactReport } from '../types/blueprint.ts';
+import type { BlueprintResponse, BlueprintNode, NodeType, NodeSummary, ImpactReport } from '../types/blueprint.ts';
 
 // ─── View types ─────────────────────────────────────────────────────────────
 
@@ -59,6 +61,13 @@ export default function BlueprintPage() {
   const [impactReport, setImpactReport] = useState<ImpactReport | null>(null);
   const [impactLoading, setImpactLoading] = useState(false);
 
+  // Create node modal state
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+
+  // Delete node dialog state
+  const [deleteNodeId, setDeleteNodeId] = useState<string | null>(null);
+  const [deleteNodeName, setDeleteNodeName] = useState<string | null>(null);
+
   // ─── Data fetching ──────────────────────────────────────────────────────
 
   const loadBlueprint = useCallback(async () => {
@@ -105,6 +114,32 @@ export default function BlueprintPage() {
     // Future: apply reconvergence
     handleImpactClose();
   }, [handleImpactClose]);
+
+  // ─── Create node ────────────────────────────────────────────────────────
+
+  const handleCreateNode = useCallback(async (node: BlueprintNode) => {
+    await api.createBlueprintNode(node);
+    await loadBlueprint();
+  }, [api, loadBlueprint]);
+
+  // ─── Delete node ────────────────────────────────────────────────────────
+
+  const handleRequestDelete = useCallback((nodeId: string) => {
+    const node = blueprint?.nodes.find(n => n.id === nodeId);
+    setDeleteNodeId(nodeId);
+    setDeleteNodeName(node?.name ?? nodeId);
+  }, [blueprint]);
+
+  const handleConfirmDelete = useCallback(async (nodeId: string) => {
+    await api.deleteBlueprintNode(nodeId);
+    if (selectedNodeId === nodeId) setSelectedNodeId(null);
+    await loadBlueprint();
+  }, [api, selectedNodeId, loadBlueprint]);
+
+  const handleDeleteClose = useCallback(() => {
+    setDeleteNodeId(null);
+    setDeleteNodeName(null);
+  }, []);
 
   // ─── Node selection / navigation ────────────────────────────────────────
 
@@ -185,6 +220,32 @@ export default function BlueprintPage() {
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <path d="M21 2v6h-6M3 12a9 9 0 0 1 15-6.7L21 8M3 22v-6h6M21 12a9 9 0 0 1-15 6.7L3 16"/>
+              </svg>
+            </button>
+
+            {/* Create node button */}
+            <button
+              className="btn btn-primary"
+              onClick={() => setCreateModalOpen(true)}
+              title="Create a new blueprint node"
+              style={{ fontSize: 'var(--text-xs)', gap: '4px' }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
+              New Node
+            </button>
+
+            {/* Delete node button */}
+            <button
+              className="btn btn-ghost"
+              onClick={() => { if (selectedNodeId) handleRequestDelete(selectedNodeId); }}
+              title="Delete selected node"
+              disabled={!selectedNodeId}
+              style={{ opacity: selectedNodeId ? 1 : 0.4, color: selectedNodeId ? 'var(--color-error)' : undefined }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
               </svg>
             </button>
 
@@ -374,6 +435,7 @@ export default function BlueprintPage() {
           onClose={() => handleSelectNode(null)}
           onNavigateNode={handleNavigateNode}
           onImpactPreview={handleImpactPreview}
+          onRequestDelete={handleRequestDelete}
         />
 
         {/* Impact preview modal */}
@@ -383,6 +445,22 @@ export default function BlueprintPage() {
           loading={impactLoading}
           onClose={handleImpactClose}
           onApply={handleImpactApply}
+        />
+
+        {/* Create node modal */}
+        <CreateNodeModal
+          isOpen={createModalOpen}
+          onClose={() => setCreateModalOpen(false)}
+          onCreate={handleCreateNode}
+        />
+
+        {/* Delete node confirmation */}
+        <DeleteNodeDialog
+          isOpen={deleteNodeId !== null}
+          nodeId={deleteNodeId}
+          nodeName={deleteNodeName}
+          onClose={handleDeleteClose}
+          onConfirm={handleConfirmDelete}
         />
       </div>
     </Layout>

@@ -1,6 +1,9 @@
 // ─── Blueprint Types ─────────────────────────────────────────────────────────
 // Mirrors the Rust types in planner-schemas/src/artifacts/blueprint.rs
 // and the API response shapes in planner-server/src/api.rs.
+//
+// SYNC CHECK: Last verified against Rust structs on 2026-03-05.
+// If you edit types here, update the Rust side too (or vice versa).
 
 export type NodeType =
   | 'decision'
@@ -22,9 +25,12 @@ export type EdgeType =
 
 export type DecisionStatus = 'proposed' | 'accepted' | 'deprecated' | 'superseded';
 export type AdoptionRing = 'adopt' | 'trial' | 'assess' | 'hold';
-export type TechnologyCategory = 'language' | 'framework' | 'library' | 'tool' | 'platform' | 'database' | 'infrastructure';
-export type ConstraintSource = 'business' | 'technical' | 'regulatory' | 'resource';
-export type PatternScope = 'system' | 'component' | 'code';
+export type TechnologyCategory = 'language' | 'framework' | 'library' | 'runtime' | 'tool' | 'platform' | 'protocol';
+export type ComponentType = 'module' | 'service' | 'library' | 'store' | 'interface' | 'pipeline';
+export type ComponentStatus = 'planned' | 'in_progress' | 'shipped' | 'deprecated';
+export type ConstraintType = 'technical' | 'organizational' | 'philosophical' | 'regulatory';
+export type QualityAttribute = 'performance' | 'reliability' | 'security' | 'usability' | 'maintainability';
+export type QualityPriority = 'critical' | 'high' | 'medium' | 'low';
 export type ImpactAction = 'reconverge' | 'update' | 'invalidate' | 'add' | 'remove';
 export type ImpactSeverity = 'shallow' | 'medium' | 'deep';
 
@@ -67,22 +73,45 @@ export interface NodeListResponse {
 
 // ─── Full node (tagged union, matches Rust enum) ────────────────────────────
 // The server returns BlueprintNode as a JSON object with a `node_type` tag.
+// These interfaces MUST match the Rust serde output exactly.
 
+// Matches Rust: DecisionOption { name, pros, cons, chosen }
+export interface DecisionOption {
+  name: string;
+  pros: string[];
+  cons: string[];
+  chosen: boolean;
+}
+
+// Matches Rust: Consequence { description, positive }
+export interface Consequence {
+  description: string;
+  positive: boolean;  // true = positive, false = negative
+}
+
+// Matches Rust: Assumption { description, confidence }
+export interface Assumption {
+  description: string;
+  confidence: string;  // "high" | "medium" | "low"
+}
+
+// Matches Rust: Decision { id, title, status, context, options, consequences, assumptions, supersedes?, tags, created_at, updated_at }
 export interface DecisionNode {
   node_type: 'decision';
   id: string;
   title: string;
   status: DecisionStatus;
   context: string;
-  options: { name: string; description: string; pros: string[]; cons: string[] }[];
-  consequences: { description: string; type: 'positive' | 'negative' | 'neutral' }[];
-  assumptions: { statement: string; risk: string; validation_approach: string }[];
+  options: DecisionOption[];
+  consequences: Consequence[];
+  assumptions: Assumption[];
   supersedes?: string;
   tags: string[];
   created_at: string;
   updated_at: string;
 }
 
+// Matches Rust: Technology { id, name, version?, category, ring, rationale, license?, tags, created_at, updated_at }
 export interface TechnologyNode {
   node_type: 'technology';
   id: string;
@@ -91,54 +120,59 @@ export interface TechnologyNode {
   category: TechnologyCategory;
   ring: AdoptionRing;
   rationale: string;
+  license?: string;
   tags: string[];
   created_at: string;
   updated_at: string;
 }
 
+// Matches Rust: Component { id, name, component_type, description, provides, consumes, status, tags, created_at, updated_at }
 export interface ComponentNode {
   node_type: 'component';
   id: string;
   name: string;
+  component_type: ComponentType;
   description: string;
-  responsibilities: string[];
-  interfaces: { name: string; direction: string; protocol: string; description: string }[];
+  provides: string[];
+  consumes: string[];
+  status: ComponentStatus;
   tags: string[];
   created_at: string;
   updated_at: string;
 }
 
+// Matches Rust: Constraint { id, title, constraint_type, description, source, tags, created_at, updated_at }
 export interface ConstraintNode {
   node_type: 'constraint';
   id: string;
   title: string;
+  constraint_type: ConstraintType;
   description: string;
-  source: ConstraintSource;
-  negotiable: boolean;
+  source: string;  // free text — who/what imposed this constraint
   tags: string[];
   created_at: string;
   updated_at: string;
 }
 
+// Matches Rust: Pattern { id, name, description, rationale, tags, created_at, updated_at }
 export interface PatternNode {
   node_type: 'pattern';
   id: string;
   name: string;
   description: string;
-  scope: PatternScope;
+  rationale: string;
   tags: string[];
   created_at: string;
   updated_at: string;
 }
 
+// Matches Rust: QualityRequirement { id, attribute, scenario, priority, tags, created_at, updated_at }
 export interface QualityRequirementNode {
   node_type: 'quality_requirement';
   id: string;
-  attribute: string;
+  attribute: QualityAttribute;
   scenario: string;
-  measure: string;
-  target: string;
-  priority: string;
+  priority: QualityPriority;
   tags: string[];
   created_at: string;
   updated_at: string;

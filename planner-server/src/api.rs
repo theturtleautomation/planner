@@ -188,6 +188,17 @@ pub struct ImpactPreviewRequest {
     pub change_description: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SnapshotEntry {
+    pub timestamp: String,
+    pub filename: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct HistoryListResponse {
+    pub snapshots: Vec<SnapshotEntry>,
+}
+
 // ---------------------------------------------------------------------------
 // Admin response types
 // ---------------------------------------------------------------------------
@@ -266,7 +277,8 @@ pub fn routes(state: Arc<AppState>) -> Router {
         .route("/blueprint", get(get_blueprint))
         .route("/blueprint/nodes", get(list_blueprint_nodes).post(create_blueprint_node))
         .route("/blueprint/nodes/{nodeId}", get(get_blueprint_node).patch(update_blueprint_node).delete(delete_blueprint_node))
-        .route("/blueprint/edges", post(create_blueprint_edge))
+        .route("/blueprint/edges", post(create_blueprint_edge).delete(delete_blueprint_edge))
+        .route("/blueprint/history", get(list_blueprint_history))
         .route("/blueprint/impact-preview", post(impact_preview))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
@@ -1205,6 +1217,47 @@ async fn create_blueprint_edge(
     state.blueprints.add_edge(edge);
     tracing::info!("Blueprint edge created: {} -[{}]-> {}", payload.source, payload.edge_type, payload.target);
     Ok((StatusCode::CREATED, Json(payload)))
+}
+
+/// DELETE /blueprint/edges — Remove an edge by source+target+edge_type.
+async fn delete_blueprint_edge(
+    State(state): State<Arc<AppState>>,
+    _claims: Claims,
+    Json(payload): Json<EdgePayload>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    let source = payload.source.clone();
+    let target = payload.target.clone();
+    let edge_type = payload.edge_type;
+
+    let removed = state.blueprints.remove_edges_where(|e| {
+        e.source.0 == source && e.target.0 == target && e.edge_type == edge_type
+    });
+
+    if removed > 0 {
+        tracing::info!("Blueprint edge(s) deleted: {} -[{}]-> {} ({})", source, edge_type, target, removed);
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: format!("No matching edge: {} -[{}]-> {}", source, edge_type, target),
+                code: Some("EDGE_NOT_FOUND".into()),
+            }),
+        ))
+    }
+}
+
+/// GET /blueprint/history — List history snapshots (timestamps).
+async fn list_blueprint_history(
+    State(state): State<Arc<AppState>>,
+    _claims: Claims,
+) -> Json<HistoryListResponse> {
+    let raw = state.blueprints.list_history();
+    let snapshots = raw.into_iter().map(|(ts, fname)| SnapshotEntry {
+        timestamp: ts,
+        filename: fname,
+    }).collect();
+    Json(HistoryListResponse { snapshots })
 }
 
 /// POST /blueprint/impact-preview — Analyze downstream impact of a node change.
@@ -2222,5 +2275,87 @@ mod tests {
         let bp: BlueprintResponse = serde_json::from_slice(&body).unwrap();
         assert_eq!(bp.total_nodes, 1);
         assert_eq!(bp.total_edges, 0);
+    }
+
+    #[tokio::test]
+    async fn test_delete_blueprint_edge() {
+        let state = test_state();
+
+        // Insert two nodes and create an edge.
+        let dec: planner_schemas::artifacts::blueprint::BlueprintNode =
+            serde_json::from_value(sample_decision_json()).unwrap();
+        let tech: planner_schemas::artifacts::blueprint::BlueprintNode =
+            serde_json::from_value(sample_technology_json()).unwrap();
+        state.blueprints.upsert_node(dec);
+        state.blueprints.upsert_node(tech);
+
+        let edge = planner_schemas::artifacts::blueprint::Edge {
+            source: planner_schemas::artifacts::blueprint::NodeId::from_raw("tech-rust-b2c3d4e5"),
+            target: planner_schemas::artifacts::blueprint::NodeId::from_raw("dec-use-msgpack-a1b2c3d4"),
+            edge_type: planner_schemas::artifacts::blueprint::EdgeType::DecidedBy,
+            metadata: None,
+        };
+        state.blueprints.add_edge(edge);
+
+        // Verify edge exists.
+        let (_, edge_count) = state.blueprints.counts();
+        assert_eq!(edge_count, 1);
+
+        // Delete the edge.
+        let app = routes(state.clone());
+        let payload = serde_json::json!({
+            "source": "tech-rust-b2c3d4e5",
+            "target": "dec-use-msgpack-a1b2c3d4",
+            "edge_type": "decided_by"
+        });
+        let req = Request::builder()
+            .method("DELETE")
+            .uri("/blueprint/edges")
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_string(&payload).unwrap()))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+
+        // Verify edge removed.
+        let (_, edge_count) = state.blueprints.counts();
+        assert_eq!(edge_count, 0);
+    }
+
+    #[tokio::test]
+    async fn test_delete_blueprint_edge_not_found() {
+        let state = test_state();
+        let app = routes(state);
+
+        let payload = serde_json::json!({
+            "source": "nonexistent-a",
+            "target": "nonexistent-b",
+            "edge_type": "depends_on"
+        });
+        let req = Request::builder()
+            .method("DELETE")
+            .uri("/blueprint/edges")
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_string(&payload).unwrap()))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_list_blueprint_history_empty() {
+        // In-memory store has no disk — should return empty list.
+        let state = test_state();
+        let app = routes(state);
+
+        let req = Request::builder()
+            .uri("/blueprint/history")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let history: HistoryListResponse = serde_json::from_slice(&body).unwrap();
+        assert!(history.snapshots.is_empty());
     }
 }

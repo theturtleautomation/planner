@@ -175,6 +175,19 @@ export function createApiClient(getToken: GetTokenFn) {
       });
     },
 
+    /** DELETE /blueprint/edges — Remove a directed edge by source+target+edge_type. */
+    deleteBlueprintEdge(edge: { source: string; target: string; edge_type: string }): Promise<void> {
+      return apiFetch<void>(getToken, '/blueprint/edges', {
+        method: 'DELETE',
+        body: JSON.stringify(edge),
+      });
+    },
+
+    /** GET /blueprint/history — List history snapshots. */
+    listBlueprintHistory(): Promise<{ snapshots: { timestamp: string; filename: string }[] }> {
+      return apiFetch<{ snapshots: { timestamp: string; filename: string }[] }>(getToken, '/blueprint/history');
+    },
+
     /** POST /blueprint/impact-preview — Analyze impact of changing a node. */
     impactPreview(nodeId: string, changeDescription: string): Promise<ImpactReport> {
       return apiFetch<ImpactReport>(getToken, '/blueprint/impact-preview', {

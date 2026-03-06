@@ -716,6 +716,30 @@ impl BlueprintStore {
         Ok(())
     }
 
+    /// List history snapshot files (timestamps).
+    pub fn list_history(&self) -> Vec<(String, String)> {
+        let blueprint_dir = match &self.blueprint_dir {
+            Some(d) => d,
+            None => return Vec::new(),
+        };
+
+        let history_dir = blueprint_dir.join("history");
+        let mut entries: Vec<(String, String)> = Vec::new();
+
+        if let Ok(read_dir) = std::fs::read_dir(&history_dir) {
+            for entry in read_dir.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.ends_with(".msgpack") {
+                    let timestamp = name.trim_end_matches(".msgpack").to_string();
+                    entries.push((timestamp, name));
+                }
+            }
+        }
+
+        entries.sort_by(|a, b| b.0.cmp(&a.0)); // newest first
+        entries
+    }
+
     /// Check if disk backing is enabled.
     pub fn is_persistent(&self) -> bool {
         self.blueprint_dir.is_some()

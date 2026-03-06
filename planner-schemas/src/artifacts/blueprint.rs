@@ -8,12 +8,12 @@
 //!
 //! | Type               | Shape (UI) | ID Prefix |
 //! |--------------------|------------|-----------|
-//! | Decision           | diamond    | DEC-      |
-//! | Technology         | hexagon    | TECH-     |
-//! | Component          | rectangle  | COMP-     |
-//! | Constraint         | pentagon   | CON-      |
-//! | Pattern            | oval       | PAT-      |
-//! | Quality Requirement| shield     | QR-       |
+//! | Decision           | rounded rect | DEC-      |
+//! | Technology         | hexagon      | TECH-     |
+//! | Component          | sharp rect   | COMP-     |
+//! | Constraint         | diamond      | CON-      |
+//! | Pattern            | ellipse      | PAT-      |
+//! | Quality Requirement| shield       | QR-       |
 //!
 //! ## Edge Types
 //!
