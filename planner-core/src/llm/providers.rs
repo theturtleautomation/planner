@@ -87,7 +87,8 @@ pub fn ensure_sandbox_git_init() {
             if let Err(e) = std::fs::create_dir_all(sandbox) {
                 tracing::warn!(
                     "Failed to create CLI sandbox dir {}: {}",
-                    CLI_SANDBOX_DIR, e
+                    CLI_SANDBOX_DIR,
+                    e
                 );
                 return;
             }
@@ -138,13 +139,15 @@ pub fn ensure_sandbox_git_init() {
             Ok(s) => {
                 tracing::warn!(
                     "git init in {} exited with {} — Claude CLI may refuse to run",
-                    CLI_SANDBOX_DIR, s
+                    CLI_SANDBOX_DIR,
+                    s
                 );
             }
             Err(e) => {
                 tracing::warn!(
                     "git init failed in {}: {} — Claude CLI may refuse to run",
-                    CLI_SANDBOX_DIR, e
+                    CLI_SANDBOX_DIR,
+                    e
                 );
             }
         }
@@ -211,11 +214,6 @@ impl CliEnvironment {
         // Disable MCP servers explicitly (belt and suspenders with SIMPLE mode)
         env.insert("ENABLE_CLAUDEAI_MCP_SERVERS".into(), "false".into());
 
-        // Pass through API key from planner.env if configured (headless auth)
-        if let Ok(key) = std::env::var("ANTHROPIC_API_KEY") {
-            env.insert("ANTHROPIC_API_KEY".into(), key);
-        }
-
         CliEnvironment {
             env,
             cwd: PathBuf::from(CLI_SANDBOX_DIR),
@@ -238,17 +236,14 @@ impl CliEnvironment {
 
         env.insert("HOME".into(), home.clone());
 
-        // Point system settings to our controlled file (highest precedence)
+        // Point system settings to our controlled file (highest precedence).
+        // This file is written by deploy/install.sh and locks Gemini to
+        // subscription auth in the isolated service home.
         let settings_path = format!("{}/settings.json", home);
         env.insert("GEMINI_CLI_SYSTEM_SETTINGS_PATH".into(), settings_path);
 
         // Disable sandbox (we run in headless --prompt mode, no tool execution)
         env.insert("GEMINI_SANDBOX".into(), "false".into());
-
-        // Pass through API key from planner.env if configured (headless auth)
-        if let Ok(key) = std::env::var("GOOGLE_API_KEY") {
-            env.insert("GOOGLE_API_KEY".into(), key);
-        }
 
         CliEnvironment {
             env,
@@ -275,11 +270,6 @@ impl CliEnvironment {
         env.insert("XDG_CONFIG_HOME".into(), format!("{}/.config", home));
         env.insert("XDG_DATA_HOME".into(), format!("{}/.local/share", home));
         env.insert("XDG_CACHE_HOME".into(), format!("{}/.cache", home));
-
-        // Pass through API key from planner.env if configured (headless auth)
-        if let Ok(key) = std::env::var("OPENAI_API_KEY") {
-            env.insert("OPENAI_API_KEY".into(), key);
-        }
 
         CliEnvironment {
             env,
@@ -372,9 +362,7 @@ pub async fn run_cli(
     ensure_sandbox_git_init();
 
     let mut cmd = Command::new(binary);
-    cmd.args(args)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+    cmd.args(args).stdout(Stdio::piped()).stderr(Stdio::piped());
 
     // Apply isolated environment if provided
     if let Some(env) = cli_env {
@@ -409,12 +397,13 @@ pub async fn run_cli(
     if let Some(input) = stdin_input {
         use tokio::io::AsyncWriteExt;
         if let Some(mut stdin) = child.stdin.take() {
-            stdin.write_all(input.as_bytes()).await.map_err(|e| {
-                LlmError::CliExecError {
+            stdin
+                .write_all(input.as_bytes())
+                .await
+                .map_err(|e| LlmError::CliExecError {
                     exit_code: None,
                     stderr: format!("Failed to write stdin: {}", e),
-                }
-            })?;
+                })?;
             // Drop stdin to signal EOF
             drop(stdin);
         }
@@ -457,14 +446,15 @@ pub async fn run_cli_instrumented(
     model: &str,
     cli_env: Option<&CliEnvironment>,
 ) -> Result<(String, String), LlmError> {
-    use observability::{PlannerEvent, EventSource};
+    use observability::{EventSource, PlannerEvent};
 
     let prompt_len = stdin_input.map(|s| s.len()).unwrap_or(0);
     let mut start_event = PlannerEvent::info(
         EventSource::LlmRouter,
         "llm.call.start",
         format!("Starting {} call to {}", binary, model),
-    ).with_metadata(serde_json::json!({
+    )
+    .with_metadata(serde_json::json!({
         "model": model,
         "provider": binary,
         "prompt_len": prompt_len,
@@ -484,7 +474,8 @@ pub async fn run_cli_instrumented(
                 EventSource::LlmRouter,
                 "llm.call.complete",
                 format!("{} call to {} completed in {}ms", binary, model, elapsed_ms),
-            ).with_duration(elapsed_ms)
+            )
+            .with_duration(elapsed_ms)
             .with_metadata(serde_json::json!({
                 "model": model,
                 "provider": binary,
@@ -513,7 +504,8 @@ pub async fn run_cli_instrumented(
                 EventSource::LlmRouter,
                 "llm.call.error",
                 format!("{} call to {} failed after {}ms", binary, model, elapsed_ms),
-            ).with_duration(elapsed_ms)
+            )
+            .with_duration(elapsed_ms)
             .with_metadata(serde_json::json!({
                 "model": model,
                 "provider": binary,
@@ -560,11 +552,10 @@ pub struct AnthropicCliClient {
 
 impl AnthropicCliClient {
     pub fn new() -> Result<Self, LlmError> {
-        let binary_path = resolve_cli_binary("claude").ok_or_else(|| {
-            LlmError::CliBinaryNotFound {
+        let binary_path =
+            resolve_cli_binary("claude").ok_or_else(|| LlmError::CliBinaryNotFound {
                 binary: "claude".into(),
-            }
-        })?;
+            })?;
         Ok(AnthropicCliClient {
             timeout_secs: DEFAULT_TIMEOUT_SECS,
             env: CliEnvironment::for_claude(),
@@ -628,7 +619,14 @@ impl LlmClient for AnthropicCliClient {
             &model_arg,
         ];
 
-        let (stdout, _stderr) = run_cli(&self.binary_path, &args, Some(&prompt), self.timeout_secs, Some(&self.env)).await?;
+        let (stdout, _stderr) = run_cli(
+            &self.binary_path,
+            &args,
+            Some(&prompt),
+            self.timeout_secs,
+            Some(&self.env),
+        )
+        .await?;
 
         // Parse stream-json: one JSON object per line.
         // We want the final result that contains the complete text.
@@ -707,11 +705,10 @@ pub struct GoogleCliClient {
 
 impl GoogleCliClient {
     pub fn new() -> Result<Self, LlmError> {
-        let binary_path = resolve_cli_binary("gemini").ok_or_else(|| {
-            LlmError::CliBinaryNotFound {
+        let binary_path =
+            resolve_cli_binary("gemini").ok_or_else(|| LlmError::CliBinaryNotFound {
                 binary: "gemini".into(),
-            }
-        })?;
+            })?;
         Ok(GoogleCliClient {
             timeout_secs: DEFAULT_TIMEOUT_SECS,
             env: CliEnvironment::for_gemini(),
@@ -767,7 +764,14 @@ impl LlmClient for GoogleCliClient {
             &model_arg,
         ];
 
-        let (stdout, _stderr) = run_cli(&self.binary_path, &args, None, self.timeout_secs, Some(&self.env)).await?;
+        let (stdout, _stderr) = run_cli(
+            &self.binary_path,
+            &args,
+            None,
+            self.timeout_secs,
+            Some(&self.env),
+        )
+        .await?;
 
         // Gemini --output-format json emits a single JSON object.
         // Try structured parse first, fall back to raw stdout.
@@ -777,7 +781,11 @@ impl LlmClient for GoogleCliClient {
                     .response
                     .or(resp.result)
                     .unwrap_or_else(|| stdout.trim().to_string());
-                (text, resp.input_tokens.unwrap_or(0), resp.output_tokens.unwrap_or(0))
+                (
+                    text,
+                    resp.input_tokens.unwrap_or(0),
+                    resp.output_tokens.unwrap_or(0),
+                )
             } else {
                 // Fallback: entire stdout is the response text
                 (stdout.trim().to_string(), 0u64, 0u64)
@@ -818,11 +826,10 @@ pub struct OpenAiCliClient {
 
 impl OpenAiCliClient {
     pub fn new() -> Result<Self, LlmError> {
-        let binary_path = resolve_cli_binary("codex").ok_or_else(|| {
-            LlmError::CliBinaryNotFound {
+        let binary_path =
+            resolve_cli_binary("codex").ok_or_else(|| LlmError::CliBinaryNotFound {
                 binary: "codex".into(),
-            }
-        })?;
+            })?;
         Ok(OpenAiCliClient {
             timeout_secs: DEFAULT_TIMEOUT_SECS,
             env: CliEnvironment::for_codex(),
@@ -886,7 +893,8 @@ impl LlmClient for OpenAiCliClient {
         // Use --output-last-message to a temp file for reliable extraction,
         // plus --json so we still get structured events on stdout.
         // The prompt goes via stdin (use "-" as the PROMPT arg).
-        let output_file = std::env::temp_dir().join(format!("codex-out-{}.txt", uuid::Uuid::new_v4()));
+        let output_file =
+            std::env::temp_dir().join(format!("codex-out-{}.txt", uuid::Uuid::new_v4()));
         let output_path = output_file.to_string_lossy().to_string();
 
         let args = vec![
@@ -898,10 +906,17 @@ impl LlmClient for OpenAiCliClient {
             &model_arg,
             "--output-last-message",
             &output_path,
-            "-",  // read prompt from stdin
+            "-", // read prompt from stdin
         ];
 
-        let (stdout, _stderr) = run_cli(&self.binary_path, &args, Some(&prompt), self.timeout_secs, Some(&self.env)).await?;
+        let (stdout, _stderr) = run_cli(
+            &self.binary_path,
+            &args,
+            Some(&prompt),
+            self.timeout_secs,
+            Some(&self.env),
+        )
+        .await?;
 
         // Strategy 1: Read from --output-last-message file (most reliable)
         let content = if output_file.exists() {
@@ -920,7 +935,7 @@ impl LlmClient for OpenAiCliClient {
         Ok(CompletionResponse {
             content,
             model: request.model,
-            input_tokens: 0,  // codex exec doesn't report token counts
+            input_tokens: 0, // codex exec doesn't report token counts
             output_tokens: 0,
             estimated_cost_usd: 0.0, // subscription-based
         })
@@ -1042,18 +1057,23 @@ impl LlmRouter {
         sink: &dyn observability::EventSink,
         session_id: Option<uuid::Uuid>,
     ) -> Result<CompletionResponse, LlmError> {
-        use observability::{PlannerEvent, EventSource};
+        use observability::{EventSource, PlannerEvent};
 
         // Determine which binary would be used for this model, for event metadata.
         let binary = self.binary_for_model(&request.model);
         let model = request.model.clone();
-        let prompt_len = request.messages.iter().map(|m| m.content.len()).sum::<usize>();
+        let prompt_len = request
+            .messages
+            .iter()
+            .map(|m| m.content.len())
+            .sum::<usize>();
 
         let mut start_event = PlannerEvent::info(
             EventSource::LlmRouter,
             "llm.call.start",
             format!("Starting {} call to {}", binary, model),
-        ).with_metadata(serde_json::json!({
+        )
+        .with_metadata(serde_json::json!({
             "model": model,
             "provider": binary,
             "prompt_len": prompt_len,
@@ -1073,7 +1093,8 @@ impl LlmRouter {
                     EventSource::LlmRouter,
                     "llm.call.complete",
                     format!("{} call to {} completed in {}ms", binary, model, elapsed_ms),
-                ).with_duration(elapsed_ms)
+                )
+                .with_duration(elapsed_ms)
                 .with_metadata(serde_json::json!({
                     "model": model,
                     "provider": binary,
@@ -1092,7 +1113,8 @@ impl LlmRouter {
                     EventSource::LlmRouter,
                     "llm.call.error",
                     format!("{} call to {} failed after {}ms", binary, model, elapsed_ms),
-                ).with_duration(elapsed_ms)
+                )
+                .with_duration(elapsed_ms)
                 .with_metadata(serde_json::json!({
                     "model": model,
                     "provider": binary,
@@ -1280,14 +1302,17 @@ mod tests {
 
     #[tokio::test]
     async fn complete_instrumented_emits_events_on_success() {
-        use crate::llm::{CompletionRequest, CompletionResponse, Message, Role, LlmError};
+        use crate::llm::{CompletionRequest, CompletionResponse, LlmError, Message, Role};
         use crate::observability::{CollectorEventSink, EventLevel};
         use async_trait::async_trait;
 
         struct MockClient;
         #[async_trait]
         impl LlmClient for MockClient {
-            async fn complete(&self, req: CompletionRequest) -> Result<CompletionResponse, LlmError> {
+            async fn complete(
+                &self,
+                req: CompletionRequest,
+            ) -> Result<CompletionResponse, LlmError> {
                 Ok(CompletionResponse {
                     content: "mock response".into(),
                     model: req.model,
@@ -1296,14 +1321,19 @@ mod tests {
                     estimated_cost_usd: 0.0,
                 })
             }
-            fn provider_name(&self) -> &str { "mock" }
+            fn provider_name(&self) -> &str {
+                "mock"
+            }
         }
 
         let router = LlmRouter::with_mock(Box::new(MockClient));
         let sink = CollectorEventSink::new();
         let request = CompletionRequest {
             system: None,
-            messages: vec![Message { role: Role::User, content: "Hello".into() }],
+            messages: vec![Message {
+                role: Role::User,
+                content: "Hello".into(),
+            }],
             max_tokens: 100,
             temperature: 0.0,
             model: "claude-opus-4-6".into(),
@@ -1323,24 +1353,34 @@ mod tests {
 
     #[tokio::test]
     async fn complete_instrumented_emits_error_event_on_failure() {
-        use crate::llm::{CompletionRequest, CompletionResponse, Message, Role, LlmError};
+        use crate::llm::{CompletionRequest, CompletionResponse, LlmError, Message, Role};
         use crate::observability::{CollectorEventSink, EventLevel};
         use async_trait::async_trait;
 
         struct FailingClient;
         #[async_trait]
         impl LlmClient for FailingClient {
-            async fn complete(&self, _req: CompletionRequest) -> Result<CompletionResponse, LlmError> {
-                Err(LlmError::CliBinaryNotFound { binary: "claude".into() })
+            async fn complete(
+                &self,
+                _req: CompletionRequest,
+            ) -> Result<CompletionResponse, LlmError> {
+                Err(LlmError::CliBinaryNotFound {
+                    binary: "claude".into(),
+                })
             }
-            fn provider_name(&self) -> &str { "mock" }
+            fn provider_name(&self) -> &str {
+                "mock"
+            }
         }
 
         let router = LlmRouter::with_mock(Box::new(FailingClient));
         let sink = CollectorEventSink::new();
         let request = CompletionRequest {
             system: None,
-            messages: vec![Message { role: Role::User, content: "Hello".into() }],
+            messages: vec![Message {
+                role: Role::User,
+                content: "Hello".into(),
+            }],
             max_tokens: 100,
             temperature: 0.0,
             model: "claude-opus-4-6".into(),

@@ -37,6 +37,23 @@ Planner v2 is a Rust workspace that takes a plain-English feature description an
 
 ## Quick Start
 
+### Linux system install (`deploy/install.sh`)
+
+Use the bundled installer if you want Planner running as a persistent `systemd` service on a Linux host:
+
+```bash
+git clone https://github.com/theturtleautomation/planner
+cd planner
+sudo ./deploy/install.sh
+
+sudo systemctl status planner
+journalctl -u planner -f
+```
+
+The installer builds the Rust workspace and frontend, installs `planner-server`, deploys the web assets, writes the `systemd` unit and default env file, and prepares isolated LLM CLI homes under `/opt/planner/cli-home/`.
+
+### Source build / local development
+
 ```bash
 git clone https://github.com/theturtleautomation/planner
 cd planner
@@ -56,6 +73,33 @@ The pipeline will detect whichever of `claude`, `gemini`, or `codex` you have in
 
 ## Installation
 
+### Linux Installer (`deploy/install.sh`)
+
+`deploy/install.sh` is the supported production install path for Linux + `systemd`.
+
+It expects Rust, Node.js/npm, and Git to already be installed, then it will:
+
+- build the release workspace and `planner-web`
+- create the `planner` service user
+- install `planner-server` to `/usr/local/bin/planner-server`
+- install the web bundle to `/opt/planner/web`
+- install `/etc/systemd/system/planner.service`
+- install `/etc/planner/planner.env` if it does not already exist
+- set up isolated CLI homes under `/opt/planner/cli-home` and a clean sandbox under `/opt/planner/cli-sandbox`
+- attempt to install `claude`, `gemini`, and `codex` into `/opt/planner/bin`
+- verify which installed providers are authenticated
+
+```bash
+# Full install
+sudo ./deploy/install.sh
+
+# Rebuild, reinstall, and restart without replacing /etc/planner/planner.env
+sudo ./deploy/install.sh --update
+
+# Remove the service, install tree, config, and service user
+sudo ./deploy/install.sh --uninstall
+```
+
 ### Rust Toolchain
 
 Install via [rustup](https://rustup.rs/):
@@ -68,6 +112,10 @@ rustup update stable
 ### LLM CLI Tools (at least one required)
 
 Planner v2 shells out to native CLI binaries — no API keys are read from environment variables. You need at least one of the following installed and authenticated:
+
+For local development, install them on your own `$PATH`. For a `systemd` deployment, `deploy/install.sh` will try to install them into `/opt/planner/bin` automatically and then check their auth state.
+
+`deploy/install.sh` also refreshes npm-based CLIs (`gemini`, `codex`) to the latest published version it can resolve at install time. For Gemini CLI, the installer applies a Planner compatibility patch so subscription auth works in non-interactive mode even when Planner disables all Gemini tools.
 
 | CLI Binary | Provider | Install Method | Subscription Required |
 |---|---|---|---|
@@ -90,7 +138,7 @@ If none are found on `$PATH`, `planner-core` will exit with a clear error listin
 
 ### Git
 
-Required for the Git Projection pipeline stage:
+Required for the Git Projection pipeline stage and for `deploy/install.sh`:
 
 ```bash
 # macOS
@@ -100,9 +148,9 @@ brew install git
 apt install git
 ```
 
-### Node.js (optional — for the React frontend)
+### Node.js (required for `planner-web` and `deploy/install.sh`)
 
-Required only if you want to run or build the `planner-web` React app:
+Required to build the React frontend locally, and also required by `deploy/install.sh`, which runs `npm install --prefix planner-web` and `npm run build --prefix planner-web` during installation:
 
 ```bash
 # Node.js 18+ required
@@ -151,6 +199,9 @@ sudo ./deploy/install.sh --uninstall  # Remove everything
 | `/usr/local/bin/planner-server` | Release binary |
 | `/opt/planner/web/` | Vite production build |
 | `/opt/planner/data/` | CXDB MessagePack storage |
+| `/opt/planner/bin/` | Installed LLM CLI binaries + copied `node` runtime |
+| `/opt/planner/cli-home/` | Isolated `HOME` directories for `claude`, `gemini`, and `codex` |
+| `/opt/planner/cli-sandbox/` | Clean working directory for provider CLI invocations |
 | `/etc/planner/planner.env` | Environment configuration |
 | `/etc/systemd/system/planner.service` | systemd unit |
 
@@ -173,9 +224,9 @@ All configuration lives in `/etc/planner/planner.env`. The file is preserved acr
 - **Authentication** — Auth0 JWT (optional; omit for dev mode)
 - **LLM Providers** — No API keys needed; authenticate CLIs as the service user:
   ```bash
-  sudo -u planner claude login
-  sudo -u planner gemini login
-  sudo -u planner codex login
+  sudo -u planner HOME=/opt/planner/cli-home/claude /opt/planner/bin/claude login
+  sudo -u planner HOME=/opt/planner/cli-home/gemini /opt/planner/bin/gemini auth login
+  sudo -u planner HOME=/opt/planner/cli-home/codex CODEX_HOME=/opt/planner/cli-home/codex/.codex /opt/planner/bin/codex login
   ```
 - **Factory Worker** — Worktree root, sandbox mode
 - **Vault Integration** — HashiCorp Vault Agent, systemd LoadCredential, SOPS

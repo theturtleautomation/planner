@@ -112,11 +112,13 @@ setup_cli_isolation() {
     mkdir -p "${cli_home}/gemini/.gemini"
 
     # Write a locked-down Gemini settings file.
-    # tools.core: [] is an empty allowlist — prevents the CLI from declaring
-    # ANY built-in tools in the API request. Without this, the CLI sends
-    # malformed tool_type protos to the Gemini API causing 400 errors
-    # ("tools[0].tool_type: required one_of 'tool_type' must have one
-    # initialized field"). This is a CLI bug in v0.32.x.
+    # tools.core: [] is an empty allowlist — Planner uses Gemini purely for
+    # text completions and never wants Gemini CLI tool execution.
+    #
+    # Gemini CLI v0.32.1 still serializes an invalid empty `tools` payload on
+    # the OAuth / Code Assist path even when tools.core is empty. The install
+    # step patches the installed client after npm install so an empty
+    # declaration set omits the `tools` field entirely.
     # NOTE: Do NOT add tools.exclude: ["*"] — that caused a different 400.
     # The Policy Engine TOML below is belt-and-suspenders for runtime denial.
     cat > "${cli_home}/gemini/settings.json" << 'GEMINI_SETTINGS'
@@ -125,6 +127,9 @@ setup_cli_isolation() {
     "core": []
   },
   "security": {
+    "auth": {
+      "selectedType": "oauth-personal"
+    },
     "disableYoloMode": true,
     "blockGitExtensions": true,
     "enablePermanentToolApproval": false
@@ -229,6 +234,74 @@ install_llm_clis() {
     fi
 
     local found=0
+
+    installed_npm_package_version() {
+        local pkg="$1"
+        local package_json="${INSTALL_DIR}/lib/node_modules/${pkg}/package.json"
+        [[ -f "${package_json}" ]] || return 1
+        "${node_cmd}" -e "const pkg = require(process.argv[1]); process.stdout.write(pkg.version || '');" "${package_json}" 2>/dev/null
+    }
+
+    latest_npm_package_version() {
+        local pkg="$1"
+        "${npm_cmd}" view "${pkg}" version 2>/dev/null | tail -n 1 | tr -d '[:space:]'
+    }
+
+    patch_gemini_cli_empty_tools_bug() {
+        local gemini_pkg_dir="${INSTALL_DIR}/lib/node_modules/@google/gemini-cli"
+        local gemini_pkg_json="${gemini_pkg_dir}/package.json"
+        local client_js="${gemini_pkg_dir}/node_modules/@google/gemini-cli-core/dist/src/core/client.js"
+
+        if [[ ! -f "${gemini_pkg_json}" ]] || [[ ! -f "${client_js}" ]]; then
+            warn "  ! gemini installed without expected package layout — skipping Planner compatibility patch"
+            return 0
+        fi
+
+        local gemini_version=""
+        gemini_version=$("${node_cmd}" -e "const pkg = require(process.argv[1]); process.stdout.write(pkg.version || '');" "${gemini_pkg_json}" 2>/dev/null || true)
+
+        if grep -q 'toolDeclarations.length > 0 ?' "${client_js}" 2>/dev/null; then
+            info "  ✓ gemini compatibility patch already present (${gemini_version:-unknown version})"
+            return 0
+        fi
+
+        if ! grep -q 'const tools = \[{ functionDeclarations: toolDeclarations }\];' "${client_js}" 2>/dev/null; then
+            warn "  ! gemini client.js layout changed (${gemini_version:-unknown version}) — skipping empty-tools patch"
+            return 0
+        fi
+
+        if "${node_cmd}" - "${client_js}" <<'NODE'
+const fs = require('fs');
+const target = process.argv[2];
+let text = fs.readFileSync(target, 'utf8');
+const replacements = [
+  [
+    'const tools = [{ functionDeclarations: toolDeclarations }];',
+    'const tools = toolDeclarations.length > 0 ? [{ functionDeclarations: toolDeclarations }] : undefined;',
+  ],
+  [
+    'return [{ functionDeclarations: toolDeclarations }];',
+    'return toolDeclarations.length > 0 ? [{ functionDeclarations: toolDeclarations }] : undefined;',
+  ],
+];
+let changed = false;
+for (const [from, to] of replacements) {
+  if (text.includes(from)) {
+    text = text.split(from).join(to);
+    changed = true;
+  }
+}
+if (!changed) {
+  process.exit(2);
+}
+fs.writeFileSync(target, text);
+NODE
+        then
+            info "  ✓ patched gemini empty-tools bug (${gemini_version:-unknown version})"
+        else
+            warn "  ✗ failed to patch gemini empty-tools bug (${gemini_version:-unknown version})"
+        fi
+    }
 
     # ---------------------------------------------------------------
     # Claude — native binary (no Node.js required)
@@ -346,11 +419,28 @@ install_llm_clis() {
     for cli in gemini codex; do
         local pkg="${npm_packages[$cli]}"
 
-        # Skip if already installed and executable
+        # Install or update npm-based CLIs when the installed version is
+        # behind npm latest.
         if [[ -x "${planner_bin}/${cli}" ]]; then
-            info "  ✓ ${cli} already installed at ${planner_bin}/${cli} — skipping"
-            found=$((found + 1))
-            continue
+            local installed_version=""
+            local latest_version=""
+            installed_version=$(installed_npm_package_version "${pkg}" || true)
+            latest_version=$(latest_npm_package_version "${pkg}" || true)
+
+            if [[ -n "${installed_version}" ]] && [[ -n "${latest_version}" ]]; then
+                if [[ "${installed_version}" == "${latest_version}" ]]; then
+                    info "  ✓ ${cli} already installed at ${planner_bin}/${cli} (${installed_version}, latest)"
+                    found=$((found + 1))
+                    continue
+                fi
+                info "  Updating ${cli} ${installed_version} → ${latest_version}..."
+            elif [[ -n "${installed_version}" ]]; then
+                warn "  ! Could not verify latest ${cli} version — keeping installed ${installed_version}"
+                found=$((found + 1))
+                continue
+            else
+                warn "  ! ${cli} binary exists but installed version is unknown — reinstalling"
+            fi
         fi
 
         # Remove stale symlinks/files from prior installs to prevent EEXIST
@@ -371,6 +461,10 @@ install_llm_clis() {
             echo "$npm_output" | grep -i "error" | tail -10
         fi
     done
+
+    if [[ -x "${planner_bin}/gemini" ]]; then
+        patch_gemini_cli_empty_tools_bug
+    fi
 
     # Ensure node is available in planner's bin dir.
     # The npm CLI wrapper scripts (gemini, codex) use #!/usr/bin/env node —
@@ -426,8 +520,8 @@ install_llm_clis() {
 # ---------------------------------------------------------------------------
 # LLM auth verification — check each installed CLI has valid credentials
 # ---------------------------------------------------------------------------
-# Checks for credential files or API keys. If neither is found for a
-# provider, the service will fail at runtime when it tries to call that CLI.
+# Checks for subscription-auth credential files. If missing, the service will
+# fail at runtime when it tries to call that CLI.
 #
 check_llm_auth() {
     info "Verifying LLM authentication..."
@@ -440,23 +534,10 @@ check_llm_auth() {
     local installed=0
     local unauthenticated=()
 
-    # Read API keys from planner.env if it exists
-    local has_anthropic_key=false
-    local has_google_key=false
-    local has_openai_key=false
-    if [[ -f "$conf" ]]; then
-        grep -q '^ANTHROPIC_API_KEY=' "$conf" 2>/dev/null && has_anthropic_key=true
-        grep -q '^GOOGLE_API_KEY=' "$conf" 2>/dev/null && has_google_key=true
-        grep -q '^OPENAI_API_KEY=' "$conf" 2>/dev/null && has_openai_key=true
-    fi
-
     # --- Claude ---
     if [[ -x "${planner_bin}/claude" ]]; then
         installed=$((installed + 1))
-        if [[ "$has_anthropic_key" == "true" ]]; then
-            info "  \u2713 claude  — API key configured in planner.env"
-            authed=$((authed + 1))
-        elif [[ -d "${cli_home}/claude/.claude" ]] &&              find "${cli_home}/claude/.claude" -name "*.json" -size +0c 2>/dev/null | grep -q .; then
+        if [[ -d "${cli_home}/claude/.claude" ]] &&              find "${cli_home}/claude/.claude" -name "*.json" -size +0c 2>/dev/null | grep -q .; then
             info "  \u2713 claude  — credentials found in ${cli_home}/claude/"
             authed=$((authed + 1))
         else
@@ -468,10 +549,7 @@ check_llm_auth() {
     # --- Gemini ---
     if [[ -x "${planner_bin}/gemini" ]]; then
         installed=$((installed + 1))
-        if [[ "$has_google_key" == "true" ]]; then
-            info "  \u2713 gemini  — API key configured in planner.env"
-            authed=$((authed + 1))
-        elif [[ -d "${cli_home}/gemini/.gemini" ]] &&              find "${cli_home}/gemini/.gemini" -name "*.json" -size +0c 2>/dev/null | grep -q .; then
+        if [[ -d "${cli_home}/gemini/.gemini" ]] &&              find "${cli_home}/gemini/.gemini" -name "*.json" -size +0c 2>/dev/null | grep -q .; then
             info "  \u2713 gemini  — credentials found in ${cli_home}/gemini/"
             authed=$((authed + 1))
         else
@@ -483,10 +561,7 @@ check_llm_auth() {
     # --- Codex ---
     if [[ -x "${planner_bin}/codex" ]]; then
         installed=$((installed + 1))
-        if [[ "$has_openai_key" == "true" ]]; then
-            info "  \u2713 codex   — API key configured in planner.env"
-            authed=$((authed + 1))
-        elif [[ -f "${cli_home}/codex/.codex/auth.json" ]] &&              [[ -s "${cli_home}/codex/.codex/auth.json" ]]; then
+        if [[ -f "${cli_home}/codex/.codex/auth.json" ]] &&              [[ -s "${cli_home}/codex/.codex/auth.json" ]]; then
             info "  \u2713 codex   — credentials found in ${cli_home}/codex/"
             authed=$((authed + 1))
         else
@@ -511,19 +586,6 @@ check_llm_auth() {
                 codex)  warn "  sudo -u ${SERVICE_USER} HOME=${cli_home}/codex CODEX_HOME=${cli_home}/codex/.codex ${planner_bin}/codex login" ;;
             esac
         done
-        echo ""
-        info "Option B — API keys (headless servers, no browser required):"
-        info "  Edit ${conf} and add:"
-        echo ""
-        for cli in "${unauthenticated[@]}"; do
-            case "$cli" in
-                claude) warn "  ANTHROPIC_API_KEY=sk-ant-..." ;;
-                gemini) warn "  GOOGLE_API_KEY=AI..." ;;
-                codex)  warn "  OPENAI_API_KEY=sk-..." ;;
-            esac
-        done
-        echo ""
-        info "  Then restart: sudo systemctl restart ${SERVICE_NAME}"
         echo ""
     elif [[ $installed -gt 0 ]]; then
         info "  All ${authed} installed provider(s) are authenticated."
