@@ -1,7 +1,7 @@
 # Blueprint Implementation — Status Tracker
 
 **Started:** March 5, 2026
-**Last Updated:** March 5, 2026 (Phase F complete)
+**Last Updated:** March 5, 2026 (Gap audit + Phase G + Phase H plan)
 
 ## Research Documents (committed to repo)
 - `docs/blueprint-research/BLUEPRINT_DEEP_DIVE.md` — Decision audit, spec vs. code gap analysis
@@ -190,8 +190,52 @@
     (yellow dot = stale, red dot = orphan) with title tooltips
   - CSS: `.health-badge`, `.health-stale`, `.health-orphan` classes
 - [x] F.4 — Verification: `tsc --noEmit` clean, 166/166 vitest passing, Vite build succeeds
-### Phase G: Automated Discovery — PENDING
-### Phase H: TUI Blueprint Table — PENDING
+### Phase G: Automated Discovery [FRONTEND COMPLETE — RUST BACKEND PENDING]
+- [x] G.1 — Discovery types in `blueprint.ts`
+  - `DiscoverySource` ('cargo_toml' | 'directory_scan' | 'pipeline_run' | 'manual')
+  - `ProposalStatus` ('pending' | 'accepted' | 'rejected' | 'merged')
+  - `ProposedNode` interface (id, node, source, reason, status, confidence, source_artifact)
+  - `DiscoveryScanRequest`, `DiscoveryScanResult`, `DiscoveryRunResponse`, `ProposedNodesResponse`
+- [x] G.2 — API client methods in `client.ts`
+  - `runDiscoveryScan(req)` → `POST /blueprint/discovery/scan`
+  - `listProposedNodes(status?)` → `GET /blueprint/discovery/proposals`
+  - `acceptProposal(id)` → `POST /blueprint/discovery/proposals/:id/accept`
+  - `rejectProposal(id, reason?)` → `POST /blueprint/discovery/proposals/:id/reject`
+- [x] G.3 — `DiscoveryPage.tsx` (358 lines)
+  - "Run Discovery Scan" button triggers all scanners
+  - Scan feedback: success summary or error message
+  - Status filter chips: All, Pending, Accepted, Rejected, Merged
+  - Proposal cards: source icon, node name + type badge, confidence %, status, relative time
+  - Expandable detail: source artifact path, full node data JSON, Accept/Reject buttons
+  - Pending proposals highlighted with warning border
+- [x] G.4 — Route + navigation
+  - Added lazy-loaded `/discovery` route in App.tsx with ProtectedRoute wrapper
+  - Added 'Discovery' item with search icon to sidebar in Layout.tsx
+  - SidebarIcon: added 'search' SVG icon variant
+- [x] G.5 — Verification: `tsc --noEmit` clean, 166/166 vitest passing, Vite build succeeds
+- [ ] G.6 — DEFERRED: Rust backend implementation
+  - Cargo.toml scanner: parse `[dependencies]` → proposed TechnologyNodes
+  - Directory structure scanner: detect modules/services → proposed ComponentNodes
+  - Pipeline run scanner: extract detected patterns/constraints from LLM pipeline
+  - Proposed nodes persistence: append-only store in `data_dir/blueprint/proposals/`
+  - REST handlers: scan trigger, proposal CRUD, accept (creates real node + event)
+
+### Phase H: TUI Blueprint Table [PLAN DOCUMENTED — RUST IMPLEMENTATION PENDING]
+- [x] H.1 — Detailed implementation plan in `planner-tui/src/blueprint_table.rs`
+  - Architecture: split-pane layout (node table left, detail right)
+  - App state extension: `AppView` enum, `BlueprintTableState` struct
+  - Key bindings: j/k navigation, Enter toggle detail, / search, t type filter, q return
+  - Render function: `ratatui::Table` with header, type-colored cells, highlight style
+  - Node detail pane: full typed field display, edge listing
+  - Data loading: from `BlueprintStore::snapshot()`
+  - View switching: Ctrl+B to toggle between Socratic and Blueprint views
+  - Testing plan: filtered_nodes, navigation bounds, type filter cycling
+- [ ] H.2 — DEFERRED: Rust implementation (requires Rust toolchain)
+  - Implement `BlueprintTableState` in `planner-tui/src/app.rs`
+  - Implement `render_blueprint_table()` in `planner-tui/src/ui.rs`
+  - Add key handling for `AppView::Blueprint` mode
+  - Wire `Ctrl+B` view toggle
+  - Add unit + integration tests
 
 ## Key Decisions (from GitHub conversation)
 1. ✅ NodeId: human-readable slug + UUID8 — implemented in CreateNodeModal.generateId()
@@ -200,7 +244,60 @@
 4. ⚠️ One per project: global singleton, OK for now
 5. ✅ WebUI primary, TUI table-only — full CRUD (create/edit/delete nodes + edges) in Phase C
 
+## Gap Audit Fixes [COMPLETE]
+
+After Phase F, a thorough gap audit identified 7 items from the roadmap not yet
+implemented. 5 were frontend-implementable; 2 were deferred as Rust-only.
+
+- [x] Gap 1 — Global search bar on BlueprintPage
+  - Search input in topbar filters all views (graph, table) via `filteredBlueprint` memo
+  - Searches node names, IDs, descriptions, statuses
+  - CSS: `.global-search-bar` + `.global-search-input`
+- [x] Gap 2 — Edge annotations ("why" metadata)
+  - Edge metadata displayed in DetailDrawer connections as `.edge-annotation` spans
+  - AddEdgeModal metadata label renamed to "Why this relationship?"
+- [x] Gap 3 — Hierarchical layout toggle
+  - Installed `@dagrejs/dagre` dependency
+  - Added dagre layout computation in BlueprintGraph (top-to-bottom layering)
+  - Layout toggle button in BlueprintPage topbar (Force / Hierarchy modes)
+  - `layoutMode` prop passed to BlueprintGraph
+- [x] Gap 4 — Snapshots UI in EventTimelinePage
+  - Events / Snapshots tab bar
+  - Snapshot list with file icon, timestamp, filename, relative age
+  - `createBlueprintSnapshot()` API client method
+  - CSS: `.snapshot-list`, `.snapshot-item`, `.snapshot-icon`, `.snapshot-info`,
+    `.snapshot-timestamp`, `.snapshot-filename`, `.snapshot-age`
+- [x] Gap 5 — Diff view for node_updated events
+  - Before/after side-by-side display in History tab (DetailDrawer)
+  - Before/after side-by-side display in global EventTimelinePage
+  - Extracts `before` and `after` from `evt.data`, computes changed keys
+  - CSS: `.diff-view`, `.diff-panel`, `.diff-panel-before`, `.diff-panel-after`,
+    `.diff-panel-header`, `.diff-row`, `.diff-key`, `.diff-value`,
+    `.diff-changed`, `.diff-added`, `.diff-removed`
+- [—] Gap 6 — Partial PATCH (JSON Merge Patch) — DEFERRED (Rust server change)
+- [—] Gap 7 — WebSocket streaming for reconvergence — DEFERRED (Rust server change)
+
 ## Files Modified
+
+### Gap Audit Fixes
+- `planner-web/src/pages/BlueprintPage.tsx` — Global search bar, filteredBlueprint memo, layout toggle
+- `planner-web/src/components/BlueprintGraph.tsx` — dagre import, layoutMode prop, hierarchical layout
+- `planner-web/src/components/DetailDrawer.tsx` — Edge annotations, diff view in History tab
+- `planner-web/src/components/AddEdgeModal.tsx` — Metadata label rename
+- `planner-web/src/pages/EventTimelinePage.tsx` — Snapshots tab, diff view, JSX fragment fix
+- `planner-web/src/api/client.ts` — `createBlueprintSnapshot()` method
+- `planner-web/src/index.css` — Snapshot + diff CSS classes
+- `planner-web/package.json` — `@dagrejs/dagre` dependency
+
+### Phase G — TypeScript (frontend)
+- `planner-web/src/types/blueprint.ts` — Discovery/proposed types (DiscoverySource, ProposalStatus, etc.)
+- `planner-web/src/api/client.ts` — 4 discovery API methods
+- `planner-web/src/pages/DiscoveryPage.tsx` — NEW (358 lines) discovery review queue
+- `planner-web/src/App.tsx` — Added `/discovery` route
+- `planner-web/src/components/Layout.tsx` — Added Discovery nav + search icon
+
+### Phase H — Rust (plan/scaffold)
+- `planner-tui/src/blueprint_table.rs` — NEW (181 lines) implementation plan + scaffold
 
 ### Phase A — Rust (backend)
 - `planner-schemas/src/artifacts/blueprint.rs` — Doc comment shape fixes (lines 11-16)
