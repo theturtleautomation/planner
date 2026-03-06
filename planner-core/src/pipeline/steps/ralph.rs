@@ -20,10 +20,10 @@
 
 use uuid::Uuid;
 
-use crate::llm::{CompletionRequest, DefaultModels, Message, Role};
+use super::{StepError, StepResult};
 use crate::llm::providers::LlmRouter;
+use crate::llm::{CompletionRequest, DefaultModels, Message, Role};
 use planner_schemas::*;
-use super::{StepResult, StepError};
 
 // ---------------------------------------------------------------------------
 // Ralph Modes
@@ -198,23 +198,28 @@ fn parse_augmented_scenarios(content: &str) -> StepResult<Vec<Scenario>> {
     let json: AugmentedScenariosJson = serde_json::from_str(&cleaned).map_err(|e| {
         StepError::JsonError(format!(
             "Failed to parse Ralph ScenarioAugmentation response: {}. Raw: {}",
-            e, &content[..content.len().min(300)],
+            e,
+            &content[..content.len().min(300)],
         ))
     })?;
 
-    Ok(json.scenarios.into_iter().map(|s| Scenario {
-        id: s.id,
-        tier: match s.tier.to_lowercase().as_str() {
-            "high" => ScenarioTier::High,
-            "medium" => ScenarioTier::Medium,
-            _ => ScenarioTier::Medium,
-        },
-        title: s.title,
-        bdd_text: s.bdd_text,
-        dtu_deps: s.dtu_deps,
-        traces_to_anchors: s.traces_to_anchors,
-        source_criterion: s.source_criterion,
-    }).collect())
+    Ok(json
+        .scenarios
+        .into_iter()
+        .map(|s| Scenario {
+            id: s.id,
+            tier: match s.tier.to_lowercase().as_str() {
+                "high" => ScenarioTier::High,
+                "medium" => ScenarioTier::Medium,
+                _ => ScenarioTier::Medium,
+            },
+            title: s.title,
+            bdd_text: s.bdd_text,
+            dtu_deps: s.dtu_deps,
+            traces_to_anchors: s.traces_to_anchors,
+            source_criterion: s.source_criterion,
+        })
+        .collect())
 }
 
 // ---------------------------------------------------------------------------
@@ -223,42 +228,60 @@ fn parse_augmented_scenarios(content: &str) -> StepResult<Vec<Scenario>> {
 
 /// Known component patterns and their common pitfalls.
 const KNOWN_PATTERNS: &[(&str, &[&str])] = &[
-    ("auth", &[
-        "Session fixation: regenerate session ID after login",
-        "Password reset tokens must expire and be single-use",
-        "Rate-limit login attempts to prevent brute force",
-        "Store passwords with bcrypt/argon2, never plain text",
-    ]),
-    ("payment", &[
-        "Idempotency keys required for all payment operations",
-        "Never store raw card numbers — use tokenization",
-        "Handle webhook retries gracefully (dedup by event ID)",
-        "Implement timeout + reconciliation for async payment flows",
-    ]),
-    ("file-upload", &[
-        "Validate file type on server side (don't trust Content-Type header)",
-        "Enforce max file size before reading entire body",
-        "Scan uploaded files for malware in async pipeline",
-        "Use pre-signed URLs for direct upload to avoid proxy bottleneck",
-    ]),
-    ("api", &[
-        "Validate and sanitize all input — never trust client data",
-        "Return consistent error format across all endpoints",
-        "Implement request timeout to prevent hanging connections",
-        "Use pagination for list endpoints — never return unbounded results",
-    ]),
-    ("database", &[
-        "Use database transactions for multi-step operations",
-        "Add indexes for commonly queried columns",
-        "Implement connection pooling — don't open/close per request",
-        "Use soft deletes for user-facing data to allow recovery",
-    ]),
-    ("realtime", &[
-        "Handle WebSocket reconnection gracefully with backoff",
-        "Implement heartbeat/ping to detect stale connections",
-        "Buffer messages during disconnection for replay on reconnect",
-        "Rate-limit incoming messages per connection",
-    ]),
+    (
+        "auth",
+        &[
+            "Session fixation: regenerate session ID after login",
+            "Password reset tokens must expire and be single-use",
+            "Rate-limit login attempts to prevent brute force",
+            "Store passwords with bcrypt/argon2, never plain text",
+        ],
+    ),
+    (
+        "payment",
+        &[
+            "Idempotency keys required for all payment operations",
+            "Never store raw card numbers — use tokenization",
+            "Handle webhook retries gracefully (dedup by event ID)",
+            "Implement timeout + reconciliation for async payment flows",
+        ],
+    ),
+    (
+        "file-upload",
+        &[
+            "Validate file type on server side (don't trust Content-Type header)",
+            "Enforce max file size before reading entire body",
+            "Scan uploaded files for malware in async pipeline",
+            "Use pre-signed URLs for direct upload to avoid proxy bottleneck",
+        ],
+    ),
+    (
+        "api",
+        &[
+            "Validate and sanitize all input — never trust client data",
+            "Return consistent error format across all endpoints",
+            "Implement request timeout to prevent hanging connections",
+            "Use pagination for list endpoints — never return unbounded results",
+        ],
+    ),
+    (
+        "database",
+        &[
+            "Use database transactions for multi-step operations",
+            "Add indexes for commonly queried columns",
+            "Implement connection pooling — don't open/close per request",
+            "Use soft deletes for user-facing data to allow recovery",
+        ],
+    ),
+    (
+        "realtime",
+        &[
+            "Handle WebSocket reconnection gracefully with backoff",
+            "Implement heartbeat/ping to detect stale connections",
+            "Buffer messages during disconnection for replay on reconnect",
+            "Rate-limit incoming messages per connection",
+        ],
+    ),
 ];
 
 /// Run GeneTransfusion: pattern-match known component types in the spec
@@ -274,8 +297,14 @@ pub fn gene_transfusion(spec: &NLSpecV1) -> Vec<RalphFinding> {
     for (pattern_name, pitfalls) in KNOWN_PATTERNS {
         // Check if the spec mentions this pattern
         let pattern_present = spec_lower.contains(pattern_name)
-            || spec.external_dependencies.iter().any(|d| d.name.to_lowercase().contains(pattern_name))
-            || spec.requirements.iter().any(|r| r.statement.to_lowercase().contains(pattern_name));
+            || spec
+                .external_dependencies
+                .iter()
+                .any(|d| d.name.to_lowercase().contains(pattern_name))
+            || spec
+                .requirements
+                .iter()
+                .any(|r| r.statement.to_lowercase().contains(pattern_name));
 
         if !pattern_present {
             continue;
@@ -284,14 +313,17 @@ pub fn gene_transfusion(spec: &NLSpecV1) -> Vec<RalphFinding> {
         // Check which pitfalls are NOT already addressed in the spec
         for pitfall in *pitfalls {
             let pitfall_lower = pitfall.to_lowercase();
-            let key_words: Vec<&str> = pitfall_lower.split_whitespace()
+            let key_words: Vec<&str> = pitfall_lower
+                .split_whitespace()
                 .filter(|w| w.len() > 4)
                 .take(3)
                 .collect();
 
-            let already_addressed = key_words.iter()
+            let already_addressed = key_words
+                .iter()
                 .filter(|w| spec_lower.contains(**w))
-                .count() >= 2;
+                .count()
+                >= 2;
 
             if !already_addressed {
                 idx += 1;
@@ -346,9 +378,12 @@ fn build_spec_search_text(spec: &NLSpecV1) -> String {
 
 fn is_high_severity_pitfall(pitfall: &str) -> bool {
     let lower = pitfall.to_lowercase();
-    lower.contains("never") || lower.contains("security")
-        || lower.contains("password") || lower.contains("token")
-        || lower.contains("malware") || lower.contains("brute force")
+    lower.contains("never")
+        || lower.contains("security")
+        || lower.contains("password")
+        || lower.contains("token")
+        || lower.contains("malware")
+        || lower.contains("brute force")
         || lower.contains("idempoten")
 }
 
@@ -361,37 +396,39 @@ pub fn surface_consequence_cards(
     findings: &[RalphFinding],
     project_id: Uuid,
 ) -> Vec<ConsequenceCardV1> {
-    findings.iter()
+    findings
+        .iter()
         .filter(|f| f.severity == RalphSeverity::High)
-        .map(|f| {
-            ConsequenceCardV1 {
-                card_id: Uuid::new_v4(),
-                project_id,
-                trigger: CardTrigger::RalphFinding,
-                problem: f.description.clone(),
-                proposed_solution: f.suggestion.clone().unwrap_or_else(|| "Review and address".into()),
-                impact: format!(
-                    "Pattern '{}' has a known pitfall that is not addressed in the current spec. \
+        .map(|f| ConsequenceCardV1 {
+            card_id: Uuid::new_v4(),
+            project_id,
+            trigger: CardTrigger::RalphFinding,
+            problem: f.description.clone(),
+            proposed_solution: f
+                .suggestion
+                .clone()
+                .unwrap_or_else(|| "Review and address".into()),
+            impact: format!(
+                "Pattern '{}' has a known pitfall that is not addressed in the current spec. \
                      If not addressed, this could lead to production issues.",
-                    f.affected_pattern,
-                ),
-                actions: vec![
-                    CardAction {
-                        label: "Add Requirement".into(),
-                        description: "Add a new FR to address this pitfall".into(),
-                    },
-                    CardAction {
-                        label: "Add to DoD".into(),
-                        description: "Add a DoD item to verify this is handled".into(),
-                    },
-                    CardAction {
-                        label: "Dismiss".into(),
-                        description: "Acknowledge but take no action".into(),
-                    },
-                ],
-                status: CardStatus::Pending,
-                resolution: None,
-            }
+                f.affected_pattern,
+            ),
+            actions: vec![
+                CardAction {
+                    label: "Add Requirement".into(),
+                    description: "Add a new FR to address this pitfall".into(),
+                },
+                CardAction {
+                    label: "Add to DoD".into(),
+                    description: "Add a DoD item to verify this is handled".into(),
+                },
+                CardAction {
+                    label: "Dismiss".into(),
+                    description: "Acknowledge but take no action".into(),
+                },
+            ],
+            status: CardStatus::Pending,
+            resolution: None,
         })
         .collect()
 }
@@ -459,15 +496,14 @@ Respond with ONLY a JSON object (no markdown fences):
 4. behavioral_rules should cover the happy path AND error handling"#;
 
 /// Generate DTU configurations for all high-priority external dependencies.
-pub fn generate_dtu_configs_deterministic(
-    spec: &NLSpecV1,
-    project_id: Uuid,
-) -> Vec<DtuConfigV1> {
-    spec.external_dependencies.iter()
+pub fn generate_dtu_configs_deterministic(spec: &NLSpecV1, project_id: Uuid) -> Vec<DtuConfigV1> {
+    spec.external_dependencies
+        .iter()
         .filter(|dep| dep.dtu_priority == DtuPriority::High)
         .filter_map(|dep| {
             let dep_lower = dep.name.to_lowercase();
-            let provider_id = DTU_PROVIDER_MAP.iter()
+            let provider_id = DTU_PROVIDER_MAP
+                .iter()
                 .find(|(name, _)| dep_lower.contains(name))
                 .map(|(_, id)| id.to_string());
 
@@ -505,28 +541,27 @@ fn generate_stripe_dtu_config(
     dependency_name: &str,
     usage_description: &str,
 ) -> DtuConfigV1 {
-    use planner_schemas::{DtuBehavioralRule, DtuStateTransition, DtuSeedEntry, DtuFailureMode};
+    use planner_schemas::{DtuBehavioralRule, DtuFailureMode, DtuSeedEntry, DtuStateTransition};
 
     let usage_lower = usage_description.to_lowercase();
 
-    let mut rules = vec![
-        DtuBehavioralRule {
-            id: "STRIPE-RULE-1".into(),
-            endpoint: "/v1/customers".into(),
-            method: "POST".into(),
-            behavior: "Create a new customer with email and metadata".into(),
-            state_transitions: vec![
-                DtuStateTransition {
-                    entity_type: "customer".into(),
-                    from_state: None,
-                    to_state: "active".into(),
-                },
-            ],
-        },
-    ];
+    let mut rules = vec![DtuBehavioralRule {
+        id: "STRIPE-RULE-1".into(),
+        endpoint: "/v1/customers".into(),
+        method: "POST".into(),
+        behavior: "Create a new customer with email and metadata".into(),
+        state_transitions: vec![DtuStateTransition {
+            entity_type: "customer".into(),
+            from_state: None,
+            to_state: "active".into(),
+        }],
+    }];
 
     // Add payment-specific rules if usage mentions payments
-    if usage_lower.contains("payment") || usage_lower.contains("charge") || usage_lower.contains("checkout") {
+    if usage_lower.contains("payment")
+        || usage_lower.contains("charge")
+        || usage_lower.contains("checkout")
+    {
         rules.push(DtuBehavioralRule {
             id: "STRIPE-RULE-2".into(),
             endpoint: "/v1/payment_intents".into(),
@@ -555,18 +590,16 @@ fn generate_stripe_dtu_config(
         });
     }
 
-    let seed_state = vec![
-        DtuSeedEntry {
-            entity_type: "customer".into(),
-            entity_id: "cus_test_1".into(),
-            initial_state: serde_json::json!({
-                "id": "cus_test_1",
-                "object": "customer",
-                "email": "test@example.com",
-                "name": "Test Customer"
-            }),
-        },
-    ];
+    let seed_state = vec![DtuSeedEntry {
+        entity_type: "customer".into(),
+        entity_id: "cus_test_1".into(),
+        initial_state: serde_json::json!({
+            "id": "cus_test_1",
+            "object": "customer",
+            "email": "test@example.com",
+            "name": "Test Customer"
+        }),
+    }];
 
     let failure_modes = vec![
         DtuFailureMode {
@@ -613,7 +646,7 @@ fn generate_auth0_dtu_config(
     dependency_name: &str,
     usage_description: &str,
 ) -> DtuConfigV1 {
-    use planner_schemas::{DtuBehavioralRule, DtuStateTransition, DtuSeedEntry, DtuFailureMode};
+    use planner_schemas::{DtuBehavioralRule, DtuFailureMode, DtuSeedEntry, DtuStateTransition};
 
     let usage_lower = usage_description.to_lowercase();
 
@@ -622,74 +655,68 @@ fn generate_auth0_dtu_config(
             id: "AUTH0-RULE-1".into(),
             endpoint: "/oauth/token".into(),
             method: "POST".into(),
-            behavior: "Password grant: validate credentials, return access + refresh + id tokens".into(),
-            state_transitions: vec![
-                DtuStateTransition {
-                    entity_type: "token".into(),
-                    from_state: None,
-                    to_state: "active".into(),
-                },
-            ],
+            behavior: "Password grant: validate credentials, return access + refresh + id tokens"
+                .into(),
+            state_transitions: vec![DtuStateTransition {
+                entity_type: "token".into(),
+                from_state: None,
+                to_state: "active".into(),
+            }],
         },
         DtuBehavioralRule {
             id: "AUTH0-RULE-2".into(),
             endpoint: "/api/v2/users".into(),
             method: "POST".into(),
             behavior: "Create user with email + password. Reject duplicate emails.".into(),
-            state_transitions: vec![
-                DtuStateTransition {
-                    entity_type: "user".into(),
-                    from_state: None,
-                    to_state: "active".into(),
-                },
-            ],
+            state_transitions: vec![DtuStateTransition {
+                entity_type: "user".into(),
+                from_state: None,
+                to_state: "active".into(),
+            }],
         },
     ];
 
     // Add role-based rules if RBAC is mentioned
-    if usage_lower.contains("role") || usage_lower.contains("permission") || usage_lower.contains("rbac") {
+    if usage_lower.contains("role")
+        || usage_lower.contains("permission")
+        || usage_lower.contains("rbac")
+    {
         rules.push(DtuBehavioralRule {
             id: "AUTH0-RULE-3".into(),
             endpoint: "/api/v2/users/{id}/roles".into(),
             method: "POST".into(),
             behavior: "Assign roles to user. Validate role IDs exist.".into(),
-            state_transitions: vec![
-                DtuStateTransition {
-                    entity_type: "user_role".into(),
-                    from_state: None,
-                    to_state: "assigned".into(),
-                },
-            ],
+            state_transitions: vec![DtuStateTransition {
+                entity_type: "user_role".into(),
+                from_state: None,
+                to_state: "assigned".into(),
+            }],
         });
     }
 
-    let seed_state = vec![
-        DtuSeedEntry {
-            entity_type: "user".into(),
-            entity_id: "auth0|test_1".into(),
-            initial_state: serde_json::json!({
-                "user_id": "auth0|test_1",
-                "email": "test@example.com",
-                "email_verified": true,
-                "name": "Test User",
-                "_password": "TestPassword123"
-            }),
-        },
-    ];
+    let seed_state = vec![DtuSeedEntry {
+        entity_type: "user".into(),
+        entity_id: "auth0|test_1".into(),
+        initial_state: serde_json::json!({
+            "user_id": "auth0|test_1",
+            "email": "test@example.com",
+            "email_verified": true,
+            "name": "Test User",
+            "_password": "TestPassword123"
+        }),
+    }];
 
-    let failure_modes = vec![
-        DtuFailureMode {
-            id: "AUTH0-FAIL-1".into(),
-            endpoint: "/oauth/token".into(),
-            trigger: "nth_request:10".into(),
-            status_code: 429,
-            error_body: serde_json::json!({
-                "error": "too_many_requests",
-                "error_description": "Rate limit exceeded"
-            }),
-            description: "Simulate rate limiting on login attempts".into(),
-        },
-    ];
+    let failure_modes = vec![DtuFailureMode {
+        id: "AUTH0-FAIL-1".into(),
+        endpoint: "/oauth/token".into(),
+        trigger: "nth_request:10".into(),
+        status_code: 429,
+        error_body: serde_json::json!({
+            "error": "too_many_requests",
+            "error_description": "Rate limit exceeded"
+        }),
+        description: "Simulate rate limiting on login attempts".into(),
+    }];
 
     DtuConfigV1 {
         project_id,
@@ -783,18 +810,20 @@ fn parse_dtu_config(
     project_id: Uuid,
     dependency_name: &str,
 ) -> StepResult<DtuConfigV1> {
-    use planner_schemas::{DtuBehavioralRule, DtuStateTransition, DtuSeedEntry, DtuFailureMode};
+    use planner_schemas::{DtuBehavioralRule, DtuFailureMode, DtuSeedEntry, DtuStateTransition};
 
     let cleaned = super::intake::strip_code_fences(content);
     let json: DtuConfigJson = serde_json::from_str(&cleaned).map_err(|e| {
         StepError::JsonError(format!(
             "Failed to parse DTU config response: {}. Raw: {}",
-            e, &content[..content.len().min(300)],
+            e,
+            &content[..content.len().min(300)],
         ))
     })?;
 
     let dep_lower = dependency_name.to_lowercase();
-    let provider_id = DTU_PROVIDER_MAP.iter()
+    let provider_id = DTU_PROVIDER_MAP
+        .iter()
         .find(|(name, _)| dep_lower.contains(name))
         .map(|(_, id)| id.to_string())
         .unwrap_or_else(|| dep_lower.replace(' ', "_"));
@@ -803,38 +832,46 @@ fn parse_dtu_config(
         project_id,
         dependency_name: dependency_name.to_string(),
         provider_id,
-        behavioral_rules: json.behavioral_rules.into_iter().map(|r| {
-            DtuBehavioralRule {
+        behavioral_rules: json
+            .behavioral_rules
+            .into_iter()
+            .map(|r| DtuBehavioralRule {
                 id: r.id,
                 endpoint: r.endpoint,
                 method: r.method,
                 behavior: r.behavior,
-                state_transitions: r.state_transitions.into_iter().map(|t| {
-                    DtuStateTransition {
+                state_transitions: r
+                    .state_transitions
+                    .into_iter()
+                    .map(|t| DtuStateTransition {
                         entity_type: t.entity_type,
                         from_state: t.from_state,
                         to_state: t.to_state,
-                    }
-                }).collect(),
-            }
-        }).collect(),
-        seed_state: json.seed_state.into_iter().map(|s| {
-            DtuSeedEntry {
+                    })
+                    .collect(),
+            })
+            .collect(),
+        seed_state: json
+            .seed_state
+            .into_iter()
+            .map(|s| DtuSeedEntry {
                 entity_type: s.entity_type,
                 entity_id: s.entity_id,
                 initial_state: s.initial_state,
-            }
-        }).collect(),
-        failure_modes: json.failure_modes.into_iter().map(|f| {
-            DtuFailureMode {
+            })
+            .collect(),
+        failure_modes: json
+            .failure_modes
+            .into_iter()
+            .map(|f| DtuFailureMode {
                 id: f.id,
                 endpoint: f.endpoint,
                 trigger: f.trigger,
                 status_code: f.status_code,
                 error_body: f.error_body,
                 description: f.description,
-            }
-        }).collect(),
+            })
+            .collect(),
         validated: false,
     })
 }
@@ -904,9 +941,10 @@ mod tests {
             line_count: 100,
             created_from: "test".into(),
             intent_summary: Some("User authentication system".into()),
-            sacred_anchors: Some(vec![
-                NLSpecAnchor { id: "SA-1".into(), statement: "Credentials must be securely stored".into() },
-            ]),
+            sacred_anchors: Some(vec![NLSpecAnchor {
+                id: "SA-1".into(),
+                statement: "Credentials must be securely stored".into(),
+            }]),
             requirements: vec![
                 Requirement {
                     id: "FR-1".into(),
@@ -924,16 +962,15 @@ mod tests {
             architectural_constraints: vec!["Node.js backend".into()],
             phase1_contracts: Some(vec![]),
             external_dependencies: vec![],
-            definition_of_done: vec![
-                DoDItem { criterion: "User can sign up and login".into(), mechanically_checkable: true },
-            ],
-            satisfaction_criteria: vec![
-                SatisfactionCriterion {
-                    id: "SC-1".into(),
-                    description: "Login with valid credentials succeeds".into(),
-                    tier_hint: ScenarioTierHint::Critical,
-                },
-            ],
+            definition_of_done: vec![DoDItem {
+                criterion: "User can sign up and login".into(),
+                mechanically_checkable: true,
+            }],
+            satisfaction_criteria: vec![SatisfactionCriterion {
+                id: "SC-1".into(),
+                description: "Login with valid credentials succeeds".into(),
+                tier_hint: ScenarioTierHint::Critical,
+            }],
             open_questions: vec![],
             out_of_scope: vec!["OAuth".into()],
             amendment_log: vec![],
@@ -967,7 +1004,8 @@ mod tests {
         // Add a requirement that addresses the bcrypt pitfall
         spec.requirements.push(Requirement {
             id: "FR-3".into(),
-            statement: "The system must rate-limit login attempts to prevent brute force attacks".into(),
+            statement: "The system must rate-limit login attempts to prevent brute force attacks"
+                .into(),
             priority: Priority::Must,
             traces_to: vec!["SA-1".into()],
         });
@@ -975,9 +1013,9 @@ mod tests {
         let findings = gene_transfusion(&spec);
 
         // "rate-limit login attempts" pitfall should NOT appear
-        assert!(!findings.iter().any(|f|
-            f.description.to_lowercase().contains("rate-limit login")
-        ));
+        assert!(!findings
+            .iter()
+            .any(|f| f.description.to_lowercase().contains("rate-limit login")));
     }
 
     #[test]
@@ -1045,25 +1083,22 @@ mod tests {
 
     fn make_spec_with_stripe_dep() -> NLSpecV1 {
         let mut spec = make_auth_spec();
-        spec.external_dependencies = vec![
-            ExternalDependency {
-                name: "Stripe".into(),
-                usage_description: "Process payment intents and charge customers".into(),
-                dtu_priority: DtuPriority::High,
-            },
-        ];
+        spec.external_dependencies = vec![ExternalDependency {
+            name: "Stripe".into(),
+            usage_description: "Process payment intents and charge customers".into(),
+            dtu_priority: DtuPriority::High,
+        }];
         spec
     }
 
     fn make_spec_with_auth0_dep() -> NLSpecV1 {
         let mut spec = make_auth_spec();
-        spec.external_dependencies = vec![
-            ExternalDependency {
-                name: "Auth0".into(),
-                usage_description: "User authentication with role-based access control and RBAC permissions".into(),
-                dtu_priority: DtuPriority::High,
-            },
-        ];
+        spec.external_dependencies = vec![ExternalDependency {
+            name: "Auth0".into(),
+            usage_description:
+                "User authentication with role-based access control and RBAC permissions".into(),
+            dtu_priority: DtuPriority::High,
+        }];
         spec
     }
 
@@ -1104,8 +1139,14 @@ mod tests {
 
         // Should have customer rule + payment rules (usage mentions "payment")
         assert!(cfg.behavioral_rules.len() >= 2);
-        assert!(cfg.behavioral_rules.iter().any(|r| r.endpoint.contains("customers")));
-        assert!(cfg.behavioral_rules.iter().any(|r| r.endpoint.contains("payment_intents")));
+        assert!(cfg
+            .behavioral_rules
+            .iter()
+            .any(|r| r.endpoint.contains("customers")));
+        assert!(cfg
+            .behavioral_rules
+            .iter()
+            .any(|r| r.endpoint.contains("payment_intents")));
 
         // Seed state
         assert!(!cfg.seed_state.is_empty());
@@ -1130,9 +1171,18 @@ mod tests {
 
         // Should have token + user rules + RBAC rule (usage mentions "role")
         assert!(cfg.behavioral_rules.len() >= 3);
-        assert!(cfg.behavioral_rules.iter().any(|r| r.endpoint.contains("oauth/token")));
-        assert!(cfg.behavioral_rules.iter().any(|r| r.endpoint.contains("users")));
-        assert!(cfg.behavioral_rules.iter().any(|r| r.endpoint.contains("roles")));
+        assert!(cfg
+            .behavioral_rules
+            .iter()
+            .any(|r| r.endpoint.contains("oauth/token")));
+        assert!(cfg
+            .behavioral_rules
+            .iter()
+            .any(|r| r.endpoint.contains("users")));
+        assert!(cfg
+            .behavioral_rules
+            .iter()
+            .any(|r| r.endpoint.contains("roles")));
 
         // Seed state
         assert!(!cfg.seed_state.is_empty());
@@ -1161,13 +1211,11 @@ mod tests {
     #[test]
     fn dtu_config_unknown_provider_skipped() {
         let mut spec = make_auth_spec();
-        spec.external_dependencies = vec![
-            ExternalDependency {
-                name: "SomeCustomAPI".into(),
-                usage_description: "Internal microservice".into(),
-                dtu_priority: DtuPriority::High,
-            },
-        ];
+        spec.external_dependencies = vec![ExternalDependency {
+            name: "SomeCustomAPI".into(),
+            usage_description: "Internal microservice".into(),
+            dtu_priority: DtuPriority::High,
+        }];
         let configs = generate_dtu_configs_deterministic(&spec, Uuid::new_v4());
         // Unknown provider not in DTU_PROVIDER_MAP → skipped
         assert!(configs.is_empty());
@@ -1176,18 +1224,18 @@ mod tests {
     #[test]
     fn dtu_config_stripe_no_payment_usage_fewer_rules() {
         let mut spec = make_auth_spec();
-        spec.external_dependencies = vec![
-            ExternalDependency {
-                name: "Stripe".into(),
-                usage_description: "Customer management only".into(),
-                dtu_priority: DtuPriority::High,
-            },
-        ];
+        spec.external_dependencies = vec![ExternalDependency {
+            name: "Stripe".into(),
+            usage_description: "Customer management only".into(),
+            dtu_priority: DtuPriority::High,
+        }];
         let configs = generate_dtu_configs_deterministic(&spec, Uuid::new_v4());
         assert_eq!(configs.len(), 1);
         // Only customer rule (no payment_intents rules since usage doesn't mention payments)
         assert_eq!(configs[0].behavioral_rules.len(), 1);
-        assert!(configs[0].behavioral_rules[0].endpoint.contains("customers"));
+        assert!(configs[0].behavioral_rules[0]
+            .endpoint
+            .contains("customers"));
     }
 
     #[test]
@@ -1239,7 +1287,8 @@ mod tests {
 
     #[test]
     fn parse_dtu_config_with_code_fences() {
-        let content = "```json\n{\"behavioral_rules\": [], \"seed_state\": [], \"failure_modes\": []}\n```";
+        let content =
+            "```json\n{\"behavioral_rules\": [], \"seed_state\": [], \"failure_modes\": []}\n```";
         let result = parse_dtu_config(content, Uuid::new_v4(), "Stripe");
         assert!(result.is_ok());
         let cfg = result.unwrap();
@@ -1261,7 +1310,11 @@ mod tests {
         let cfg = &configs[0];
 
         for rule in &cfg.behavioral_rules {
-            assert!(!rule.state_transitions.is_empty(), "Rule {} has no state transitions", rule.id);
+            assert!(
+                !rule.state_transitions.is_empty(),
+                "Rule {} has no state transitions",
+                rule.id
+            );
             for transition in &rule.state_transitions {
                 assert!(!transition.entity_type.is_empty());
                 assert!(!transition.to_state.is_empty());

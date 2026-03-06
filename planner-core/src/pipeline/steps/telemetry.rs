@@ -20,10 +20,10 @@
 
 use uuid::Uuid;
 
-use crate::llm::{CompletionRequest, DefaultModels, Message, Role};
+use super::{StepError, StepResult};
 use crate::llm::providers::LlmRouter;
+use crate::llm::{CompletionRequest, DefaultModels, Message, Role};
 use planner_schemas::*;
-use super::{StepResult, StepError};
 
 // ---------------------------------------------------------------------------
 // Telemetry Report — the output of the Telemetry Presenter
@@ -124,8 +124,11 @@ pub async fn execute_telemetry_presentation(
                 "This run has used ${:.2} of its ${:.2} budget.",
                 budget.current_spend_usd, budget.hard_cap_usd,
             ),
-            proposed_solution: "The run can continue, but you may want to review before it reaches the limit.".into(),
-            impact: "If the budget runs out, the work will stop and you'll see what was completed.".into(),
+            proposed_solution:
+                "The run can continue, but you may want to review before it reaches the limit."
+                    .into(),
+            impact: "If the budget runs out, the work will stop and you'll see what was completed."
+                .into(),
             actions: vec![
                 CardAction {
                     label: "Continue".into(),
@@ -151,7 +154,8 @@ pub async fn execute_telemetry_presentation(
                 "This run reached its ${:.2} budget limit.",
                 budget.hard_cap_usd,
             ),
-            proposed_solution: "Here's what was completed. Want to continue with a new budget allocation?".into(),
+            proposed_solution:
+                "Here's what was completed. Want to continue with a new budget allocation?".into(),
             impact: "No more work will be done until you approve additional budget.".into(),
             actions: vec![
                 CardAction {
@@ -175,7 +179,8 @@ pub async fn execute_telemetry_presentation(
             project_id,
             trigger: CardTrigger::CriticalGateFailure,
             problem: "Something critical didn't work as expected.".into(),
-            proposed_solution: "I need to understand your intent better before trying again.".into(),
+            proposed_solution: "I need to understand your intent better before trying again."
+                .into(),
             impact: "The core functionality needs to work before we move forward.".into(),
             actions: vec![
                 CardAction {
@@ -239,9 +244,8 @@ pub async fn execute_telemetry_presentation(
     }
 
     let satisfaction_message = satisfaction.user_message().to_string();
-    let needs_user_action = llm_report.needs_user_action
-        || !consequence_cards.is_empty()
-        || !satisfaction.gates_passed;
+    let needs_user_action =
+        llm_report.needs_user_action || !consequence_cards.is_empty() || !satisfaction.gates_passed;
 
     let preview_path = if factory_output.build_status == BuildStatus::Success
         || factory_output.build_status == BuildStatus::PartialSuccess
@@ -271,8 +275,12 @@ pub fn build_telemetry_report_deterministic(
 ) -> TelemetryReport {
     let headline = match factory_output.build_status {
         BuildStatus::Success => satisfaction.user_message().to_string(),
-        BuildStatus::PartialSuccess => "Your app is mostly built, but some pieces need work.".into(),
-        BuildStatus::Failed => "The build didn't complete. Let me figure out what went wrong.".into(),
+        BuildStatus::PartialSuccess => {
+            "Your app is mostly built, but some pieces need work.".into()
+        }
+        BuildStatus::Failed => {
+            "The build didn't complete. Let me figure out what went wrong.".into()
+        }
         BuildStatus::BudgetExhausted => format!(
             "The run used its full ${:.2} budget. Here's what got done.",
             budget.hard_cap_usd,
@@ -280,7 +288,11 @@ pub fn build_telemetry_report_deterministic(
         BuildStatus::Error { ref message } => format!("Something unexpected happened: {}", message),
     };
 
-    let nodes_done = factory_output.node_results.iter().filter(|n| n.success).count();
+    let nodes_done = factory_output
+        .node_results
+        .iter()
+        .filter(|n| n.success)
+        .count();
     let nodes_total = factory_output.node_results.len();
 
     let summary = format!(
@@ -472,16 +484,14 @@ mod tests {
             spend_usd: 1.20,
             checkpoint_path: "/tmp/checkpoint.json".into(),
             dod_results: vec![],
-            node_results: vec![
-                NodeResult {
-                    node_name: "implement".into(),
-                    success: false,
-                    attempts: 3,
-                    spend_usd: 1.20,
-                    duration_secs: 60.0,
-                    error: Some("Build error".into()),
-                },
-            ],
+            node_results: vec![NodeResult {
+                node_name: "implement".into(),
+                success: false,
+                attempts: 3,
+                spend_usd: 1.20,
+                duration_secs: 60.0,
+                error: Some("Build error".into()),
+            }],
             output_path: "/tmp/output".into(),
         };
 
@@ -551,16 +561,14 @@ mod tests {
             spend_usd: 0.50,
             checkpoint_path: "/tmp/cp.json".into(),
             dod_results: vec![],
-            node_results: vec![
-                NodeResult {
-                    node_name: "implement".into(),
-                    success: true,
-                    attempts: 1,
-                    spend_usd: 0.50,
-                    duration_secs: 30.0,
-                    error: None,
-                },
-            ],
+            node_results: vec![NodeResult {
+                node_name: "implement".into(),
+                success: true,
+                attempts: 1,
+                spend_usd: 0.50,
+                duration_secs: 30.0,
+                error: None,
+            }],
             output_path: "/tmp/out".into(),
         };
 
@@ -571,19 +579,17 @@ mod tests {
             high_pass_rate: 0.80,
             medium_pass_rate: 0.90,
             gates_passed: false,
-            scenario_results: vec![
-                ScenarioResult {
-                    scenario_id: "SC-HIGH-1".into(),
-                    tier: ScenarioTier::High,
-                    runs: [0.3, 0.4, 0.2],
-                    majority_pass: false,
-                    score: 0.3,
-                    generalized_error: Some(GeneralizedError {
-                        category: "state-management".into(),
-                        severity: Severity::High,
-                    }),
-                },
-            ],
+            scenario_results: vec![ScenarioResult {
+                scenario_id: "SC-HIGH-1".into(),
+                tier: ScenarioTier::High,
+                runs: [0.3, 0.4, 0.2],
+                majority_pass: false,
+                score: 0.3,
+                generalized_error: Some(GeneralizedError {
+                    category: "state-management".into(),
+                    severity: Severity::High,
+                }),
+            }],
         };
 
         let budget = RunBudgetV1::new_phase0(project_id, Uuid::new_v4());

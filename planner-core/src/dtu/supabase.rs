@@ -16,8 +16,8 @@ use std::sync::RwLock;
 use serde_json::{json, Value};
 use uuid::Uuid;
 
-use planner_schemas::{DtuConfigV1, DtuProviderInfo, DtuRequest, DtuResponse};
 use super::DtuProvider;
+use planner_schemas::{DtuConfigV1, DtuProviderInfo, DtuRequest, DtuResponse};
 
 // ---------------------------------------------------------------------------
 // Supabase DTU Clone
@@ -85,12 +85,21 @@ impl SupabaseDtu {
     }
 
     fn signup(&self, body: &Value) -> DtuResponse {
-        let email = body.get("email").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        let password = body.get("password").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let email = body
+            .get("email")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let password = body
+            .get("password")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
 
         if email.is_empty() || password.is_empty() {
             return DtuResponse {
-                status_code: 400, headers: vec![],
+                status_code: 400,
+                headers: vec![],
                 body: json!({"error": "email and password required"}),
             };
         }
@@ -99,7 +108,8 @@ impl SupabaseDtu {
 
         if state.users.values().any(|u| u.email == email) {
             return DtuResponse {
-                status_code: 422, headers: vec![],
+                status_code: 422,
+                headers: vec![],
                 body: json!({"error": "User already registered"}),
             };
         }
@@ -107,16 +117,20 @@ impl SupabaseDtu {
         let user_id = Uuid::new_v4().to_string();
         let token = format!("sb_token_{}", Uuid::new_v4().to_string().replace('-', ""));
 
-        state.users.insert(user_id.clone(), UserRecord {
-            id: user_id.clone(),
-            email: email.clone(),
-            password,
-            metadata: body.get("data").cloned().unwrap_or(json!({})),
-        });
+        state.users.insert(
+            user_id.clone(),
+            UserRecord {
+                id: user_id.clone(),
+                email: email.clone(),
+                password,
+                metadata: body.get("data").cloned().unwrap_or(json!({})),
+            },
+        );
         state.tokens.insert(token.clone(), user_id.clone());
 
         DtuResponse {
-            status_code: 200, headers: vec![],
+            status_code: 200,
+            headers: vec![],
             body: json!({
                 "access_token": token, "token_type": "bearer",
                 "user": {"id": user_id, "email": email, "role": "authenticated"}
@@ -129,14 +143,19 @@ impl SupabaseDtu {
         let password = body.get("password").and_then(|v| v.as_str()).unwrap_or("");
 
         let mut state = self.state.write().unwrap();
-        let user = state.users.values().find(|u| u.email == email && u.password == password).cloned();
+        let user = state
+            .users
+            .values()
+            .find(|u| u.email == email && u.password == password)
+            .cloned();
 
         match user {
             Some(u) => {
                 let token = format!("sb_token_{}", Uuid::new_v4().to_string().replace('-', ""));
                 state.tokens.insert(token.clone(), u.id.clone());
                 DtuResponse {
-                    status_code: 200, headers: vec![],
+                    status_code: 200,
+                    headers: vec![],
                     body: json!({
                         "access_token": token, "token_type": "bearer",
                         "user": {"id": u.id, "email": u.email, "role": "authenticated"}
@@ -144,14 +163,16 @@ impl SupabaseDtu {
                 }
             }
             None => DtuResponse {
-                status_code: 400, headers: vec![],
+                status_code: 400,
+                headers: vec![],
                 body: json!({"error": "Invalid login credentials"}),
             },
         }
     }
 
     fn get_user(&self, headers: &[(String, String)]) -> DtuResponse {
-        let token = headers.iter()
+        let token = headers
+            .iter()
             .find(|(k, _)| k.to_lowercase() == "authorization")
             .map(|(_, v)| v.strip_prefix("Bearer ").unwrap_or(v).to_string());
 
@@ -162,11 +183,13 @@ impl SupabaseDtu {
 
         match user {
             Some(u) => DtuResponse {
-                status_code: 200, headers: vec![],
+                status_code: 200,
+                headers: vec![],
                 body: json!({"id": u.id, "email": u.email, "user_metadata": u.metadata}),
             },
             None => DtuResponse {
-                status_code: 401, headers: vec![],
+                status_code: 401,
+                headers: vec![],
                 body: json!({"error": "Not authenticated"}),
             },
         }
@@ -179,13 +202,16 @@ impl SupabaseDtu {
         let mut filtered = rows;
         for (key, value) in query_params {
             if let Some(col) = key.strip_suffix(".eq") {
-                filtered.retain(|row| {
-                    row.get(col).and_then(|v| v.as_str()) == Some(value.as_str())
-                });
+                filtered
+                    .retain(|row| row.get(col).and_then(|v| v.as_str()) == Some(value.as_str()));
             }
         }
 
-        DtuResponse { status_code: 200, headers: vec![], body: json!(filtered) }
+        DtuResponse {
+            status_code: 200,
+            headers: vec![],
+            body: json!(filtered),
+        }
     }
 
     fn table_insert(&self, table: &str, body: &Value) -> DtuResponse {
@@ -196,19 +222,25 @@ impl SupabaseDtu {
             for row in arr {
                 let mut r = row.clone();
                 if r.get("id").is_none() {
-                    r.as_object_mut().map(|o| o.insert("id".into(), json!(Uuid::new_v4().to_string())));
+                    r.as_object_mut()
+                        .map(|o| o.insert("id".into(), json!(Uuid::new_v4().to_string())));
                 }
                 rows.push(r);
             }
         } else {
             let mut r = body.clone();
             if r.get("id").is_none() {
-                r.as_object_mut().map(|o| o.insert("id".into(), json!(Uuid::new_v4().to_string())));
+                r.as_object_mut()
+                    .map(|o| o.insert("id".into(), json!(Uuid::new_v4().to_string())));
             }
             rows.push(r);
         }
 
-        DtuResponse { status_code: 201, headers: vec![], body: body.clone() }
+        DtuResponse {
+            status_code: 201,
+            headers: vec![],
+            body: body.clone(),
+        }
     }
 
     fn table_delete(&self, table: &str, query_params: &[(String, String)]) -> DtuResponse {
@@ -222,15 +254,25 @@ impl SupabaseDtu {
                     });
                 }
             }
-            DtuResponse { status_code: 200, headers: vec![], body: json!({"deleted": before - rows.len()}) }
+            DtuResponse {
+                status_code: 200,
+                headers: vec![],
+                body: json!({"deleted": before - rows.len()}),
+            }
         } else {
-            DtuResponse { status_code: 200, headers: vec![], body: json!({"deleted": 0}) }
+            DtuResponse {
+                status_code: 200,
+                headers: vec![],
+                body: json!({"deleted": 0}),
+            }
         }
     }
 }
 
 impl DtuProvider for SupabaseDtu {
-    fn info(&self) -> &DtuProviderInfo { &self.info }
+    fn info(&self) -> &DtuProviderInfo {
+        &self.info
+    }
 
     fn handle_request(&self, request: &DtuRequest) -> DtuResponse {
         if let Some(failure) = self.check_failure(&request.path) {
@@ -258,7 +300,8 @@ impl DtuProvider for SupabaseDtu {
                 self.table_delete(&table, &request.query_params)
             }
             _ => DtuResponse {
-                status_code: 404, headers: vec![],
+                status_code: 404,
+                headers: vec![],
                 body: json!({"error": "Not found"}),
             },
         }
@@ -274,16 +317,38 @@ impl DtuProvider for SupabaseDtu {
         for seed in &config.seed_state {
             match seed.entity_type.as_str() {
                 "user" => {
-                    state.users.insert(seed.entity_id.clone(), UserRecord {
-                        id: seed.entity_id.clone(),
-                        email: seed.initial_state.get("email").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        password: seed.initial_state.get("password").and_then(|v| v.as_str()).unwrap_or("password").to_string(),
-                        metadata: json!({}),
-                    });
+                    state.users.insert(
+                        seed.entity_id.clone(),
+                        UserRecord {
+                            id: seed.entity_id.clone(),
+                            email: seed
+                                .initial_state
+                                .get("email")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                            password: seed
+                                .initial_state
+                                .get("password")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("password")
+                                .to_string(),
+                            metadata: json!({}),
+                        },
+                    );
                 }
                 "row" => {
-                    let table = seed.initial_state.get("_table").and_then(|v| v.as_str()).unwrap_or("default").to_string();
-                    state.tables.entry(table).or_default().push(seed.initial_state.clone());
+                    let table = seed
+                        .initial_state
+                        .get("_table")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("default")
+                        .to_string();
+                    state
+                        .tables
+                        .entry(table)
+                        .or_default()
+                        .push(seed.initial_state.clone());
                 }
                 _ => {}
             }
@@ -292,7 +357,9 @@ impl DtuProvider for SupabaseDtu {
 
     fn inject_failure(&self, endpoint: &str, status_code: u16, error_body: Value) {
         self.failures.write().unwrap().push(FailureInjection {
-            endpoint: endpoint.to_string(), status_code, error_body,
+            endpoint: endpoint.to_string(),
+            status_code,
+            error_body,
         });
     }
 
@@ -323,29 +390,42 @@ mod tests {
         let dtu = SupabaseDtu::new();
 
         let resp = dtu.handle_request(&DtuRequest {
-            method: "POST".into(), path: "/auth/v1/signup".into(),
-            query_params: vec![], headers: vec![],
+            method: "POST".into(),
+            path: "/auth/v1/signup".into(),
+            query_params: vec![],
+            headers: vec![],
             body: Some(json!({"email": "test@example.com", "password": "secret123"})),
         });
         assert_eq!(resp.status_code, 200);
         assert!(resp.body.get("access_token").is_some());
 
         let resp = dtu.handle_request(&DtuRequest {
-            method: "POST".into(), path: "/auth/v1/token".into(),
-            query_params: vec![], headers: vec![],
+            method: "POST".into(),
+            path: "/auth/v1/token".into(),
+            query_params: vec![],
+            headers: vec![],
             body: Some(json!({"email": "test@example.com", "password": "secret123"})),
         });
         assert_eq!(resp.status_code, 200);
-        let token = resp.body.get("access_token").and_then(|v| v.as_str()).unwrap().to_string();
+        let token = resp
+            .body
+            .get("access_token")
+            .and_then(|v| v.as_str())
+            .unwrap()
+            .to_string();
 
         let resp = dtu.handle_request(&DtuRequest {
-            method: "GET".into(), path: "/auth/v1/user".into(),
+            method: "GET".into(),
+            path: "/auth/v1/user".into(),
             query_params: vec![],
             headers: vec![("Authorization".into(), format!("Bearer {}", token))],
             body: None,
         });
         assert_eq!(resp.status_code, 200);
-        assert_eq!(resp.body.get("email").and_then(|v| v.as_str()).unwrap(), "test@example.com");
+        assert_eq!(
+            resp.body.get("email").and_then(|v| v.as_str()).unwrap(),
+            "test@example.com"
+        );
     }
 
     #[test]
@@ -354,13 +434,19 @@ mod tests {
         let body = json!({"email": "test@example.com", "password": "secret"});
 
         dtu.handle_request(&DtuRequest {
-            method: "POST".into(), path: "/auth/v1/signup".into(),
-            query_params: vec![], headers: vec![], body: Some(body.clone()),
+            method: "POST".into(),
+            path: "/auth/v1/signup".into(),
+            query_params: vec![],
+            headers: vec![],
+            body: Some(body.clone()),
         });
 
         let resp = dtu.handle_request(&DtuRequest {
-            method: "POST".into(), path: "/auth/v1/signup".into(),
-            query_params: vec![], headers: vec![], body: Some(body),
+            method: "POST".into(),
+            path: "/auth/v1/signup".into(),
+            query_params: vec![],
+            headers: vec![],
+            body: Some(body),
         });
         assert_eq!(resp.status_code, 422);
     }
@@ -369,14 +455,18 @@ mod tests {
     fn wrong_password_fails() {
         let dtu = SupabaseDtu::new();
         dtu.handle_request(&DtuRequest {
-            method: "POST".into(), path: "/auth/v1/signup".into(),
-            query_params: vec![], headers: vec![],
+            method: "POST".into(),
+            path: "/auth/v1/signup".into(),
+            query_params: vec![],
+            headers: vec![],
             body: Some(json!({"email": "test@example.com", "password": "correct"})),
         });
 
         let resp = dtu.handle_request(&DtuRequest {
-            method: "POST".into(), path: "/auth/v1/token".into(),
-            query_params: vec![], headers: vec![],
+            method: "POST".into(),
+            path: "/auth/v1/token".into(),
+            query_params: vec![],
+            headers: vec![],
             body: Some(json!({"email": "test@example.com", "password": "wrong"})),
         });
         assert_eq!(resp.status_code, 400);
@@ -388,16 +478,21 @@ mod tests {
 
         // Insert
         let resp = dtu.handle_request(&DtuRequest {
-            method: "POST".into(), path: "/rest/v1/todos".into(),
-            query_params: vec![], headers: vec![],
+            method: "POST".into(),
+            path: "/rest/v1/todos".into(),
+            query_params: vec![],
+            headers: vec![],
             body: Some(json!({"title": "Buy milk", "done": false})),
         });
         assert_eq!(resp.status_code, 201);
 
         // Read
         let resp = dtu.handle_request(&DtuRequest {
-            method: "GET".into(), path: "/rest/v1/todos".into(),
-            query_params: vec![], headers: vec![], body: None,
+            method: "GET".into(),
+            path: "/rest/v1/todos".into(),
+            query_params: vec![],
+            headers: vec![],
+            body: None,
         });
         assert_eq!(resp.status_code, 200);
         assert_eq!(resp.body.as_array().unwrap().len(), 1);
@@ -416,9 +511,11 @@ mod tests {
         }
 
         let resp = dtu.handle_request(&DtuRequest {
-            method: "GET".into(), path: "/rest/v1/tasks".into(),
+            method: "GET".into(),
+            path: "/rest/v1/tasks".into(),
             query_params: vec![("status.eq".into(), "done".into())],
-            headers: vec![], body: None,
+            headers: vec![],
+            body: None,
         });
         assert_eq!(resp.body.as_array().unwrap().len(), 1);
     }
@@ -428,20 +525,27 @@ mod tests {
         let dtu = SupabaseDtu::new();
 
         dtu.handle_request(&DtuRequest {
-            method: "POST".into(), path: "/rest/v1/items".into(),
-            query_params: vec![], headers: vec![],
+            method: "POST".into(),
+            path: "/rest/v1/items".into(),
+            query_params: vec![],
+            headers: vec![],
             body: Some(json!({"name": "Widget", "sku": "W001"})),
         });
 
         dtu.handle_request(&DtuRequest {
-            method: "DELETE".into(), path: "/rest/v1/items".into(),
+            method: "DELETE".into(),
+            path: "/rest/v1/items".into(),
             query_params: vec![("sku.eq".into(), "W001".into())],
-            headers: vec![], body: None,
+            headers: vec![],
+            body: None,
         });
 
         let resp = dtu.handle_request(&DtuRequest {
-            method: "GET".into(), path: "/rest/v1/items".into(),
-            query_params: vec![], headers: vec![], body: None,
+            method: "GET".into(),
+            path: "/rest/v1/items".into(),
+            query_params: vec![],
+            headers: vec![],
+            body: None,
         });
         assert!(resp.body.as_array().unwrap().is_empty());
     }
@@ -450,8 +554,11 @@ mod tests {
     fn unauthenticated_user_401() {
         let dtu = SupabaseDtu::new();
         let resp = dtu.handle_request(&DtuRequest {
-            method: "GET".into(), path: "/auth/v1/user".into(),
-            query_params: vec![], headers: vec![], body: None,
+            method: "GET".into(),
+            path: "/auth/v1/user".into(),
+            query_params: vec![],
+            headers: vec![],
+            body: None,
         });
         assert_eq!(resp.status_code, 401);
     }
@@ -460,8 +567,10 @@ mod tests {
     fn reset_clears_all_state() {
         let dtu = SupabaseDtu::new();
         dtu.handle_request(&DtuRequest {
-            method: "POST".into(), path: "/auth/v1/signup".into(),
-            query_params: vec![], headers: vec![],
+            method: "POST".into(),
+            path: "/auth/v1/signup".into(),
+            query_params: vec![],
+            headers: vec![],
             body: Some(json!({"email": "test@example.com", "password": "secret"})),
         });
         dtu.reset();
@@ -474,8 +583,11 @@ mod tests {
         dtu.inject_failure("/rest/v1/", 500, json!({"error": "Internal server error"}));
 
         let resp = dtu.handle_request(&DtuRequest {
-            method: "GET".into(), path: "/rest/v1/todos".into(),
-            query_params: vec![], headers: vec![], body: None,
+            method: "GET".into(),
+            path: "/rest/v1/todos".into(),
+            query_params: vec![],
+            headers: vec![],
+            body: None,
         });
         assert_eq!(resp.status_code, 500);
     }

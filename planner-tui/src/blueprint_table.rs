@@ -56,7 +56,10 @@ impl BlueprintTableState {
                 query.is_empty()
                     || node.name.to_lowercase().contains(&query)
                     || node.id.as_str().to_lowercase().contains(&query)
-                    || node.tags.iter().any(|tag| tag.to_lowercase().contains(&query))
+                    || node
+                        .tags
+                        .iter()
+                        .any(|tag| tag.to_lowercase().contains(&query))
             })
             .collect()
     }

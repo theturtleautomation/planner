@@ -29,8 +29,8 @@
 //! | AR Reviewer (Gemini)   | Gemini 3.1 Pro        | Google     | Scope integrity, massive context window  |
 //! | AR Refiner             | Claude Opus 4.6       | Anthropic  | High-precision spec amendments           |
 
-pub mod providers;
 pub mod json_repair;
+pub mod providers;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -140,17 +140,53 @@ pub struct ModelInfo {
 /// translate to the correct model flag format when invoking the binary.
 pub const MODELS: &[ModelInfo] = &[
     // Anthropic — uses `claude` CLI
-    ModelInfo { id: "claude-opus-4-6",   provider: "anthropic", cli_binary: "claude" },
-    ModelInfo { id: "claude-sonnet-4-6", provider: "anthropic", cli_binary: "claude" },
-    ModelInfo { id: "claude-haiku-4-5",  provider: "anthropic", cli_binary: "claude" },
+    ModelInfo {
+        id: "claude-opus-4-6",
+        provider: "anthropic",
+        cli_binary: "claude",
+    },
+    ModelInfo {
+        id: "claude-sonnet-4-6",
+        provider: "anthropic",
+        cli_binary: "claude",
+    },
+    ModelInfo {
+        id: "claude-haiku-4-5",
+        provider: "anthropic",
+        cli_binary: "claude",
+    },
     // Google — uses `gemini` CLI
-    ModelInfo { id: "gemini-3.1-pro-preview",  provider: "google",    cli_binary: "gemini" },
-    ModelInfo { id: "gemini-3-flash-preview",  provider: "google",    cli_binary: "gemini" },
-    ModelInfo { id: "gemini-2.5-pro",          provider: "google",    cli_binary: "gemini" },
-    ModelInfo { id: "gemini-2.5-flash",        provider: "google",    cli_binary: "gemini" },
+    ModelInfo {
+        id: "gemini-3.1-pro-preview",
+        provider: "google",
+        cli_binary: "gemini",
+    },
+    ModelInfo {
+        id: "gemini-3-flash-preview",
+        provider: "google",
+        cli_binary: "gemini",
+    },
+    ModelInfo {
+        id: "gemini-2.5-pro",
+        provider: "google",
+        cli_binary: "gemini",
+    },
+    ModelInfo {
+        id: "gemini-2.5-flash",
+        provider: "google",
+        cli_binary: "gemini",
+    },
     // OpenAI — uses `codex` CLI
-    ModelInfo { id: "gpt-5.3-codex",     provider: "openai",    cli_binary: "codex"  },
-    ModelInfo { id: "gpt-5.2",           provider: "openai",    cli_binary: "codex"  },
+    ModelInfo {
+        id: "gpt-5.3-codex",
+        provider: "openai",
+        cli_binary: "codex",
+    },
+    ModelInfo {
+        id: "gpt-5.2",
+        provider: "openai",
+        cli_binary: "codex",
+    },
 ];
 
 /// Look up a model by ID.

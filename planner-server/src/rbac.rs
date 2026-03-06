@@ -176,11 +176,7 @@ mod tests {
         ];
         let role = Role::Admin;
         for perm in &all {
-            assert!(
-                role.has_permission(perm),
-                "Admin should have {:?}",
-                perm
-            );
+            assert!(role.has_permission(perm), "Admin should have {:?}", perm);
         }
     }
 
@@ -285,7 +281,11 @@ mod tests {
     #[test]
     fn all_roles_have_nonempty_permissions() {
         for role in [Role::Admin, Role::Operator, Role::Viewer, Role::Service] {
-            assert!(!role.permissions().is_empty(), "{:?} has no permissions", role);
+            assert!(
+                !role.permissions().is_empty(),
+                "{:?} has no permissions",
+                role
+            );
         }
     }
 }

@@ -69,7 +69,12 @@ impl NodeId {
             .replace(|c: char| !c.is_alphanumeric() && c != '-', "-")
             .trim_matches('-')
             .to_string();
-        NodeId(format!("{}-{}-{}", prefix.to_lowercase(), clean, uuid_prefix))
+        NodeId(format!(
+            "{}-{}-{}",
+            prefix.to_lowercase(),
+            clean,
+            uuid_prefix
+        ))
     }
 
     /// Parse a NodeId from an existing string (no generation).
@@ -644,15 +649,9 @@ pub enum BlueprintEvent {
         timestamp: String,
     },
     /// An edge was created.
-    EdgeCreated {
-        edge: Edge,
-        timestamp: String,
-    },
+    EdgeCreated { edge: Edge, timestamp: String },
     /// One or more edges were deleted.
-    EdgesDeleted {
-        edges: Vec<Edge>,
-        timestamp: String,
-    },
+    EdgesDeleted { edges: Vec<Edge>, timestamp: String },
 }
 
 impl BlueprintEvent {
@@ -676,7 +675,12 @@ impl BlueprintEvent {
             Self::NodeUpdated { node_id, after, .. } => {
                 format!("Updated {} '{}'", after.type_name(), node_id)
             }
-            Self::NodeDeleted { node_id, node, removed_edges, .. } => {
+            Self::NodeDeleted {
+                node_id,
+                node,
+                removed_edges,
+                ..
+            } => {
                 let edge_note = if removed_edges.is_empty() {
                     String::new()
                 } else {
@@ -685,12 +689,18 @@ impl BlueprintEvent {
                 format!("Deleted {} '{}'{}", node.type_name(), node_id, edge_note)
             }
             Self::EdgeCreated { edge, .. } => {
-                format!("Edge {} -[{}]-> {}", edge.source, edge.edge_type, edge.target)
+                format!(
+                    "Edge {} -[{}]-> {}",
+                    edge.source, edge.edge_type, edge.target
+                )
             }
             Self::EdgesDeleted { edges, .. } => {
                 if edges.len() == 1 {
                     let e = &edges[0];
-                    format!("Removed edge {} -[{}]-> {}", e.source, e.edge_type, e.target)
+                    format!(
+                        "Removed edge {} -[{}]-> {}",
+                        e.source, e.edge_type, e.target
+                    )
                 } else {
                     format!("Removed {} edges", edges.len())
                 }
@@ -760,12 +770,19 @@ mod tests {
                 },
             ],
             consequences: vec![
-                Consequence { description: "Minimal deserialization overhead".into(), positive: true },
-                Consequence { description: "Cannot query without full load".into(), positive: false },
+                Consequence {
+                    description: "Minimal deserialization overhead".into(),
+                    positive: true,
+                },
+                Consequence {
+                    description: "Cannot query without full load".into(),
+                    positive: false,
+                },
             ],
-            assumptions: vec![
-                Assumption { description: "Data volumes stay small".into(), confidence: "medium".into() },
-            ],
+            assumptions: vec![Assumption {
+                description: "Data volumes stay small".into(),
+                confidence: "medium".into(),
+            }],
             supersedes: None,
             tags: vec!["storage".into(), "core".into()],
             documentation: Some("# Decision Notes".into()),

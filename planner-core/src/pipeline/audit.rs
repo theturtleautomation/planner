@@ -13,8 +13,8 @@
 //! ## Output
 //! Produces an AuditReport with findings and an overall risk score.
 
-use uuid::Uuid;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use planner_schemas::*;
 
@@ -152,7 +152,8 @@ const VENDOR_ANALYSIS: &[VendorPattern] = &[
 struct VendorPattern {
     name_pattern: &'static str,
     category: &'static str,
-    #[allow(dead_code)] // Part of lock-in audit report data model — used in future audit report generation
+    #[allow(dead_code)]
+    // Part of lock-in audit report data model — used in future audit report generation
     has_standard_alternative: bool,
     migration_complexity: &'static str,
     data_export: bool,
@@ -173,7 +174,8 @@ pub fn audit_lock_in(spec: &NLSpecV1) -> LockInAuditReport {
         let dep_lower = dep.name.to_lowercase();
 
         // Find matching vendor pattern
-        let vendor = VENDOR_ANALYSIS.iter()
+        let vendor = VENDOR_ANALYSIS
+            .iter()
             .find(|v| dep_lower.contains(v.name_pattern));
 
         if let Some(v) = vendor {
@@ -240,12 +242,13 @@ pub fn audit_lock_in(spec: &NLSpecV1) -> LockInAuditReport {
         // Check if this is a High-priority dep with no DTU (no abstraction)
         if dep.dtu_priority == DtuPriority::High {
             // Check if architectural constraints mention abstraction
-            let has_abstraction = spec.architectural_constraints.iter()
-                .any(|c| {
-                    let lower = c.to_lowercase();
-                    (lower.contains("adapter") || lower.contains("port") || lower.contains("abstraction"))
+            let has_abstraction = spec.architectural_constraints.iter().any(|c| {
+                let lower = c.to_lowercase();
+                (lower.contains("adapter")
+                    || lower.contains("port")
+                    || lower.contains("abstraction"))
                     && lower.contains(&dep_lower)
-                });
+            });
 
             if !has_abstraction {
                 idx += 1;
@@ -270,17 +273,28 @@ pub fn audit_lock_in(spec: &NLSpecV1) -> LockInAuditReport {
     }
 
     // Check for single-vendor categories
-    let mut categories: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+    let mut categories: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
     for dep in &spec.external_dependencies {
         let dep_lower = dep.name.to_lowercase();
-        if let Some(v) = VENDOR_ANALYSIS.iter().find(|v| dep_lower.contains(v.name_pattern)) {
-            categories.entry(v.category.to_string()).or_default().push(dep.name.clone());
+        if let Some(v) = VENDOR_ANALYSIS
+            .iter()
+            .find(|v| dep_lower.contains(v.name_pattern))
+        {
+            categories
+                .entry(v.category.to_string())
+                .or_default()
+                .push(dep.name.clone());
         }
     }
 
     for (category, deps) in &categories {
-        if deps.len() == 1 && spec.external_dependencies.iter()
-            .any(|d| d.name == deps[0] && d.dtu_priority == DtuPriority::High) {
+        if deps.len() == 1
+            && spec
+                .external_dependencies
+                .iter()
+                .any(|d| d.name == deps[0] && d.dtu_priority == DtuPriority::High)
+        {
             idx += 1;
             findings.push(LockInFinding {
                 id: format!("LOCKIN-{}", idx),
@@ -331,12 +345,15 @@ fn calculate_risk_score(findings: &[LockInFinding]) -> f64 {
         return 0.0;
     }
 
-    let total_weight: f64 = findings.iter().map(|f| match f.severity {
-        RiskLevel::Critical => 1.0,
-        RiskLevel::High => 0.75,
-        RiskLevel::Medium => 0.5,
-        RiskLevel::Low => 0.25,
-    }).sum();
+    let total_weight: f64 = findings
+        .iter()
+        .map(|f| match f.severity {
+            RiskLevel::Critical => 1.0,
+            RiskLevel::High => 0.75,
+            RiskLevel::Medium => 0.5,
+            RiskLevel::Low => 0.25,
+        })
+        .sum();
 
     // Normalize to 0.0-1.0 range (cap at 4 findings worth of max severity)
     (total_weight / 4.0).min(1.0)
@@ -345,33 +362,45 @@ fn calculate_risk_score(findings: &[LockInFinding]) -> f64 {
 fn generate_recommendations(findings: &[LockInFinding]) -> Vec<String> {
     let mut recs = Vec::new();
 
-    let has_no_abstraction = findings.iter().any(|f| f.category == LockInCategory::ProprietaryApi);
-    let has_migration_risk = findings.iter().any(|f| f.category == LockInCategory::MigrationComplexity);
-    let has_data_risk = findings.iter().any(|f| f.category == LockInCategory::DataFormat);
+    let has_no_abstraction = findings
+        .iter()
+        .any(|f| f.category == LockInCategory::ProprietaryApi);
+    let has_migration_risk = findings
+        .iter()
+        .any(|f| f.category == LockInCategory::MigrationComplexity);
+    let has_data_risk = findings
+        .iter()
+        .any(|f| f.category == LockInCategory::DataFormat);
 
     if has_no_abstraction {
         recs.push(
             "Implement a port/adapter architecture for external dependencies. \
-             Define interfaces in your domain language, not vendor-specific terms.".into()
+             Define interfaces in your domain language, not vendor-specific terms."
+                .into(),
         );
     }
 
     if has_migration_risk {
         recs.push(
             "Create a migration playbook documenting how to switch each high-complexity \
-             provider. Include estimated effort and data migration steps.".into()
+             provider. Include estimated effort and data migration steps."
+                .into(),
         );
     }
 
     if has_data_risk {
         recs.push(
             "Implement shadow logging for services without data export. \
-             Store copies of critical state transitions in your own database.".into()
+             Store copies of critical state transitions in your own database."
+                .into(),
         );
     }
 
     if findings.is_empty() {
-        recs.push("No significant lock-in risks identified. Continue monitoring as dependencies evolve.".into());
+        recs.push(
+            "No significant lock-in risks identified. Continue monitoring as dependencies evolve."
+                .into(),
+        );
     }
 
     recs
@@ -418,76 +447,91 @@ mod tests {
 
     #[test]
     fn audit_stripe_generates_findings() {
-        let spec = make_spec_with_deps(vec![
-            ExternalDependency {
-                name: "Stripe".into(),
-                usage_description: "Payment processing".into(),
-                dtu_priority: DtuPriority::High,
-            },
-        ]);
+        let spec = make_spec_with_deps(vec![ExternalDependency {
+            name: "Stripe".into(),
+            usage_description: "Payment processing".into(),
+            dtu_priority: DtuPriority::High,
+        }]);
 
         let report = audit_lock_in(&spec);
         assert!(!report.findings.is_empty());
         assert_eq!(report.dependencies_audited, 1);
 
         // Should flag: proprietary API (no abstraction) + single vendor
-        assert!(report.findings.iter().any(|f| f.category == LockInCategory::ProprietaryApi));
+        assert!(report
+            .findings
+            .iter()
+            .any(|f| f.category == LockInCategory::ProprietaryApi));
     }
 
     #[test]
     fn audit_auth0_flags_migration_complexity() {
-        let spec = make_spec_with_deps(vec![
-            ExternalDependency {
-                name: "Auth0".into(),
-                usage_description: "Authentication".into(),
-                dtu_priority: DtuPriority::High,
-            },
-        ]);
+        let spec = make_spec_with_deps(vec![ExternalDependency {
+            name: "Auth0".into(),
+            usage_description: "Authentication".into(),
+            dtu_priority: DtuPriority::High,
+        }]);
 
         let report = audit_lock_in(&spec);
-        assert!(report.findings.iter().any(|f| f.category == LockInCategory::MigrationComplexity));
+        assert!(report
+            .findings
+            .iter()
+            .any(|f| f.category == LockInCategory::MigrationComplexity));
     }
 
     #[test]
     fn audit_sendgrid_flags_no_data_export() {
-        let spec = make_spec_with_deps(vec![
-            ExternalDependency {
-                name: "SendGrid".into(),
-                usage_description: "Transactional email".into(),
-                dtu_priority: DtuPriority::High,
-            },
-        ]);
+        let spec = make_spec_with_deps(vec![ExternalDependency {
+            name: "SendGrid".into(),
+            usage_description: "Transactional email".into(),
+            dtu_priority: DtuPriority::High,
+        }]);
 
         let report = audit_lock_in(&spec);
-        assert!(report.findings.iter().any(|f| f.category == LockInCategory::DataFormat));
+        assert!(report
+            .findings
+            .iter()
+            .any(|f| f.category == LockInCategory::DataFormat));
     }
 
     #[test]
     fn audit_with_abstraction_constraint_reduces_findings() {
-        let mut spec = make_spec_with_deps(vec![
-            ExternalDependency {
-                name: "Stripe".into(),
-                usage_description: "Payments".into(),
-                dtu_priority: DtuPriority::High,
-            },
-        ]);
-        spec.architectural_constraints = vec![
-            "Use adapter pattern for Stripe integration".into(),
-        ];
+        let mut spec = make_spec_with_deps(vec![ExternalDependency {
+            name: "Stripe".into(),
+            usage_description: "Payments".into(),
+            dtu_priority: DtuPriority::High,
+        }]);
+        spec.architectural_constraints = vec!["Use adapter pattern for Stripe integration".into()];
 
         let report = audit_lock_in(&spec);
         // Should NOT flag proprietary API because abstraction is specified
-        assert!(!report.findings.iter().any(|f|
-            f.category == LockInCategory::ProprietaryApi && f.dependency_name == "Stripe"
-        ));
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.category == LockInCategory::ProprietaryApi
+                    && f.dependency_name == "Stripe")
+        );
     }
 
     #[test]
     fn audit_multiple_deps_higher_risk() {
         let spec = make_spec_with_deps(vec![
-            ExternalDependency { name: "Auth0".into(), usage_description: "Auth".into(), dtu_priority: DtuPriority::High },
-            ExternalDependency { name: "Stripe".into(), usage_description: "Payments".into(), dtu_priority: DtuPriority::High },
-            ExternalDependency { name: "SendGrid".into(), usage_description: "Email".into(), dtu_priority: DtuPriority::High },
+            ExternalDependency {
+                name: "Auth0".into(),
+                usage_description: "Auth".into(),
+                dtu_priority: DtuPriority::High,
+            },
+            ExternalDependency {
+                name: "Stripe".into(),
+                usage_description: "Payments".into(),
+                dtu_priority: DtuPriority::High,
+            },
+            ExternalDependency {
+                name: "SendGrid".into(),
+                usage_description: "Email".into(),
+                dtu_priority: DtuPriority::High,
+            },
         ]);
 
         let report = audit_lock_in(&spec);
@@ -497,13 +541,11 @@ mod tests {
 
     #[test]
     fn audit_low_priority_dep_fewer_findings() {
-        let spec = make_spec_with_deps(vec![
-            ExternalDependency {
-                name: "Redis".into(),
-                usage_description: "Caching".into(),
-                dtu_priority: DtuPriority::Low,
-            },
-        ]);
+        let spec = make_spec_with_deps(vec![ExternalDependency {
+            name: "Redis".into(),
+            usage_description: "Caching".into(),
+            dtu_priority: DtuPriority::Low,
+        }]);
 
         let report = audit_lock_in(&spec);
         // Redis is not in VENDOR_ANALYSIS, and Low priority = no proprietary API finding
@@ -512,9 +554,11 @@ mod tests {
 
     #[test]
     fn recommendations_generated_for_findings() {
-        let spec = make_spec_with_deps(vec![
-            ExternalDependency { name: "Auth0".into(), usage_description: "Auth".into(), dtu_priority: DtuPriority::High },
-        ]);
+        let spec = make_spec_with_deps(vec![ExternalDependency {
+            name: "Auth0".into(),
+            usage_description: "Auth".into(),
+            dtu_priority: DtuPriority::High,
+        }]);
 
         let report = audit_lock_in(&spec);
         assert!(!report.recommendations.is_empty());
@@ -523,9 +567,21 @@ mod tests {
     #[test]
     fn risk_score_bounded() {
         let spec = make_spec_with_deps(vec![
-            ExternalDependency { name: "Auth0".into(), usage_description: "Auth".into(), dtu_priority: DtuPriority::High },
-            ExternalDependency { name: "Firebase".into(), usage_description: "DB".into(), dtu_priority: DtuPriority::High },
-            ExternalDependency { name: "AWS Lambda".into(), usage_description: "Compute".into(), dtu_priority: DtuPriority::High },
+            ExternalDependency {
+                name: "Auth0".into(),
+                usage_description: "Auth".into(),
+                dtu_priority: DtuPriority::High,
+            },
+            ExternalDependency {
+                name: "Firebase".into(),
+                usage_description: "DB".into(),
+                dtu_priority: DtuPriority::High,
+            },
+            ExternalDependency {
+                name: "AWS Lambda".into(),
+                usage_description: "Compute".into(),
+                dtu_priority: DtuPriority::High,
+            },
         ]);
 
         let report = audit_lock_in(&spec);

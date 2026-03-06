@@ -10,8 +10,8 @@
 //! - Timeline views (ordered by created_at)
 
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use serde::{Serialize, Deserialize};
 
 // ---------------------------------------------------------------------------
 // Query types
@@ -51,9 +51,7 @@ pub enum CxdbQuery {
     },
 
     /// List all runs for a project.
-    ProjectRuns {
-        project_id: Uuid,
-    },
+    ProjectRuns { project_id: Uuid },
 
     /// Cross-run query: find turns of a given type across all runs in a project.
     CrossRunQuery {
@@ -193,17 +191,19 @@ mod tests {
 
     #[test]
     fn query_result_paginated() {
-        let summaries: Vec<TurnSummary> = (0..5).map(|i| TurnSummary {
-            turn_id: Uuid::new_v4(),
-            type_id: "test".into(),
-            parent_id: None,
-            blob_hash: format!("hash_{}", i),
-            run_id: Uuid::new_v4(),
-            execution_id: format!("exec-{}", i),
-            produced_by: "test".into(),
-            created_at: Utc::now(),
-            note: None,
-        }).collect();
+        let summaries: Vec<TurnSummary> = (0..5)
+            .map(|i| TurnSummary {
+                turn_id: Uuid::new_v4(),
+                type_id: "test".into(),
+                parent_id: None,
+                blob_hash: format!("hash_{}", i),
+                run_id: Uuid::new_v4(),
+                execution_id: format!("exec-{}", i),
+                produced_by: "test".into(),
+                created_at: Utc::now(),
+                note: None,
+            })
+            .collect();
 
         let result = QueryResult::paginated(summaries, 10, true);
         assert_eq!(result.turns.len(), 5);
@@ -223,7 +223,10 @@ mod tests {
         let json = serde_json::to_string(&query).unwrap();
         let decoded: CxdbQuery = serde_json::from_str(&json).unwrap();
 
-        if let CxdbQuery::ListTurns { type_filter, limit, .. } = decoded {
+        if let CxdbQuery::ListTurns {
+            type_filter, limit, ..
+        } = decoded
+        {
             assert_eq!(type_filter.unwrap(), "planner.intake.v1");
             assert_eq!(limit.unwrap(), 10);
         } else {

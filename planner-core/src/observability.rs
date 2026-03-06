@@ -224,10 +224,17 @@ impl EventStore {
     }
 
     /// Persist all events for a session.
-    pub fn save_session_events(&self, session_id: Uuid, events: &[PlannerEvent]) -> std::io::Result<()> {
+    pub fn save_session_events(
+        &self,
+        session_id: Uuid,
+        events: &[PlannerEvent],
+    ) -> std::io::Result<()> {
         let path = self.events_dir.join(format!("{}.msgpack", session_id));
         let bytes = rmp_serde::to_vec(events).map_err(|e| {
-            std::io::Error::new(std::io::ErrorKind::Other, format!("MessagePack encode: {}", e))
+            std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("MessagePack encode: {}", e),
+            )
         })?;
         std::fs::write(&path, &bytes)
     }
@@ -240,7 +247,10 @@ impl EventStore {
         }
         let bytes = std::fs::read(&path)?;
         rmp_serde::from_slice(&bytes).map_err(|e| {
-            std::io::Error::new(std::io::ErrorKind::Other, format!("MessagePack decode: {}", e))
+            std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("MessagePack decode: {}", e),
+            )
         })
     }
 
@@ -317,7 +327,11 @@ mod tests {
     #[test]
     fn noop_sink_does_not_panic() {
         let sink = NoopEventSink;
-        sink.emit(PlannerEvent::info(EventSource::System, "test", "test event"));
+        sink.emit(PlannerEvent::info(
+            EventSource::System,
+            "test",
+            "test event",
+        ));
     }
 
     #[test]
@@ -334,7 +348,11 @@ mod tests {
     #[tokio::test]
     async fn channel_sink_sends() {
         let (sink, mut rx) = ChannelEventSink::new();
-        sink.emit(PlannerEvent::info(EventSource::SocraticEngine, "test", "hello"));
+        sink.emit(PlannerEvent::info(
+            EventSource::SocraticEngine,
+            "test",
+            "hello",
+        ));
 
         let event = rx.recv().await.unwrap();
         assert_eq!(event.message, "hello");

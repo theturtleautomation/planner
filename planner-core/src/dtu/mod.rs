@@ -17,16 +17,16 @@
 //! The `DtuRegistry` manages all registered providers and routes
 //! requests to the correct clone based on the provider ID.
 
-pub mod stripe;
 pub mod auth0;
 pub mod sendgrid;
+pub mod stripe;
 pub mod supabase;
 pub mod twilio;
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use planner_schemas::{DtuRequest, DtuResponse, DtuProviderInfo, DtuConfigV1};
+use planner_schemas::{DtuConfigV1, DtuProviderInfo, DtuRequest, DtuResponse};
 
 // ---------------------------------------------------------------------------
 // DtuProvider trait
@@ -112,7 +112,9 @@ impl DtuRegistry {
         provider_id: &str,
         request: &DtuRequest,
     ) -> Result<DtuResponse, DtuError> {
-        let provider = self.providers.get(provider_id)
+        let provider = self
+            .providers
+            .get(provider_id)
             .ok_or_else(|| DtuError::ProviderNotFound(provider_id.to_string()))?;
         Ok(provider.handle_request(request))
     }

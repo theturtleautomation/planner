@@ -19,18 +19,18 @@
 
 mod app;
 mod blueprint_table;
-mod ui;
 mod events;
 mod pipeline;
+mod ui;
 
-use std::io;
 use crossterm::{
     event::{DisableMouseCapture, EnableMouseCapture},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use ratatui::prelude::*;
 use ratatui::backend::CrosstermBackend;
+use ratatui::prelude::*;
+use std::io;
 
 use app::App;
 use events::EventHandler;
@@ -111,7 +111,8 @@ async fn run_app<B: Backend>(
         // ── Socratic interview spawn ────────────────────────────────────────
         // The user submitted their first message → spawn the Socratic engine.
         if let Some(initial_message) = app.take_pending_socratic() {
-            let (user_tx, events_rx, planner_events_rx) = pipeline::spawn_socratic_interview(initial_message);
+            let (user_tx, events_rx, planner_events_rx) =
+                pipeline::spawn_socratic_interview(initial_message);
             app.socratic_tx = Some(user_tx);
             app.socratic_events_rx = Some(events_rx);
             app.planner_events_rx = Some(planner_events_rx);

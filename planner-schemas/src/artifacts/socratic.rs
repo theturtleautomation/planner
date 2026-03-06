@@ -430,9 +430,11 @@ impl RequirementsBeliefState {
         if self.required_dimensions.is_empty() {
             return 1.0;
         }
-        let resolved = self.required_dimensions.iter().filter(|d| {
-            self.filled.contains_key(d) || self.out_of_scope.contains(d)
-        }).count();
+        let resolved = self
+            .required_dimensions
+            .iter()
+            .filter(|d| self.filled.contains_key(d) || self.out_of_scope.contains(d))
+            .count();
         resolved as f32 / self.required_dimensions.len() as f32
     }
 
@@ -695,7 +697,10 @@ impl InterviewerConstitution {
 
     /// Get all active rules (base + overrides).
     pub fn all_rules(&self) -> Vec<&ConstitutionRule> {
-        self.rules.iter().chain(self.project_overrides.iter()).collect()
+        self.rules
+            .iter()
+            .chain(self.project_overrides.iter())
+            .collect()
     }
 
     /// Format rules as a string for inclusion in LLM system prompts.
@@ -731,45 +736,31 @@ pub enum SocraticEvent {
 
     /// Belief state updated after processing user input.
     #[serde(rename = "belief_state_update")]
-    BeliefStateUpdate {
-        state: RequirementsBeliefState,
-    },
+    BeliefStateUpdate { state: RequirementsBeliefState },
 
     /// System asks a question.
     #[serde(rename = "question")]
-    Question {
-        output: QuestionOutput,
-    },
+    Question { output: QuestionOutput },
 
     /// Speculative draft generated — present for review.
     #[serde(rename = "speculative_draft")]
-    SpeculativeDraftReady {
-        draft: SpeculativeDraft,
-    },
+    SpeculativeDraftReady { draft: SpeculativeDraft },
 
     /// Contradiction detected.
     #[serde(rename = "contradiction")]
-    ContradictionDetected {
-        contradiction: Contradiction,
-    },
+    ContradictionDetected { contradiction: Contradiction },
 
     /// Convergence reached — interview ending.
     #[serde(rename = "converged")]
-    Converged {
-        result: ConvergenceResult,
-    },
+    Converged { result: ConvergenceResult },
 
     /// System message (informational, not a question).
     #[serde(rename = "system_message")]
-    SystemMessage {
-        content: String,
-    },
+    SystemMessage { content: String },
 
     /// Error during Socratic processing.
     #[serde(rename = "socratic_error")]
-    Error {
-        message: String,
-    },
+    Error { message: String },
 }
 
 // ===========================================================================
@@ -857,21 +848,28 @@ mod tests {
         assert!(state.filled.is_empty());
 
         // Fill a dimension
-        state.fill(Dimension::Goal, SlotValue {
-            value: "Task tracking for team".into(),
-            source_turn: 1,
-            source_quote: Some("I want to build a task tracker".into()),
-        });
+        state.fill(
+            Dimension::Goal,
+            SlotValue {
+                value: "Task tracking for team".into(),
+                source_turn: 1,
+                source_quote: Some("I want to build a task tracker".into()),
+            },
+        );
 
         assert!(state.filled.contains_key(&Dimension::Goal));
         assert!(!state.missing.contains(&Dimension::Goal));
 
         // Mark uncertain
-        state.mark_uncertain(Dimension::Performance, SlotValue {
-            value: "Sub-200ms responses".into(),
-            source_turn: 2,
-            source_quote: None,
-        }, 0.6);
+        state.mark_uncertain(
+            Dimension::Performance,
+            SlotValue {
+                value: "Sub-200ms responses".into(),
+                source_turn: 2,
+                source_quote: None,
+            },
+            0.6,
+        );
 
         assert!(state.uncertain.contains_key(&Dimension::Performance));
 
@@ -887,17 +885,24 @@ mod tests {
             project_type: ProjectType::CliTool,
             complexity: ComplexityTier::Light,
             detected_signals: vec![],
-            required_dimensions: vec![Dimension::Goal, Dimension::CoreFeatures, Dimension::OutOfScope],
+            required_dimensions: vec![
+                Dimension::Goal,
+                Dimension::CoreFeatures,
+                Dimension::OutOfScope,
+            ],
         };
 
         let mut state = RequirementsBeliefState::from_classification(&classification);
         assert_eq!(state.convergence_pct(), 0.0);
 
-        state.fill(Dimension::Goal, SlotValue {
-            value: "Parse CSV files".into(),
-            source_turn: 1,
-            source_quote: None,
-        });
+        state.fill(
+            Dimension::Goal,
+            SlotValue {
+                value: "Parse CSV files".into(),
+                source_turn: 1,
+                source_quote: None,
+            },
+        );
         // 1 of 3 = 33.3%
         assert!((state.convergence_pct() - 0.333).abs() < 0.01);
 
@@ -960,16 +965,23 @@ mod tests {
         let mut state = RequirementsBeliefState::from_classification(&classification);
         let initial_missing = state.missing.len();
 
-        state.fill(Dimension::Goal, SlotValue {
-            value: "test".into(),
-            source_turn: 1,
-            source_quote: None,
-        });
-        state.mark_uncertain(Dimension::Performance, SlotValue {
-            value: "fast".into(),
-            source_turn: 2,
-            source_quote: None,
-        }, 0.5);
+        state.fill(
+            Dimension::Goal,
+            SlotValue {
+                value: "test".into(),
+                source_turn: 1,
+                source_quote: None,
+            },
+        );
+        state.mark_uncertain(
+            Dimension::Performance,
+            SlotValue {
+                value: "fast".into(),
+                source_turn: 2,
+                source_quote: None,
+            },
+            0.5,
+        );
 
         let counts = state.counts();
         assert_eq!(counts.filled, 1);

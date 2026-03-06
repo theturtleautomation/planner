@@ -81,9 +81,9 @@ pub enum StorageError {
     IntegrityFailure(Uuid),
 }
 
+pub mod durable;
 pub mod protocol;
 pub mod query;
-pub mod durable;
 
 // ---------------------------------------------------------------------------
 // CXDB Engine — the core storage engine
@@ -203,10 +203,14 @@ impl CxdbEngine {
         let index = self.run_type_index.read().unwrap();
 
         if let Some(type_id) = type_filter {
-            index.get(&(run_id, type_id.to_string())).cloned().unwrap_or_default()
+            index
+                .get(&(run_id, type_id.to_string()))
+                .cloned()
+                .unwrap_or_default()
         } else {
             // Return all turn IDs for this run across all types
-            index.iter()
+            index
+                .iter()
                 .filter(|((rid, _), _)| *rid == run_id)
                 .flat_map(|(_, ids)| ids.iter().copied())
                 .collect()
@@ -303,7 +307,8 @@ impl CxdbEngine {
         stored: &StoredTurn,
     ) -> Result<Turn<T>, StorageError> {
         let blobs = self.blobs.read().unwrap();
-        let blob_data = blobs.get(&stored.blob_hash)
+        let blob_data = blobs
+            .get(&stored.blob_hash)
             .ok_or_else(|| StorageError::NotFound(stored.turn_id))?;
 
         let payload: T = rmp_serde::from_slice(blob_data)
@@ -366,8 +371,7 @@ impl TurnStore for CxdbEngine {
         turn_id: Uuid,
     ) -> Result<Turn<T>, StorageError> {
         let turns = self.turns.read().unwrap();
-        let stored = turns.get(&turn_id)
-            .ok_or(StorageError::NotFound(turn_id))?;
+        let stored = turns.get(&turn_id).ok_or(StorageError::NotFound(turn_id))?;
         self.reconstruct_turn(stored)
     }
 
@@ -377,19 +381,22 @@ impl TurnStore for CxdbEngine {
         type_id: &str,
     ) -> Result<Vec<Turn<T>>, StorageError> {
         let index = self.run_type_index.read().unwrap();
-        let turn_ids = index.get(&(run_id, type_id.to_string()))
+        let turn_ids = index
+            .get(&(run_id, type_id.to_string()))
             .cloned()
             .unwrap_or_default();
         drop(index);
 
         // Collect stored turns first (clone to release the lock), then reconstruct
         let turns_lock = self.turns.read().unwrap();
-        let stored_turns: Vec<StoredTurn> = turn_ids.iter()
+        let stored_turns: Vec<StoredTurn> = turn_ids
+            .iter()
             .filter_map(|tid| turns_lock.get(tid).cloned())
             .collect();
         drop(turns_lock);
 
-        stored_turns.iter()
+        stored_turns
+            .iter()
             .map(|st| self.reconstruct_turn(st))
             .collect()
     }
@@ -400,7 +407,8 @@ impl TurnStore for CxdbEngine {
         type_id: &str,
     ) -> Result<Option<Turn<T>>, StorageError> {
         let index = self.run_type_index.read().unwrap();
-        let turn_ids = index.get(&(run_id, type_id.to_string()))
+        let turn_ids = index
+            .get(&(run_id, type_id.to_string()))
             .cloned()
             .unwrap_or_default();
         drop(index);
@@ -411,7 +419,8 @@ impl TurnStore for CxdbEngine {
 
         // Find the one with the latest created_at
         let turns_lock = self.turns.read().unwrap();
-        let latest = turn_ids.iter()
+        let latest = turn_ids
+            .iter()
             .filter_map(|tid| turns_lock.get(tid))
             .max_by_key(|st| st.created_at)
             .cloned();
@@ -464,9 +473,7 @@ mod tests {
 
         // Store a turn that carries a project_id via new_with_project
         let intake = make_test_intake("Project ID Roundtrip");
-        let turn = Turn::new_with_project(
-            intake, None, run_id, "test", "exec-1", project_id,
-        );
+        let turn = Turn::new_with_project(intake, None, run_id, "test", "exec-1", project_id);
         let turn_id = turn.turn_id;
         engine.store_turn(&turn).unwrap();
 
@@ -506,9 +513,8 @@ mod tests {
             engine.store_turn(&turn).unwrap();
         }
 
-        let turns: Vec<Turn<IntakeV1>> = engine
-            .get_turns_by_type(run_id, IntakeV1::TYPE_ID)
-            .unwrap();
+        let turns: Vec<Turn<IntakeV1>> =
+            engine.get_turns_by_type(run_id, IntakeV1::TYPE_ID).unwrap();
         assert_eq!(turns.len(), 3);
     }
 
@@ -523,9 +529,8 @@ mod tests {
             engine.store_turn(&turn).unwrap();
         }
 
-        let latest: Option<Turn<IntakeV1>> = engine
-            .get_latest_turn(run_id, IntakeV1::TYPE_ID)
-            .unwrap();
+        let latest: Option<Turn<IntakeV1>> =
+            engine.get_latest_turn(run_id, IntakeV1::TYPE_ID).unwrap();
         assert!(latest.is_some());
         assert_eq!(latest.unwrap().payload.project_name, "Project 2");
     }
@@ -635,14 +640,12 @@ mod tests {
         let engine = CxdbEngine::new();
         let run_id = Uuid::new_v4();
 
-        let turns: Vec<Turn<IntakeV1>> = engine
-            .get_turns_by_type(run_id, IntakeV1::TYPE_ID)
-            .unwrap();
+        let turns: Vec<Turn<IntakeV1>> =
+            engine.get_turns_by_type(run_id, IntakeV1::TYPE_ID).unwrap();
         assert!(turns.is_empty());
 
-        let latest: Option<Turn<IntakeV1>> = engine
-            .get_latest_turn(run_id, IntakeV1::TYPE_ID)
-            .unwrap();
+        let latest: Option<Turn<IntakeV1>> =
+            engine.get_latest_turn(run_id, IntakeV1::TYPE_ID).unwrap();
         assert!(latest.is_none());
     }
 

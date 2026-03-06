@@ -28,8 +28,8 @@
 
 use ratatui::prelude::*;
 use ratatui::widgets::{
-    Block, Borders, Cell, Gauge, List, ListItem, Paragraph, Row, Scrollbar,
-    ScrollbarOrientation, ScrollbarState, Table, Wrap,
+    Block, Borders, Cell, Gauge, List, ListItem, Paragraph, Row, Scrollbar, ScrollbarOrientation,
+    ScrollbarState, Table, Wrap,
 };
 
 use planner_schemas::ComplexityTier;
@@ -118,7 +118,9 @@ fn draw_provider_status(frame: &mut Frame, area: Rect, app: &App) {
         let (icon, icon_style, name_style) = if p.available {
             (
                 "✓",
-                Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
                 Style::default().fg(Color::Green),
             )
         } else {
@@ -154,7 +156,10 @@ fn draw_provider_status(frame: &mut Frame, area: Rect, app: &App) {
     lines.push(Line::from(""));
 
     // Summary line
-    let summary_text = format!("  {} of {} providers available", available_count, total_count);
+    let summary_text = format!(
+        "  {} of {} providers available",
+        available_count, total_count
+    );
     let summary_style = if all_missing {
         Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
     } else if available_count < total_count {
@@ -209,10 +214,7 @@ fn draw_interviewing(frame: &mut Frame, app: &App) {
     // Horizontal split: Chat (50%) | Right Pane (50%)
     let columns = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(50),
-            Constraint::Percentage(50),
-        ])
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
         .split(rows[1]);
 
     draw_chat(frame, columns[0], app);
@@ -264,24 +266,34 @@ fn draw_blueprint_table(frame: &mut Frame, app: &mut App) {
     let columns = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Percentage(if app.blueprint.detail_expanded { 55 } else { 100 }),
+            Constraint::Percentage(if app.blueprint.detail_expanded {
+                55
+            } else {
+                100
+            }),
             Constraint::Percentage(if app.blueprint.detail_expanded { 45 } else { 0 }),
         ])
         .split(rows[1]);
 
     let filtered = app.blueprint.filtered_nodes();
     let filtered_len = filtered.len();
-    let header = Row::new(["ID", "Type", "Name", "Status"])
-        .style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD));
+    let header = Row::new(["ID", "Type", "Name", "Status"]).style(
+        Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD),
+    );
 
-    let rows_vec: Vec<Row<'static>> = filtered.iter().map(|node| {
-        Row::new([
-            Cell::from(truncate_text(node.id.as_str(), 18)),
-            Cell::from(node.node_type.clone()).style(node_type_style(&node.node_type)),
-            Cell::from(truncate_text(&node.name, 30)),
-            Cell::from(node.status.clone()),
-        ])
-    }).collect();
+    let rows_vec: Vec<Row<'static>> = filtered
+        .iter()
+        .map(|node| {
+            Row::new([
+                Cell::from(truncate_text(node.id.as_str(), 18)),
+                Cell::from(node.node_type.clone()).style(node_type_style(&node.node_type)),
+                Cell::from(truncate_text(&node.name, 30)),
+                Cell::from(node.status.clone()),
+            ])
+        })
+        .collect();
 
     let table = Table::new(
         rows_vec,
@@ -298,7 +310,11 @@ fn draw_blueprint_table(frame: &mut Frame, app: &mut App) {
             .borders(Borders::ALL)
             .title(" Blueprint Nodes "),
     )
-    .row_highlight_style(Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD))
+    .row_highlight_style(
+        Style::default()
+            .bg(Color::DarkGray)
+            .add_modifier(Modifier::BOLD),
+    )
     .highlight_symbol("► ");
 
     frame.render_stateful_widget(table, columns[0], &mut app.blueprint.table_state);
@@ -307,11 +323,7 @@ fn draw_blueprint_table(frame: &mut Frame, app: &mut App) {
         draw_blueprint_detail(frame, app, columns[1]);
     }
 
-    let type_filter = app
-        .blueprint
-        .type_filter
-        .as_deref()
-        .unwrap_or("all");
+    let type_filter = app.blueprint.type_filter.as_deref().unwrap_or("all");
     let status_text = if app.blueprint.search_mode {
         format!(
             " Search: {}",
@@ -367,24 +379,55 @@ fn draw_blueprint_detail(frame: &mut Frame, app: &App, area: Rect) {
 
     let mut lines = vec![
         Line::from(vec![
-            Span::styled("ID: ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "ID: ",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::raw(node.id().as_str().to_string()),
         ]),
         Line::from(vec![
-            Span::styled("Type: ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-            Span::styled(node.type_name().to_string(), node_type_style(node.type_name())),
+            Span::styled(
+                "Type: ",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                node.type_name().to_string(),
+                node_type_style(node.type_name()),
+            ),
         ]),
         Line::from(vec![
-            Span::styled("Name: ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "Name: ",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::raw(node.name().to_string()),
         ]),
         Line::from(vec![
-            Span::styled("Status: ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "Status: ",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::raw(node.status()),
         ]),
         Line::from(vec![
-            Span::styled("Edges: ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-            Span::raw(format!("{} upstream · {} downstream", edge_count_in, edge_count_out)),
+            Span::styled(
+                "Edges: ",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(format!(
+                "{} upstream · {} downstream",
+                edge_count_in, edge_count_out
+            )),
         ]),
         Line::from(""),
     ];
@@ -397,7 +440,10 @@ fn draw_blueprint_detail(frame: &mut Frame, app: &App, area: Rect) {
             }
         }
         planner_schemas::artifacts::blueprint::BlueprintNode::Technology(technology) => {
-            lines.push(detail_line("Version", technology.version.as_deref().unwrap_or("-")));
+            lines.push(detail_line(
+                "Version",
+                technology.version.as_deref().unwrap_or("-"),
+            ));
             lines.push(detail_line("Rationale", &technology.rationale));
             if let Some(doc) = &technology.documentation {
                 lines.push(detail_line("Docs", doc));
@@ -427,7 +473,10 @@ fn draw_blueprint_detail(frame: &mut Frame, app: &App, area: Rect) {
         }
         planner_schemas::artifacts::blueprint::BlueprintNode::QualityRequirement(requirement) => {
             lines.push(detail_line("Scenario", &requirement.scenario));
-            lines.push(detail_line("Attribute", &format!("{:?}", requirement.attribute)));
+            lines.push(detail_line(
+                "Attribute",
+                &format!("{:?}", requirement.attribute),
+            ));
             if let Some(doc) = &requirement.documentation {
                 lines.push(detail_line("Docs", doc));
             }
@@ -441,10 +490,7 @@ fn draw_blueprint_detail(frame: &mut Frame, app: &App, area: Rect) {
 
     lines.push(detail_line("Updated", node.updated_at()));
 
-    frame.render_widget(
-        Paragraph::new(lines).wrap(Wrap { trim: false }),
-        inner,
-    );
+    frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
 }
 
 fn node_type_style(node_type: &str) -> Style {
@@ -463,7 +509,9 @@ fn detail_line(label: &str, value: &str) -> Line<'static> {
     Line::from(vec![
         Span::styled(
             format!("{}: ", label),
-            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
         ),
         Span::raw(value.to_string()),
     ])
@@ -486,9 +534,9 @@ fn truncate_text(value: &str, max_len: usize) -> String {
 fn draw_header(frame: &mut Frame, area: Rect, app: &App) {
     let phase_badge = match app.intake_phase {
         IntakePhase::WaitingForInput => "[ Intake ]",
-        IntakePhase::Interviewing   => "[ Interview ]",
+        IntakePhase::Interviewing => "[ Interview ]",
         IntakePhase::PipelineRunning => "[ Pipeline ]",
-        IntakePhase::Complete       => "[ Complete ]",
+        IntakePhase::Complete => "[ Complete ]",
     };
 
     let header_text = format!(
@@ -535,9 +583,9 @@ fn draw_chat(frame: &mut Frame, area: Rect, app: &App) {
 
     for msg in &app.messages {
         let (role_color, prefix) = match msg.role {
-            MessageRole::System  => (Color::DarkGray, format!("[{}] ", msg.role.label())),
-            MessageRole::User    => (Color::Green,    format!("[{}] ", msg.role.label())),
-            MessageRole::Planner => (Color::Cyan,     format!("[{}] ", msg.role.label())),
+            MessageRole::System => (Color::DarkGray, format!("[{}] ", msg.role.label())),
+            MessageRole::User => (Color::Green, format!("[{}] ", msg.role.label())),
+            MessageRole::Planner => (Color::Cyan, format!("[{}] ", msg.role.label())),
         };
 
         let time_span = Span::styled(
@@ -555,10 +603,7 @@ fn draw_chat(frame: &mut Frame, area: Rect, app: &App) {
             lines.push(Line::from(vec![time_span, role_span, Span::raw(*first)]));
         }
         for line in content_lines.iter().skip(1) {
-            lines.push(Line::from(vec![
-                Span::raw("       "),
-                Span::raw(*line),
-            ]));
+            lines.push(Line::from(vec![Span::raw("       "), Span::raw(*line)]));
         }
 
         // Blank line between messages
@@ -571,7 +616,9 @@ fn draw_chat(frame: &mut Frame, area: Rect, app: &App) {
             if !q.quick_options.is_empty() {
                 lines.push(Line::from(Span::styled(
                     "  Quick options:",
-                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
                 )));
                 let mut option_spans: Vec<Span> = Vec::new();
                 for (i, opt) in q.quick_options.iter().enumerate() {
@@ -601,8 +648,8 @@ fn draw_chat(frame: &mut Frame, area: Rect, app: &App) {
 
     if app.messages.len() > 5 {
         let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight);
-        let mut scrollbar_state = ScrollbarState::new(app.messages.len() * 3)
-            .position(app.scroll_offset as usize);
+        let mut scrollbar_state =
+            ScrollbarState::new(app.messages.len() * 3).position(app.scroll_offset as usize);
         frame.render_stateful_widget(scrollbar, area, &mut scrollbar_state);
     }
 }
@@ -644,21 +691,20 @@ fn draw_belief_state(frame: &mut Frame, area: Rect, app: &App) {
             " {} | {} ",
             cls.project_type,
             match cls.complexity {
-                ComplexityTier::Light    => "Light",
+                ComplexityTier::Light => "Light",
                 ComplexityTier::Standard => "Standard",
-                ComplexityTier::Deep     => "Deep",
+                ComplexityTier::Deep => "Deep",
             }
         )
     } else {
         " Classifying…".to_string()
     };
 
-    let domain_badge = Paragraph::new(domain_text)
-        .style(
-            Style::default()
-                .fg(Color::White)
-                .add_modifier(Modifier::BOLD),
-        );
+    let domain_badge = Paragraph::new(domain_text).style(
+        Style::default()
+            .fg(Color::White)
+            .add_modifier(Modifier::BOLD),
+    );
     frame.render_widget(domain_badge, inner_rows[0]);
 
     // --- Convergence gauge ---
@@ -684,7 +730,9 @@ fn draw_belief_state(frame: &mut Frame, area: Rect, app: &App) {
         if !bs.filled.is_empty() {
             items.push(ListItem::new(Line::from(Span::styled(
                 "Filled:",
-                Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
             ))));
             for (dim, val) in &bs.filled {
                 let label = dim.label();
@@ -696,10 +744,7 @@ fn draw_belief_state(frame: &mut Frame, area: Rect, app: &App) {
                 };
                 items.push(ListItem::new(Line::from(vec![
                     Span::styled("  ✓ ", Style::default().fg(Color::Green)),
-                    Span::styled(
-                        format!("{}: ", label),
-                        Style::default().fg(Color::Green),
-                    ),
+                    Span::styled(format!("{}: ", label), Style::default().fg(Color::Green)),
                     Span::styled(truncated, Style::default().fg(Color::Gray)),
                 ])));
             }
@@ -709,7 +754,9 @@ fn draw_belief_state(frame: &mut Frame, area: Rect, app: &App) {
         if !bs.uncertain.is_empty() {
             items.push(ListItem::new(Line::from(Span::styled(
                 "Uncertain:",
-                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
             ))));
             for (dim, (val, conf)) in &bs.uncertain {
                 let label = dim.label();
@@ -720,10 +767,7 @@ fn draw_belief_state(frame: &mut Frame, area: Rect, app: &App) {
                 };
                 items.push(ListItem::new(Line::from(vec![
                     Span::styled("  ? ", Style::default().fg(Color::Yellow)),
-                    Span::styled(
-                        format!("{}: ", label),
-                        Style::default().fg(Color::Yellow),
-                    ),
+                    Span::styled(format!("{}: ", label), Style::default().fg(Color::Yellow)),
                     Span::styled(truncated, Style::default().fg(Color::DarkGray)),
                     Span::styled(
                         format!(" ({:.0}%)", conf * 100.0),
@@ -737,7 +781,9 @@ fn draw_belief_state(frame: &mut Frame, area: Rect, app: &App) {
         if !bs.missing.is_empty() {
             items.push(ListItem::new(Line::from(Span::styled(
                 "Missing:",
-                Style::default().fg(Color::Gray).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Gray)
+                    .add_modifier(Modifier::BOLD),
             ))));
             for dim in &bs.missing {
                 items.push(ListItem::new(Line::from(vec![
@@ -751,7 +797,9 @@ fn draw_belief_state(frame: &mut Frame, area: Rect, app: &App) {
         if !bs.out_of_scope.is_empty() {
             items.push(ListItem::new(Line::from(Span::styled(
                 "Out of scope:",
-                Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::BOLD),
             ))));
             for dim in &bs.out_of_scope {
                 items.push(ListItem::new(Line::from(vec![
@@ -767,9 +815,8 @@ fn draw_belief_state(frame: &mut Frame, area: Rect, app: &App) {
         }
 
         // Contradiction warnings (red !)
-        let active_contradictions: Vec<_> = bs.contradictions.iter()
-            .filter(|c| !c.resolved)
-            .collect();
+        let active_contradictions: Vec<_> =
+            bs.contradictions.iter().filter(|c| !c.resolved).collect();
         if !active_contradictions.is_empty() {
             items.push(ListItem::new(Line::from(Span::styled(
                 "Contradictions:",
@@ -800,10 +847,10 @@ fn draw_belief_state(frame: &mut Frame, area: Rect, app: &App) {
 fn draw_status_bar(frame: &mut Frame, area: Rect, app: &App) {
     // [phase: INTERVIEWING]  [step: classify_domain 2.3s]  [llm: 3 calls]  [L: logs]
     let phase_label = match app.intake_phase {
-        IntakePhase::WaitingForInput  => "WAITING",
-        IntakePhase::Interviewing     => "INTERVIEWING",
-        IntakePhase::PipelineRunning  => "PIPELINE",
-        IntakePhase::Complete         => "COMPLETE",
+        IntakePhase::WaitingForInput => "WAITING",
+        IntakePhase::Interviewing => "INTERVIEWING",
+        IntakePhase::PipelineRunning => "PIPELINE",
+        IntakePhase::Complete => "COMPLETE",
     };
 
     let mut spans: Vec<Span> = Vec::new();
@@ -817,17 +864,15 @@ fn draw_status_bar(frame: &mut Frame, area: Rect, app: &App) {
 
     // Step segment
     let step_text = if let Some(ref step) = app.current_step {
-        let elapsed = app.current_step_started
+        let elapsed = app
+            .current_step_started
             .map(|inst| inst.elapsed().as_secs_f32())
             .unwrap_or(0.0);
         format!("[step: {} {:.1}s]", step, elapsed)
     } else {
         "[step: —]".to_string()
     };
-    spans.push(Span::styled(
-        step_text,
-        Style::default().fg(Color::Yellow),
-    ));
+    spans.push(Span::styled(step_text, Style::default().fg(Color::Yellow)));
     spans.push(Span::styled("  ", Style::default()));
 
     // LLM call count segment
@@ -840,7 +885,7 @@ fn draw_status_bar(frame: &mut Frame, area: Rect, app: &App) {
     // Hint: toggle logs
     let logs_hint = match app.right_pane_mode {
         RightPaneMode::BeliefState => "[L: logs]",
-        RightPaneMode::Logs        => "[L: belief]",
+        RightPaneMode::Logs => "[L: belief]",
     };
     spans.push(Span::styled(
         logs_hint,
@@ -864,10 +909,10 @@ fn draw_logs_panel(frame: &mut Frame, area: Rect, app: &App) {
 
     // Title reflects active filter
     let filter_label = match app.logs_filter {
-        None                                                  => "All",
+        None => "All",
         Some(planner_core::observability::EventLevel::Error) => "Errors",
-        Some(planner_core::observability::EventLevel::Warn)  => "Warnings",
-        Some(planner_core::observability::EventLevel::Info)  => "Info",
+        Some(planner_core::observability::EventLevel::Warn) => "Warnings",
+        Some(planner_core::observability::EventLevel::Info) => "Info",
     };
     let title = format!(" Logs [{}] [f: filter] ", filter_label);
 
@@ -893,7 +938,9 @@ fn draw_logs_panel(frame: &mut Frame, area: Rect, app: &App) {
     if events.is_empty() {
         let empty = Paragraph::new(Span::styled(
             "  No events yet",
-            Style::default().fg(Color::DarkGray).add_modifier(Modifier::DIM),
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::DIM),
         ));
         frame.render_widget(empty, inner);
         return;
@@ -908,9 +955,9 @@ fn draw_logs_panel(frame: &mut Frame, area: Rect, app: &App) {
         .iter()
         .map(|ev| {
             let (level_color, level_str) = match ev.level {
-                planner_core::observability::EventLevel::Info  => (Color::DarkGray, "INFO "),
-                planner_core::observability::EventLevel::Warn  => (Color::Yellow,   "WARN "),
-                planner_core::observability::EventLevel::Error => (Color::Red,      "ERROR"),
+                planner_core::observability::EventLevel::Info => (Color::DarkGray, "INFO "),
+                planner_core::observability::EventLevel::Warn => (Color::Yellow, "WARN "),
+                planner_core::observability::EventLevel::Error => (Color::Red, "ERROR"),
             };
 
             let ts = ev.timestamp.format("%H:%M:%S").to_string();
@@ -931,13 +978,12 @@ fn draw_logs_panel(frame: &mut Frame, area: Rect, app: &App) {
             };
 
             Line::from(vec![
-                Span::styled(
-                    format!("{} ", ts),
-                    Style::default().fg(Color::DarkGray),
-                ),
+                Span::styled(format!("{} ", ts), Style::default().fg(Color::DarkGray)),
                 Span::styled(
                     format!("{} ", level_str),
-                    Style::default().fg(level_color).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(level_color)
+                        .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
                     format!("{:<12} ", source_str),
@@ -954,8 +1000,8 @@ fn draw_logs_panel(frame: &mut Frame, area: Rect, app: &App) {
     // Scrollbar when there are enough events to scroll
     if total > 4 {
         let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight);
-        let mut scrollbar_state = ScrollbarState::new(total as usize)
-            .position(clamped_scroll as usize);
+        let mut scrollbar_state =
+            ScrollbarState::new(total as usize).position(clamped_scroll as usize);
         frame.render_stateful_widget(scrollbar, area, &mut scrollbar_state);
     }
 }
@@ -966,10 +1012,10 @@ fn draw_pipeline_status(frame: &mut Frame, area: Rect, app: &App) {
 
     for (i, stage) in app.stages.iter().enumerate() {
         let (symbol, color) = match stage.status {
-            StageStatus::Pending  => ("□", Color::DarkGray),
-            StageStatus::Running  => ("◆", Color::Yellow),
+            StageStatus::Pending => ("□", Color::DarkGray),
+            StageStatus::Running => ("◆", Color::Yellow),
             StageStatus::Complete => ("■", Color::Green),
-            StageStatus::Failed   => ("✗", Color::Red),
+            StageStatus::Failed => ("✗", Color::Red),
         };
 
         spans.push(Span::styled(
@@ -1071,9 +1117,21 @@ mod tests {
         let mut app = make_app();
         // Simulate all three providers available
         app.providers = vec![
-            ProviderStatus { name: "anthropic".into(), binary: "claude".into(), available: true },
-            ProviderStatus { name: "google".into(),    binary: "gemini".into(), available: true },
-            ProviderStatus { name: "openai".into(),    binary: "codex".into(),  available: true },
+            ProviderStatus {
+                name: "anthropic".into(),
+                binary: "claude".into(),
+                available: true,
+            },
+            ProviderStatus {
+                name: "google".into(),
+                binary: "gemini".into(),
+                available: true,
+            },
+            ProviderStatus {
+                name: "openai".into(),
+                binary: "codex".into(),
+                available: true,
+            },
         ];
         terminal.draw(|f| draw(f, &mut app)).unwrap();
     }
@@ -1087,9 +1145,21 @@ mod tests {
         let mut app = make_app();
         // Simulate no providers — should render the red warning line
         app.providers = vec![
-            ProviderStatus { name: "anthropic".into(), binary: "claude".into(), available: false },
-            ProviderStatus { name: "google".into(),    binary: "gemini".into(), available: false },
-            ProviderStatus { name: "openai".into(),    binary: "codex".into(),  available: false },
+            ProviderStatus {
+                name: "anthropic".into(),
+                binary: "claude".into(),
+                available: false,
+            },
+            ProviderStatus {
+                name: "google".into(),
+                binary: "gemini".into(),
+                available: false,
+            },
+            ProviderStatus {
+                name: "openai".into(),
+                binary: "codex".into(),
+                available: false,
+            },
         ];
         terminal.draw(|f| draw(f, &mut app)).unwrap();
     }
@@ -1107,8 +1177,10 @@ mod tests {
 
     #[test]
     fn draw_interviewing_with_belief_state_does_not_panic() {
-        use planner_schemas::{DomainClassification, ProjectType, ComplexityTier, Dimension,
-                              RequirementsBeliefState, SlotValue};
+        use planner_schemas::{
+            ComplexityTier, Dimension, DomainClassification, ProjectType, RequirementsBeliefState,
+            SlotValue,
+        };
 
         let backend = TestBackend::new(160, 50);
         let mut terminal = Terminal::new(backend).unwrap();
@@ -1125,14 +1197,21 @@ mod tests {
         app.classification = Some(cls.clone());
 
         let mut bs = RequirementsBeliefState::from_classification(&cls);
-        bs.fill(Dimension::Goal, SlotValue {
-            value: "Task tracker for team".into(),
-            source_turn: 1,
-            source_quote: None,
-        });
+        bs.fill(
+            Dimension::Goal,
+            SlotValue {
+                value: "Task tracker for team".into(),
+                source_turn: 1,
+                source_quote: None,
+            },
+        );
         bs.mark_uncertain(
             Dimension::Stakeholders,
-            SlotValue { value: "dev team".into(), source_turn: 1, source_quote: None },
+            SlotValue {
+                value: "dev team".into(),
+                source_turn: 1,
+                source_quote: None,
+            },
             0.6,
         );
         app.belief_state = Some(bs);
@@ -1142,7 +1221,7 @@ mod tests {
 
     #[test]
     fn draw_interviewing_with_question_options_does_not_panic() {
-        use planner_schemas::{QuestionOutput, Dimension, QuickOption};
+        use planner_schemas::{Dimension, QuestionOutput, QuickOption};
 
         let backend = TestBackend::new(120, 40);
         let mut terminal = Terminal::new(backend).unwrap();
@@ -1153,9 +1232,18 @@ mod tests {
             question: "What is the primary goal?".into(),
             target_dimension: Dimension::Goal,
             quick_options: vec![
-                QuickOption { label: "A".into(), value: "Option A".into() },
-                QuickOption { label: "B".into(), value: "Option B".into() },
-                QuickOption { label: "Not sure".into(), value: "unsure".into() },
+                QuickOption {
+                    label: "A".into(),
+                    value: "Option A".into(),
+                },
+                QuickOption {
+                    label: "B".into(),
+                    value: "Option B".into(),
+                },
+                QuickOption {
+                    label: "Not sure".into(),
+                    value: "unsure".into(),
+                },
             ],
             allow_skip: true,
         });
@@ -1275,8 +1363,8 @@ mod tests {
     #[test]
     fn draw_belief_pane_with_out_of_scope_and_contradiction() {
         use planner_schemas::{
-            DomainClassification, ProjectType, ComplexityTier, Dimension,
-            RequirementsBeliefState, Contradiction,
+            ComplexityTier, Contradiction, Dimension, DomainClassification, ProjectType,
+            RequirementsBeliefState,
         };
 
         let backend = TestBackend::new(160, 50);

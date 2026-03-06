@@ -168,10 +168,7 @@ pub fn spawn_eviction_task(limiter: Arc<RateLimiter>) {
             let before = limiter.active_key_count();
             limiter.evict_stale();
             let after = limiter.active_key_count();
-            tracing::debug!(
-                "Rate limiter eviction: {} → {} active keys",
-                before, after,
-            );
+            tracing::debug!("Rate limiter eviction: {} → {} active keys", before, after,);
         }
     });
 }

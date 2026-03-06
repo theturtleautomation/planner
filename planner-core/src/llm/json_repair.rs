@@ -189,8 +189,12 @@ fn try_close_truncated_json(s: &str) -> Option<String> {
             '"' => close_in_string = true,
             '{' => close_stack.push('{'),
             '[' => close_stack.push('['),
-            '}' => { close_stack.pop(); }
-            ']' => { close_stack.pop(); }
+            '}' => {
+                close_stack.pop();
+            }
+            ']' => {
+                close_stack.pop();
+            }
             _ => {}
         }
     }
@@ -286,7 +290,10 @@ mod tests {
     fn repair_returns_none_on_truly_broken_json() {
         let raw = "This is not JSON at all, no braces here";
         let result = try_repair_json(raw);
-        assert!(result.is_none(), "Should return None for content with no JSON");
+        assert!(
+            result.is_none(),
+            "Should return None for content with no JSON"
+        );
     }
 
     #[test]
@@ -367,7 +374,10 @@ mod tests {
       "affected_requirements": ["FR-1", "FR-3"],
       "description": "The Amendment Log mentions concrete deliverable constra"#;
         let result = try_repair_json(raw);
-        assert!(result.is_some(), "Should repair realistic truncated AR response");
+        assert!(
+            result.is_some(),
+            "Should repair realistic truncated AR response"
+        );
         let v: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
         // The partial finding gets dropped since it's mid-string,
         // but the outer structure should be valid

@@ -89,37 +89,70 @@ async fn main() {
         match pipeline::run_full_pipeline(&config, &worker, project_id, &user_description).await {
             Ok(output) => {
                 println!("\n=== Phase 7 Pipeline Complete ===\n");
-                println!("Project: {} ({})",
+                println!(
+                    "Project: {} ({})",
                     output.front_office.intake.project_name,
-                    output.front_office.intake.feature_slug);
+                    output.front_office.intake.feature_slug
+                );
                 println!("Intent:  {}", output.front_office.intake.intent_summary);
                 println!();
 
                 println!("Compilation:");
-                let total_reqs: usize = output.front_office.specs.iter().map(|s| s.requirements.len()).sum();
-                let total_dod: usize = output.front_office.specs.iter().map(|s| s.definition_of_done.len()).sum();
-                println!("  NLSpecV1:           {} chunk(s), {} total requirements, {} DoD items",
+                let total_reqs: usize = output
+                    .front_office
+                    .specs
+                    .iter()
+                    .map(|s| s.requirements.len())
+                    .sum();
+                let total_dod: usize = output
+                    .front_office
+                    .specs
+                    .iter()
+                    .map(|s| s.definition_of_done.len())
+                    .sum();
+                println!(
+                    "  NLSpecV1:           {} chunk(s), {} total requirements, {} DoD items",
                     output.front_office.specs.len(),
                     total_reqs,
-                    total_dod);
-                println!("  GraphDotV1:         {} nodes, ${:.2} budget",
+                    total_dod
+                );
+                println!(
+                    "  GraphDotV1:         {} nodes, ${:.2} budget",
                     output.front_office.graph_dot.node_count,
-                    output.front_office.graph_dot.run_budget_usd);
-                println!("  ScenarioSetV1:      {} scenarios",
-                    output.front_office.scenarios.scenarios.len());
+                    output.front_office.graph_dot.run_budget_usd
+                );
+                println!(
+                    "  ScenarioSetV1:      {} scenarios",
+                    output.front_office.scenarios.scenarios.len()
+                );
                 println!();
 
                 println!("Factory:");
-                println!("  Build Status:       {:?}", output.factory_output.build_status);
-                println!("  Spend:              ${:.2} / ${:.2}",
-                    output.budget.current_spend_usd, output.budget.hard_cap_usd);
-                println!("  Nodes:              {} completed",
-                    output.factory_output.node_results.iter().filter(|n| n.success).count());
+                println!(
+                    "  Build Status:       {:?}",
+                    output.factory_output.build_status
+                );
+                println!(
+                    "  Spend:              ${:.2} / ${:.2}",
+                    output.budget.current_spend_usd, output.budget.hard_cap_usd
+                );
+                println!(
+                    "  Nodes:              {} completed",
+                    output
+                        .factory_output
+                        .node_results
+                        .iter()
+                        .filter(|n| n.success)
+                        .count()
+                );
                 println!();
 
                 println!("Validation:");
                 println!("  Gates Passed:       {}", output.satisfaction.gates_passed);
-                println!("  Satisfaction:       {}", output.satisfaction.user_message());
+                println!(
+                    "  Satisfaction:       {}",
+                    output.satisfaction.user_message()
+                );
                 println!();
 
                 println!("Result:");
@@ -128,7 +161,10 @@ async fn main() {
                 println!();
 
                 if !output.telemetry.consequence_cards.is_empty() {
-                    println!("Consequence Cards ({}):", output.telemetry.consequence_cards.len());
+                    println!(
+                        "Consequence Cards ({}):",
+                        output.telemetry.consequence_cards.len()
+                    );
                     for card in &output.telemetry.consequence_cards {
                         println!("  [{:?}] {}", card.trigger, card.problem);
                     }
@@ -136,8 +172,11 @@ async fn main() {
                 }
 
                 println!("Git:");
-                println!("  Commit:             {}",
-                    &output.git_result.commit.commit_hash[..12.min(output.git_result.commit.commit_hash.len())]);
+                println!(
+                    "  Commit:             {}",
+                    &output.git_result.commit.commit_hash
+                        [..12.min(output.git_result.commit.commit_hash.len())]
+                );
                 println!("  Branch:             {}", output.git_result.commit.branch);
                 println!("  Repo:               {}", output.git_result.repo_path);
             }
@@ -151,29 +190,47 @@ async fn main() {
         match pipeline::run_phase0_front_office(&router, project_id, &user_description).await {
             Ok(output) => {
                 println!("\n=== Phase 0 Front Office Complete ===\n");
-                println!("Project: {} ({})", output.intake.project_name, output.intake.feature_slug);
+                println!(
+                    "Project: {} ({})",
+                    output.intake.project_name, output.intake.feature_slug
+                );
                 println!("Intent:  {}", output.intake.intent_summary);
                 println!();
                 println!("Artifacts produced:");
-                println!("  IntakeV1:           {} sacred anchors, {} satisfaction seeds",
+                println!(
+                    "  IntakeV1:           {} sacred anchors, {} satisfaction seeds",
                     output.intake.sacred_anchors.len(),
-                    output.intake.satisfaction_criteria_seeds.len());
+                    output.intake.satisfaction_criteria_seeds.len()
+                );
                 let fo_total_reqs: usize = output.specs.iter().map(|s| s.requirements.len()).sum();
-                let fo_total_dod: usize = output.specs.iter().map(|s| s.definition_of_done.len()).sum();
-                println!("  NLSpecV1:           {} chunk(s), {} total requirements, {} DoD items",
+                let fo_total_dod: usize = output
+                    .specs
+                    .iter()
+                    .map(|s| s.definition_of_done.len())
+                    .sum();
+                println!(
+                    "  NLSpecV1:           {} chunk(s), {} total requirements, {} DoD items",
                     output.specs.len(),
                     fo_total_reqs,
-                    fo_total_dod);
-                println!("  GraphDotV1:         {} nodes, ${:.2} budget",
-                    output.graph_dot.node_count,
-                    output.graph_dot.run_budget_usd);
-                println!("  ScenarioSetV1:      {} scenarios",
-                    output.scenarios.scenarios.len());
-                println!("  AgentsManifestV1:   {} bytes",
-                    output.agents_manifest.root_agents_md.len());
+                    fo_total_dod
+                );
+                println!(
+                    "  GraphDotV1:         {} nodes, ${:.2} budget",
+                    output.graph_dot.node_count, output.graph_dot.run_budget_usd
+                );
+                println!(
+                    "  ScenarioSetV1:      {} scenarios",
+                    output.scenarios.scenarios.len()
+                );
+                println!(
+                    "  AgentsManifestV1:   {} bytes",
+                    output.agents_manifest.root_agents_md.len()
+                );
                 println!();
-                println!("Next: planner-core --full \"{}\" (to run Factory → Validator → Git)",
-                    user_description);
+                println!(
+                    "Next: planner-core --full \"{}\" (to run Factory → Validator → Git)",
+                    user_description
+                );
             }
             Err(e) => {
                 eprintln!("\nPipeline failed: {}", e);

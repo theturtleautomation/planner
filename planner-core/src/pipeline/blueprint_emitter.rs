@@ -17,10 +17,7 @@
 
 use chrono::Utc;
 
-use planner_schemas::{
-    IntakeV1, NLSpecV1, ArReportV1, FactoryOutputV1,
-    artifacts::blueprint::*,
-};
+use planner_schemas::{artifacts::blueprint::*, ArReportV1, FactoryOutputV1, IntakeV1, NLSpecV1};
 
 use crate::blueprint::BlueprintStore;
 
@@ -63,7 +60,10 @@ pub fn emit_from_intake(store: &BlueprintStore, intake: &IntakeV1) {
     };
     store.upsert_node(BlueprintNode::Decision(scope_decision));
 
-    tracing::info!("Blueprint: emitted intake nodes for '{}'", intake.project_name);
+    tracing::info!(
+        "Blueprint: emitted intake nodes for '{}'",
+        intake.project_name
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -241,7 +241,9 @@ pub fn emit_from_spec(store: &BlueprintStore, spec: &NLSpecV1) {
     let (node_count, edge_count) = store.counts();
     tracing::info!(
         "Blueprint: emitted spec nodes for chunk '{}' → {} total nodes, {} edges",
-        chunk_tag, node_count, edge_count
+        chunk_tag,
+        node_count,
+        edge_count
     );
 }
 
@@ -285,7 +287,10 @@ pub fn emit_from_ar(store: &BlueprintStore, reports: &[ArReportV1]) {
     }
 
     if blocking_count > 0 {
-        tracing::info!("Blueprint: emitted {} AR blocking constraints", blocking_count);
+        tracing::info!(
+            "Blueprint: emitted {} AR blocking constraints",
+            blocking_count
+        );
     }
 }
 
@@ -341,7 +346,10 @@ pub fn emit_from_factory(store: &BlueprintStore, output: &FactoryOutputV1) {
     store.upsert_node(BlueprintNode::Component(output_component));
 
     let (node_count, _) = store.counts();
-    tracing::info!("Blueprint: emitted factory nodes → {} total nodes", node_count);
+    tracing::info!(
+        "Blueprint: emitted factory nodes → {} total nodes",
+        node_count
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -360,28 +368,49 @@ fn truncate(s: &str, max_len: usize) -> String {
 /// Classify a dependency name into a TechnologyCategory.
 fn classify_dependency_category(name: &str) -> TechnologyCategory {
     let lower = name.to_lowercase();
-    if lower.contains("react") || lower.contains("vue") || lower.contains("angular")
-        || lower.contains("next") || lower.contains("express") || lower.contains("django")
-        || lower.contains("flask") || lower.contains("rails") || lower.contains("axum")
+    if lower.contains("react")
+        || lower.contains("vue")
+        || lower.contains("angular")
+        || lower.contains("next")
+        || lower.contains("express")
+        || lower.contains("django")
+        || lower.contains("flask")
+        || lower.contains("rails")
+        || lower.contains("axum")
         || lower.contains("actix")
     {
         TechnologyCategory::Framework
-    } else if lower.contains("stripe") || lower.contains("auth0") || lower.contains("sendgrid")
-        || lower.contains("twilio") || lower.contains("supabase") || lower.contains("aws")
-        || lower.contains("gcp") || lower.contains("azure") || lower.contains("vercel")
+    } else if lower.contains("stripe")
+        || lower.contains("auth0")
+        || lower.contains("sendgrid")
+        || lower.contains("twilio")
+        || lower.contains("supabase")
+        || lower.contains("aws")
+        || lower.contains("gcp")
+        || lower.contains("azure")
+        || lower.contains("vercel")
         || lower.contains("heroku")
     {
         TechnologyCategory::Platform
-    } else if lower.contains("rust") || lower.contains("python") || lower.contains("typescript")
-        || lower.contains("javascript") || lower.contains("go") || lower.contains("java")
+    } else if lower.contains("rust")
+        || lower.contains("python")
+        || lower.contains("typescript")
+        || lower.contains("javascript")
+        || lower.contains("go")
+        || lower.contains("java")
     {
         TechnologyCategory::Language
-    } else if lower.contains("tokio") || lower.contains("node") || lower.contains("deno")
+    } else if lower.contains("tokio")
+        || lower.contains("node")
+        || lower.contains("deno")
         || lower.contains("bun")
     {
         TechnologyCategory::Runtime
-    } else if lower.contains("http") || lower.contains("grpc") || lower.contains("graphql")
-        || lower.contains("websocket") || lower.contains("rest")
+    } else if lower.contains("http")
+        || lower.contains("grpc")
+        || lower.contains("graphql")
+        || lower.contains("websocket")
+        || lower.contains("rest")
     {
         TechnologyCategory::Protocol
     } else {
@@ -447,21 +476,42 @@ mod tests {
 
     #[test]
     fn classify_frameworks() {
-        assert_eq!(classify_dependency_category("React"), TechnologyCategory::Framework);
-        assert_eq!(classify_dependency_category("Axum"), TechnologyCategory::Framework);
+        assert_eq!(
+            classify_dependency_category("React"),
+            TechnologyCategory::Framework
+        );
+        assert_eq!(
+            classify_dependency_category("Axum"),
+            TechnologyCategory::Framework
+        );
     }
 
     #[test]
     fn classify_platforms() {
-        assert_eq!(classify_dependency_category("Stripe"), TechnologyCategory::Platform);
-        assert_eq!(classify_dependency_category("Auth0"), TechnologyCategory::Platform);
-        assert_eq!(classify_dependency_category("AWS S3"), TechnologyCategory::Platform);
+        assert_eq!(
+            classify_dependency_category("Stripe"),
+            TechnologyCategory::Platform
+        );
+        assert_eq!(
+            classify_dependency_category("Auth0"),
+            TechnologyCategory::Platform
+        );
+        assert_eq!(
+            classify_dependency_category("AWS S3"),
+            TechnologyCategory::Platform
+        );
     }
 
     #[test]
     fn classify_default_is_library() {
-        assert_eq!(classify_dependency_category("serde"), TechnologyCategory::Library);
-        assert_eq!(classify_dependency_category("rmp-serde"), TechnologyCategory::Library);
+        assert_eq!(
+            classify_dependency_category("serde"),
+            TechnologyCategory::Library
+        );
+        assert_eq!(
+            classify_dependency_category("rmp-serde"),
+            TechnologyCategory::Library
+        );
     }
 
     #[test]
@@ -516,7 +566,10 @@ mod tests {
 
         // Verify the scope decision exists
         let summaries = store.list_by_type("decision");
-        assert!(!summaries.is_empty(), "Should have at least 1 decision node");
+        assert!(
+            !summaries.is_empty(),
+            "Should have at least 1 decision node"
+        );
         assert!(
             summaries.iter().any(|s| s.name.contains("Test Project")),
             "Should have a decision about the project scope"
@@ -562,26 +615,20 @@ mod tests {
                 "Must deploy to a single binary".into(),
             ],
             phase1_contracts: None,
-            external_dependencies: vec![
-                ExternalDependency {
-                    name: "Auth0".into(),
-                    dtu_priority: DtuPriority::High,
-                    usage_description: "OAuth2 identity provider".into(),
-                },
-            ],
-            definition_of_done: vec![
-                DoDItem {
-                    criterion: "All endpoints return valid JSON".into(),
-                    mechanically_checkable: true,
-                },
-            ],
-            satisfaction_criteria: vec![
-                SatisfactionCriterion {
-                    id: "SC-001".into(),
-                    description: "Login flow completes in under 2s".into(),
-                    tier_hint: ScenarioTierHint::Critical,
-                },
-            ],
+            external_dependencies: vec![ExternalDependency {
+                name: "Auth0".into(),
+                dtu_priority: DtuPriority::High,
+                usage_description: "OAuth2 identity provider".into(),
+            }],
+            definition_of_done: vec![DoDItem {
+                criterion: "All endpoints return valid JSON".into(),
+                mechanically_checkable: true,
+            }],
+            satisfaction_criteria: vec![SatisfactionCriterion {
+                id: "SC-001".into(),
+                description: "Login flow completes in under 2s".into(),
+                tier_hint: ScenarioTierHint::Critical,
+            }],
             open_questions: vec![],
             out_of_scope: vec!["Mobile app".into()],
             amendment_log: vec![],
@@ -590,24 +637,48 @@ mod tests {
         emit_from_spec(&store, &spec);
 
         let (node_count, edge_count) = store.counts();
-        assert!(node_count >= 5, "Expected at least 5 nodes, got {}", node_count);
-        assert!(edge_count >= 1, "Expected at least 1 edge, got {}", edge_count);
+        assert!(
+            node_count >= 5,
+            "Expected at least 5 nodes, got {}",
+            node_count
+        );
+        assert!(
+            edge_count >= 1,
+            "Expected at least 1 edge, got {}",
+            edge_count
+        );
 
         // Verify we got constraints
         let constraints = store.list_by_type("constraint");
-        assert_eq!(constraints.len(), 2, "Should have 2 architectural constraints");
+        assert_eq!(
+            constraints.len(),
+            2,
+            "Should have 2 architectural constraints"
+        );
 
         // Verify we got technology nodes
         let techs = store.list_by_type("technology");
-        assert!(!techs.is_empty(), "Should have technology nodes for dependencies");
-        assert!(techs.iter().any(|t| t.name == "Auth0"), "Should have Auth0 tech node");
+        assert!(
+            !techs.is_empty(),
+            "Should have technology nodes for dependencies"
+        );
+        assert!(
+            techs.iter().any(|t| t.name == "Auth0"),
+            "Should have Auth0 tech node"
+        );
 
         // Verify we got component groups (auth + api = 2)
         let components = store.list_by_type("component");
-        assert!(components.len() >= 2, "Should have at least 2 component groups (auth + api)");
+        assert!(
+            components.len() >= 2,
+            "Should have at least 2 component groups (auth + api)"
+        );
 
         // Verify we got quality requirements
         let qrs = store.list_by_type("quality_requirement");
-        assert!(qrs.len() >= 1, "Should have at least 1 QR from satisfaction criteria");
+        assert!(
+            qrs.len() >= 1,
+            "Should have at least 1 QR from satisfaction criteria"
+        );
     }
 }

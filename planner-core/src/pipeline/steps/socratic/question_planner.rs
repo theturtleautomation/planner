@@ -9,11 +9,11 @@
 
 use planner_schemas::*;
 
-use crate::llm::{CompletionRequest, DefaultModels, Message, Role};
-use crate::llm::providers::LlmRouter;
-use super::super::{StepResult, StepError};
+use super::super::{StepError, StepResult};
 use super::belief_state::format_belief_state_for_llm;
 use super::constitution::{evaluate_question, ConstitutionViolation};
+use crate::llm::providers::LlmRouter;
+use crate::llm::{CompletionRequest, DefaultModels, Message, Role};
 
 // ---------------------------------------------------------------------------
 // System Prompt
@@ -70,7 +70,8 @@ pub async fn plan_next_question(
     };
 
     // Step 2: Generate the question via LLM
-    let output = generate_question(router, state, &strategy, constitution, conversation_history).await?;
+    let output =
+        generate_question(router, state, &strategy, constitution, conversation_history).await?;
 
     // Step 3: Self-critique against constitution
     let violations = evaluate_question(
@@ -83,8 +84,14 @@ pub async fn plan_next_question(
     if !violations.is_empty() {
         // Regenerate with critique feedback
         let output = regenerate_with_critique(
-            router, state, &strategy, constitution, conversation_history, &violations
-        ).await?;
+            router,
+            state,
+            &strategy,
+            constitution,
+            conversation_history,
+            &violations,
+        )
+        .await?;
         return Ok(Some(output));
     }
 
@@ -97,9 +104,7 @@ pub async fn plan_next_question(
 /// - Priority weight (from Dimension::priority_weight)
 /// - Information gain estimate (missing > uncertain)
 /// - Dependency check (don't ask about auth before scope is set)
-pub fn select_target_dimension(
-    state: &RequirementsBeliefState,
-) -> Option<QuestionStrategy> {
+pub fn select_target_dimension(state: &RequirementsBeliefState) -> Option<QuestionStrategy> {
     let mut candidates: Vec<(Dimension, f32, String)> = Vec::new();
 
     // Score missing dimensions (higher info gain — we know nothing)
@@ -109,10 +114,14 @@ pub fn select_target_dimension(
         let dep_penalty = dependency_penalty(dim, state);
         let score = weight * info_gain * dep_penalty;
 
-        candidates.push((dim.clone(), score, format!(
-            "Missing dimension (weight={:.2}, info_gain={:.1}, dep={:.1})",
-            weight, info_gain, dep_penalty
-        )));
+        candidates.push((
+            dim.clone(),
+            score,
+            format!(
+                "Missing dimension (weight={:.2}, info_gain={:.1}, dep={:.1})",
+                weight, info_gain, dep_penalty
+            ),
+        ));
     }
 
     // Score uncertain dimensions (lower info gain — we have a guess)
@@ -122,31 +131,43 @@ pub fn select_target_dimension(
         let dep_penalty = dependency_penalty(dim, state);
         let score = weight * info_gain * dep_penalty;
 
-        candidates.push((dim.clone(), score, format!(
-            "Uncertain (confidence={:.0}%, weight={:.2}, info_gain={:.2})",
-            confidence * 100.0, weight, info_gain
-        )));
+        candidates.push((
+            dim.clone(),
+            score,
+            format!(
+                "Uncertain (confidence={:.0}%, weight={:.2}, info_gain={:.2})",
+                confidence * 100.0,
+                weight,
+                info_gain
+            ),
+        ));
     }
 
     // Handle unresolved contradictions — these get top priority
     for contradiction in &state.contradictions {
         if !contradiction.resolved {
-            candidates.push((contradiction.dimension_a.clone(), 2.0, format!(
-                "Unresolved contradiction: {} vs {}",
-                contradiction.dimension_a.label(),
-                contradiction.dimension_b.label()
-            )));
+            candidates.push((
+                contradiction.dimension_a.clone(),
+                2.0,
+                format!(
+                    "Unresolved contradiction: {} vs {}",
+                    contradiction.dimension_a.label(),
+                    contradiction.dimension_b.label()
+                ),
+            ));
         }
     }
 
     // Sort by score descending
     candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
-    candidates.first().map(|(dim, score, rationale)| QuestionStrategy {
-        target_dimension: dim.clone(),
-        rationale: rationale.clone(),
-        score: *score,
-    })
+    candidates
+        .first()
+        .map(|(dim, score, rationale)| QuestionStrategy {
+            target_dimension: dim.clone(),
+            rationale: rationale.clone(),
+            score: *score,
+        })
 }
 
 /// Dependency penalty: reduce score for dimensions that depend on others
@@ -155,7 +176,9 @@ fn dependency_penalty(dim: &Dimension, state: &RequirementsBeliefState) -> f32 {
     match dim {
         // Don't ask about auth mechanism before knowing if auth is needed
         Dimension::Auth => {
-            if state.filled.contains_key(&Dimension::Stakeholders) || state.filled.contains_key(&Dimension::CoreFeatures) {
+            if state.filled.contains_key(&Dimension::Stakeholders)
+                || state.filled.contains_key(&Dimension::CoreFeatures)
+            {
                 1.0
             } else {
                 0.3
@@ -239,7 +262,8 @@ async fn regenerate_with_critique(
     let state_text = format_belief_state_for_llm(state);
     let history_text = format_conversation_history(conversation_history);
 
-    let critique_text: String = violations.iter()
+    let critique_text: String = violations
+        .iter()
         .map(|v| format!("- Rule {}: {}", v.rule_id, v.explanation))
         .collect::<Vec<_>>()
         .join("\n");
@@ -274,13 +298,17 @@ fn format_conversation_history(history: &[SocraticTurn]) -> String {
         return "(no conversation yet — this is the first turn)".to_string();
     }
 
-    history.iter().map(|turn| {
-        let role = match turn.role {
-            SocraticRole::User => "User",
-            SocraticRole::Interviewer => "Interviewer",
-        };
-        format!("{}: {}", role, turn.content)
-    }).collect::<Vec<_>>().join("\n")
+    history
+        .iter()
+        .map(|turn| {
+            let role = match turn.role {
+                SocraticRole::User => "User",
+                SocraticRole::Interviewer => "Interviewer",
+            };
+            format!("{}: {}", role, turn.content)
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 // ---------------------------------------------------------------------------
@@ -296,7 +324,9 @@ struct QuestionJson {
     allow_skip: bool,
 }
 
-fn default_true() -> bool { true }
+fn default_true() -> bool {
+    true
+}
 
 #[derive(Debug, serde::Deserialize)]
 struct QuickOptionJson {
@@ -304,7 +334,10 @@ struct QuickOptionJson {
     value: String,
 }
 
-fn parse_question_response(content: &str, target_dimension: &Dimension) -> StepResult<QuestionOutput> {
+fn parse_question_response(
+    content: &str,
+    target_dimension: &Dimension,
+) -> StepResult<QuestionOutput> {
     let cleaned = crate::pipeline::steps::intake::strip_code_fences(content);
     let json: QuestionJson = serde_json::from_str(&cleaned)
         .or_else(|_| {
@@ -312,18 +345,25 @@ fn parse_question_response(content: &str, target_dimension: &Dimension) -> StepR
                 .unwrap_or_else(|| cleaned.clone());
             serde_json::from_str(&repaired)
         })
-        .map_err(|e| StepError::JsonError(format!(
-            "Failed to parse question response: {}. Raw: {}",
-            e, &content[..content.len().min(300)]
-        )))?;
+        .map_err(|e| {
+            StepError::JsonError(format!(
+                "Failed to parse question response: {}. Raw: {}",
+                e,
+                &content[..content.len().min(300)]
+            ))
+        })?;
 
     Ok(QuestionOutput {
         question: json.question,
         target_dimension: target_dimension.clone(),
-        quick_options: json.quick_options.into_iter().map(|o| QuickOption {
-            label: o.label,
-            value: o.value,
-        }).collect(),
+        quick_options: json
+            .quick_options
+            .into_iter()
+            .map(|o| QuickOption {
+                label: o.label,
+                value: o.value,
+            })
+            .collect(),
         allow_skip: json.allow_skip,
     })
 }
@@ -361,11 +401,14 @@ mod tests {
     #[test]
     fn select_skips_filled_dimensions() {
         let mut state = make_empty_state();
-        state.fill(Dimension::Goal, SlotValue {
-            value: "Task tracker".into(),
-            source_turn: 1,
-            source_quote: None,
-        });
+        state.fill(
+            Dimension::Goal,
+            SlotValue {
+                value: "Task tracker".into(),
+                source_turn: 1,
+                source_quote: None,
+            },
+        );
 
         let strategy = select_target_dimension(&state);
         assert!(strategy.is_some());
@@ -418,11 +461,14 @@ mod tests {
         // Fill all missing dimensions
         let missing_clone: Vec<_> = state.missing.clone();
         for dim in missing_clone {
-            state.fill(dim, SlotValue {
-                value: "filled".into(),
-                source_turn: 1,
-                source_quote: None,
-            });
+            state.fill(
+                dim,
+                SlotValue {
+                    value: "filled".into(),
+                    source_turn: 1,
+                    source_quote: None,
+                },
+            );
         }
 
         let strategy = select_target_dimension(&state);

@@ -6,9 +6,9 @@
 
 use planner_schemas::*;
 
-use crate::llm::{CompletionRequest, DefaultModels, Message, Role};
+use super::super::{StepError, StepResult};
 use crate::llm::providers::LlmRouter;
-use super::super::{StepResult, StepError};
+use crate::llm::{CompletionRequest, DefaultModels, Message, Role};
 
 // ---------------------------------------------------------------------------
 // System Prompt
@@ -87,10 +87,13 @@ fn parse_classification(content: &str) -> StepResult<DomainClassification> {
                 .unwrap_or_else(|| cleaned.clone());
             serde_json::from_str(&repaired)
         })
-        .map_err(|e| StepError::JsonError(format!(
-            "Failed to parse domain classification: {}. Raw: {}",
-            e, &content[..content.len().min(300)]
-        )))?;
+        .map_err(|e| {
+            StepError::JsonError(format!(
+                "Failed to parse domain classification: {}. Raw: {}",
+                e,
+                &content[..content.len().min(300)]
+            ))
+        })?;
 
     let project_type = match json.project_type.as_str() {
         "cli_tool" => ProjectType::CliTool,
@@ -154,7 +157,8 @@ mod tests {
 
     #[test]
     fn parse_unknown_type_defaults_to_hybrid() {
-        let json = r#"{"project_type":"unknown_thing","complexity":"standard","detected_signals":[]}"#;
+        let json =
+            r#"{"project_type":"unknown_thing","complexity":"standard","detected_signals":[]}"#;
         let result = parse_classification(json).unwrap();
         assert_eq!(result.project_type, ProjectType::Hybrid);
     }

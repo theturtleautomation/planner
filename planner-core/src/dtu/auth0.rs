@@ -15,8 +15,8 @@ use std::sync::RwLock;
 
 use serde_json::{json, Value};
 
-use planner_schemas::{DtuConfigV1, DtuProviderInfo, DtuRequest, DtuResponse};
 use super::DtuProvider;
+use planner_schemas::{DtuConfigV1, DtuProviderInfo, DtuRequest, DtuResponse};
 
 // ---------------------------------------------------------------------------
 // Auth0 DTU
@@ -141,13 +141,20 @@ impl Auth0Dtu {
     // -- Authentication endpoints --
 
     fn oauth_token(&self, body: &Value) -> DtuResponse {
-        let grant_type = body.get("grant_type").and_then(|v| v.as_str()).unwrap_or("");
+        let grant_type = body
+            .get("grant_type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
 
         match grant_type {
             "password" => self.password_grant(body),
             "refresh_token" => self.refresh_token_grant(body),
             "client_credentials" => self.client_credentials_grant(body),
-            _ => self.error_response(400, "invalid_grant", &format!("Unknown grant_type: {}", grant_type)),
+            _ => self.error_response(
+                400,
+                "invalid_grant",
+                &format!("Unknown grant_type: {}", grant_type),
+            ),
         }
     }
 
@@ -158,9 +165,10 @@ impl Auth0Dtu {
         let state = self.state.read().unwrap();
 
         // Find user by email
-        let user = state.users.values().find(|u| {
-            u.get("email").and_then(|e| e.as_str()) == Some(email)
-        });
+        let user = state
+            .users
+            .values()
+            .find(|u| u.get("email").and_then(|e| e.as_str()) == Some(email));
 
         let user = match user {
             Some(u) => u.clone(),
@@ -180,10 +188,16 @@ impl Auth0Dtu {
     }
 
     fn refresh_token_grant(&self, body: &Value) -> DtuResponse {
-        let refresh_token = body.get("refresh_token").and_then(|v| v.as_str()).unwrap_or("");
+        let refresh_token = body
+            .get("refresh_token")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
 
         let state = self.state.read().unwrap();
-        let token_info = state.tokens.values().find(|t| t.refresh_token == refresh_token);
+        let token_info = state
+            .tokens
+            .values()
+            .find(|t| t.refresh_token == refresh_token);
 
         match token_info {
             Some(info) => {
@@ -236,13 +250,21 @@ impl Auth0Dtu {
 
     fn userinfo(&self, request: &DtuRequest) -> DtuResponse {
         // Extract bearer token from Authorization header
-        let auth_header = request.headers.iter()
+        let auth_header = request
+            .headers
+            .iter()
             .find(|(k, _)| k.to_lowercase() == "authorization")
             .map(|(_, v)| v.as_str());
 
         let token = match auth_header {
             Some(h) if h.starts_with("Bearer ") => &h[7..],
-            _ => return self.error_response(401, "Unauthorized", "Missing or invalid authorization header"),
+            _ => {
+                return self.error_response(
+                    401,
+                    "Unauthorized",
+                    "Missing or invalid authorization header",
+                )
+            }
         };
 
         let state = self.state.read().unwrap();
@@ -274,13 +296,23 @@ impl Auth0Dtu {
             None => return self.error_response(400, "Bad Request", "email is required"),
         };
 
-        let password = body.get("password").and_then(|v| v.as_str()).unwrap_or("default_password");
-        let connection = body.get("connection").and_then(|v| v.as_str()).unwrap_or("Username-Password-Authentication");
+        let password = body
+            .get("password")
+            .and_then(|v| v.as_str())
+            .unwrap_or("default_password");
+        let connection = body
+            .get("connection")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Username-Password-Authentication");
 
         let mut state = self.state.write().unwrap();
 
         // Check duplicate email
-        if state.users.values().any(|u| u.get("email").and_then(|e| e.as_str()) == Some(email)) {
+        if state
+            .users
+            .values()
+            .any(|u| u.get("email").and_then(|e| e.as_str()) == Some(email))
+        {
             return self.error_response(409, "Conflict", "The user already exists");
         }
 
@@ -319,11 +351,15 @@ impl Auth0Dtu {
 
     fn list_users(&self) -> DtuResponse {
         let state = self.state.read().unwrap();
-        let users: Vec<Value> = state.users.values().map(|u| {
-            let mut user = u.clone();
-            user.as_object_mut().unwrap().remove("_password");
-            user
-        }).collect();
+        let users: Vec<Value> = state
+            .users
+            .values()
+            .map(|u| {
+                let mut user = u.clone();
+                user.as_object_mut().unwrap().remove("_password");
+                user
+            })
+            .collect();
         self.ok_response(json!(users))
     }
 
@@ -331,7 +367,13 @@ impl Auth0Dtu {
         let mut state = self.state.write().unwrap();
         let user = match state.users.get_mut(user_id) {
             Some(u) => u,
-            None => return self.error_response(404, "Not Found", &format!("User not found: {}", user_id)),
+            None => {
+                return self.error_response(
+                    404,
+                    "Not Found",
+                    &format!("User not found: {}", user_id),
+                )
+            }
         };
 
         // Apply updates
@@ -366,17 +408,23 @@ impl Auth0Dtu {
     }
 
     fn users_by_email(&self, request: &DtuRequest) -> DtuResponse {
-        let email = request.query_params.iter()
+        let email = request
+            .query_params
+            .iter()
             .find(|(k, _)| k == "email")
             .map(|(_, v)| v.as_str());
 
         let email = match email {
             Some(e) => e,
-            None => return self.error_response(400, "Bad Request", "email query parameter is required"),
+            None => {
+                return self.error_response(400, "Bad Request", "email query parameter is required")
+            }
         };
 
         let state = self.state.read().unwrap();
-        let users: Vec<Value> = state.users.values()
+        let users: Vec<Value> = state
+            .users
+            .values()
             .filter(|u| u.get("email").and_then(|e| e.as_str()) == Some(email))
             .map(|u| {
                 let mut user = u.clone();
@@ -397,13 +445,16 @@ impl Auth0Dtu {
         };
 
         let state = self.state.read().unwrap();
-        let user = state.users.values().find(|u| {
-            u.get("email").and_then(|e| e.as_str()) == Some(email)
-        });
+        let user = state
+            .users
+            .values()
+            .find(|u| u.get("email").and_then(|e| e.as_str()) == Some(email));
 
         if user.is_none() {
             // Auth0 returns 200 even for unknown emails (security best practice)
-            return self.ok_response(json!("We've just sent you an email to reset your password."));
+            return self.ok_response(json!(
+                "We've just sent you an email to reset your password."
+            ));
         }
 
         let user_id = user.unwrap()["user_id"].as_str().unwrap().to_string();
@@ -413,7 +464,9 @@ impl Auth0Dtu {
         let token = format!("reset_{}", state.next_token());
         state.reset_tokens.insert(token, user_id);
 
-        self.ok_response(json!("We've just sent you an email to reset your password."))
+        self.ok_response(json!(
+            "We've just sent you an email to reset your password."
+        ))
     }
 
     // -- Roles --
@@ -444,7 +497,10 @@ impl Auth0Dtu {
     fn assign_roles(&self, user_id: &str, body: &Value) -> DtuResponse {
         let roles = body.get("roles").and_then(|v| v.as_array());
         let roles = match roles {
-            Some(r) => r.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect::<Vec<_>>(),
+            Some(r) => r
+                .iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect::<Vec<_>>(),
             None => return self.error_response(400, "Bad Request", "roles array is required"),
         };
 
@@ -473,11 +529,10 @@ impl Auth0Dtu {
             return self.error_response(404, "Not Found", "User not found");
         }
 
-        let role_ids = state.user_roles.get(user_id)
-            .cloned()
-            .unwrap_or_default();
+        let role_ids = state.user_roles.get(user_id).cloned().unwrap_or_default();
 
-        let roles: Vec<Value> = role_ids.iter()
+        let roles: Vec<Value> = role_ids
+            .iter()
             .filter_map(|rid| state.roles.get(rid).cloned())
             .collect();
 
@@ -555,8 +610,16 @@ impl DtuProvider for Auth0Dtu {
         let mut state = self.state.write().unwrap();
         for seed in &config.seed_state {
             match seed.entity_type.as_str() {
-                "user" => { state.users.insert(seed.entity_id.clone(), seed.initial_state.clone()); }
-                "role" => { state.roles.insert(seed.entity_id.clone(), seed.initial_state.clone()); }
+                "user" => {
+                    state
+                        .users
+                        .insert(seed.entity_id.clone(), seed.initial_state.clone());
+                }
+                "role" => {
+                    state
+                        .roles
+                        .insert(seed.entity_id.clone(), seed.initial_state.clone());
+                }
                 _ => {}
             }
         }
@@ -669,11 +732,14 @@ mod tests {
     #[test]
     fn create_and_get_user() {
         let a = auth0();
-        let resp = a.handle_request(&post("/api/v2/users", json!({
-            "email": "test@example.com",
-            "password": "Password123!",
-            "connection": "Username-Password-Authentication"
-        })));
+        let resp = a.handle_request(&post(
+            "/api/v2/users",
+            json!({
+                "email": "test@example.com",
+                "password": "Password123!",
+                "connection": "Username-Password-Authentication"
+            }),
+        ));
         assert_eq!(resp.status_code, 201);
         let user_id = resp.body["user_id"].as_str().unwrap().to_string();
         assert!(user_id.starts_with("auth0|"));
@@ -689,15 +755,21 @@ mod tests {
     #[test]
     fn duplicate_email_fails() {
         let a = auth0();
-        a.handle_request(&post("/api/v2/users", json!({
-            "email": "dup@test.com",
-            "password": "Pass123!"
-        })));
+        a.handle_request(&post(
+            "/api/v2/users",
+            json!({
+                "email": "dup@test.com",
+                "password": "Pass123!"
+            }),
+        ));
 
-        let resp = a.handle_request(&post("/api/v2/users", json!({
-            "email": "dup@test.com",
-            "password": "Pass456!"
-        })));
+        let resp = a.handle_request(&post(
+            "/api/v2/users",
+            json!({
+                "email": "dup@test.com",
+                "password": "Pass456!"
+            }),
+        ));
         assert_eq!(resp.status_code, 409);
     }
 
@@ -706,17 +778,23 @@ mod tests {
         let a = auth0();
 
         // Create user
-        a.handle_request(&post("/api/v2/users", json!({
-            "email": "login@test.com",
-            "password": "MyPassword123"
-        })));
+        a.handle_request(&post(
+            "/api/v2/users",
+            json!({
+                "email": "login@test.com",
+                "password": "MyPassword123"
+            }),
+        ));
 
         // Login
-        let resp = a.handle_request(&post("/oauth/token", json!({
-            "grant_type": "password",
-            "username": "login@test.com",
-            "password": "MyPassword123"
-        })));
+        let resp = a.handle_request(&post(
+            "/oauth/token",
+            json!({
+                "grant_type": "password",
+                "username": "login@test.com",
+                "password": "MyPassword123"
+            }),
+        ));
         assert_eq!(resp.status_code, 200);
         assert!(resp.body.get("access_token").is_some());
         assert!(resp.body.get("refresh_token").is_some());
@@ -728,16 +806,22 @@ mod tests {
     fn wrong_password_fails() {
         let a = auth0();
 
-        a.handle_request(&post("/api/v2/users", json!({
-            "email": "wrong@test.com",
-            "password": "CorrectPassword"
-        })));
+        a.handle_request(&post(
+            "/api/v2/users",
+            json!({
+                "email": "wrong@test.com",
+                "password": "CorrectPassword"
+            }),
+        ));
 
-        let resp = a.handle_request(&post("/oauth/token", json!({
-            "grant_type": "password",
-            "username": "wrong@test.com",
-            "password": "WrongPassword"
-        })));
+        let resp = a.handle_request(&post(
+            "/oauth/token",
+            json!({
+                "grant_type": "password",
+                "username": "wrong@test.com",
+                "password": "WrongPassword"
+            }),
+        ));
         assert_eq!(resp.status_code, 403);
     }
 
@@ -745,16 +829,22 @@ mod tests {
     fn userinfo_with_valid_token() {
         let a = auth0();
 
-        a.handle_request(&post("/api/v2/users", json!({
-            "email": "info@test.com",
-            "password": "Pass123"
-        })));
+        a.handle_request(&post(
+            "/api/v2/users",
+            json!({
+                "email": "info@test.com",
+                "password": "Pass123"
+            }),
+        ));
 
-        let login = a.handle_request(&post("/oauth/token", json!({
-            "grant_type": "password",
-            "username": "info@test.com",
-            "password": "Pass123"
-        })));
+        let login = a.handle_request(&post(
+            "/oauth/token",
+            json!({
+                "grant_type": "password",
+                "username": "info@test.com",
+                "password": "Pass123"
+            }),
+        ));
         let token = login.body["access_token"].as_str().unwrap().to_string();
 
         let resp = a.handle_request(&get_with_headers(
@@ -776,22 +866,31 @@ mod tests {
     fn refresh_token_grant() {
         let a = auth0();
 
-        a.handle_request(&post("/api/v2/users", json!({
-            "email": "refresh@test.com",
-            "password": "Pass123"
-        })));
+        a.handle_request(&post(
+            "/api/v2/users",
+            json!({
+                "email": "refresh@test.com",
+                "password": "Pass123"
+            }),
+        ));
 
-        let login = a.handle_request(&post("/oauth/token", json!({
-            "grant_type": "password",
-            "username": "refresh@test.com",
-            "password": "Pass123"
-        })));
+        let login = a.handle_request(&post(
+            "/oauth/token",
+            json!({
+                "grant_type": "password",
+                "username": "refresh@test.com",
+                "password": "Pass123"
+            }),
+        ));
         let refresh = login.body["refresh_token"].as_str().unwrap().to_string();
 
-        let resp = a.handle_request(&post("/oauth/token", json!({
-            "grant_type": "refresh_token",
-            "refresh_token": refresh
-        })));
+        let resp = a.handle_request(&post(
+            "/oauth/token",
+            json!({
+                "grant_type": "refresh_token",
+                "refresh_token": refresh
+            }),
+        ));
         assert_eq!(resp.status_code, 200);
         assert!(resp.body.get("access_token").is_some());
     }
@@ -799,10 +898,13 @@ mod tests {
     #[test]
     fn update_user() {
         let a = auth0();
-        let create = a.handle_request(&post("/api/v2/users", json!({
-            "email": "update@test.com",
-            "password": "Pass123"
-        })));
+        let create = a.handle_request(&post(
+            "/api/v2/users",
+            json!({
+                "email": "update@test.com",
+                "password": "Pass123"
+            }),
+        ));
         let user_id = create.body["user_id"].as_str().unwrap().to_string();
 
         let resp = a.handle_request(&patch(
@@ -816,10 +918,13 @@ mod tests {
     #[test]
     fn delete_user() {
         let a = auth0();
-        let create = a.handle_request(&post("/api/v2/users", json!({
-            "email": "delete@test.com",
-            "password": "Pass123"
-        })));
+        let create = a.handle_request(&post(
+            "/api/v2/users",
+            json!({
+                "email": "delete@test.com",
+                "password": "Pass123"
+            }),
+        ));
         let user_id = create.body["user_id"].as_str().unwrap().to_string();
 
         let resp = a.handle_request(&delete(&format!("/api/v2/users/{}", user_id)));
@@ -835,16 +940,22 @@ mod tests {
         let a = auth0();
 
         // Create user + role
-        let user = a.handle_request(&post("/api/v2/users", json!({
-            "email": "role@test.com",
-            "password": "Pass123"
-        })));
+        let user = a.handle_request(&post(
+            "/api/v2/users",
+            json!({
+                "email": "role@test.com",
+                "password": "Pass123"
+            }),
+        ));
         let user_id = user.body["user_id"].as_str().unwrap().to_string();
 
-        let role = a.handle_request(&post("/api/v2/roles", json!({
-            "name": "admin",
-            "description": "Administrator"
-        })));
+        let role = a.handle_request(&post(
+            "/api/v2/roles",
+            json!({
+                "name": "admin",
+                "description": "Administrator"
+            }),
+        ));
         let role_id = role.body["id"].as_str().unwrap().to_string();
 
         // Assign role
@@ -865,10 +976,13 @@ mod tests {
     #[test]
     fn users_by_email() {
         let a = auth0();
-        a.handle_request(&post("/api/v2/users", json!({
-            "email": "find@test.com",
-            "password": "Pass123"
-        })));
+        a.handle_request(&post(
+            "/api/v2/users",
+            json!({
+                "email": "find@test.com",
+                "password": "Pass123"
+            }),
+        ));
 
         let resp = a.handle_request(&get_with_query(
             "/api/v2/users-by-email",
@@ -883,47 +997,66 @@ mod tests {
     #[test]
     fn password_reset() {
         let a = auth0();
-        a.handle_request(&post("/api/v2/users", json!({
-            "email": "reset@test.com",
-            "password": "Pass123"
-        })));
+        a.handle_request(&post(
+            "/api/v2/users",
+            json!({
+                "email": "reset@test.com",
+                "password": "Pass123"
+            }),
+        ));
 
-        let resp = a.handle_request(&post("/dbconnections/change_password", json!({
-            "email": "reset@test.com",
-            "connection": "Username-Password-Authentication"
-        })));
+        let resp = a.handle_request(&post(
+            "/dbconnections/change_password",
+            json!({
+                "email": "reset@test.com",
+                "connection": "Username-Password-Authentication"
+            }),
+        ));
         assert_eq!(resp.status_code, 200);
 
         // Even for unknown emails, should return 200
-        let resp2 = a.handle_request(&post("/dbconnections/change_password", json!({
-            "email": "unknown@test.com"
-        })));
+        let resp2 = a.handle_request(&post(
+            "/dbconnections/change_password",
+            json!({
+                "email": "unknown@test.com"
+            }),
+        ));
         assert_eq!(resp2.status_code, 200);
     }
 
     #[test]
     fn failure_injection() {
         let a = auth0();
-        a.inject_failure("/oauth/token", 429, json!({
-            "error": "too_many_requests",
-            "message": "Rate limit exceeded"
-        }));
+        a.inject_failure(
+            "/oauth/token",
+            429,
+            json!({
+                "error": "too_many_requests",
+                "message": "Rate limit exceeded"
+            }),
+        );
 
-        let resp = a.handle_request(&post("/oauth/token", json!({
-            "grant_type": "password",
-            "username": "test",
-            "password": "test"
-        })));
+        let resp = a.handle_request(&post(
+            "/oauth/token",
+            json!({
+                "grant_type": "password",
+                "username": "test",
+                "password": "test"
+            }),
+        ));
         assert_eq!(resp.status_code, 429);
     }
 
     #[test]
     fn reset_clears_all_state() {
         let a = auth0();
-        a.handle_request(&post("/api/v2/users", json!({
-            "email": "temp@test.com",
-            "password": "Pass123"
-        })));
+        a.handle_request(&post(
+            "/api/v2/users",
+            json!({
+                "email": "temp@test.com",
+                "password": "Pass123"
+            }),
+        ));
 
         a.reset();
 

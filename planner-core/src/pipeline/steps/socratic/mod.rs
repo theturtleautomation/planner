@@ -19,19 +19,21 @@
 //! The engine communicates via `SocraticIO` trait, implemented by both
 //! the TUI and WebSocket server. This keeps the engine IO-agnostic.
 
-pub mod domain_classifier;
 pub mod belief_state;
 pub mod constitution;
-pub mod question_planner;
 pub mod convergence;
-pub mod speculative_draft;
+pub mod domain_classifier;
+pub mod question_planner;
 pub mod socratic_engine;
+pub mod speculative_draft;
 
 // Re-export the key public APIs
-pub use socratic_engine::{SocraticIO, run_interview, session_to_intake};
-pub use belief_state::{verify_and_update, persist_to_cxdb, restore_from_cxdb, format_belief_state_for_llm};
-pub use domain_classifier::classify_domain;
+pub use belief_state::{
+    format_belief_state_for_llm, persist_to_cxdb, restore_from_cxdb, verify_and_update,
+};
+pub use constitution::{check_coverage, evaluate_question, load_constitution};
 pub use convergence::check_convergence;
-pub use constitution::{load_constitution, evaluate_question, check_coverage};
+pub use domain_classifier::classify_domain;
 pub use question_planner::{plan_next_question, select_target_dimension};
-pub use speculative_draft::{should_trigger_draft, generate_draft, format_draft_for_display};
+pub use socratic_engine::{run_interview, session_to_intake, SocraticIO};
+pub use speculative_draft::{format_draft_for_display, generate_draft, should_trigger_draft};

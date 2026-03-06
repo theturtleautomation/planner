@@ -107,15 +107,20 @@ impl ProjectRegistry {
 
     /// Look up a project by slug.
     pub fn get_by_slug(&self, slug: &str) -> Option<&ProjectInfo> {
-        self.slug_index.get(slug)
+        self.slug_index
+            .get(slug)
             .and_then(|id| self.projects.get(id))
     }
 
     /// List all projects, optionally filtered by status.
     pub fn list(&self, status_filter: Option<ProjectStatus>) -> Vec<&ProjectInfo> {
-        self.projects.values()
+        self.projects
+            .values()
             .filter(|p| {
-                status_filter.as_ref().map(|s| &p.status == s).unwrap_or(true)
+                status_filter
+                    .as_ref()
+                    .map(|s| &p.status == s)
+                    .unwrap_or(true)
             })
             .collect()
     }
@@ -126,7 +131,9 @@ impl ProjectRegistry {
         project_id: Uuid,
         status: ProjectStatus,
     ) -> Result<(), ProjectError> {
-        let project = self.projects.get_mut(&project_id)
+        let project = self
+            .projects
+            .get_mut(&project_id)
             .ok_or(ProjectError::NotFound(project_id))?;
         project.status = status;
         Ok(())
@@ -134,7 +141,9 @@ impl ProjectRegistry {
 
     /// Increment the run count for a project.
     pub fn increment_run_count(&mut self, project_id: Uuid) -> Result<(), ProjectError> {
-        let project = self.projects.get_mut(&project_id)
+        let project = self
+            .projects
+            .get_mut(&project_id)
             .ok_or(ProjectError::NotFound(project_id))?;
         project.run_count += 1;
         Ok(())
@@ -142,7 +151,8 @@ impl ProjectRegistry {
 
     /// Find projects by tag.
     pub fn find_by_tag(&self, tag: &str) -> Vec<&ProjectInfo> {
-        self.projects.values()
+        self.projects
+            .values()
             .filter(|p| p.tags.iter().any(|t| t == tag))
             .collect()
     }
@@ -158,7 +168,10 @@ impl ProjectRegistry {
         let mut tag_map: HashMap<String, Vec<Uuid>> = HashMap::new();
         for project in self.projects.values() {
             for tag in &project.tags {
-                tag_map.entry(tag.clone()).or_default().push(project.project_id);
+                tag_map
+                    .entry(tag.clone())
+                    .or_default()
+                    .push(project.project_id);
             }
         }
         // Only return tags shared by multiple projects
@@ -188,11 +201,13 @@ mod tests {
     #[test]
     fn register_and_get_project() {
         let mut registry = ProjectRegistry::new();
-        let project = registry.register(
-            "My App".into(),
-            "my-app".into(),
-            vec!["web".into(), "stripe".into()],
-        ).unwrap();
+        let project = registry
+            .register(
+                "My App".into(),
+                "my-app".into(),
+                vec!["web".into(), "stripe".into()],
+            )
+            .unwrap();
 
         assert_eq!(project.name, "My App");
         assert_eq!(project.slug, "my-app");
@@ -205,7 +220,9 @@ mod tests {
     #[test]
     fn get_by_slug() {
         let mut registry = ProjectRegistry::new();
-        registry.register("App A".into(), "app-a".into(), vec![]).unwrap();
+        registry
+            .register("App A".into(), "app-a".into(), vec![])
+            .unwrap();
 
         assert!(registry.get_by_slug("app-a").is_some());
         assert!(registry.get_by_slug("app-b").is_none());
@@ -214,7 +231,9 @@ mod tests {
     #[test]
     fn duplicate_slug_rejected() {
         let mut registry = ProjectRegistry::new();
-        registry.register("App A".into(), "my-slug".into(), vec![]).unwrap();
+        registry
+            .register("App A".into(), "my-slug".into(), vec![])
+            .unwrap();
 
         let result = registry.register("App B".into(), "my-slug".into(), vec![]);
         assert!(result.is_err());
@@ -223,11 +242,19 @@ mod tests {
     #[test]
     fn list_with_status_filter() {
         let mut registry = ProjectRegistry::new();
-        let _p1 = registry.register("Active 1".into(), "a1".into(), vec![]).unwrap();
-        let p2 = registry.register("Active 2".into(), "a2".into(), vec![]).unwrap();
-        registry.register("Archived".into(), "archived".into(), vec![]).unwrap();
+        let _p1 = registry
+            .register("Active 1".into(), "a1".into(), vec![])
+            .unwrap();
+        let p2 = registry
+            .register("Active 2".into(), "a2".into(), vec![])
+            .unwrap();
+        registry
+            .register("Archived".into(), "archived".into(), vec![])
+            .unwrap();
 
-        registry.update_status(p2.project_id, ProjectStatus::Archived).unwrap();
+        registry
+            .update_status(p2.project_id, ProjectStatus::Archived)
+            .unwrap();
 
         let active = registry.list(Some(ProjectStatus::Active));
         assert_eq!(active.len(), 2); // p1 + "Archived" (initially active)
@@ -242,7 +269,9 @@ mod tests {
     #[test]
     fn increment_run_count() {
         let mut registry = ProjectRegistry::new();
-        let project = registry.register("App".into(), "app".into(), vec![]).unwrap();
+        let project = registry
+            .register("App".into(), "app".into(), vec![])
+            .unwrap();
         assert_eq!(project.run_count, 0);
 
         registry.increment_run_count(project.project_id).unwrap();
@@ -255,9 +284,23 @@ mod tests {
     #[test]
     fn find_by_tag() {
         let mut registry = ProjectRegistry::new();
-        registry.register("App A".into(), "a".into(), vec!["web".into(), "stripe".into()]).unwrap();
-        registry.register("App B".into(), "b".into(), vec!["mobile".into(), "stripe".into()]).unwrap();
-        registry.register("App C".into(), "c".into(), vec!["mobile".into()]).unwrap();
+        registry
+            .register(
+                "App A".into(),
+                "a".into(),
+                vec!["web".into(), "stripe".into()],
+            )
+            .unwrap();
+        registry
+            .register(
+                "App B".into(),
+                "b".into(),
+                vec!["mobile".into(), "stripe".into()],
+            )
+            .unwrap();
+        registry
+            .register("App C".into(), "c".into(), vec!["mobile".into()])
+            .unwrap();
 
         let stripe_projects = registry.find_by_tag("stripe");
         assert_eq!(stripe_projects.len(), 2);
@@ -272,14 +315,24 @@ mod tests {
     #[test]
     fn find_shared_tags() {
         let mut registry = ProjectRegistry::new();
-        registry.register("A".into(), "a".into(), vec!["web".into(), "stripe".into()]).unwrap();
-        registry.register("B".into(), "b".into(), vec!["stripe".into(), "auth0".into()]).unwrap();
-        registry.register("C".into(), "c".into(), vec!["auth0".into()]).unwrap();
+        registry
+            .register("A".into(), "a".into(), vec!["web".into(), "stripe".into()])
+            .unwrap();
+        registry
+            .register(
+                "B".into(),
+                "b".into(),
+                vec!["stripe".into(), "auth0".into()],
+            )
+            .unwrap();
+        registry
+            .register("C".into(), "c".into(), vec!["auth0".into()])
+            .unwrap();
 
         let shared = registry.find_shared_tags();
         assert!(shared.contains_key("stripe")); // shared by A and B
-        assert!(shared.contains_key("auth0"));  // shared by B and C
-        assert!(!shared.contains_key("web"));   // only A
+        assert!(shared.contains_key("auth0")); // shared by B and C
+        assert!(!shared.contains_key("web")); // only A
     }
 
     #[test]

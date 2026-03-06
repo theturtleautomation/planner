@@ -206,17 +206,14 @@ impl WorktreeManager {
         }
 
         // Write context files
-        std::fs::write(context_dir.join("SPEC.md"), spec_markdown).map_err(|e| {
-            StepError::FactoryError(format!("Failed to write SPEC.md: {}", e))
-        })?;
+        std::fs::write(context_dir.join("SPEC.md"), spec_markdown)
+            .map_err(|e| StepError::FactoryError(format!("Failed to write SPEC.md: {}", e)))?;
 
-        std::fs::write(context_dir.join("graph.dot"), graph_dot).map_err(|e| {
-            StepError::FactoryError(format!("Failed to write graph.dot: {}", e))
-        })?;
+        std::fs::write(context_dir.join("graph.dot"), graph_dot)
+            .map_err(|e| StepError::FactoryError(format!("Failed to write graph.dot: {}", e)))?;
 
-        std::fs::write(context_dir.join("AGENTS.md"), agents_md).map_err(|e| {
-            StepError::FactoryError(format!("Failed to write AGENTS.md: {}", e))
-        })?;
+        std::fs::write(context_dir.join("AGENTS.md"), agents_md)
+            .map_err(|e| StepError::FactoryError(format!("Failed to write AGENTS.md: {}", e)))?;
 
         // Initialize a git repo so codex treats it as a trusted directory.
         // Without this, codex exec refuses with "Not inside a trusted directory".
@@ -234,7 +231,11 @@ impl WorktreeManager {
                 tracing::warn!("git init exited with {} in {}", s, worktree_dir.display());
             }
             Err(e) => {
-                tracing::warn!("git init failed in {}: {} — codex may refuse to run", worktree_dir.display(), e);
+                tracing::warn!(
+                    "git init failed in {}: {} — codex may refuse to run",
+                    worktree_dir.display(),
+                    e
+                );
             }
         }
 
@@ -242,9 +243,8 @@ impl WorktreeManager {
         // dependencies, build artifacts, and caches automatically.
         // This also helps Codex — it respects .gitignore for context.
         let gitignore_content = WORKTREE_GITIGNORE;
-        std::fs::write(worktree_dir.join(".gitignore"), gitignore_content).map_err(|e| {
-            StepError::FactoryError(format!("Failed to write .gitignore: {}", e))
-        })?;
+        std::fs::write(worktree_dir.join(".gitignore"), gitignore_content)
+            .map_err(|e| StepError::FactoryError(format!("Failed to write .gitignore: {}", e)))?;
 
         // Create an initial commit with the context files + .gitignore
         // so that post-codex `git diff` can identify what Codex changed.
@@ -318,10 +318,18 @@ impl WorktreeManager {
         }
 
         // Commit
-        if run(&["commit", "-m", "planner: initial worktree setup", "--allow-empty"]) {
+        if run(&[
+            "commit",
+            "-m",
+            "planner: initial worktree setup",
+            "--allow-empty",
+        ]) {
             tracing::debug!("git initial commit created in {}", worktree_dir.display());
         } else {
-            tracing::debug!("git commit failed in {} (non-fatal)", worktree_dir.display());
+            tracing::debug!(
+                "git commit failed in {} (non-fatal)",
+                worktree_dir.display()
+            );
         }
     }
 }
@@ -374,7 +382,8 @@ pub fn git_worktree_changed_files(worktree: &Path) -> Vec<String> {
     }
 
     // Strategy 2: untracked files not covered by .gitignore
-    if let Some(untracked) = git_command(worktree, &["ls-files", "--others", "--exclude-standard"]) {
+    if let Some(untracked) = git_command(worktree, &["ls-files", "--others", "--exclude-standard"])
+    {
         for line in untracked.lines() {
             let trimmed = line.trim();
             if !trimmed.is_empty() && !files.contains(&trimmed.to_string()) {
@@ -573,7 +582,10 @@ impl SandboxMode {
 
         // Check persistent probe cache (~/.cache/planner/sandbox-probe)
         if let Some(cached) = SandboxProbe::read_cache() {
-            tracing::info!("SandboxMode::resolve: using cached probe result → {}", cached);
+            tracing::info!(
+                "SandboxMode::resolve: using cached probe result → {}",
+                cached
+            );
             return cached;
         }
 
@@ -626,9 +638,7 @@ impl SandboxMode {
             // NOTE: We do NOT pass -a/--ask-for-approval here. `codex exec`
             // is non-interactive — it has no approval prompt loop. Passing
             // `-a` to `exec` causes "error: unexpected argument '-a' found".
-            SandboxMode::WorkspaceWrite => vec![
-                "--sandbox", "danger-full-access",
-            ],
+            SandboxMode::WorkspaceWrite => vec!["--sandbox", "danger-full-access"],
         }
     }
 
@@ -727,7 +737,9 @@ impl SandboxProbe {
             "workspace-write" => Some(SandboxMode::WorkspaceWrite),
             // Legacy value no longer valid — treat as cache miss.
             "danger-full-access" => {
-                tracing::info!("SandboxProbe: cache contains deprecated 'danger-full-access', ignoring");
+                tracing::info!(
+                    "SandboxProbe: cache contains deprecated 'danger-full-access', ignoring"
+                );
                 None
             }
             _ => None,
@@ -769,9 +781,7 @@ impl SandboxProbe {
     fn migrate_stale_cache() {
         if let Some(path) = Self::cache_path() {
             if let Ok(content) = std::fs::read_to_string(&path) {
-                if content.contains("danger-full-access")
-                    || content.contains("workspace-write")
-                {
+                if content.contains("danger-full-access") || content.contains("workspace-write") {
                     tracing::info!(
                         "SandboxProbe: deleting stale cache (value was set by broken \
                          probe that checked nonexistent sysfs path). Will re-probe."
@@ -804,9 +814,7 @@ impl SandboxProbe {
                 .split(',')
                 .any(|module| module.trim() == "landlock");
             if has_landlock {
-                tracing::info!(
-                    "SandboxProbe: Landlock detected via /sys/kernel/security/lsm"
-                );
+                tracing::info!("SandboxProbe: Landlock detected via /sys/kernel/security/lsm");
                 return true;
             }
             tracing::debug!(
@@ -814,9 +822,7 @@ impl SandboxProbe {
                 lsm_list.trim()
             );
         } else {
-            tracing::debug!(
-                "SandboxProbe: /sys/kernel/security/lsm not readable, trying syscall"
-            );
+            tracing::debug!("SandboxProbe: /sys/kernel/security/lsm not readable, trying syscall");
         }
 
         // --- Method 2: landlock_create_ruleset syscall ---
@@ -848,7 +854,10 @@ impl SandboxProbe {
                 false
             }
             Err(e) => {
-                tracing::info!("SandboxProbe: python3 not available for syscall probe: {}", e);
+                tracing::info!(
+                    "SandboxProbe: python3 not available for syscall probe: {}",
+                    e
+                );
                 false
             }
         }
@@ -882,12 +891,21 @@ impl SandboxProbe {
                 let probe = std::process::Command::new("bwrap")
                     .args([
                         "--unshare-all",
-                        "--ro-bind", "/usr", "/usr",
-                        "--symlink", "usr/bin", "/bin",
-                        "--symlink", "usr/lib", "/lib",
-                        "--proc", "/proc",
-                        "--dev", "/dev",
-                        "--", "true",
+                        "--ro-bind",
+                        "/usr",
+                        "/usr",
+                        "--symlink",
+                        "usr/bin",
+                        "/bin",
+                        "--symlink",
+                        "usr/lib",
+                        "/lib",
+                        "--proc",
+                        "/proc",
+                        "--dev",
+                        "/dev",
+                        "--",
+                        "true",
                     ])
                     .stdout(std::process::Stdio::null())
                     .stderr(std::process::Stdio::piped())
@@ -902,7 +920,8 @@ impl SandboxProbe {
                         let stderr = String::from_utf8_lossy(&output.stderr);
                         tracing::info!(
                             "SandboxProbe: bwrap --unshare-all failed (exit {}): {}",
-                            output.status, stderr.trim()
+                            output.status,
+                            stderr.trim()
                         );
                     }
                     Err(e) => {
@@ -944,7 +963,12 @@ impl SandboxProbe {
 /// Works on Linux/macOS. Returns None if HOME is not set.
 fn dirs_cache_path() -> Option<PathBuf> {
     let home = std::env::var("HOME").ok()?;
-    Some(PathBuf::from(home).join(".cache").join("planner").join("sandbox-probe"))
+    Some(
+        PathBuf::from(home)
+            .join(".cache")
+            .join("planner")
+            .join("sandbox-probe"),
+    )
 }
 
 /// Factory worker that shells out to `codex exec` for code generation.
@@ -1008,9 +1032,7 @@ impl CodexFactoryWorker {
         if binary_path.is_none() {
             tracing::warn!("codex CLI not found — CodexFactoryWorker will fail on invocation");
         }
-        Ok(CodexFactoryWorker {
-            binary_path,
-        })
+        Ok(CodexFactoryWorker { binary_path })
     }
 
     /// Build the full prompt from spec, graph, agents context + task instruction.
@@ -1082,10 +1104,7 @@ impl CodexFactoryWorker {
         let worktree_str = config.worktree.to_string_lossy().to_string();
         let model_str = config.model.clone();
 
-        let output_file = std::env::temp_dir().join(format!(
-            "codex-factory-{}.txt",
-            invocation_id
-        ));
+        let output_file = std::env::temp_dir().join(format!("codex-factory-{}.txt", invocation_id));
         let output_path = output_file.to_string_lossy().to_string();
 
         let mut args: Vec<&str> = vec!["exec", "--json", "--ephemeral"];
@@ -1096,20 +1115,22 @@ impl CodexFactoryWorker {
         // project_doc_max_bytes=0 suppresses AGENTS.md/instructions.md loading.
         // This ensures only our factory prompt reaches the model, not the
         // user's personal Codex instructions, local-memory plugins, etc.
-        args.extend_from_slice(&[
-            "-c", "project_doc_max_bytes=0",
-        ]);
+        args.extend_from_slice(&["-c", "project_doc_max_bytes=0"]);
 
         tracing::info!(
             "CodexFactoryWorker: sandbox={} ({})",
-            sandbox_mode, sandbox_mode.env_value()
+            sandbox_mode,
+            sandbox_mode.env_value()
         );
 
         args.extend_from_slice(&[
-            "-m", &model_str,
-            "-C", &worktree_str,
-            "--output-last-message", &output_path,
-            "-",  // read prompt from stdin
+            "-m",
+            &model_str,
+            "-C",
+            &worktree_str,
+            "--output-last-message",
+            &output_path,
+            "-", // read prompt from stdin
         ]);
 
         tracing::info!(
@@ -1119,10 +1140,7 @@ impl CodexFactoryWorker {
             config.timeout_secs
         );
 
-        tracing::debug!(
-            "CodexFactoryWorker: full command: codex {}",
-            args.join(" ")
-        );
+        tracing::debug!("CodexFactoryWorker: full command: codex {}", args.join(" "));
 
         let codex_env = crate::llm::providers::CliEnvironment::for_codex();
 
@@ -1150,10 +1168,7 @@ impl CodexFactoryWorker {
                 ));
             }
             Err(e) => {
-                return Err(StepError::FactoryError(format!(
-                    "codex exec failed: {}",
-                    e
-                )));
+                return Err(StepError::FactoryError(format!("codex exec failed: {}", e)));
             }
         };
 
@@ -1170,19 +1185,21 @@ impl CodexFactoryWorker {
             for (i, line) in stdout.lines().enumerate().take(10) {
                 let trimmed = line.trim();
                 if let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed) {
-                    let etype = val.get("type").and_then(|v| v.as_str()).unwrap_or("unknown");
-                    let item_type = val.get("item")
+                    let etype = val
+                        .get("type")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown");
+                    let item_type = val
+                        .get("item")
                         .and_then(|i| i.get("type"))
                         .and_then(|v| v.as_str())
                         .unwrap_or("-");
-                    tracing::info!(
-                        "  JSONL[{}]: type={}, item_type={}",
-                        i, etype, item_type
-                    );
+                    tracing::info!("  JSONL[{}]: type={}, item_type={}", i, etype, item_type);
                 } else {
                     tracing::info!(
                         "  JSONL[{}]: (not JSON) {}",
-                        i, &trimmed[..trimmed.len().min(200)]
+                        i,
+                        &trimmed[..trimmed.len().min(200)]
                     );
                 }
             }
@@ -1202,9 +1219,7 @@ impl CodexFactoryWorker {
         // --- Early bail-out: cyber policy violation in JSONL output ---
         // Even if codex exits 0, the JSONL may contain a response.failed
         // with cyber_policy_violation. Detect and fail fast.
-        if stdout.contains("cyber_policy_violation")
-            || stderr.contains("cyber_policy_violation")
-        {
+        if stdout.contains("cyber_policy_violation") || stderr.contains("cyber_policy_violation") {
             return Err(StepError::CyberPolicyBlocked(
                 "OpenAI temporarily blocked this account for suspected \
                  cybersecurity-related activity. Retrying will not help \
@@ -1228,7 +1243,10 @@ impl CodexFactoryWorker {
                 crate::llm::providers::extract_codex_message_from_jsonl(&stdout)
             }
         } else {
-            tracing::warn!("CodexFactoryWorker: --output-last-message file not found at {}", output_path);
+            tracing::warn!(
+                "CodexFactoryWorker: --output-last-message file not found at {}",
+                output_path
+            );
             // Strategy 2: Parse JSONL events from stdout
             crate::llm::providers::extract_codex_message_from_jsonl(&stdout)
         };
@@ -1245,7 +1263,8 @@ impl CodexFactoryWorker {
                     .flatten()
                     .map(|e| {
                         let p = e.path();
-                        let name = p.file_name()
+                        let name = p
+                            .file_name()
                             .map(|n| n.to_string_lossy().to_string())
                             .unwrap_or_default();
                         let is_dir = p.is_dir();
@@ -1473,7 +1492,10 @@ async fn run_compilation_check(
             }
             Err(_) => {
                 tracing::warn!("cargo check timed out after {}s", timeout_secs);
-                (false, Some(format!("cargo check timed out after {}s", timeout_secs)))
+                (
+                    false,
+                    Some(format!("cargo check timed out after {}s", timeout_secs)),
+                )
             }
         };
     }
@@ -1510,7 +1532,8 @@ async fn run_compilation_check(
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 tracing::warn!(
                     "npm install failed (exit {}): stderr={}, stdout={}",
-                    output.status, stderr.chars().take(500).collect::<String>(),
+                    output.status,
+                    stderr.chars().take(500).collect::<String>(),
                     stdout.chars().take(500).collect::<String>(),
                 );
                 // Don't abort — tsc may still find some type errors without
@@ -1524,7 +1547,10 @@ async fn run_compilation_check(
                 }
             }
             Err(_) => {
-                tracing::warn!("npm install timed out after {}s — proceeding anyway", install_timeout);
+                tracing::warn!(
+                    "npm install timed out after {}s — proceeding anyway",
+                    install_timeout
+                );
             }
         }
 
@@ -1590,7 +1616,10 @@ async fn run_compilation_check(
             }
             Err(_) => {
                 tracing::warn!("npx tsc timed out after {}s", timeout_secs);
-                (false, Some(format!("tsc timed out after {}s", timeout_secs)))
+                (
+                    false,
+                    Some(format!("tsc timed out after {}s", timeout_secs)),
+                )
             }
         };
     }
@@ -1732,12 +1761,24 @@ mod tests {
 
         // Verify .gitignore was written with expected patterns
         let gitignore_path = info.path.join(".gitignore");
-        assert!(gitignore_path.exists(), ".gitignore must be created in worktree");
+        assert!(
+            gitignore_path.exists(),
+            ".gitignore must be created in worktree"
+        );
         let gitignore = std::fs::read_to_string(&gitignore_path).unwrap();
-        assert!(gitignore.contains("node_modules/"), ".gitignore must exclude node_modules");
+        assert!(
+            gitignore.contains("node_modules/"),
+            ".gitignore must exclude node_modules"
+        );
         assert!(gitignore.contains("dist/"), ".gitignore must exclude dist/");
-        assert!(gitignore.contains("target/"), ".gitignore must exclude target/");
-        assert!(gitignore.contains("__pycache__/"), ".gitignore must exclude __pycache__");
+        assert!(
+            gitignore.contains("target/"),
+            ".gitignore must exclude target/"
+        );
+        assert!(
+            gitignore.contains("__pycache__/"),
+            ".gitignore must exclude __pycache__"
+        );
 
         // Verify git repo was initialized with an initial commit
         let git_dir = info.path.join(".git");
@@ -1750,11 +1791,30 @@ mod tests {
 
         // Verify the initial commit contains our scaffolding files
         // Note: --root is required because this is the root commit (no parent to diff against)
-        let committed_files = git_command(&info.path, &["diff-tree", "--root", "--no-commit-id", "--name-only", "-r", "HEAD"]);
-        assert!(committed_files.is_some(), "should be able to list committed files");
+        let committed_files = git_command(
+            &info.path,
+            &[
+                "diff-tree",
+                "--root",
+                "--no-commit-id",
+                "--name-only",
+                "-r",
+                "HEAD",
+            ],
+        );
+        assert!(
+            committed_files.is_some(),
+            "should be able to list committed files"
+        );
         let file_list = committed_files.unwrap();
-        assert!(file_list.contains(".gitignore"), "initial commit must include .gitignore");
-        assert!(file_list.contains(".planner-context/SPEC.md"), "initial commit must include SPEC.md");
+        assert!(
+            file_list.contains(".gitignore"),
+            "initial commit must include .gitignore"
+        );
+        assert!(
+            file_list.contains(".planner-context/SPEC.md"),
+            "initial commit must include SPEC.md"
+        );
 
         // Cleanup
         mgr.cleanup(&info).unwrap();
@@ -1799,26 +1859,47 @@ mod tests {
         let run_id = Uuid::new_v4();
 
         // Attempt 1: prepare + simulate Codex writing files
-        let info1 = mgr.prepare(run_id, "# Spec v1", "digraph {}", "# Agents").unwrap();
-        std::fs::write(info1.path.join("src/App.tsx"), "export default function App() {}").unwrap();
+        let info1 = mgr
+            .prepare(run_id, "# Spec v1", "digraph {}", "# Agents")
+            .unwrap();
+        std::fs::write(
+            info1.path.join("src/App.tsx"),
+            "export default function App() {}",
+        )
+        .unwrap();
         std::fs::write(info1.path.join("package.json"), "{}").unwrap();
         std::fs::create_dir_all(info1.path.join("node_modules/react")).unwrap();
-        std::fs::write(info1.path.join("node_modules/react/index.js"), "module.exports = {};").unwrap();
+        std::fs::write(
+            info1.path.join("node_modules/react/index.js"),
+            "module.exports = {};",
+        )
+        .unwrap();
 
         // Verify attempt 1 sees files
         let files_attempt1 = git_worktree_changed_files(&info1.path);
         assert!(!files_attempt1.is_empty(), "attempt 1 should detect files");
 
         // Attempt 2: prepare with SAME run_id (retry scenario)
-        let info2 = mgr.prepare(run_id, "# Spec v1", "digraph {}", "# Agents").unwrap();
+        let info2 = mgr
+            .prepare(run_id, "# Spec v1", "digraph {}", "# Agents")
+            .unwrap();
 
         // The path should be the same
         assert_eq!(info1.path, info2.path);
 
         // The stale Codex output should be gone
-        assert!(!info2.path.join("src/App.tsx").exists(), "stale Codex files must be wiped");
-        assert!(!info2.path.join("package.json").exists(), "stale package.json must be wiped");
-        assert!(!info2.path.join("node_modules").exists(), "stale node_modules must be wiped");
+        assert!(
+            !info2.path.join("src/App.tsx").exists(),
+            "stale Codex files must be wiped"
+        );
+        assert!(
+            !info2.path.join("package.json").exists(),
+            "stale package.json must be wiped"
+        );
+        assert!(
+            !info2.path.join("node_modules").exists(),
+            "stale node_modules must be wiped"
+        );
 
         // Fresh worktree should have 0 changed files
         let files_attempt2 = git_worktree_changed_files(&info2.path);
@@ -1829,7 +1910,11 @@ mod tests {
         );
 
         // Simulate Codex writing new files in attempt 2
-        std::fs::write(info2.path.join("src/App.tsx"), "export default function App() { return <div>v2</div>; }").unwrap();
+        std::fs::write(
+            info2.path.join("src/App.tsx"),
+            "export default function App() { return <div>v2</div>; }",
+        )
+        .unwrap();
         let files_after_codex = git_worktree_changed_files(&info2.path);
         assert!(
             files_after_codex.contains(&"src/App.tsx".to_string()),
@@ -1849,7 +1934,9 @@ mod tests {
         let mgr = WorktreeManager::new(&tmp);
         let run_id = Uuid::new_v4();
 
-        let info = mgr.prepare(run_id, "# Spec", "digraph {}", "# Agents").unwrap();
+        let info = mgr
+            .prepare(run_id, "# Spec", "digraph {}", "# Agents")
+            .unwrap();
 
         // Before adding any files, git should report nothing new
         let before = git_worktree_changed_files(&info.path);
@@ -1860,22 +1947,52 @@ mod tests {
         );
 
         // Simulate Codex creating source files
-        std::fs::write(info.path.join("src/App.tsx"), "export default function App() { return <div>Hello</div>; }").unwrap();
-        std::fs::write(info.path.join("package.json"), r#"{"name":"test","version":"0.1.0"}"#).unwrap();
+        std::fs::write(
+            info.path.join("src/App.tsx"),
+            "export default function App() { return <div>Hello</div>; }",
+        )
+        .unwrap();
+        std::fs::write(
+            info.path.join("package.json"),
+            r#"{"name":"test","version":"0.1.0"}"#,
+        )
+        .unwrap();
 
         // These should show up as changed
         let after = git_worktree_changed_files(&info.path);
-        assert!(after.contains(&"src/App.tsx".to_string()), "should detect src/App.tsx, got: {:?}", after);
-        assert!(after.contains(&"package.json".to_string()), "should detect package.json, got: {:?}", after);
+        assert!(
+            after.contains(&"src/App.tsx".to_string()),
+            "should detect src/App.tsx, got: {:?}",
+            after
+        );
+        assert!(
+            after.contains(&"package.json".to_string()),
+            "should detect package.json, got: {:?}",
+            after
+        );
         // Scaffolding files must NOT appear
-        assert!(!after.iter().any(|f| f.starts_with(".planner-context/")), "must not include .planner-context/");
-        assert!(!after.contains(&".gitignore".to_string()), "must not include .gitignore");
+        assert!(
+            !after.iter().any(|f| f.starts_with(".planner-context/")),
+            "must not include .planner-context/"
+        );
+        assert!(
+            !after.contains(&".gitignore".to_string()),
+            "must not include .gitignore"
+        );
 
         // Simulate Codex also installing node_modules (this is the critical test)
         std::fs::create_dir_all(info.path.join("node_modules/react")).unwrap();
-        std::fs::write(info.path.join("node_modules/react/index.js"), "module.exports = {};").unwrap();
+        std::fs::write(
+            info.path.join("node_modules/react/index.js"),
+            "module.exports = {};",
+        )
+        .unwrap();
         std::fs::create_dir_all(info.path.join("dist")).unwrap();
-        std::fs::write(info.path.join("dist/bundle.js"), "!function(){console.log('minified')}()").unwrap();
+        std::fs::write(
+            info.path.join("dist/bundle.js"),
+            "!function(){console.log('minified')}()",
+        )
+        .unwrap();
 
         let with_ignored = git_worktree_changed_files(&info.path);
         assert!(
@@ -1905,38 +2022,70 @@ mod tests {
         let mgr = WorktreeManager::new(&tmp);
         let run_id = Uuid::new_v4();
 
-        let info = mgr.prepare(run_id, "# Spec", "digraph {}", "# Agents").unwrap();
+        let info = mgr
+            .prepare(run_id, "# Spec", "digraph {}", "# Agents")
+            .unwrap();
 
         // Write actual source files
         let tsx_content = "import React from 'react';\nexport function TaskTracker() { return <div>Tasks</div>; }";
         std::fs::write(info.path.join("src/TaskTracker.tsx"), tsx_content).unwrap();
-        std::fs::write(info.path.join("src/index.ts"), "export { TaskTracker } from './TaskTracker';").unwrap();
+        std::fs::write(
+            info.path.join("src/index.ts"),
+            "export { TaskTracker } from './TaskTracker';",
+        )
+        .unwrap();
 
         // Write ignored junk that was previously polluting the validator
         std::fs::create_dir_all(info.path.join("dist")).unwrap();
         let bundle = "x".repeat(80_000); // 80KB minified bundle
         std::fs::write(info.path.join("dist/bundle.js"), &bundle).unwrap();
         std::fs::create_dir_all(info.path.join("node_modules/react")).unwrap();
-        std::fs::write(info.path.join("node_modules/react/index.js"), "module.exports = {};").unwrap();
+        std::fs::write(
+            info.path.join("node_modules/react/index.js"),
+            "module.exports = {};",
+        )
+        .unwrap();
 
         let result = read_worktree_source_files(&info.path);
 
         // Must contain our actual source
-        assert!(result.contains("TaskTracker"), "must contain TaskTracker component, got:\n{}", &result[..result.len().min(500)]);
-        assert!(result.contains("=== src/TaskTracker.tsx ==="), "must have src/TaskTracker.tsx header");
-        assert!(result.contains("=== src/index.ts ==="), "must have src/index.ts header");
+        assert!(
+            result.contains("TaskTracker"),
+            "must contain TaskTracker component, got:\n{}",
+            &result[..result.len().min(500)]
+        );
+        assert!(
+            result.contains("=== src/TaskTracker.tsx ==="),
+            "must have src/TaskTracker.tsx header"
+        );
+        assert!(
+            result.contains("=== src/index.ts ==="),
+            "must have src/index.ts header"
+        );
 
         // Must NOT contain ignored dirs
-        assert!(!result.contains("dist/bundle.js"), "must not contain dist/bundle.js");
-        assert!(!result.contains("node_modules"), "must not contain node_modules");
-        assert!(!result.contains("x".repeat(1000).as_str()), "must not contain minified bundle content");
+        assert!(
+            !result.contains("dist/bundle.js"),
+            "must not contain dist/bundle.js"
+        );
+        assert!(
+            !result.contains("node_modules"),
+            "must not contain node_modules"
+        );
+        assert!(
+            !result.contains("x".repeat(1000).as_str()),
+            "must not contain minified bundle content"
+        );
 
         // src/ files should appear before root files (priority sorting)
         let src_pos = result.find("=== src/").unwrap_or(usize::MAX);
         let pkg_pos = result.find("=== package").unwrap_or(0);
         // If package.json exists it should come after src/
         if result.contains("=== package") {
-            assert!(src_pos < pkg_pos, "src/ files must be sorted before root files");
+            assert!(
+                src_pos < pkg_pos,
+                "src/ files must be sorted before root files"
+            );
         }
 
         mgr.cleanup(&info).unwrap();
@@ -1951,18 +2100,30 @@ mod tests {
         let mgr = WorktreeManager::new(&tmp);
         let run_id = Uuid::new_v4();
 
-        let info = mgr.prepare(run_id, "# Spec", "digraph {}", "# Agents").unwrap();
+        let info = mgr
+            .prepare(run_id, "# Spec", "digraph {}", "# Agents")
+            .unwrap();
 
         // A normal source file
-        std::fs::write(info.path.join("src/app.js"), "function app() {\n  return 'hello';\n}\n").unwrap();
+        std::fs::write(
+            info.path.join("src/app.js"),
+            "function app() {\n  return 'hello';\n}\n",
+        )
+        .unwrap();
         // A minified file that sneaks past .gitignore (e.g. in src/)
         let minified = "var a=".to_string() + &"x".repeat(6000) + ";";
         std::fs::write(info.path.join("src/vendor.min.js"), &minified).unwrap();
 
         let result = read_worktree_source_files(&info.path);
 
-        assert!(result.contains("=== src/app.js ==="), "must include normal source");
-        assert!(!result.contains("=== src/vendor.min.js ==="), "must skip minified file (<=2 lines, >5KB)");
+        assert!(
+            result.contains("=== src/app.js ==="),
+            "must include normal source"
+        );
+        assert!(
+            !result.contains("=== src/vendor.min.js ==="),
+            "must skip minified file (<=2 lines, >5KB)"
+        );
 
         mgr.cleanup(&info).unwrap();
         let _ = std::fs::remove_dir_all(&tmp);
@@ -1995,7 +2156,11 @@ mod tests {
     async fn mock_factory_worker_success() {
         let worker = MockFactoryWorker::success(
             "Generated 3 files",
-            vec!["src/main.rs".into(), "src/lib.rs".into(), "Cargo.toml".into()],
+            vec![
+                "src/main.rs".into(),
+                "src/lib.rs".into(),
+                "Cargo.toml".into(),
+            ],
         );
 
         let config = WorkerConfig::default();
@@ -2031,7 +2196,11 @@ mod tests {
         let context_dir = tmp.join(".planner-context");
         std::fs::create_dir_all(&context_dir).unwrap();
 
-        std::fs::write(context_dir.join("SPEC.md"), "# My Spec\n## Requirements\n- FR-1").unwrap();
+        std::fs::write(
+            context_dir.join("SPEC.md"),
+            "# My Spec\n## Requirements\n- FR-1",
+        )
+        .unwrap();
         std::fs::write(context_dir.join("graph.dot"), "digraph { a -> b; }").unwrap();
         std::fs::write(context_dir.join("AGENTS.md"), "# Agents\n- coder").unwrap();
 
@@ -2123,10 +2292,7 @@ mod tests {
             SandboxMode::Bwrap.cli_args(),
             vec!["--full-auto", "--enable", "use_linux_sandbox_bwrap"]
         );
-        assert_eq!(
-            SandboxMode::FullAuto.cli_args(),
-            vec!["--full-auto"]
-        );
+        assert_eq!(SandboxMode::FullAuto.cli_args(), vec!["--full-auto"]);
         // WorkspaceWrite uses danger-full-access (no -a flag — exec is non-interactive)
         assert_eq!(
             SandboxMode::WorkspaceWrite.cli_args(),
@@ -2173,9 +2339,18 @@ mod tests {
     #[test]
     fn sandbox_mode_env_roundtrip() {
         // Setting env var then reading should preserve the mode
-        for mode in [SandboxMode::Bwrap, SandboxMode::FullAuto, SandboxMode::WorkspaceWrite] {
+        for mode in [
+            SandboxMode::Bwrap,
+            SandboxMode::FullAuto,
+            SandboxMode::WorkspaceWrite,
+        ] {
             std::env::set_var("PLANNER_CODEX_SANDBOX", mode.env_value());
-            assert_eq!(SandboxMode::from_env(), mode, "roundtrip failed for {:?}", mode);
+            assert_eq!(
+                SandboxMode::from_env(),
+                mode,
+                "roundtrip failed for {:?}",
+                mode
+            );
         }
         std::env::remove_var("PLANNER_CODEX_SANDBOX");
     }
@@ -2249,7 +2424,10 @@ mod tests {
             if path.exists() {
                 // Invalidate
                 SandboxProbe::invalidate_cache();
-                assert!(!path.exists(), "cache file should be removed after invalidation");
+                assert!(
+                    !path.exists(),
+                    "cache file should be removed after invalidation"
+                );
 
                 // Write a new one to verify write after invalidate works
                 SandboxProbe::write_cache(SandboxMode::FullAuto);
@@ -2329,17 +2507,23 @@ mod tests {
             mode = next;
         }
 
-        assert_eq!(cascade, vec![
-            SandboxMode::Bwrap,
-            SandboxMode::FullAuto,
-            SandboxMode::WorkspaceWrite,
-        ]);
+        assert_eq!(
+            cascade,
+            vec![
+                SandboxMode::Bwrap,
+                SandboxMode::FullAuto,
+                SandboxMode::WorkspaceWrite,
+            ]
+        );
     }
 
     #[test]
     fn sandbox_mode_workspace_write_env_value() {
         assert_eq!(SandboxMode::WorkspaceWrite.env_value(), "workspace-write");
-        assert_eq!(SandboxMode::WorkspaceWrite.label(), "workspace-write (worktree + LXC isolation)");
+        assert_eq!(
+            SandboxMode::WorkspaceWrite.label(),
+            "workspace-write (worktree + LXC isolation)"
+        );
     }
 
     #[test]
@@ -2360,7 +2544,9 @@ mod tests {
         assert!(lsm_with_landlock.split(',').any(|m| m.trim() == "landlock"));
 
         let lsm_without_landlock = "lockdown,yama,integrity,apparmor";
-        assert!(!lsm_without_landlock.split(',').any(|m| m.trim() == "landlock"));
+        assert!(!lsm_without_landlock
+            .split(',')
+            .any(|m| m.trim() == "landlock"));
 
         // Edge: landlock at end, with trailing newline
         let lsm_trailing = "lockdown,yama,landlock\n";
@@ -2391,20 +2577,29 @@ mod tests {
             let stale = format!("{}\ndanger-full-access", ts);
             std::fs::write(&path, &stale).unwrap();
             SandboxProbe::migrate_stale_cache();
-            assert!(!path.exists(), "danger-full-access cache should be deleted by migrate");
+            assert!(
+                !path.exists(),
+                "danger-full-access cache should be deleted by migrate"
+            );
 
             // Test workspace-write (also stale from broken probe)
             let stale_ws = format!("{}\nworkspace-write", ts);
             std::fs::write(&path, &stale_ws).unwrap();
             SandboxProbe::migrate_stale_cache();
-            assert!(!path.exists(), "workspace-write cache should be deleted by migrate");
+            assert!(
+                !path.exists(),
+                "workspace-write cache should be deleted by migrate"
+            );
 
             // Test valid values are NOT deleted
             SandboxProbe::write_cache(SandboxMode::FullAuto);
             SandboxProbe::migrate_stale_cache();
             if path.exists() {
                 let content = std::fs::read_to_string(&path).unwrap();
-                assert!(content.contains("full-auto"), "full-auto cache should survive migration");
+                assert!(
+                    content.contains("full-auto"),
+                    "full-auto cache should survive migration"
+                );
                 let _ = std::fs::remove_file(&path);
             }
         }

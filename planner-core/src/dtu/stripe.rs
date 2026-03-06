@@ -16,8 +16,8 @@ use std::sync::RwLock;
 use serde_json::{json, Value};
 use uuid::Uuid;
 
-use planner_schemas::{DtuConfigV1, DtuProviderInfo, DtuRequest, DtuResponse};
 use super::DtuProvider;
+use planner_schemas::{DtuConfigV1, DtuProviderInfo, DtuRequest, DtuResponse};
 
 // ---------------------------------------------------------------------------
 // Stripe DTU
@@ -192,7 +192,10 @@ impl StripeDtu {
 
     fn create_payment_intent(&self, body: &Value) -> DtuResponse {
         let amount = body.get("amount").and_then(|v| v.as_i64()).unwrap_or(0);
-        let currency = body.get("currency").and_then(|v| v.as_str()).unwrap_or("usd");
+        let currency = body
+            .get("currency")
+            .and_then(|v| v.as_str())
+            .unwrap_or("usd");
 
         if amount <= 0 {
             return self.bad_request("Amount must be a positive integer");
@@ -200,7 +203,11 @@ impl StripeDtu {
 
         let mut state = self.state.write().unwrap();
         let id = state.next_id("pi");
-        let client_secret = format!("{}_secret_{}", id, Uuid::new_v4().to_string().replace('-', ""));
+        let client_secret = format!(
+            "{}_secret_{}",
+            id,
+            Uuid::new_v4().to_string().replace('-', "")
+        );
 
         let pi = json!({
             "id": id,
@@ -242,7 +249,10 @@ impl StripeDtu {
             pi["payment_method"] = json!(pm);
         }
 
-        let capture_method = pi["capture_method"].as_str().unwrap_or("automatic").to_string();
+        let capture_method = pi["capture_method"]
+            .as_str()
+            .unwrap_or("automatic")
+            .to_string();
         if capture_method == "automatic" {
             pi["status"] = json!("succeeded");
 
@@ -299,7 +309,8 @@ impl StripeDtu {
 
         let status = pi["status"].as_str().unwrap_or("");
         if status == "succeeded" {
-            return self.bad_request("This PaymentIntent has already succeeded and cannot be canceled.");
+            return self
+                .bad_request("This PaymentIntent has already succeeded and cannot be canceled.");
         }
         if status == "canceled" {
             return self.bad_request("This PaymentIntent has already been canceled.");
@@ -337,7 +348,8 @@ impl StripeDtu {
         }
 
         let original_amount = pi["amount"].as_i64().unwrap_or(0);
-        let refund_amount = body.get("amount")
+        let refund_amount = body
+            .get("amount")
             .and_then(|v| v.as_i64())
             .unwrap_or(original_amount);
 
@@ -391,7 +403,12 @@ impl DtuProvider for StripeDtu {
 
             // Payment Intents
             ("POST", "/v1/payment_intents") => self.create_payment_intent(&body),
-            ("GET", p) if p.starts_with("/v1/payment_intents/") && !p.contains("/confirm") && !p.contains("/capture") && !p.contains("/cancel") => {
+            ("GET", p)
+                if p.starts_with("/v1/payment_intents/")
+                    && !p.contains("/confirm")
+                    && !p.contains("/capture")
+                    && !p.contains("/cancel") =>
+            {
                 let id = &p["/v1/payment_intents/".len()..];
                 self.get_payment_intent(id)
             }
@@ -435,11 +452,31 @@ impl DtuProvider for StripeDtu {
         // Seed initial state
         for seed in &config.seed_state {
             match seed.entity_type.as_str() {
-                "customer" => { state.customers.insert(seed.entity_id.clone(), seed.initial_state.clone()); }
-                "payment_intent" => { state.payment_intents.insert(seed.entity_id.clone(), seed.initial_state.clone()); }
-                "payment_method" => { state.payment_methods.insert(seed.entity_id.clone(), seed.initial_state.clone()); }
-                "product" => { state.products.insert(seed.entity_id.clone(), seed.initial_state.clone()); }
-                "price" => { state.prices.insert(seed.entity_id.clone(), seed.initial_state.clone()); }
+                "customer" => {
+                    state
+                        .customers
+                        .insert(seed.entity_id.clone(), seed.initial_state.clone());
+                }
+                "payment_intent" => {
+                    state
+                        .payment_intents
+                        .insert(seed.entity_id.clone(), seed.initial_state.clone());
+                }
+                "payment_method" => {
+                    state
+                        .payment_methods
+                        .insert(seed.entity_id.clone(), seed.initial_state.clone());
+                }
+                "product" => {
+                    state
+                        .products
+                        .insert(seed.entity_id.clone(), seed.initial_state.clone());
+                }
+                "price" => {
+                    state
+                        .prices
+                        .insert(seed.entity_id.clone(), seed.initial_state.clone());
+                }
                 _ => {} // Unknown entity types are ignored
             }
         }
@@ -527,10 +564,13 @@ mod tests {
     #[test]
     fn create_and_get_customer() {
         let s = stripe();
-        let resp = s.handle_request(&post("/v1/customers", json!({
-            "email": "test@example.com",
-            "name": "Test User"
-        })));
+        let resp = s.handle_request(&post(
+            "/v1/customers",
+            json!({
+                "email": "test@example.com",
+                "name": "Test User"
+            }),
+        ));
         assert_eq!(resp.status_code, 200);
         let id = resp.body["id"].as_str().unwrap().to_string();
         assert!(id.starts_with("cus_"));
@@ -572,10 +612,13 @@ mod tests {
         let s = stripe();
 
         // Create
-        let resp = s.handle_request(&post("/v1/payment_intents", json!({
-            "amount": 2000,
-            "currency": "usd"
-        })));
+        let resp = s.handle_request(&post(
+            "/v1/payment_intents",
+            json!({
+                "amount": 2000,
+                "currency": "usd"
+            }),
+        ));
         assert_eq!(resp.status_code, 200);
         assert_eq!(resp.body["status"], "requires_payment_method");
         let id = resp.body["id"].as_str().unwrap().to_string();
@@ -593,11 +636,14 @@ mod tests {
     fn payment_intent_manual_capture() {
         let s = stripe();
 
-        let resp = s.handle_request(&post("/v1/payment_intents", json!({
-            "amount": 5000,
-            "currency": "eur",
-            "capture_method": "manual"
-        })));
+        let resp = s.handle_request(&post(
+            "/v1/payment_intents",
+            json!({
+                "amount": 5000,
+                "currency": "eur",
+                "capture_method": "manual"
+            }),
+        ));
         let id = resp.body["id"].as_str().unwrap().to_string();
 
         // Confirm → requires_capture
@@ -619,10 +665,13 @@ mod tests {
     fn payment_intent_cancel() {
         let s = stripe();
 
-        let resp = s.handle_request(&post("/v1/payment_intents", json!({
-            "amount": 1000,
-            "currency": "usd"
-        })));
+        let resp = s.handle_request(&post(
+            "/v1/payment_intents",
+            json!({
+                "amount": 1000,
+                "currency": "usd"
+            }),
+        ));
         let id = resp.body["id"].as_str().unwrap().to_string();
 
         let cancel = s.handle_request(&post(
@@ -635,10 +684,13 @@ mod tests {
     #[test]
     fn payment_intent_invalid_amount() {
         let s = stripe();
-        let resp = s.handle_request(&post("/v1/payment_intents", json!({
-            "amount": -100,
-            "currency": "usd"
-        })));
+        let resp = s.handle_request(&post(
+            "/v1/payment_intents",
+            json!({
+                "amount": -100,
+                "currency": "usd"
+            }),
+        ));
         assert_eq!(resp.status_code, 400);
     }
 
@@ -647,10 +699,13 @@ mod tests {
         let s = stripe();
 
         // Create + confirm a payment
-        let pi = s.handle_request(&post("/v1/payment_intents", json!({
-            "amount": 3000,
-            "currency": "usd"
-        })));
+        let pi = s.handle_request(&post(
+            "/v1/payment_intents",
+            json!({
+                "amount": 3000,
+                "currency": "usd"
+            }),
+        ));
         let pi_id = pi.body["id"].as_str().unwrap().to_string();
         s.handle_request(&post(
             &format!("/v1/payment_intents/{}/confirm", pi_id),
@@ -658,9 +713,12 @@ mod tests {
         ));
 
         // Refund
-        let refund = s.handle_request(&post("/v1/refunds", json!({
-            "payment_intent": pi_id
-        })));
+        let refund = s.handle_request(&post(
+            "/v1/refunds",
+            json!({
+                "payment_intent": pi_id
+            }),
+        ));
         assert_eq!(refund.status_code, 200);
         assert_eq!(refund.body["amount"], 3000);
         assert_eq!(refund.body["status"], "succeeded");
@@ -670,20 +728,26 @@ mod tests {
     fn partial_refund() {
         let s = stripe();
 
-        let pi = s.handle_request(&post("/v1/payment_intents", json!({
-            "amount": 5000,
-            "currency": "usd"
-        })));
+        let pi = s.handle_request(&post(
+            "/v1/payment_intents",
+            json!({
+                "amount": 5000,
+                "currency": "usd"
+            }),
+        ));
         let pi_id = pi.body["id"].as_str().unwrap().to_string();
         s.handle_request(&post(
             &format!("/v1/payment_intents/{}/confirm", pi_id),
             json!({"payment_method": "pm_card_visa"}),
         ));
 
-        let refund = s.handle_request(&post("/v1/refunds", json!({
-            "payment_intent": pi_id,
-            "amount": 2000
-        })));
+        let refund = s.handle_request(&post(
+            "/v1/refunds",
+            json!({
+                "payment_intent": pi_id,
+                "amount": 2000
+            }),
+        ));
         assert_eq!(refund.body["amount"], 2000);
     }
 
@@ -691,42 +755,58 @@ mod tests {
     fn refund_exceeding_amount_fails() {
         let s = stripe();
 
-        let pi = s.handle_request(&post("/v1/payment_intents", json!({
-            "amount": 1000,
-            "currency": "usd"
-        })));
+        let pi = s.handle_request(&post(
+            "/v1/payment_intents",
+            json!({
+                "amount": 1000,
+                "currency": "usd"
+            }),
+        ));
         let pi_id = pi.body["id"].as_str().unwrap().to_string();
         s.handle_request(&post(
             &format!("/v1/payment_intents/{}/confirm", pi_id),
             json!({"payment_method": "pm_card_visa"}),
         ));
 
-        let refund = s.handle_request(&post("/v1/refunds", json!({
-            "payment_intent": pi_id,
-            "amount": 9999
-        })));
+        let refund = s.handle_request(&post(
+            "/v1/refunds",
+            json!({
+                "payment_intent": pi_id,
+                "amount": 9999
+            }),
+        ));
         assert_eq!(refund.status_code, 400);
     }
 
     #[test]
     fn failure_injection() {
         let s = stripe();
-        s.inject_failure("/v1/payment_intents", 503, json!({
-            "error": {"message": "Service temporarily unavailable"}
-        }));
+        s.inject_failure(
+            "/v1/payment_intents",
+            503,
+            json!({
+                "error": {"message": "Service temporarily unavailable"}
+            }),
+        );
 
-        let resp = s.handle_request(&post("/v1/payment_intents", json!({
-            "amount": 1000,
-            "currency": "usd"
-        })));
+        let resp = s.handle_request(&post(
+            "/v1/payment_intents",
+            json!({
+                "amount": 1000,
+                "currency": "usd"
+            }),
+        ));
         assert_eq!(resp.status_code, 503);
 
         // Clear failures
         s.clear_failures();
-        let resp2 = s.handle_request(&post("/v1/payment_intents", json!({
-            "amount": 1000,
-            "currency": "usd"
-        })));
+        let resp2 = s.handle_request(&post(
+            "/v1/payment_intents",
+            json!({
+                "amount": 1000,
+                "currency": "usd"
+            }),
+        ));
         assert_eq!(resp2.status_code, 200);
     }
 
@@ -756,7 +836,10 @@ mod tests {
         let s = stripe();
         let resp = s.handle_request(&get("/v1/customers/cus_nonexistent"));
         assert_eq!(resp.status_code, 404);
-        assert!(resp.body["error"]["message"].as_str().unwrap().contains("No such customer"));
+        assert!(resp.body["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("No such customer"));
     }
 
     #[test]
@@ -767,17 +850,15 @@ mod tests {
             dependency_name: "Stripe".into(),
             provider_id: "stripe".into(),
             behavioral_rules: vec![],
-            seed_state: vec![
-                DtuSeedEntry {
-                    entity_type: "customer".into(),
-                    entity_id: "cus_seeded".into(),
-                    initial_state: json!({
-                        "id": "cus_seeded",
-                        "object": "customer",
-                        "email": "seeded@test.com"
-                    }),
-                },
-            ],
+            seed_state: vec![DtuSeedEntry {
+                entity_type: "customer".into(),
+                entity_id: "cus_seeded".into(),
+                initial_state: json!({
+                    "id": "cus_seeded",
+                    "object": "customer",
+                    "email": "seeded@test.com"
+                }),
+            }],
             failure_modes: vec![],
             validated: false,
         };

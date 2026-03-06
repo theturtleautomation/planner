@@ -42,7 +42,6 @@ pub struct NLSpecV1 {
     pub created_from: String,
 
     // -- Sections (root chunk has all; domain chunks have a subset) --
-
     /// Intent Summary — root chunk only. Plain-English project description.
     pub intent_summary: Option<String>,
 

@@ -10,9 +10,9 @@
 //! - Server → Client: { "type": "pipeline_complete", "success": true }
 //! - Client → Server: { "type": "user_message", "content": "..." }
 
-use std::sync::Arc;
 use axum::extract::ws::{Message, WebSocket};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::AppState;
@@ -27,10 +27,7 @@ use crate::AppState;
 pub enum ServerMessage {
     /// A pipeline stage changed status.
     #[serde(rename = "stage_update")]
-    StageUpdate {
-        stage: String,
-        status: String,
-    },
+    StageUpdate { stage: String, status: String },
     /// A new chat message from the system or planner.
     #[serde(rename = "message")]
     ChatMessage {
@@ -41,15 +38,10 @@ pub enum ServerMessage {
     },
     /// Pipeline completed.
     #[serde(rename = "pipeline_complete")]
-    PipelineComplete {
-        success: bool,
-        summary: String,
-    },
+    PipelineComplete { success: bool, summary: String },
     /// Error occurred.
     #[serde(rename = "error")]
-    Error {
-        message: String,
-    },
+    Error { message: String },
 
     /// A structured observability event.
     #[serde(rename = "planner_event")]
@@ -67,7 +59,6 @@ pub enum ServerMessage {
     // -----------------------------------------------------------------------
     // Socratic interview messages
     // -----------------------------------------------------------------------
-
     /// Domain classification complete.
     #[serde(rename = "classified")]
     Classified {
@@ -135,24 +126,17 @@ pub enum ServerMessage {
 pub enum ClientMessage {
     /// User sends a chat message.
     #[serde(rename = "user_message")]
-    UserMessage {
-        content: String,
-    },
+    UserMessage { content: String },
     /// User requests pipeline start.
     #[serde(rename = "start_pipeline")]
-    StartPipeline {
-        description: String,
-    },
+    StartPipeline { description: String },
 
     // -----------------------------------------------------------------------
     // Socratic interview messages
     // -----------------------------------------------------------------------
-
     /// User responds during Socratic interview.
     #[serde(rename = "socratic_response")]
-    SocraticResponse {
-        content: String,
-    },
+    SocraticResponse { content: String },
 
     /// User skips current question.
     #[serde(rename = "skip_question")]
@@ -412,7 +396,12 @@ mod tests {
 
         let deserialized: ServerMessage = serde_json::from_str(&json).unwrap();
         match deserialized {
-            ServerMessage::PlannerEvent { level, source, duration_ms, .. } => {
+            ServerMessage::PlannerEvent {
+                level,
+                source,
+                duration_ms,
+                ..
+            } => {
                 assert_eq!(level, "info");
                 assert_eq!(source, "llm_router");
                 assert_eq!(duration_ms, Some(1234));
@@ -461,7 +450,11 @@ mod tests {
 
         let deserialized: ServerMessage = serde_json::from_str(&json).unwrap();
         match deserialized {
-            ServerMessage::ContradictionDetected { dimension_a, explanation, .. } => {
+            ServerMessage::ContradictionDetected {
+                dimension_a,
+                explanation,
+                ..
+            } => {
                 assert_eq!(dimension_a, "Deployment");
                 assert!(explanation.contains("conflicts"));
             }
@@ -474,7 +467,11 @@ mod tests {
         let json = r#"{"type":"draft_reaction","target":"0","action":"fix","correction":"Should use REST not GraphQL"}"#;
         let msg: ClientMessage = serde_json::from_str(json).unwrap();
         match msg {
-            ClientMessage::DraftReaction { target, action, correction } => {
+            ClientMessage::DraftReaction {
+                target,
+                action,
+                correction,
+            } => {
                 assert_eq!(target, "0");
                 assert_eq!(action, "fix");
                 assert_eq!(correction.unwrap(), "Should use REST not GraphQL");
@@ -488,7 +485,11 @@ mod tests {
         let json = r#"{"type":"draft_reaction","target":"assumptions","action":"confirm_all"}"#;
         let msg: ClientMessage = serde_json::from_str(json).unwrap();
         match msg {
-            ClientMessage::DraftReaction { target, action, correction } => {
+            ClientMessage::DraftReaction {
+                target,
+                action,
+                correction,
+            } => {
                 assert_eq!(target, "assumptions");
                 assert_eq!(action, "confirm_all");
                 assert!(correction.is_none());
@@ -502,7 +503,10 @@ mod tests {
         let json = r#"{"type":"dimension_edit","dimension":"Database","new_value":"SQLite"}"#;
         let msg: ClientMessage = serde_json::from_str(json).unwrap();
         match msg {
-            ClientMessage::DimensionEdit { dimension, new_value } => {
+            ClientMessage::DimensionEdit {
+                dimension,
+                new_value,
+            } => {
                 assert_eq!(dimension, "Database");
                 assert_eq!(new_value, "SQLite");
             }

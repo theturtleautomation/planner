@@ -29,12 +29,12 @@ use std::path::{Path, PathBuf};
 use std::sync::RwLock;
 
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use super::{StorageError, TurnStore};
 use planner_schemas::{ArtifactPayload, Turn, TurnMetadata};
-use super::{TurnStore, StorageError};
 
 // ---------------------------------------------------------------------------
 // On-disk metadata record (stored as MessagePack)
@@ -51,7 +51,7 @@ struct StoredTurnRecord {
     run_id: String,
     execution_id: String,
     produced_by: String,
-    created_at: String,       // RFC 3339
+    created_at: String, // RFC 3339
     note: Option<String>,
     project_id: Option<String>,
 }
@@ -88,8 +88,9 @@ impl DurableCxdbEngine {
             .map_err(|e| StorageError::Serialization(format!("Cannot create blobs dir: {}", e)))?;
         fs::create_dir_all(root.join("turns"))
             .map_err(|e| StorageError::Serialization(format!("Cannot create turns dir: {}", e)))?;
-        fs::create_dir_all(root.join("projects"))
-            .map_err(|e| StorageError::Serialization(format!("Cannot create projects dir: {}", e)))?;
+        fs::create_dir_all(root.join("projects")).map_err(|e| {
+            StorageError::Serialization(format!("Cannot create projects dir: {}", e))
+        })?;
 
         let engine = DurableCxdbEngine {
             root,
@@ -124,7 +125,11 @@ impl DurableCxdbEngine {
     fn blob_path(&self, hash: &str) -> PathBuf {
         let (prefix_a, rest) = hash.split_at(2.min(hash.len()));
         let (prefix_b, _) = rest.split_at(2.min(rest.len()));
-        self.root.join("blobs").join(prefix_a).join(prefix_b).join(hash)
+        self.root
+            .join("blobs")
+            .join(prefix_a)
+            .join(prefix_b)
+            .join(hash)
     }
 
     /// Write blob bytes to disk (no-op if already exists — content-addressed).
@@ -146,9 +151,9 @@ impl DurableCxdbEngine {
     fn read_blob(&self, hash: &str) -> Result<Vec<u8>, StorageError> {
         let path = self.blob_path(hash);
         fs::read(&path).map_err(|e| match e.kind() {
-            io::ErrorKind::NotFound => StorageError::Serialization(
-                format!("Blob not found: {}", hash),
-            ),
+            io::ErrorKind::NotFound => {
+                StorageError::Serialization(format!("Blob not found: {}", hash))
+            }
             _ => StorageError::Serialization(format!("Read blob: {}", e)),
         })
     }
@@ -179,8 +184,8 @@ impl DurableCxdbEngine {
                 .map_err(|e| StorageError::Serialization(format!("Turn dir: {}", e)))?;
         }
 
-        let data = rmp_serde::to_vec(record)
-            .map_err(|e| StorageError::Serialization(e.to_string()))?;
+        let data =
+            rmp_serde::to_vec(record).map_err(|e| StorageError::Serialization(e.to_string()))?;
         fs::write(&path, data)
             .map_err(|e| StorageError::Serialization(format!("Write turn: {}", e)))?;
         Ok(())
@@ -188,10 +193,9 @@ impl DurableCxdbEngine {
 
     /// Read a turn metadata record from a path.
     fn read_turn_record(path: &Path) -> Result<StoredTurnRecord, StorageError> {
-        let data = fs::read(path)
-            .map_err(|e| StorageError::Serialization(format!("Read turn: {}", e)))?;
-        rmp_serde::from_slice(&data)
-            .map_err(|e| StorageError::Serialization(e.to_string()))
+        let data =
+            fs::read(path).map_err(|e| StorageError::Serialization(format!("Read turn: {}", e)))?;
+        rmp_serde::from_slice(&data).map_err(|e| StorageError::Serialization(e.to_string()))
     }
 
     // -----------------------------------------------------------------------
@@ -200,13 +204,15 @@ impl DurableCxdbEngine {
 
     /// Register a project→run association.
     pub fn register_run(&self, project_id: Uuid, run_id: Uuid) -> Result<(), StorageError> {
-        let path = self.root.join("projects").join(format!("{}.msgpack", project_id));
+        let path = self
+            .root
+            .join("projects")
+            .join(format!("{}.msgpack", project_id));
 
         let mut runs: Vec<String> = if path.exists() {
             let data = fs::read(&path)
                 .map_err(|e| StorageError::Serialization(format!("Read project: {}", e)))?;
-            rmp_serde::from_slice(&data)
-                .map_err(|e| StorageError::Serialization(e.to_string()))?
+            rmp_serde::from_slice(&data).map_err(|e| StorageError::Serialization(e.to_string()))?
         } else {
             Vec::new()
         };
@@ -216,8 +222,8 @@ impl DurableCxdbEngine {
             runs.push(run_str);
         }
 
-        let data = rmp_serde::to_vec(&runs)
-            .map_err(|e| StorageError::Serialization(e.to_string()))?;
+        let data =
+            rmp_serde::to_vec(&runs).map_err(|e| StorageError::Serialization(e.to_string()))?;
         fs::write(&path, data)
             .map_err(|e| StorageError::Serialization(format!("Write project: {}", e)))?;
         Ok(())
@@ -225,7 +231,10 @@ impl DurableCxdbEngine {
 
     /// List all run IDs for a given project.
     pub fn list_runs(&self, project_id: Uuid) -> Vec<Uuid> {
-        let path = self.root.join("projects").join(format!("{}.msgpack", project_id));
+        let path = self
+            .root
+            .join("projects")
+            .join(format!("{}.msgpack", project_id));
         if !path.exists() {
             return Vec::new();
         }
@@ -262,9 +271,7 @@ impl DurableCxdbEngine {
         // Walk turns/<run_id>/<type_id>/<turn_id>.msgpack
         for run_entry in Self::read_dir_sorted(&turns_dir)? {
             let run_path = run_entry;
-            let run_id_str = run_path.file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("");
+            let run_id_str = run_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
             let run_id = match Uuid::parse_str(run_id_str) {
                 Ok(id) => id,
                 Err(_) => continue,
@@ -272,7 +279,8 @@ impl DurableCxdbEngine {
 
             for type_entry in Self::read_dir_sorted(&run_path)? {
                 let type_path = type_entry;
-                let type_id = type_path.file_name()
+                let type_id = type_path
+                    .file_name()
                     .and_then(|n| n.to_str())
                     .unwrap_or("")
                     .to_string();
@@ -326,13 +334,17 @@ impl DurableCxdbEngine {
 
         let turn_id = Uuid::parse_str(&record.turn_id)
             .map_err(|e| StorageError::Serialization(e.to_string()))?;
-        let parent_id = record.parent_id.as_deref()
+        let parent_id = record
+            .parent_id
+            .as_deref()
             .map(Uuid::parse_str)
             .transpose()
             .map_err(|e| StorageError::Serialization(e.to_string()))?;
         let run_id = Uuid::parse_str(&record.run_id)
             .map_err(|e| StorageError::Serialization(e.to_string()))?;
-        let created_at: DateTime<Utc> = record.created_at.parse()
+        let created_at: DateTime<Utc> = record
+            .created_at
+            .parse()
             .map_err(|e: chrono::ParseError| StorageError::Serialization(e.to_string()))?;
 
         Ok(Turn {
@@ -485,7 +497,8 @@ impl TurnStore for DurableCxdbEngine {
         turn_id: Uuid,
     ) -> Result<Turn<T>, StorageError> {
         let cache = self.turn_cache.read().unwrap();
-        let record = cache.get(&turn_id)
+        let record = cache
+            .get(&turn_id)
             .ok_or(StorageError::NotFound(turn_id))?
             .clone();
         drop(cache);
@@ -499,20 +512,20 @@ impl TurnStore for DurableCxdbEngine {
         type_id: &str,
     ) -> Result<Vec<Turn<T>>, StorageError> {
         let idx = self.run_type_index.read().unwrap();
-        let turn_ids = idx.get(&(run_id, type_id.to_string()))
+        let turn_ids = idx
+            .get(&(run_id, type_id.to_string()))
             .cloned()
             .unwrap_or_default();
         drop(idx);
 
         let cache = self.turn_cache.read().unwrap();
-        let records: Vec<StoredTurnRecord> = turn_ids.iter()
+        let records: Vec<StoredTurnRecord> = turn_ids
+            .iter()
             .filter_map(|tid| cache.get(tid).cloned())
             .collect();
         drop(cache);
 
-        records.iter()
-            .map(|r| self.reconstruct_turn(r))
-            .collect()
+        records.iter().map(|r| self.reconstruct_turn(r)).collect()
     }
 
     fn get_latest_turn<T: ArtifactPayload + DeserializeOwned>(
@@ -521,7 +534,8 @@ impl TurnStore for DurableCxdbEngine {
         type_id: &str,
     ) -> Result<Option<Turn<T>>, StorageError> {
         let idx = self.run_type_index.read().unwrap();
-        let turn_ids = idx.get(&(run_id, type_id.to_string()))
+        let turn_ids = idx
+            .get(&(run_id, type_id.to_string()))
             .cloned()
             .unwrap_or_default();
         drop(idx);
@@ -531,7 +545,8 @@ impl TurnStore for DurableCxdbEngine {
         }
 
         let cache = self.turn_cache.read().unwrap();
-        let latest = turn_ids.iter()
+        let latest = turn_ids
+            .iter()
             .filter_map(|tid| cache.get(tid))
             .max_by_key(|r| r.created_at.clone())
             .cloned();
@@ -633,9 +648,8 @@ mod tests {
             engine.store_turn(&turn).unwrap();
         }
 
-        let turns: Vec<Turn<IntakeV1>> = engine
-            .get_turns_by_type(run_id, IntakeV1::TYPE_ID)
-            .unwrap();
+        let turns: Vec<Turn<IntakeV1>> =
+            engine.get_turns_by_type(run_id, IntakeV1::TYPE_ID).unwrap();
         assert_eq!(turns.len(), 3);
 
         let _ = fs::remove_dir_all(engine.root_path());
@@ -652,9 +666,8 @@ mod tests {
             engine.store_turn(&turn).unwrap();
         }
 
-        let latest: Option<Turn<IntakeV1>> = engine
-            .get_latest_turn(run_id, IntakeV1::TYPE_ID)
-            .unwrap();
+        let latest: Option<Turn<IntakeV1>> =
+            engine.get_latest_turn(run_id, IntakeV1::TYPE_ID).unwrap();
         assert!(latest.is_some());
         assert_eq!(latest.unwrap().payload.project_name, "Project 2");
 
@@ -717,14 +730,12 @@ mod tests {
         let engine = DurableCxdbEngine::open_temp().unwrap();
         let run_id = Uuid::new_v4();
 
-        let turns: Vec<Turn<IntakeV1>> = engine
-            .get_turns_by_type(run_id, IntakeV1::TYPE_ID)
-            .unwrap();
+        let turns: Vec<Turn<IntakeV1>> =
+            engine.get_turns_by_type(run_id, IntakeV1::TYPE_ID).unwrap();
         assert!(turns.is_empty());
 
-        let latest: Option<Turn<IntakeV1>> = engine
-            .get_latest_turn(run_id, IntakeV1::TYPE_ID)
-            .unwrap();
+        let latest: Option<Turn<IntakeV1>> =
+            engine.get_latest_turn(run_id, IntakeV1::TYPE_ID).unwrap();
         assert!(latest.is_none());
 
         let _ = fs::remove_dir_all(engine.root_path());

@@ -18,8 +18,8 @@ use std::sync::RwLock;
 
 use serde_json::{json, Value};
 
-use planner_schemas::{DtuConfigV1, DtuProviderInfo, DtuRequest, DtuResponse};
 use super::DtuProvider;
+use planner_schemas::{DtuConfigV1, DtuProviderInfo, DtuRequest, DtuResponse};
 
 // ---------------------------------------------------------------------------
 // Twilio DTU Clone
@@ -128,13 +128,26 @@ impl TwilioDtu {
     }
 
     fn send_message(&self, body: &Value) -> DtuResponse {
-        let from = body.get("From").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        let to = body.get("To").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        let msg_body = body.get("Body").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let from = body
+            .get("From")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let to = body
+            .get("To")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let msg_body = body
+            .get("Body")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
 
         if from.is_empty() || to.is_empty() {
             return DtuResponse {
-                status_code: 400, headers: vec![],
+                status_code: 400,
+                headers: vec![],
                 body: json!({"code": 21211, "message": "'To' and 'From' are required", "status": 400}),
             };
         }
@@ -143,13 +156,21 @@ impl TwilioDtu {
         let sid = state.next_message_sid();
         let num_segments = (msg_body.len() as u32 / 160) + 1;
 
-        state.messages.insert(sid.clone(), SmsMessage {
-            sid: sid.clone(), from: from.clone(), to: to.clone(),
-            body: msg_body.clone(), status: "sent".into(), num_segments,
-        });
+        state.messages.insert(
+            sid.clone(),
+            SmsMessage {
+                sid: sid.clone(),
+                from: from.clone(),
+                to: to.clone(),
+                body: msg_body.clone(),
+                status: "sent".into(),
+                num_segments,
+            },
+        );
 
         DtuResponse {
-            status_code: 201, headers: vec![],
+            status_code: 201,
+            headers: vec![],
             body: json!({
                 "sid": sid, "from": from, "to": to, "body": msg_body,
                 "status": "sent", "num_segments": num_segments.to_string(),
@@ -164,44 +185,70 @@ impl TwilioDtu {
             json!({"sid": m.sid, "from": m.from, "to": m.to, "body": m.body, "status": m.status})
         }).collect();
 
-        DtuResponse { status_code: 200, headers: vec![], body: json!({"messages": messages, "page": 0}) }
+        DtuResponse {
+            status_code: 200,
+            headers: vec![],
+            body: json!({"messages": messages, "page": 0}),
+        }
     }
 
     fn get_message(&self, sid: &str) -> DtuResponse {
         let state = self.state.read().unwrap();
         match state.messages.get(sid) {
             Some(m) => DtuResponse {
-                status_code: 200, headers: vec![],
+                status_code: 200,
+                headers: vec![],
                 body: json!({"sid": m.sid, "from": m.from, "to": m.to, "body": m.body, "status": m.status, "num_segments": m.num_segments.to_string()}),
             },
             None => DtuResponse {
-                status_code: 404, headers: vec![],
+                status_code: 404,
+                headers: vec![],
                 body: json!({"code": 20404, "message": "Message not found", "status": 404}),
             },
         }
     }
 
     fn create_call(&self, body: &Value) -> DtuResponse {
-        let from = body.get("From").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        let to = body.get("To").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        let url = body.get("Url").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let from = body
+            .get("From")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let to = body
+            .get("To")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let url = body
+            .get("Url")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
 
         if from.is_empty() || to.is_empty() {
             return DtuResponse {
-                status_code: 400, headers: vec![],
+                status_code: 400,
+                headers: vec![],
                 body: json!({"code": 21211, "message": "'To' and 'From' are required", "status": 400}),
             };
         }
 
         let mut state = self.state.write().unwrap();
         let sid = state.next_call_sid();
-        state.calls.insert(sid.clone(), VoiceCall {
-            sid: sid.clone(), from: from.clone(), to: to.clone(),
-            url: url.clone(), status: "queued".into(),
-        });
+        state.calls.insert(
+            sid.clone(),
+            VoiceCall {
+                sid: sid.clone(),
+                from: from.clone(),
+                to: to.clone(),
+                url: url.clone(),
+                status: "queued".into(),
+            },
+        );
 
         DtuResponse {
-            status_code: 201, headers: vec![],
+            status_code: 201,
+            headers: vec![],
             body: json!({"sid": sid, "from": from, "to": to, "url": url, "status": "queued"}),
         }
     }
@@ -210,11 +257,13 @@ impl TwilioDtu {
         let state = self.state.read().unwrap();
         match state.calls.get(sid) {
             Some(c) => DtuResponse {
-                status_code: 200, headers: vec![],
+                status_code: 200,
+                headers: vec![],
                 body: json!({"sid": c.sid, "from": c.from, "to": c.to, "url": c.url, "status": c.status}),
             },
             None => DtuResponse {
-                status_code: 404, headers: vec![],
+                status_code: 404,
+                headers: vec![],
                 body: json!({"code": 20404, "message": "Call not found", "status": 404}),
             },
         }
@@ -222,7 +271,9 @@ impl TwilioDtu {
 }
 
 impl DtuProvider for TwilioDtu {
-    fn info(&self) -> &DtuProviderInfo { &self.info }
+    fn info(&self) -> &DtuProviderInfo {
+        &self.info
+    }
 
     fn handle_request(&self, request: &DtuRequest) -> DtuResponse {
         if let Some(failure) = self.check_failure(&request.path) {
@@ -240,7 +291,8 @@ impl DtuProvider for TwilioDtu {
             ("POST", "Calls", None) => self.create_call(&body),
             ("GET", "Calls", Some(call_sid)) => self.get_call(call_sid),
             _ => DtuResponse {
-                status_code: 404, headers: vec![],
+                status_code: 404,
+                headers: vec![],
                 body: json!({"code": 20404, "message": "Resource not found", "status": 404}),
             },
         }
@@ -256,23 +308,59 @@ impl DtuProvider for TwilioDtu {
         for seed in &config.seed_state {
             match seed.entity_type.as_str() {
                 "message" => {
-                    state.messages.insert(seed.entity_id.clone(), SmsMessage {
-                        sid: seed.entity_id.clone(),
-                        from: seed.initial_state.get("from").and_then(|v| v.as_str()).unwrap_or("+15551234567").to_string(),
-                        to: seed.initial_state.get("to").and_then(|v| v.as_str()).unwrap_or("+15559876543").to_string(),
-                        body: seed.initial_state.get("body").and_then(|v| v.as_str()).unwrap_or("Seeded").to_string(),
-                        status: "delivered".into(),
-                        num_segments: 1,
-                    });
+                    state.messages.insert(
+                        seed.entity_id.clone(),
+                        SmsMessage {
+                            sid: seed.entity_id.clone(),
+                            from: seed
+                                .initial_state
+                                .get("from")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("+15551234567")
+                                .to_string(),
+                            to: seed
+                                .initial_state
+                                .get("to")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("+15559876543")
+                                .to_string(),
+                            body: seed
+                                .initial_state
+                                .get("body")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("Seeded")
+                                .to_string(),
+                            status: "delivered".into(),
+                            num_segments: 1,
+                        },
+                    );
                 }
                 "call" => {
-                    state.calls.insert(seed.entity_id.clone(), VoiceCall {
-                        sid: seed.entity_id.clone(),
-                        from: seed.initial_state.get("from").and_then(|v| v.as_str()).unwrap_or("+15551234567").to_string(),
-                        to: seed.initial_state.get("to").and_then(|v| v.as_str()).unwrap_or("+15559876543").to_string(),
-                        url: seed.initial_state.get("url").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        status: "completed".into(),
-                    });
+                    state.calls.insert(
+                        seed.entity_id.clone(),
+                        VoiceCall {
+                            sid: seed.entity_id.clone(),
+                            from: seed
+                                .initial_state
+                                .get("from")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("+15551234567")
+                                .to_string(),
+                            to: seed
+                                .initial_state
+                                .get("to")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("+15559876543")
+                                .to_string(),
+                            url: seed
+                                .initial_state
+                                .get("url")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                            status: "completed".into(),
+                        },
+                    );
                 }
                 _ => {}
             }
@@ -281,7 +369,9 @@ impl DtuProvider for TwilioDtu {
 
     fn inject_failure(&self, endpoint: &str, status_code: u16, error_body: Value) {
         self.failures.write().unwrap().push(FailureInjection {
-            endpoint: endpoint.to_string(), status_code, error_body,
+            endpoint: endpoint.to_string(),
+            status_code,
+            error_body,
         });
     }
 
@@ -318,21 +408,28 @@ mod tests {
     fn send_sms() {
         let dtu = TwilioDtu::new();
         let resp = dtu.handle_request(&DtuRequest {
-            method: "POST".into(), path: messages_path(),
-            query_params: vec![], headers: vec![],
+            method: "POST".into(),
+            path: messages_path(),
+            query_params: vec![],
+            headers: vec![],
             body: Some(json!({"From": "+15551234567", "To": "+15559876543", "Body": "Hello!"})),
         });
         assert_eq!(resp.status_code, 201);
         assert!(resp.body.get("sid").is_some());
-        assert_eq!(resp.body.get("status").and_then(|v| v.as_str()).unwrap(), "sent");
+        assert_eq!(
+            resp.body.get("status").and_then(|v| v.as_str()).unwrap(),
+            "sent"
+        );
     }
 
     #[test]
     fn send_sms_missing_fields_400() {
         let dtu = TwilioDtu::new();
         let resp = dtu.handle_request(&DtuRequest {
-            method: "POST".into(), path: messages_path(),
-            query_params: vec![], headers: vec![],
+            method: "POST".into(),
+            path: messages_path(),
+            query_params: vec![],
+            headers: vec![],
             body: Some(json!({"Body": "No from/to"})),
         });
         assert_eq!(resp.status_code, 400);
@@ -343,36 +440,60 @@ mod tests {
         let dtu = TwilioDtu::new();
         for to in &["+15551111111", "+15552222222"] {
             dtu.handle_request(&DtuRequest {
-                method: "POST".into(), path: messages_path(),
-                query_params: vec![], headers: vec![],
+                method: "POST".into(),
+                path: messages_path(),
+                query_params: vec![],
+                headers: vec![],
                 body: Some(json!({"From": "+15550000000", "To": to, "Body": "Test"})),
             });
         }
 
         let resp = dtu.handle_request(&DtuRequest {
-            method: "GET".into(), path: messages_path(),
-            query_params: vec![], headers: vec![], body: None,
+            method: "GET".into(),
+            path: messages_path(),
+            query_params: vec![],
+            headers: vec![],
+            body: None,
         });
-        assert_eq!(resp.body.get("messages").and_then(|m| m.as_array()).unwrap().len(), 2);
+        assert_eq!(
+            resp.body
+                .get("messages")
+                .and_then(|m| m.as_array())
+                .unwrap()
+                .len(),
+            2
+        );
     }
 
     #[test]
     fn get_message_by_sid() {
         let dtu = TwilioDtu::new();
         let resp = dtu.handle_request(&DtuRequest {
-            method: "POST".into(), path: messages_path(),
-            query_params: vec![], headers: vec![],
+            method: "POST".into(),
+            path: messages_path(),
+            query_params: vec![],
+            headers: vec![],
             body: Some(json!({"From": "+15550000000", "To": "+15551111111", "Body": "Hello"})),
         });
-        let sid = resp.body.get("sid").and_then(|v| v.as_str()).unwrap().to_string();
+        let sid = resp
+            .body
+            .get("sid")
+            .and_then(|v| v.as_str())
+            .unwrap()
+            .to_string();
 
         let resp = dtu.handle_request(&DtuRequest {
             method: "GET".into(),
             path: format!("/2010-04-01/Accounts/AC_test/Messages/{}.json", sid),
-            query_params: vec![], headers: vec![], body: None,
+            query_params: vec![],
+            headers: vec![],
+            body: None,
         });
         assert_eq!(resp.status_code, 200);
-        assert_eq!(resp.body.get("body").and_then(|v| v.as_str()).unwrap(), "Hello");
+        assert_eq!(
+            resp.body.get("body").and_then(|v| v.as_str()).unwrap(),
+            "Hello"
+        );
     }
 
     #[test]
@@ -384,7 +505,10 @@ mod tests {
             body: Some(json!({"From": "+15550000000", "To": "+15551111111", "Url": "http://example.com/twiml"})),
         });
         assert_eq!(resp.status_code, 201);
-        assert_eq!(resp.body.get("status").and_then(|v| v.as_str()).unwrap(), "queued");
+        assert_eq!(
+            resp.body.get("status").and_then(|v| v.as_str()).unwrap(),
+            "queued"
+        );
     }
 
     #[test]
@@ -395,12 +519,19 @@ mod tests {
             query_params: vec![], headers: vec![],
             body: Some(json!({"From": "+15550000000", "To": "+15551111111", "Url": "http://example.com/twiml"})),
         });
-        let sid = resp.body.get("sid").and_then(|v| v.as_str()).unwrap().to_string();
+        let sid = resp
+            .body
+            .get("sid")
+            .and_then(|v| v.as_str())
+            .unwrap()
+            .to_string();
 
         let resp = dtu.handle_request(&DtuRequest {
             method: "GET".into(),
             path: format!("/2010-04-01/Accounts/AC_test/Calls/{}.json", sid),
-            query_params: vec![], headers: vec![], body: None,
+            query_params: vec![],
+            headers: vec![],
+            body: None,
         });
         assert_eq!(resp.status_code, 200);
     }
@@ -408,11 +539,17 @@ mod tests {
     #[test]
     fn failure_injection() {
         let dtu = TwilioDtu::new();
-        dtu.inject_failure("Messages", 429, json!({"code": 20429, "message": "Too many requests"}));
+        dtu.inject_failure(
+            "Messages",
+            429,
+            json!({"code": 20429, "message": "Too many requests"}),
+        );
 
         let resp = dtu.handle_request(&DtuRequest {
-            method: "POST".into(), path: messages_path(),
-            query_params: vec![], headers: vec![],
+            method: "POST".into(),
+            path: messages_path(),
+            query_params: vec![],
+            headers: vec![],
             body: Some(json!({"From": "+15550000000", "To": "+15551111111", "Body": "Test"})),
         });
         assert_eq!(resp.status_code, 429);
@@ -423,19 +560,29 @@ mod tests {
         let dtu = TwilioDtu::new();
         let long_body = "a".repeat(320);
         let resp = dtu.handle_request(&DtuRequest {
-            method: "POST".into(), path: messages_path(),
-            query_params: vec![], headers: vec![],
+            method: "POST".into(),
+            path: messages_path(),
+            query_params: vec![],
+            headers: vec![],
             body: Some(json!({"From": "+15550000000", "To": "+15551111111", "Body": long_body})),
         });
-        assert_eq!(resp.body.get("num_segments").and_then(|v| v.as_str()).unwrap(), "3");
+        assert_eq!(
+            resp.body
+                .get("num_segments")
+                .and_then(|v| v.as_str())
+                .unwrap(),
+            "3"
+        );
     }
 
     #[test]
     fn reset_clears_all_state() {
         let dtu = TwilioDtu::new();
         dtu.handle_request(&DtuRequest {
-            method: "POST".into(), path: messages_path(),
-            query_params: vec![], headers: vec![],
+            method: "POST".into(),
+            path: messages_path(),
+            query_params: vec![],
+            headers: vec![],
             body: Some(json!({"From": "+15550000000", "To": "+15551111111", "Body": "Test"})),
         });
         dtu.reset();
@@ -451,7 +598,8 @@ mod tests {
 
     #[test]
     fn parse_twilio_path_message_with_sid() {
-        let (resource, sid) = TwilioDtu::parse_path("/2010-04-01/Accounts/AC_test/Messages/SM123.json");
+        let (resource, sid) =
+            TwilioDtu::parse_path("/2010-04-01/Accounts/AC_test/Messages/SM123.json");
         assert_eq!(resource, "Messages");
         assert_eq!(sid.unwrap(), "SM123");
     }
@@ -469,7 +617,9 @@ mod tests {
         let resp = dtu.handle_request(&DtuRequest {
             method: "GET".into(),
             path: "/2010-04-01/Accounts/AC_test/Messages/SM_NOPE.json".into(),
-            query_params: vec![], headers: vec![], body: None,
+            query_params: vec![],
+            headers: vec![],
+            body: None,
         });
         assert_eq!(resp.status_code, 404);
     }

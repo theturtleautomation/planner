@@ -70,13 +70,18 @@ pub fn generate_propositions(spec: &NLSpecV1) -> Vec<Lean4Proposition> {
             props.push(Lean4Proposition {
                 id: format!("PROP-SA-TRACE-{}", idx),
                 category: PropositionCategory::AnchorTraceability,
-                description: format!("Sacred anchor '{}' traces to at least one requirement", anchor.id),
+                description: format!(
+                    "Sacred anchor '{}' traces to at least one requirement",
+                    anchor.id
+                ),
                 lean4_source: format!(
                     r#"-- Sacred anchor traceability: {}
 theorem anchor_{}_has_trace :
   ∃ (r : Requirement), r.traces_to.contains "{}" := by
   sorry -- proof stub"#,
-                    anchor.statement, anchor.id.replace('-', "_").to_lowercase(), anchor.id
+                    anchor.statement,
+                    anchor.id.replace('-', "_").to_lowercase(),
+                    anchor.id
                 ),
                 traces_to: vec![anchor.id.clone()],
             });
@@ -97,7 +102,11 @@ theorem req_ids_unique :
   List.Nodup [{ids}] := by
   sorry -- proof stub"#,
             req_ids,
-            ids = req_ids.iter().map(|id| format!("\"{}\"", id)).collect::<Vec<_>>().join(", "),
+            ids = req_ids
+                .iter()
+                .map(|id| format!("\"{}\"", id))
+                .collect::<Vec<_>>()
+                .join(", "),
         ),
         traces_to: req_ids.iter().map(|id| id.to_string()).collect(),
     });
@@ -108,15 +117,20 @@ theorem req_ids_unique :
         props.push(Lean4Proposition {
             id: format!("PROP-COVERAGE-{}", idx),
             category: PropositionCategory::Coverage,
-            description: format!("Satisfaction criterion '{}' is covered by at least one scenario", sc.id),
+            description: format!(
+                "Satisfaction criterion '{}' is covered by at least one scenario",
+                sc.id
+            ),
             lean4_source: format!(
                 r#"-- Coverage: satisfaction criterion {}
 -- Description: {}
 theorem criterion_{}_covered :
   ∃ (s : Scenario), s.source_criterion = some "{}" := by
   sorry -- proof stub"#,
-                sc.id, sc.description,
-                sc.id.replace('-', "_").to_lowercase(), sc.id,
+                sc.id,
+                sc.description,
+                sc.id.replace('-', "_").to_lowercase(),
+                sc.id,
             ),
             traces_to: vec![sc.id.clone()],
         });
@@ -129,7 +143,10 @@ theorem criterion_{}_covered :
             props.push(Lean4Proposition {
                 id: format!("PROP-FSM-{}", idx),
                 category: PropositionCategory::StateMachineInvariant,
-                description: format!("DTU '{}' state transitions are valid (no invalid transitions)", dep.name),
+                description: format!(
+                    "DTU '{}' state transitions are valid (no invalid transitions)",
+                    dep.name
+                ),
                 lean4_source: format!(
                     r#"-- State machine invariant: {}
 -- Usage: {}
@@ -138,7 +155,8 @@ theorem dtu_{}_valid_transitions :
     valid_transition s t →
     valid_state (apply_transition s t) := by
   sorry -- proof stub"#,
-                    dep.name, dep.usage_description,
+                    dep.name,
+                    dep.usage_description,
                     dep.name.to_lowercase().replace(' ', "_"),
                 ),
                 traces_to: vec![dep.name.clone()],
@@ -156,7 +174,8 @@ theorem dtu_{}_valid_transitions :
 theorem turn_dag_acyclic :
   ∀ (t : Turn),
     ¬ (t ∈ ancestors t) := by
-  sorry -- proof stub"#.into(),
+  sorry -- proof stub"#
+            .into(),
         traces_to: vec!["CXDB".into()],
     });
 
@@ -182,25 +201,34 @@ pub fn render_lean4_file(
 
     // Group by category
     let categories = [
-        (PropositionCategory::AnchorTraceability, "Sacred Anchor Traceability"),
+        (
+            PropositionCategory::AnchorTraceability,
+            "Sacred Anchor Traceability",
+        ),
         (PropositionCategory::Uniqueness, "Uniqueness Constraints"),
         (PropositionCategory::Coverage, "Coverage Completeness"),
-        (PropositionCategory::StateMachineInvariant, "State Machine Invariants"),
+        (
+            PropositionCategory::StateMachineInvariant,
+            "State Machine Invariants",
+        ),
         (PropositionCategory::DagIntegrity, "DAG Integrity"),
     ];
 
     for (cat, label) in &categories {
-        let cat_props: Vec<&Lean4Proposition> = props.iter()
-            .filter(|p| &p.category == cat)
-            .collect();
+        let cat_props: Vec<&Lean4Proposition> =
+            props.iter().filter(|p| &p.category == cat).collect();
 
         if cat_props.is_empty() {
             continue;
         }
 
-        lines.push(format!("-- ========================================================================="));
+        lines.push(format!(
+            "-- ========================================================================="
+        ));
         lines.push(format!("-- {}", label));
-        lines.push(format!("-- ========================================================================="));
+        lines.push(format!(
+            "-- ========================================================================="
+        ));
         lines.push(String::new());
 
         for prop in cat_props {
@@ -231,24 +259,45 @@ mod tests {
             created_from: "test".into(),
             intent_summary: Some("Test project".into()),
             sacred_anchors: Some(vec![
-                NLSpecAnchor { id: "SA-1".into(), statement: "Data must be encrypted at rest".into() },
-                NLSpecAnchor { id: "SA-2".into(), statement: "All actions must be auditable".into() },
+                NLSpecAnchor {
+                    id: "SA-1".into(),
+                    statement: "Data must be encrypted at rest".into(),
+                },
+                NLSpecAnchor {
+                    id: "SA-2".into(),
+                    statement: "All actions must be auditable".into(),
+                },
             ]),
             requirements: vec![
-                Requirement { id: "FR-1".into(), statement: "Encrypt data".into(), priority: Priority::Must, traces_to: vec!["SA-1".into()] },
-                Requirement { id: "FR-2".into(), statement: "Audit trail".into(), priority: Priority::Must, traces_to: vec!["SA-2".into()] },
+                Requirement {
+                    id: "FR-1".into(),
+                    statement: "Encrypt data".into(),
+                    priority: Priority::Must,
+                    traces_to: vec!["SA-1".into()],
+                },
+                Requirement {
+                    id: "FR-2".into(),
+                    statement: "Audit trail".into(),
+                    priority: Priority::Must,
+                    traces_to: vec!["SA-2".into()],
+                },
             ],
             architectural_constraints: vec![],
             phase1_contracts: None,
-            external_dependencies: vec![
-                ExternalDependency { name: "Stripe".into(), usage_description: "Payment processing".into(), dtu_priority: DtuPriority::High },
-            ],
-            definition_of_done: vec![
-                DoDItem { criterion: "All data encrypted".into(), mechanically_checkable: true },
-            ],
-            satisfaction_criteria: vec![
-                SatisfactionCriterion { id: "SC-1".into(), description: "Payments succeed".into(), tier_hint: ScenarioTierHint::Critical },
-            ],
+            external_dependencies: vec![ExternalDependency {
+                name: "Stripe".into(),
+                usage_description: "Payment processing".into(),
+                dtu_priority: DtuPriority::High,
+            }],
+            definition_of_done: vec![DoDItem {
+                criterion: "All data encrypted".into(),
+                mechanically_checkable: true,
+            }],
+            satisfaction_criteria: vec![SatisfactionCriterion {
+                id: "SC-1".into(),
+                description: "Payments succeed".into(),
+                tier_hint: ScenarioTierHint::Critical,
+            }],
             open_questions: vec![],
             out_of_scope: vec![],
             amendment_log: vec![],
@@ -260,7 +309,8 @@ mod tests {
         let spec = make_test_spec();
         let props = generate_propositions(&spec);
 
-        let anchor_props: Vec<_> = props.iter()
+        let anchor_props: Vec<_> = props
+            .iter()
             .filter(|p| p.category == PropositionCategory::AnchorTraceability)
             .collect();
         assert_eq!(anchor_props.len(), 2); // SA-1 and SA-2
@@ -272,7 +322,8 @@ mod tests {
         let spec = make_test_spec();
         let props = generate_propositions(&spec);
 
-        let unique_props: Vec<_> = props.iter()
+        let unique_props: Vec<_> = props
+            .iter()
             .filter(|p| p.category == PropositionCategory::Uniqueness)
             .collect();
         assert_eq!(unique_props.len(), 1);
@@ -285,7 +336,8 @@ mod tests {
         let spec = make_test_spec();
         let props = generate_propositions(&spec);
 
-        let coverage: Vec<_> = props.iter()
+        let coverage: Vec<_> = props
+            .iter()
             .filter(|p| p.category == PropositionCategory::Coverage)
             .collect();
         assert_eq!(coverage.len(), 1); // SC-1
@@ -296,7 +348,8 @@ mod tests {
         let spec = make_test_spec();
         let props = generate_propositions(&spec);
 
-        let fsm: Vec<_> = props.iter()
+        let fsm: Vec<_> = props
+            .iter()
             .filter(|p| p.category == PropositionCategory::StateMachineInvariant)
             .collect();
         assert_eq!(fsm.len(), 1); // Stripe (High priority)
@@ -308,7 +361,8 @@ mod tests {
         let spec = make_test_spec();
         let props = generate_propositions(&spec);
 
-        let dag: Vec<_> = props.iter()
+        let dag: Vec<_> = props
+            .iter()
             .filter(|p| p.category == PropositionCategory::DagIntegrity)
             .collect();
         assert_eq!(dag.len(), 1);
@@ -318,12 +372,15 @@ mod tests {
     #[test]
     fn no_fsm_prop_for_low_priority_dep() {
         let mut spec = make_test_spec();
-        spec.external_dependencies = vec![
-            ExternalDependency { name: "Redis".into(), usage_description: "Caching".into(), dtu_priority: DtuPriority::Low },
-        ];
+        spec.external_dependencies = vec![ExternalDependency {
+            name: "Redis".into(),
+            usage_description: "Caching".into(),
+            dtu_priority: DtuPriority::Low,
+        }];
 
         let props = generate_propositions(&spec);
-        let fsm: Vec<_> = props.iter()
+        let fsm: Vec<_> = props
+            .iter()
             .filter(|p| p.category == PropositionCategory::StateMachineInvariant)
             .collect();
         assert!(fsm.is_empty());
@@ -352,7 +409,11 @@ mod tests {
 
         let props = generate_propositions(&spec);
         // Should still have uniqueness + DAG
-        assert!(props.iter().any(|p| p.category == PropositionCategory::Uniqueness));
-        assert!(props.iter().any(|p| p.category == PropositionCategory::DagIntegrity));
+        assert!(props
+            .iter()
+            .any(|p| p.category == PropositionCategory::Uniqueness));
+        assert!(props
+            .iter()
+            .any(|p| p.category == PropositionCategory::DagIntegrity));
     }
 }

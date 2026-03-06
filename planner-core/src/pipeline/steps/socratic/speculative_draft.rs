@@ -8,10 +8,10 @@
 
 use planner_schemas::*;
 
-use crate::llm::{CompletionRequest, DefaultModels, Message, Role};
-use crate::llm::providers::LlmRouter;
-use super::super::{StepResult, StepError};
+use super::super::{StepError, StepResult};
 use super::belief_state::format_belief_state_for_llm;
+use crate::llm::providers::LlmRouter;
+use crate::llm::{CompletionRequest, DefaultModels, Message, Role};
 
 // ---------------------------------------------------------------------------
 // Trigger Logic
@@ -150,27 +150,42 @@ fn parse_draft_response(content: &str) -> StepResult<SpeculativeDraft> {
                 .unwrap_or_else(|| cleaned.clone());
             serde_json::from_str(&repaired)
         })
-        .map_err(|e| StepError::JsonError(format!(
-            "Failed to parse draft response: {}. Raw: {}",
-            e, &content[..content.len().min(300)]
-        )))?;
+        .map_err(|e| {
+            StepError::JsonError(format!(
+                "Failed to parse draft response: {}. Raw: {}",
+                e,
+                &content[..content.len().min(300)]
+            ))
+        })?;
 
-    let sections = json.sections.into_iter().map(|s| DraftSection {
-        heading: s.heading,
-        content: s.content,
-        dimensions: s.dimensions.into_iter()
-            .filter_map(|d| super::belief_state::parse_dimension(&d))
-            .collect(),
-    }).collect();
+    let sections = json
+        .sections
+        .into_iter()
+        .map(|s| DraftSection {
+            heading: s.heading,
+            content: s.content,
+            dimensions: s
+                .dimensions
+                .into_iter()
+                .filter_map(|d| super::belief_state::parse_dimension(&d))
+                .collect(),
+        })
+        .collect();
 
-    let assumptions = json.assumptions.into_iter().map(|a| DraftAssumption {
-        dimension: super::belief_state::parse_dimension(&a.dimension)
-            .unwrap_or(Dimension::Custom(a.dimension)),
-        assumption: a.assumption,
-        confidence: a.confidence,
-    }).collect();
+    let assumptions = json
+        .assumptions
+        .into_iter()
+        .map(|a| DraftAssumption {
+            dimension: super::belief_state::parse_dimension(&a.dimension)
+                .unwrap_or(Dimension::Custom(a.dimension)),
+            assumption: a.assumption,
+            confidence: a.confidence,
+        })
+        .collect();
 
-    let not_discussed = json.not_discussed.into_iter()
+    let not_discussed = json
+        .not_discussed
+        .into_iter()
         .filter_map(|d| super::belief_state::parse_dimension(&d))
         .collect();
 
@@ -222,27 +237,52 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
 
-    fn make_state(filled_count: usize, uncertain_count: usize, turn_count: u32) -> RequirementsBeliefState {
+    fn make_state(
+        filled_count: usize,
+        uncertain_count: usize,
+        turn_count: u32,
+    ) -> RequirementsBeliefState {
         let mut filled = HashMap::new();
         let dims = vec![
-            Dimension::Goal, Dimension::CoreFeatures, Dimension::Stakeholders,
-            Dimension::Auth, Dimension::DataModel, Dimension::UserFlows,
+            Dimension::Goal,
+            Dimension::CoreFeatures,
+            Dimension::Stakeholders,
+            Dimension::Auth,
+            Dimension::DataModel,
+            Dimension::UserFlows,
         ];
         for (i, dim) in dims.into_iter().enumerate() {
             if i < filled_count {
-                filled.insert(dim, SlotValue {
-                    value: "test".into(), source_turn: i as u32 + 1, source_quote: None,
-                });
+                filled.insert(
+                    dim,
+                    SlotValue {
+                        value: "test".into(),
+                        source_turn: i as u32 + 1,
+                        source_quote: None,
+                    },
+                );
             }
         }
 
         let mut uncertain = HashMap::new();
-        let uncertain_dims = vec![Dimension::Performance, Dimension::Scalability, Dimension::Security];
+        let uncertain_dims = vec![
+            Dimension::Performance,
+            Dimension::Scalability,
+            Dimension::Security,
+        ];
         for (i, dim) in uncertain_dims.into_iter().enumerate() {
             if i < uncertain_count {
-                uncertain.insert(dim, (SlotValue {
-                    value: "guess".into(), source_turn: 1, source_quote: None,
-                }, 0.5));
+                uncertain.insert(
+                    dim,
+                    (
+                        SlotValue {
+                            value: "guess".into(),
+                            source_turn: 1,
+                            source_quote: None,
+                        },
+                        0.5,
+                    ),
+                );
             }
         }
 

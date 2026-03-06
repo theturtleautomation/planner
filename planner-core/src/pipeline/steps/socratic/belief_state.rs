@@ -14,10 +14,10 @@ use uuid::Uuid;
 
 use planner_schemas::*;
 
-use crate::llm::{CompletionRequest, DefaultModels, Message, Role};
-use crate::llm::providers::LlmRouter;
+use super::super::{StepError, StepResult};
 use crate::cxdb::TurnStore;
-use super::super::{StepResult, StepError};
+use crate::llm::providers::LlmRouter;
+use crate::llm::{CompletionRequest, DefaultModels, Message, Role};
 
 // ---------------------------------------------------------------------------
 // Verifier System Prompt
@@ -165,22 +165,29 @@ fn apply_updates(state: &mut RequirementsBeliefState, output: &VerifierOutput) {
     // Apply filled updates
     for update in &output.filled_updates {
         if let Some(dim) = parse_dimension(&update.dimension) {
-            state.fill(dim, SlotValue {
-                value: update.value.clone(),
-                source_turn: state.turn_count + 1,
-                source_quote: update.source_quote.clone(),
-            });
+            state.fill(
+                dim,
+                SlotValue {
+                    value: update.value.clone(),
+                    source_turn: state.turn_count + 1,
+                    source_quote: update.source_quote.clone(),
+                },
+            );
         }
     }
 
     // Apply uncertain updates
     for update in &output.uncertain_updates {
         if let Some(dim) = parse_dimension(&update.dimension) {
-            state.mark_uncertain(dim, SlotValue {
-                value: update.value.clone(),
-                source_turn: state.turn_count + 1,
-                source_quote: update.source_quote.clone(),
-            }, update.confidence);
+            state.mark_uncertain(
+                dim,
+                SlotValue {
+                    value: update.value.clone(),
+                    source_turn: state.turn_count + 1,
+                    source_quote: update.source_quote.clone(),
+                },
+                update.confidence,
+            );
         }
     }
 
@@ -193,7 +200,10 @@ fn apply_updates(state: &mut RequirementsBeliefState, output: &VerifierOutput) {
 
     // Apply contradictions
     for c in &output.contradictions {
-        if let (Some(dim_a), Some(dim_b)) = (parse_dimension(&c.dimension_a), parse_dimension(&c.dimension_b)) {
+        if let (Some(dim_a), Some(dim_b)) = (
+            parse_dimension(&c.dimension_a),
+            parse_dimension(&c.dimension_b),
+        ) {
             state.add_contradiction(Contradiction {
                 dimension_a: dim_a,
                 value_a: c.value_a.clone(),
@@ -228,7 +238,8 @@ pub fn persist_to_cxdb<S: TurnStore>(
             produced_by: "socratic_engine.belief_state".into(),
             run_id,
             execution_id: format!("belief_state_turn_{}", state.turn_count),
-            note: Some(format!("Turn {} — {} filled, {} uncertain, {} missing",
+            note: Some(format!(
+                "Turn {} — {} filled, {} uncertain, {} missing",
                 state.turn_count,
                 state.filled.len(),
                 state.uncertain.len(),
@@ -238,7 +249,8 @@ pub fn persist_to_cxdb<S: TurnStore>(
         },
     };
 
-    store.store_turn(&turn)
+    store
+        .store_turn(&turn)
         .map_err(|e| StepError::StorageError(format!("Failed to persist belief state: {}", e)))?;
 
     Ok(turn_id)
@@ -249,10 +261,9 @@ pub fn restore_from_cxdb<S: TurnStore>(
     store: &S,
     run_id: Uuid,
 ) -> StepResult<Option<RequirementsBeliefState>> {
-    let result = store.get_latest_turn::<RequirementsBeliefState>(
-        run_id,
-        RequirementsBeliefState::TYPE_ID,
-    ).map_err(|e| StepError::StorageError(format!("Failed to restore belief state: {}", e)))?;
+    let result = store
+        .get_latest_turn::<RequirementsBeliefState>(run_id, RequirementsBeliefState::TYPE_ID)
+        .map_err(|e| StepError::StorageError(format!("Failed to restore belief state: {}", e)))?;
 
     Ok(result.map(|turn| turn.payload))
 }
@@ -309,8 +320,12 @@ pub fn format_belief_state_for_llm(state: &RequirementsBeliefState) -> String {
         text.push_str("  (none)\n");
     } else {
         for (dim, (val, conf)) in &state.uncertain {
-            text.push_str(&format!("  - {} ({}% confidence): {}\n",
-                dim.label(), (conf * 100.0) as u32, val.value));
+            text.push_str(&format!(
+                "  - {} ({}% confidence): {}\n",
+                dim.label(),
+                (conf * 100.0) as u32,
+                val.value
+            ));
         }
     }
 
@@ -336,10 +351,14 @@ pub fn format_belief_state_for_llm(state: &RequirementsBeliefState) -> String {
         text.push_str("\n### Contradictions:\n");
         for c in &state.contradictions {
             if !c.resolved {
-                text.push_str(&format!("  ⚠ {} ('{}') vs {} ('{}'): {}\n",
-                    c.dimension_a.label(), c.value_a,
-                    c.dimension_b.label(), c.value_b,
-                    c.explanation));
+                text.push_str(&format!(
+                    "  ⚠ {} ('{}') vs {} ('{}'): {}\n",
+                    c.dimension_a.label(),
+                    c.value_a,
+                    c.dimension_b.label(),
+                    c.value_b,
+                    c.explanation
+                ));
             }
         }
     }
@@ -355,10 +374,13 @@ fn parse_verifier_response(content: &str) -> StepResult<VerifierOutput> {
                 .unwrap_or_else(|| cleaned.clone());
             serde_json::from_str(&repaired)
         })
-        .map_err(|e| StepError::JsonError(format!(
-            "Failed to parse verifier response: {}. Raw: {}",
-            e, &content[..content.len().min(300)]
-        )))?;
+        .map_err(|e| {
+            StepError::JsonError(format!(
+                "Failed to parse verifier response: {}. Raw: {}",
+                e,
+                &content[..content.len().min(300)]
+            ))
+        })?;
     Ok(output)
 }
 
@@ -374,7 +396,10 @@ mod tests {
     #[test]
     fn parse_dimension_known() {
         assert_eq!(parse_dimension("goal"), Some(Dimension::Goal));
-        assert_eq!(parse_dimension("CORE_FEATURES"), Some(Dimension::CoreFeatures));
+        assert_eq!(
+            parse_dimension("CORE_FEATURES"),
+            Some(Dimension::CoreFeatures)
+        );
         assert_eq!(parse_dimension("auth"), Some(Dimension::Auth));
     }
 

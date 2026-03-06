@@ -106,7 +106,8 @@ pub fn build_spec_context_pack(
 
     // Priority 0: Always include Sacred Anchors (for any target)
     if let Some(ref anchors) = spec.sacred_anchors {
-        let content = anchors.iter()
+        let content = anchors
+            .iter()
             .map(|a| format!("{}: {}", a.id, a.statement))
             .collect::<Vec<_>>()
             .join("\n");
@@ -132,9 +133,18 @@ pub fn build_spec_context_pack(
 
     // Priority 1: Requirements
     {
-        let content = spec.requirements.iter()
-            .map(|r| format!("{} [{}]: {} (traces: {:?})",
-                r.id, format!("{:?}", r.priority), r.statement, r.traces_to))
+        let content = spec
+            .requirements
+            .iter()
+            .map(|r| {
+                format!(
+                    "{} [{}]: {} (traces: {:?})",
+                    r.id,
+                    format!("{:?}", r.priority),
+                    r.statement,
+                    r.traces_to
+                )
+            })
             .collect::<Vec<_>>()
             .join("\n");
         sections.push(ContextSection {
@@ -148,8 +158,14 @@ pub fn build_spec_context_pack(
 
     // Priority 1: Phase 1 Contracts (for domain/spec compilation)
     if let Some(ref contracts) = spec.phase1_contracts {
-        let content = contracts.iter()
-            .map(|c| format!("{} = {} (consumed by: {:?})", c.name, c.type_definition, c.consumed_by))
+        let content = contracts
+            .iter()
+            .map(|c| {
+                format!(
+                    "{} = {} (consumed by: {:?})",
+                    c.name, c.type_definition, c.consumed_by
+                )
+            })
             .collect::<Vec<_>>()
             .join("\n");
         let priority = match &target {
@@ -167,7 +183,9 @@ pub fn build_spec_context_pack(
 
     // Priority 1: Satisfaction Criteria
     {
-        let content = spec.satisfaction_criteria.iter()
+        let content = spec
+            .satisfaction_criteria
+            .iter()
             .map(|sc| format!("{} [{:?}]: {}", sc.id, sc.tier_hint, sc.description))
             .collect::<Vec<_>>()
             .join("\n");
@@ -198,10 +216,20 @@ pub fn build_spec_context_pack(
 
     // Priority 2: Definition of Done
     if !spec.definition_of_done.is_empty() {
-        let content = spec.definition_of_done.iter()
-            .map(|d| format!("[{}] {}",
-                if d.mechanically_checkable { "mechanical" } else { "manual" },
-                d.criterion))
+        let content = spec
+            .definition_of_done
+            .iter()
+            .map(|d| {
+                format!(
+                    "[{}] {}",
+                    if d.mechanically_checkable {
+                        "mechanical"
+                    } else {
+                        "manual"
+                    },
+                    d.criterion
+                )
+            })
             .collect::<Vec<_>>()
             .join("\n");
         sections.push(ContextSection {
@@ -227,7 +255,9 @@ pub fn build_spec_context_pack(
 
     // Priority 2: External Dependencies
     if !spec.external_dependencies.is_empty() {
-        let content = spec.external_dependencies.iter()
+        let content = spec
+            .external_dependencies
+            .iter()
             .map(|d| format!("{} [{:?}]: {}", d.name, d.dtu_priority, d.usage_description))
             .collect::<Vec<_>>()
             .join("\n");
@@ -290,7 +320,10 @@ pub fn render_context_pack(pack: &ContextPackV1) -> String {
     let mut output = Vec::new();
 
     for section in &pack.sections {
-        output.push(format!("## {}", section.name.replace('_', " ").to_uppercase()));
+        output.push(format!(
+            "## {}",
+            section.name.replace('_', " ").to_uppercase()
+        ));
         output.push(section.content.clone());
         output.push(String::new());
     }
@@ -323,36 +356,32 @@ mod tests {
             line_count: 100,
             created_from: "test".into(),
             intent_summary: Some("Build a task tracker".into()),
-            sacred_anchors: Some(vec![
-                NLSpecAnchor { id: "SA-1".into(), statement: "Data must persist".into() },
-            ]),
-            requirements: vec![
-                Requirement {
-                    id: "FR-1".into(),
-                    statement: "Must save to localStorage".into(),
-                    priority: Priority::Must,
-                    traces_to: vec!["SA-1".into()],
-                },
-            ],
+            sacred_anchors: Some(vec![NLSpecAnchor {
+                id: "SA-1".into(),
+                statement: "Data must persist".into(),
+            }]),
+            requirements: vec![Requirement {
+                id: "FR-1".into(),
+                statement: "Must save to localStorage".into(),
+                priority: Priority::Must,
+                traces_to: vec!["SA-1".into()],
+            }],
             architectural_constraints: vec!["React single file".into()],
-            phase1_contracts: Some(vec![
-                Phase1Contract {
-                    name: "Task".into(),
-                    type_definition: "{ id: string, done: boolean }".into(),
-                    consumed_by: vec!["ui".into()],
-                },
-            ]),
+            phase1_contracts: Some(vec![Phase1Contract {
+                name: "Task".into(),
+                type_definition: "{ id: string, done: boolean }".into(),
+                consumed_by: vec!["ui".into()],
+            }]),
             external_dependencies: vec![],
-            definition_of_done: vec![
-                DoDItem { criterion: "Tasks persist".into(), mechanically_checkable: true },
-            ],
-            satisfaction_criteria: vec![
-                SatisfactionCriterion {
-                    id: "SC-1".into(),
-                    description: "Add task survives refresh".into(),
-                    tier_hint: ScenarioTierHint::Critical,
-                },
-            ],
+            definition_of_done: vec![DoDItem {
+                criterion: "Tasks persist".into(),
+                mechanically_checkable: true,
+            }],
+            satisfaction_criteria: vec![SatisfactionCriterion {
+                id: "SC-1".into(),
+                description: "Add task survives refresh".into(),
+                tier_hint: ScenarioTierHint::Critical,
+            }],
             open_questions: vec![],
             out_of_scope: vec!["Cloud sync".into()],
             amendment_log: vec![],
@@ -392,7 +421,9 @@ mod tests {
         let spec = make_test_spec();
         let pack = build_spec_context_pack(
             &spec,
-            ContextTarget::DomainCompiler { domain_name: "auth".into() },
+            ContextTarget::DomainCompiler {
+                domain_name: "auth".into(),
+            },
             10000,
         );
 
@@ -407,7 +438,10 @@ mod tests {
         let spec = make_test_spec();
         let pack = build_spec_context_pack(&spec, ContextTarget::ScenarioGenerator, 10000);
 
-        let sc_section = pack.sections.iter().find(|s| s.name == "satisfaction_criteria");
+        let sc_section = pack
+            .sections
+            .iter()
+            .find(|s| s.name == "satisfaction_criteria");
         assert!(sc_section.is_some());
         assert_eq!(sc_section.unwrap().priority, 0);
     }

@@ -20,10 +20,10 @@
 
 use uuid::Uuid;
 
-use crate::llm::{CompletionRequest, DefaultModels, Message, Role};
-use crate::llm::providers::LlmRouter;
-use planner_schemas::*;
 use super::steps::StepResult;
+use crate::llm::providers::LlmRouter;
+use crate::llm::{CompletionRequest, DefaultModels, Message, Role};
+use planner_schemas::*;
 
 // ---------------------------------------------------------------------------
 // Pyramid Builder
@@ -50,25 +50,28 @@ impl PyramidBuilder {
         project_id: Uuid,
         turns: &[(Uuid, &str)], // (turn_id, turn_text)
     ) -> Vec<PyramidSummaryV1> {
-        turns.iter().map(|(turn_id, text)| {
-            // For leaves, we create a condensed summary
-            let summary = Self::truncate_to_summary(text, PyramidTier::Leaf.target_tokens());
-            let topics = Self::extract_topics(text);
+        turns
+            .iter()
+            .map(|(turn_id, text)| {
+                // For leaves, we create a condensed summary
+                let summary = Self::truncate_to_summary(text, PyramidTier::Leaf.target_tokens());
+                let topics = Self::extract_topics(text);
 
-            PyramidSummaryV1 {
-                project_id,
-                tier: PyramidTier::Leaf,
-                node_id: Uuid::new_v4(),
-                parent_id: None, // Set when branches are built
-                children: vec![],
-                summary,
-                token_count: PyramidTier::Leaf.target_tokens(),
-                covered_turn_ids: vec![*turn_id],
-                topics,
-                refreshed_at: chrono::Utc::now().to_rfc3339(),
-                stale: false,
-            }
-        }).collect()
+                PyramidSummaryV1 {
+                    project_id,
+                    tier: PyramidTier::Leaf,
+                    node_id: Uuid::new_v4(),
+                    parent_id: None, // Set when branches are built
+                    children: vec![],
+                    summary,
+                    token_count: PyramidTier::Leaf.target_tokens(),
+                    covered_turn_ids: vec![*turn_id],
+                    topics,
+                    refreshed_at: chrono::Utc::now().to_rfc3339(),
+                    stale: false,
+                }
+            })
+            .collect()
     }
 
     /// Group leaves into branches. Each branch covers up to `leaves_per_branch` leaves.
@@ -84,19 +87,22 @@ impl PyramidBuilder {
             let branch_id = Uuid::new_v4();
 
             // Aggregate summaries
-            let combined: String = chunk.iter()
+            let combined: String = chunk
+                .iter()
                 .map(|leaf| leaf.summary.as_str())
                 .collect::<Vec<_>>()
                 .join(" ");
 
             let summary = Self::truncate_to_summary(&combined, PyramidTier::Branch.target_tokens());
-            let topics: Vec<String> = chunk.iter()
+            let topics: Vec<String> = chunk
+                .iter()
                 .flat_map(|leaf| leaf.topics.clone())
                 .collect::<std::collections::HashSet<_>>()
                 .into_iter()
                 .collect();
 
-            let covered_turns: Vec<Uuid> = chunk.iter()
+            let covered_turns: Vec<Uuid> = chunk
+                .iter()
                 .flat_map(|leaf| leaf.covered_turn_ids.clone())
                 .collect();
 
@@ -133,19 +139,22 @@ impl PyramidBuilder {
     ) -> PyramidSummaryV1 {
         let root_id = Uuid::new_v4();
 
-        let combined: String = branches.iter()
+        let combined: String = branches
+            .iter()
             .map(|b| b.summary.as_str())
             .collect::<Vec<_>>()
             .join(" ");
 
         let summary = Self::truncate_to_summary(&combined, PyramidTier::Root.target_tokens());
-        let topics: Vec<String> = branches.iter()
+        let topics: Vec<String> = branches
+            .iter()
             .flat_map(|b| b.topics.clone())
             .collect::<std::collections::HashSet<_>>()
             .into_iter()
             .collect();
 
-        let covered_turns: Vec<Uuid> = branches.iter()
+        let covered_turns: Vec<Uuid> = branches
+            .iter()
             .flat_map(|b| b.covered_turn_ids.clone())
             .collect();
 
@@ -173,11 +182,7 @@ impl PyramidBuilder {
 
     /// Build the complete pyramid from raw turns.
     /// Returns (root, branches, leaves) — all nodes with parent_ids set.
-    pub fn build_pyramid(
-        &self,
-        project_id: Uuid,
-        turns: &[(Uuid, &str)],
-    ) -> PyramidTree {
+    pub fn build_pyramid(&self, project_id: Uuid, turns: &[(Uuid, &str)]) -> PyramidTree {
         let mut leaves = self.build_leaves(project_id, turns);
 
         if leaves.len() < self.config.min_turns_for_pyramid {
@@ -225,10 +230,31 @@ impl PyramidBuilder {
 
         // Match against known domain keywords
         let domain_keywords = [
-            "auth", "authentication", "payment", "stripe", "api", "database",
-            "frontend", "backend", "user", "admin", "security", "performance",
-            "webhook", "notification", "email", "file", "upload", "search",
-            "cache", "session", "token", "jwt", "oauth", "role", "permission",
+            "auth",
+            "authentication",
+            "payment",
+            "stripe",
+            "api",
+            "database",
+            "frontend",
+            "backend",
+            "user",
+            "admin",
+            "security",
+            "performance",
+            "webhook",
+            "notification",
+            "email",
+            "file",
+            "upload",
+            "search",
+            "cache",
+            "session",
+            "token",
+            "jwt",
+            "oauth",
+            "role",
+            "permission",
         ];
 
         for keyword in &domain_keywords {
@@ -266,14 +292,16 @@ impl PyramidTree {
 
     /// Find branches relevant to a topic.
     pub fn branches_for_topic(&self, topic: &str) -> Vec<&PyramidSummaryV1> {
-        self.branches.iter()
+        self.branches
+            .iter()
             .filter(|b| b.topics.iter().any(|t| t == topic))
             .collect()
     }
 
     /// Find leaves for a specific branch.
     pub fn leaves_for_branch(&self, branch_id: Uuid) -> Vec<&PyramidSummaryV1> {
-        self.leaves.iter()
+        self.leaves
+            .iter()
             .filter(|l| l.parent_id == Some(branch_id))
             .collect()
     }
@@ -310,10 +338,7 @@ Branch summaries:
 "#;
 
 /// LLM-enhanced leaf summarization for production use.
-pub async fn summarize_turn_with_llm(
-    router: &LlmRouter,
-    turn_text: &str,
-) -> StepResult<String> {
+pub async fn summarize_turn_with_llm(router: &LlmRouter, turn_text: &str) -> StepResult<String> {
     let request = CompletionRequest {
         system: None,
         messages: vec![Message {
@@ -380,20 +405,26 @@ mod tests {
     use super::*;
 
     fn make_turns(count: usize) -> Vec<(Uuid, String)> {
-        (0..count).map(|i| {
-            (Uuid::new_v4(), format!(
-                "Turn {} processed authentication token validation for the user session. \
+        (0..count)
+            .map(|i| {
+                (
+                    Uuid::new_v4(),
+                    format!(
+                        "Turn {} processed authentication token validation for the user session. \
                  The payment flow was updated to include stripe webhook verification.",
-                i,
-            ))
-        }).collect()
+                        i,
+                    ),
+                )
+            })
+            .collect()
     }
 
     #[test]
     fn build_leaves_from_turns() {
         let builder = PyramidBuilder::with_defaults();
         let turns = make_turns(5);
-        let turn_refs: Vec<(Uuid, &str)> = turns.iter()
+        let turn_refs: Vec<(Uuid, &str)> = turns
+            .iter()
             .map(|(id, text)| (*id, text.as_str()))
             .collect();
 
@@ -413,7 +444,8 @@ mod tests {
 
         let project_id = Uuid::new_v4();
         let turns = make_turns(9);
-        let turn_refs: Vec<(Uuid, &str)> = turns.iter()
+        let turn_refs: Vec<(Uuid, &str)> = turns
+            .iter()
             .map(|(id, text)| (*id, text.as_str()))
             .collect();
 
@@ -438,7 +470,8 @@ mod tests {
 
         let project_id = Uuid::new_v4();
         let turns = make_turns(50);
-        let turn_refs: Vec<(Uuid, &str)> = turns.iter()
+        let turn_refs: Vec<(Uuid, &str)> = turns
+            .iter()
             .map(|(id, text)| (*id, text.as_str()))
             .collect();
 
@@ -463,7 +496,8 @@ mod tests {
         });
 
         let turns = make_turns(10);
-        let turn_refs: Vec<(Uuid, &str)> = turns.iter()
+        let turn_refs: Vec<(Uuid, &str)> = turns
+            .iter()
             .map(|(id, text)| (*id, text.as_str()))
             .collect();
 
@@ -484,7 +518,8 @@ mod tests {
 
         let project_id = Uuid::new_v4();
         let turns = make_turns(20);
-        let turn_refs: Vec<(Uuid, &str)> = turns.iter()
+        let turn_refs: Vec<(Uuid, &str)> = turns
+            .iter()
             .map(|(id, text)| (*id, text.as_str()))
             .collect();
 
@@ -507,7 +542,8 @@ mod tests {
         });
 
         let turns = make_turns(15);
-        let turn_refs: Vec<(Uuid, &str)> = turns.iter()
+        let turn_refs: Vec<(Uuid, &str)> = turns
+            .iter()
             .map(|(id, text)| (*id, text.as_str()))
             .collect();
 
@@ -532,7 +568,9 @@ mod tests {
         let text = "The authentication module handles JWT token validation for user sessions. \
                      Payment processing via Stripe requires webhook security.";
         let topics = PyramidBuilder::extract_topics(text);
-        assert!(topics.contains(&"auth".to_string()) || topics.contains(&"authentication".to_string()));
+        assert!(
+            topics.contains(&"auth".to_string()) || topics.contains(&"authentication".to_string())
+        );
         assert!(topics.contains(&"token".to_string()));
         assert!(topics.contains(&"stripe".to_string()));
     }

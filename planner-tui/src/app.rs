@@ -20,7 +20,7 @@ use uuid::Uuid;
 
 use planner_core::blueprint::BlueprintStore;
 use planner_schemas::{
-    RequirementsBeliefState, DomainClassification, QuestionOutput, SpeculativeDraft, SocraticEvent,
+    DomainClassification, QuestionOutput, RequirementsBeliefState, SocraticEvent, SpeculativeDraft,
 };
 
 use crate::blueprint_table::BlueprintTableState;
@@ -179,7 +179,6 @@ pub struct App {
     // -----------------------------------------------------------------------
     // Intake phase
     // -----------------------------------------------------------------------
-
     /// Current intake phase — governs layout and input routing.
     pub intake_phase: IntakePhase,
 
@@ -201,7 +200,6 @@ pub struct App {
     // -----------------------------------------------------------------------
     // Pipeline orchestration
     // -----------------------------------------------------------------------
-
     /// Pending pipeline description — set by `submit_input()` on the first
     /// message (WaitingForInput phase) so the main loop can spawn the
     /// Socratic background task.
@@ -218,7 +216,6 @@ pub struct App {
     // -----------------------------------------------------------------------
     // Socratic IO channels
     // -----------------------------------------------------------------------
-
     /// Send user replies into the Socratic engine.
     /// Set by `pipeline::spawn_socratic_interview()`.
     pub socratic_tx: Option<tokio::sync::mpsc::UnboundedSender<String>>,
@@ -230,7 +227,6 @@ pub struct App {
     // -----------------------------------------------------------------------
     // Observability
     // -----------------------------------------------------------------------
-
     /// Structured observability events for this session.
     pub planner_events: Vec<planner_core::observability::PlannerEvent>,
 
@@ -257,7 +253,8 @@ pub struct App {
 
     /// Receive structured PlannerEvents from the Socratic engine.
     /// Set by `pipeline::spawn_socratic_interview()`.
-    pub planner_events_rx: Option<tokio::sync::mpsc::UnboundedReceiver<planner_core::observability::PlannerEvent>>,
+    pub planner_events_rx:
+        Option<tokio::sync::mpsc::UnboundedReceiver<planner_core::observability::PlannerEvent>>,
 
     /// Shared blueprint store for TUI browsing and pipeline emission.
     pub blueprint_store: Arc<BlueprintStore>,
@@ -272,18 +269,54 @@ impl App {
         let blueprint_store = Arc::new(open_blueprint_store());
 
         let stages = vec![
-            PipelineStage { name: "Intake".into(),    status: StageStatus::Pending },
-            PipelineStage { name: "Chunk".into(),     status: StageStatus::Pending },
-            PipelineStage { name: "Compile".into(),   status: StageStatus::Pending },
-            PipelineStage { name: "Lint".into(),      status: StageStatus::Pending },
-            PipelineStage { name: "AR Review".into(), status: StageStatus::Pending },
-            PipelineStage { name: "Refine".into(),    status: StageStatus::Pending },
-            PipelineStage { name: "Scenarios".into(), status: StageStatus::Pending },
-            PipelineStage { name: "Ralph".into(),     status: StageStatus::Pending },
-            PipelineStage { name: "Graph".into(),     status: StageStatus::Pending },
-            PipelineStage { name: "Factory".into(),   status: StageStatus::Pending },
-            PipelineStage { name: "Validate".into(),  status: StageStatus::Pending },
-            PipelineStage { name: "Git".into(),       status: StageStatus::Pending },
+            PipelineStage {
+                name: "Intake".into(),
+                status: StageStatus::Pending,
+            },
+            PipelineStage {
+                name: "Chunk".into(),
+                status: StageStatus::Pending,
+            },
+            PipelineStage {
+                name: "Compile".into(),
+                status: StageStatus::Pending,
+            },
+            PipelineStage {
+                name: "Lint".into(),
+                status: StageStatus::Pending,
+            },
+            PipelineStage {
+                name: "AR Review".into(),
+                status: StageStatus::Pending,
+            },
+            PipelineStage {
+                name: "Refine".into(),
+                status: StageStatus::Pending,
+            },
+            PipelineStage {
+                name: "Scenarios".into(),
+                status: StageStatus::Pending,
+            },
+            PipelineStage {
+                name: "Ralph".into(),
+                status: StageStatus::Pending,
+            },
+            PipelineStage {
+                name: "Graph".into(),
+                status: StageStatus::Pending,
+            },
+            PipelineStage {
+                name: "Factory".into(),
+                status: StageStatus::Pending,
+            },
+            PipelineStage {
+                name: "Validate".into(),
+                status: StageStatus::Pending,
+            },
+            PipelineStage {
+                name: "Git".into(),
+                status: StageStatus::Pending,
+            },
         ];
 
         let providers = vec![
@@ -395,7 +428,11 @@ impl App {
             self.current_step_started = Some(std::time::Instant::now());
         }
         if event.source == planner_core::observability::EventSource::LlmRouter
-            && event.step.as_deref().map(|s| s.starts_with("llm.call.complete")).unwrap_or(false)
+            && event
+                .step
+                .as_deref()
+                .map(|s| s.starts_with("llm.call.complete"))
+                .unwrap_or(false)
         {
             self.llm_call_count += 1;
         }
@@ -406,7 +443,11 @@ impl App {
     pub fn filtered_events(&self) -> Vec<&planner_core::observability::PlannerEvent> {
         match self.logs_filter {
             None => self.planner_events.iter().collect(),
-            Some(level) => self.planner_events.iter().filter(|e| e.level == level).collect(),
+            Some(level) => self
+                .planner_events
+                .iter()
+                .filter(|e| e.level == level)
+                .collect(),
         }
     }
 
@@ -558,7 +599,9 @@ impl App {
             KeyCode::Backspace => {
                 if self.cursor_position > 0 {
                     self.cursor_position -= 1;
-                    let byte_pos = self.input.char_indices()
+                    let byte_pos = self
+                        .input
+                        .char_indices()
                         .nth(self.cursor_position)
                         .map(|(i, _)| i)
                         .unwrap_or(0);
@@ -568,7 +611,9 @@ impl App {
             KeyCode::Delete => {
                 let char_count = self.input.chars().count();
                 if self.cursor_position < char_count {
-                    let byte_pos = self.input.char_indices()
+                    let byte_pos = self
+                        .input
+                        .char_indices()
                         .nth(self.cursor_position)
                         .map(|(i, _)| i)
                         .unwrap_or(self.input.len());
@@ -604,7 +649,8 @@ impl App {
                 KeyCode::Esc => self.blueprint.clear_search(),
                 KeyCode::Enter => {
                     self.blueprint.search_mode = false;
-                    self.blueprint.load_selected_detail(self.blueprint_store.as_ref());
+                    self.blueprint
+                        .load_selected_detail(self.blueprint_store.as_ref());
                 }
                 KeyCode::Backspace => self.blueprint.pop_filter_char(),
                 KeyCode::Char(c) => self.blueprint.push_filter_char(c),
@@ -619,36 +665,43 @@ impl App {
                     self.view = AppView::Socratic;
                 } else {
                     self.blueprint.clear_search();
-                    self.blueprint.load_selected_detail(self.blueprint_store.as_ref());
+                    self.blueprint
+                        .load_selected_detail(self.blueprint_store.as_ref());
                 }
             }
             KeyCode::Char('j') | KeyCode::Down => {
                 self.blueprint.move_down();
-                self.blueprint.load_selected_detail(self.blueprint_store.as_ref());
+                self.blueprint
+                    .load_selected_detail(self.blueprint_store.as_ref());
             }
             KeyCode::Char('k') | KeyCode::Up => {
                 self.blueprint.move_up();
-                self.blueprint.load_selected_detail(self.blueprint_store.as_ref());
+                self.blueprint
+                    .load_selected_detail(self.blueprint_store.as_ref());
             }
             KeyCode::Char('g') | KeyCode::Home => {
                 self.blueprint.jump_top();
-                self.blueprint.load_selected_detail(self.blueprint_store.as_ref());
+                self.blueprint
+                    .load_selected_detail(self.blueprint_store.as_ref());
             }
             KeyCode::Char('G') | KeyCode::End => {
                 self.blueprint.jump_bottom();
-                self.blueprint.load_selected_detail(self.blueprint_store.as_ref());
+                self.blueprint
+                    .load_selected_detail(self.blueprint_store.as_ref());
             }
             KeyCode::Char('/') => {
                 self.blueprint.search_mode = true;
             }
             KeyCode::Char('t') => {
                 self.blueprint.cycle_type_filter();
-                self.blueprint.load_selected_detail(self.blueprint_store.as_ref());
+                self.blueprint
+                    .load_selected_detail(self.blueprint_store.as_ref());
             }
             KeyCode::Enter | KeyCode::Tab => {
                 self.blueprint.detail_expanded = !self.blueprint.detail_expanded;
                 if self.blueprint.detail_expanded {
-                    self.blueprint.load_selected_detail(self.blueprint_store.as_ref());
+                    self.blueprint
+                        .load_selected_detail(self.blueprint_store.as_ref());
                 }
             }
             _ => {}
@@ -735,7 +788,9 @@ impl App {
     // -----------------------------------------------------------------------
 
     fn insert_char(&mut self, c: char) {
-        let byte_pos = self.input.char_indices()
+        let byte_pos = self
+            .input
+            .char_indices()
             .nth(self.cursor_position)
             .map(|(i, _)| i)
             .unwrap_or(self.input.len());
@@ -781,7 +836,9 @@ impl App {
                 );
             }
             IntakePhase::Complete => {
-                self.add_planner_message("Session is complete. Start a new session to plan another project.");
+                self.add_planner_message(
+                    "Session is complete. Start a new session to plan another project.",
+                );
             }
         }
     }
@@ -868,8 +925,7 @@ impl App {
                 }
                 if let Some(idx) = found_idx {
                     let next = idx + 1;
-                    if next < self.stages.len()
-                        && self.stages[next].status == StageStatus::Pending
+                    if next < self.stages.len() && self.stages[next].status == StageStatus::Pending
                     {
                         self.stages[next].status = StageStatus::Running;
                     }
@@ -962,12 +1018,14 @@ impl App {
             SocraticEvent::Question { output } => {
                 self.add_planner_message(&output.question.clone());
                 self.current_question = Some(output);
-                self.status_message = "Answering — [Esc] Skip  [Ctrl+D] Done  [1-9] Quick pick".into();
+                self.status_message =
+                    "Answering — [Esc] Skip  [Ctrl+D] Done  [1-9] Quick pick".into();
             }
 
             SocraticEvent::SpeculativeDraftReady { draft } => {
                 // Render draft sections as a planner message for the chat pane
-                let mut text = String::from("Here's a speculative draft based on what I know so far:\n");
+                let mut text =
+                    String::from("Here's a speculative draft based on what I know so far:\n");
                 for section in &draft.sections {
                     text.push_str(&format!("\n**{}**\n{}\n", section.heading, section.content));
                 }
@@ -1004,7 +1062,8 @@ impl App {
 
                 // Signal the main loop to spawn the pipeline.
                 // We use the belief-state goal as the description if available.
-                let description = self.belief_state
+                let description = self
+                    .belief_state
                     .as_ref()
                     .and_then(|bs| bs.filled.get(&planner_schemas::Dimension::Goal))
                     .map(|sv| sv.value.clone())
@@ -1099,7 +1158,10 @@ mod tests {
         assert_eq!(app.messages[1].role, MessageRole::User);
 
         // pending_socratic_message should be set
-        assert_eq!(app.pending_socratic_message, Some("Build me a widget".to_string()));
+        assert_eq!(
+            app.pending_socratic_message,
+            Some("Build me a widget".to_string())
+        );
         // pipeline should NOT start yet
         assert!(!app.pipeline_running);
     }
@@ -1322,14 +1384,16 @@ mod tests {
         let (tx, rx) = mpsc::unbounded_channel::<PipelineEvent>();
         app.pipeline_rx = Some(rx);
 
-        tx.send(PipelineEvent::StepComplete("Intake".to_string())).unwrap();
+        tx.send(PipelineEvent::StepComplete("Intake".to_string()))
+            .unwrap();
         app.tick();
 
         assert_eq!(app.stages[0].status, StageStatus::Complete);
         assert_eq!(app.stages[1].status, StageStatus::Running);
         assert!(app.status_message.contains("Intake"));
 
-        tx.send(PipelineEvent::StepComplete("Chunk".to_string())).unwrap();
+        tx.send(PipelineEvent::StepComplete("Chunk".to_string()))
+            .unwrap();
         app.tick();
 
         assert_eq!(app.stages[1].status, StageStatus::Complete);
@@ -1344,7 +1408,8 @@ mod tests {
         let (tx, rx) = mpsc::unbounded_channel::<PipelineEvent>();
         app.pipeline_rx = Some(rx);
 
-        tx.send(PipelineEvent::StepComplete("NonExistentStage".to_string())).unwrap();
+        tx.send(PipelineEvent::StepComplete("NonExistentStage".to_string()))
+            .unwrap();
         app.tick();
 
         assert!(app.stages.iter().all(|s| s.status == StageStatus::Pending));
@@ -1363,7 +1428,10 @@ mod tests {
         app.tick();
         assert!(app.status_message.contains("running"));
 
-        tx.send(PipelineEvent::Completed("Project: Test\nSpecs: 1 chunk(s)".into())).unwrap();
+        tx.send(PipelineEvent::Completed(
+            "Project: Test\nSpecs: 1 chunk(s)".into(),
+        ))
+        .unwrap();
         app.tick();
 
         assert!(!app.pipeline_running);
@@ -1384,7 +1452,8 @@ mod tests {
         let (tx, rx) = mpsc::unbounded_channel::<PipelineEvent>();
         app.pipeline_rx = Some(rx);
 
-        tx.send(PipelineEvent::Failed("LLM CLI not found".into())).unwrap();
+        tx.send(PipelineEvent::Failed("LLM CLI not found".into()))
+            .unwrap();
         app.tick();
 
         assert!(!app.pipeline_running);
@@ -1400,7 +1469,7 @@ mod tests {
 
     #[tokio::test]
     async fn tick_socratic_classified_event() {
-        use planner_schemas::{DomainClassification, ProjectType, ComplexityTier, Dimension};
+        use planner_schemas::{ComplexityTier, Dimension, DomainClassification, ProjectType};
 
         let mut app = App::new();
         app.intake_phase = IntakePhase::Interviewing;
@@ -1415,7 +1484,10 @@ mod tests {
             required_dimensions: Dimension::required_for(&ProjectType::WebApp),
         };
 
-        tx.send(SocraticEvent::Classified { classification: classification.clone() }).unwrap();
+        tx.send(SocraticEvent::Classified {
+            classification: classification.clone(),
+        })
+        .unwrap();
         let had_events = app.tick_socratic();
 
         assert!(had_events);
@@ -1425,8 +1497,9 @@ mod tests {
 
     #[tokio::test]
     async fn tick_socratic_belief_state_update() {
-        use planner_schemas::{DomainClassification, ProjectType, ComplexityTier, Dimension,
-                              RequirementsBeliefState};
+        use planner_schemas::{
+            ComplexityTier, Dimension, DomainClassification, ProjectType, RequirementsBeliefState,
+        };
 
         let mut app = App::new();
         app.intake_phase = IntakePhase::Interviewing;
@@ -1443,7 +1516,10 @@ mod tests {
         let belief_state = RequirementsBeliefState::from_classification(&classification);
         let expected_pct = belief_state.convergence_pct();
 
-        tx.send(SocraticEvent::BeliefStateUpdate { state: belief_state }).unwrap();
+        tx.send(SocraticEvent::BeliefStateUpdate {
+            state: belief_state,
+        })
+        .unwrap();
         app.tick_socratic();
 
         assert!(app.belief_state.is_some());
@@ -1452,7 +1528,7 @@ mod tests {
 
     #[tokio::test]
     async fn tick_socratic_question_event() {
-        use planner_schemas::{QuestionOutput, Dimension, QuickOption};
+        use planner_schemas::{Dimension, QuestionOutput, QuickOption};
 
         let mut app = App::new();
         app.intake_phase = IntakePhase::Interviewing;
@@ -1463,17 +1539,24 @@ mod tests {
         let question = QuestionOutput {
             question: "What is the main goal of your project?".into(),
             target_dimension: Dimension::Goal,
-            quick_options: vec![
-                QuickOption { label: "Productivity".into(), value: "Improve productivity".into() },
-            ],
+            quick_options: vec![QuickOption {
+                label: "Productivity".into(),
+                value: "Improve productivity".into(),
+            }],
             allow_skip: true,
         };
 
-        tx.send(SocraticEvent::Question { output: question.clone() }).unwrap();
+        tx.send(SocraticEvent::Question {
+            output: question.clone(),
+        })
+        .unwrap();
         app.tick_socratic();
 
         assert!(app.current_question.is_some());
-        assert_eq!(app.current_question.as_ref().unwrap().question, question.question);
+        assert_eq!(
+            app.current_question.as_ref().unwrap().question,
+            question.question
+        );
         // A planner message should have been added
         let last = app.messages.last().unwrap();
         assert_eq!(last.role, MessageRole::Planner);
@@ -1513,7 +1596,10 @@ mod tests {
         let (tx, rx) = mpsc::unbounded_channel::<SocraticEvent>();
         app.socratic_events_rx = Some(rx);
 
-        tx.send(SocraticEvent::Error { message: "LLM timeout".into() }).unwrap();
+        tx.send(SocraticEvent::Error {
+            message: "LLM timeout".into(),
+        })
+        .unwrap();
         app.tick_socratic();
 
         let last = app.messages.last().unwrap();
@@ -1535,8 +1621,14 @@ mod tests {
             question: "Which best describes your goal?".into(),
             target_dimension: Dimension::Goal,
             quick_options: vec![
-                QuickOption { label: "Option A".into(), value: "Improve productivity".into() },
-                QuickOption { label: "Option B".into(), value: "Save time".into() },
+                QuickOption {
+                    label: "Option A".into(),
+                    value: "Improve productivity".into(),
+                },
+                QuickOption {
+                    label: "Option B".into(),
+                    value: "Save time".into(),
+                },
             ],
             allow_skip: true,
         });

@@ -18,10 +18,10 @@
 
 use uuid::Uuid;
 
-use crate::llm::{CompletionRequest, DefaultModels, Message, Role};
+use super::{StepError, StepResult};
 use crate::llm::providers::LlmRouter;
+use crate::llm::{CompletionRequest, DefaultModels, Message, Role};
 use planner_schemas::*;
-use super::{StepResult, StepError};
 
 // ---------------------------------------------------------------------------
 // ChunkPlan — output of the chunk planner
@@ -121,9 +121,7 @@ pub async fn plan_chunks(
 
 /// Build a single-chunk plan (Phase 0-2 behavior preserved).
 fn build_single_chunk_plan(intake: &IntakeV1, project_id: Uuid) -> ChunkPlan {
-    let anchor_ids: Vec<String> = intake.sacred_anchors.iter()
-        .map(|a| a.id.clone())
-        .collect();
+    let anchor_ids: Vec<String> = intake.sacred_anchors.iter().map(|a| a.id.clone()).collect();
 
     ChunkPlan {
         project_id,
@@ -189,8 +187,8 @@ async fn plan_multi_chunk(
     intake: &IntakeV1,
     project_id: Uuid,
 ) -> StepResult<ChunkPlan> {
-    let intake_json = serde_json::to_string_pretty(intake)
-        .map_err(|e| StepError::JsonError(e.to_string()))?;
+    let intake_json =
+        serde_json::to_string_pretty(intake).map_err(|e| StepError::JsonError(e.to_string()))?;
 
     let request = CompletionRequest {
         system: Some(CHUNK_PLANNER_SYSTEM_PROMPT.to_string()),
@@ -230,7 +228,9 @@ struct ChunkJson {
     estimated_fr_count: u32,
 }
 
-fn default_fr_count() -> u32 { 5 }
+fn default_fr_count() -> u32 {
+    5
+}
 
 fn parse_chunk_plan_response(
     content: &str,
@@ -242,7 +242,8 @@ fn parse_chunk_plan_response(
     let json: ChunkPlanJson = serde_json::from_str(&cleaned).map_err(|e| {
         StepError::JsonError(format!(
             "Failed to parse chunk plan response: {}. Raw: {}",
-            e, &content[..content.len().min(300)]
+            e,
+            &content[..content.len().min(300)]
         ))
     })?;
 
@@ -258,10 +259,14 @@ fn parse_chunk_plan_response(
     }
 
     // Validate: every Sacred Anchor must appear in at least one chunk
-    let all_anchor_ids: Vec<&str> = intake.sacred_anchors.iter()
+    let all_anchor_ids: Vec<&str> = intake
+        .sacred_anchors
+        .iter()
         .map(|a| a.id.as_str())
         .collect();
-    let covered_anchors: Vec<&str> = json.chunks.iter()
+    let covered_anchors: Vec<&str> = json
+        .chunks
+        .iter()
         .flat_map(|c| c.relevant_anchor_ids.iter().map(|s| s.as_str()))
         .collect();
     for anchor_id in &all_anchor_ids {
@@ -273,27 +278,37 @@ fn parse_chunk_plan_response(
         }
     }
 
-    let chunks: Vec<PlannedChunk> = json.chunks.into_iter().map(|c| {
-        let chunk_type = if c.chunk_id == "root" {
-            ChunkType::Root
-        } else {
-            ChunkType::Domain { name: c.chunk_id.clone() }
-        };
+    let chunks: Vec<PlannedChunk> = json
+        .chunks
+        .into_iter()
+        .map(|c| {
+            let chunk_type = if c.chunk_id == "root" {
+                ChunkType::Root
+            } else {
+                ChunkType::Domain {
+                    name: c.chunk_id.clone(),
+                }
+            };
 
-        PlannedChunk {
-            chunk_id: c.chunk_id,
-            chunk_type,
-            relevant_anchor_ids: c.relevant_anchor_ids,
-            domain_context: c.domain_context,
-            estimated_fr_count: c.estimated_fr_count,
-        }
-    }).collect();
+            PlannedChunk {
+                chunk_id: c.chunk_id,
+                chunk_type,
+                relevant_anchor_ids: c.relevant_anchor_ids,
+                domain_context: c.domain_context,
+                estimated_fr_count: c.estimated_fr_count,
+            }
+        })
+        .collect();
 
     let is_multi = chunks.len() > 1;
     tracing::info!(
         "Chunk plan: {} chunk(s) — {}",
         chunks.len(),
-        chunks.iter().map(|c| c.chunk_id.as_str()).collect::<Vec<_>>().join(", "),
+        chunks
+            .iter()
+            .map(|c| c.chunk_id.as_str())
+            .collect::<Vec<_>>()
+            .join(", "),
     );
 
     Ok(ChunkPlan {
@@ -373,7 +388,12 @@ mod tests {
         assert_eq!(plan.chunks[0].chunk_id, "root");
         assert_eq!(plan.chunks[1].chunk_id, "auth");
         assert_eq!(plan.chunks[2].chunk_id, "payments");
-        assert_eq!(plan.chunks[1].chunk_type, ChunkType::Domain { name: "auth".into() });
+        assert_eq!(
+            plan.chunks[1].chunk_type,
+            ChunkType::Domain {
+                name: "auth".into()
+            }
+        );
     }
 
     #[test]
@@ -429,8 +449,16 @@ mod tests {
                 build_tool: Some("vite".into()),
             },
             sacred_anchors: vec![
-                SacredAnchor { id: "SA-1".into(), statement: "Never negative".into(), rationale: None },
-                SacredAnchor { id: "SA-2".into(), statement: "Pause preserves time".into(), rationale: None },
+                SacredAnchor {
+                    id: "SA-1".into(),
+                    statement: "Never negative".into(),
+                    rationale: None,
+                },
+                SacredAnchor {
+                    id: "SA-2".into(),
+                    statement: "Pause preserves time".into(),
+                    rationale: None,
+                },
             ],
             satisfaction_criteria_seeds: vec!["Timer counts down".into()],
             out_of_scope: vec!["Sound alerts".into()],

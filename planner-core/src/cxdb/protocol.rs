@@ -149,14 +149,12 @@ pub enum ProtocolError {
 impl StoreTurnMessage {
     /// Serialize to MessagePack bytes.
     pub fn to_msgpack(&self) -> Result<Vec<u8>, ProtocolError> {
-        rmp_serde::to_vec(self)
-            .map_err(|e| ProtocolError::InvalidPayload(e.to_string()))
+        rmp_serde::to_vec(self).map_err(|e| ProtocolError::InvalidPayload(e.to_string()))
     }
 
     /// Deserialize from MessagePack bytes.
     pub fn from_msgpack(data: &[u8]) -> Result<Self, ProtocolError> {
-        rmp_serde::from_slice(data)
-            .map_err(|e| ProtocolError::InvalidPayload(e.to_string()))
+        rmp_serde::from_slice(data).map_err(|e| ProtocolError::InvalidPayload(e.to_string()))
     }
 
     /// Convert to a Frame ready for wire transmission.
@@ -169,22 +167,19 @@ impl StoreTurnMessage {
 
     /// Extract turn_id as UUID.
     pub fn parse_turn_id(&self) -> Result<Uuid, ProtocolError> {
-        Uuid::parse_str(&self.turn_id)
-            .map_err(|e| ProtocolError::InvalidUuid(e.to_string()))
+        Uuid::parse_str(&self.turn_id).map_err(|e| ProtocolError::InvalidUuid(e.to_string()))
     }
 }
 
 impl StoreTurnAck {
     /// Serialize to MessagePack bytes.
     pub fn to_msgpack(&self) -> Result<Vec<u8>, ProtocolError> {
-        rmp_serde::to_vec(self)
-            .map_err(|e| ProtocolError::InvalidPayload(e.to_string()))
+        rmp_serde::to_vec(self).map_err(|e| ProtocolError::InvalidPayload(e.to_string()))
     }
 
     /// Deserialize from MessagePack bytes.
     pub fn from_msgpack(data: &[u8]) -> Result<Self, ProtocolError> {
-        rmp_serde::from_slice(data)
-            .map_err(|e| ProtocolError::InvalidPayload(e.to_string()))
+        rmp_serde::from_slice(data).map_err(|e| ProtocolError::InvalidPayload(e.to_string()))
     }
 
     /// Convert to a Frame ready for wire transmission.
@@ -242,7 +237,10 @@ mod tests {
     fn frame_decode_unknown_type() {
         let buf = [0x00, 0x00, 0x00, 0x01, 0xFF]; // length=1, type=0xFF
         let result = Frame::decode(&buf);
-        assert!(matches!(result, Err(ProtocolError::UnknownMessageType(0xFF))));
+        assert!(matches!(
+            result,
+            Err(ProtocolError::UnknownMessageType(0xFF))
+        ));
     }
 
     #[test]
@@ -317,7 +315,10 @@ mod tests {
     #[test]
     fn message_type_conversions() {
         assert_eq!(MessageType::try_from(0x01).unwrap(), MessageType::StoreTurn);
-        assert_eq!(MessageType::try_from(0x02).unwrap(), MessageType::StoreTurnAck);
+        assert_eq!(
+            MessageType::try_from(0x02).unwrap(),
+            MessageType::StoreTurnAck
+        );
         assert_eq!(MessageType::try_from(0x03).unwrap(), MessageType::Ping);
         assert_eq!(MessageType::try_from(0x04).unwrap(), MessageType::Pong);
         assert!(MessageType::try_from(0x99).is_err());

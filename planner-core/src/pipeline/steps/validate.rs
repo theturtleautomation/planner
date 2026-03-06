@@ -21,12 +21,11 @@
 
 use uuid::Uuid;
 
-use crate::llm::{CompletionRequest, DefaultModels, Message, Role};
-use crate::llm::providers::LlmRouter;
+use super::{StepError, StepResult};
 use crate::dtu::DtuRegistry;
+use crate::llm::providers::LlmRouter;
+use crate::llm::{CompletionRequest, DefaultModels, Message, Role};
 use planner_schemas::*;
-use super::{StepResult, StepError};
-
 
 // ---------------------------------------------------------------------------
 // Evaluation prompt
@@ -179,12 +178,7 @@ pub async fn execute_scenario_validation(
             scenario.title,
         );
 
-        let result = evaluate_single_scenario(
-            router,
-            scenario,
-            factory_output,
-        )
-        .await?;
+        let result = evaluate_single_scenario(router, scenario, factory_output).await?;
 
         tracing::info!(
             "    → score={:.2}, majority_pass={}, runs=[{:.2}, {:.2}, {:.2}]",
@@ -249,7 +243,11 @@ pub async fn execute_scenario_validation(
         result.critical_pass_rate * 100.0,
         result.high_pass_rate * 100.0,
         result.medium_pass_rate * 100.0,
-        if result.gates_passed { "PASSED" } else { "FAILED" },
+        if result.gates_passed {
+            "PASSED"
+        } else {
+            "FAILED"
+        },
     );
 
     Ok(result)
@@ -270,13 +268,7 @@ async fn evaluate_single_scenario(
     let mut last_error_severity: Option<Severity> = None;
 
     for run_idx in 0..3 {
-        let eval = evaluate_scenario_once(
-            router,
-            scenario,
-            factory_output,
-            run_idx + 1,
-        )
-        .await?;
+        let eval = evaluate_scenario_once(router, scenario, factory_output, run_idx + 1).await?;
 
         runs[run_idx] = eval.score;
 
@@ -330,15 +322,16 @@ async fn evaluate_scenario_once(
     factory_output: &FactoryOutputV1,
     run_number: usize,
 ) -> StepResult<SingleEvalResult> {
-    let source_files = super::factory_worker::read_worktree_source_files(
-        std::path::Path::new(&factory_output.output_path),
-    );
+    let source_files = super::factory_worker::read_worktree_source_files(std::path::Path::new(
+        &factory_output.output_path,
+    ));
 
     // Log source file stats for every scenario
     let file_count = source_files.matches("=== ").count();
     tracing::info!(
         "    Source files for evaluation: {} files, {} bytes",
-        file_count, source_files.len()
+        file_count,
+        source_files.len()
     );
 
     let mut last_error = None;
@@ -347,14 +340,15 @@ async fn evaluate_scenario_once(
     // relevant to this scenario's BDD text. If found, inject the
     // evidence into the prompt so the evaluator can't miss it.
     // Computed once outside the retry loop since source + BDD are stable.
-    let evidence_block = pattern_precheck(&scenario.bdd_text, &source_files)
-        .unwrap_or_default();
+    let evidence_block = pattern_precheck(&scenario.bdd_text, &source_files).unwrap_or_default();
 
     for attempt in 0..=EVAL_MAX_RETRIES {
         if attempt > 0 {
             tracing::warn!(
                 "    Retrying evaluation for {} (attempt {}/{})",
-                scenario.id, attempt + 1, EVAL_MAX_RETRIES + 1,
+                scenario.id,
+                attempt + 1,
+                EVAL_MAX_RETRIES + 1,
             );
         }
 
@@ -391,7 +385,10 @@ async fn evaluate_scenario_once(
                     Ok(result) => {
                         tracing::info!(
                             "    {} run {}: score={:.2}, passed={}",
-                            scenario.id, run_number, result.score, result.passed
+                            scenario.id,
+                            run_number,
+                            result.score,
+                            result.passed
                         );
                         return Ok(result);
                     }
@@ -444,15 +441,15 @@ fn parse_eval_response(content: &str) -> StepResult<SingleEvalResult> {
         ))
     })?;
 
-    let error_severity = json.error_severity.and_then(|s| {
-        match s.to_lowercase().as_str() {
+    let error_severity = json
+        .error_severity
+        .and_then(|s| match s.to_lowercase().as_str() {
             "critical" => Some(Severity::Critical),
             "high" => Some(Severity::High),
             "medium" => Some(Severity::Medium),
             "low" => Some(Severity::Low),
             _ => None,
-        }
-    });
+        });
 
     Ok(SingleEvalResult {
         score: json.score.clamp(0.0, 1.0),
@@ -494,78 +491,165 @@ const DEFENSIVE_PATTERNS: &[DefensivePatternCategory] = &[
     DefensivePatternCategory {
         name: "rapid-interaction-guard",
         bdd_triggers: &[
-            "double-click", "double click", "rapid", "double-submit",
-            "double submit", "duplicate", "race condition", "debounce",
-            "throttle", "spam", "repeated click", "multiple click",
+            "double-click",
+            "double click",
+            "rapid",
+            "double-submit",
+            "double submit",
+            "duplicate",
+            "race condition",
+            "debounce",
+            "throttle",
+            "spam",
+            "repeated click",
+            "multiple click",
             "multiple submit",
         ],
         code_patterns: &[
-            "debounce", "throttle", "isSubmitting", "is_submitting",
-            "isLoading", "is_loading", "disabled", "setDisabled",
-            "submitting", "inProgress", "in_progress", "cooldown",
-            "setTimeout", "set_timeout", "once(", ".once(",
-            "e.preventDefault", "loading",
+            "debounce",
+            "throttle",
+            "isSubmitting",
+            "is_submitting",
+            "isLoading",
+            "is_loading",
+            "disabled",
+            "setDisabled",
+            "submitting",
+            "inProgress",
+            "in_progress",
+            "cooldown",
+            "setTimeout",
+            "set_timeout",
+            "once(",
+            ".once(",
+            "e.preventDefault",
+            "loading",
         ],
     },
     DefensivePatternCategory {
         name: "overflow-truncation",
         bdd_triggers: &[
-            "overflow", "truncat", "long text", "long name", "long title",
-            "ellipsis", "wrap", "break-word", "max-width",
+            "overflow",
+            "truncat",
+            "long text",
+            "long name",
+            "long title",
+            "ellipsis",
+            "wrap",
+            "break-word",
+            "max-width",
         ],
         code_patterns: &[
-            "text-overflow", "overflow:", "overflow-hidden", "truncate",
-            "line-clamp", "whitespace-nowrap", "text-ellipsis",
-            "word-break", "overflow-wrap", "break-word", "break-all",
-            "max-width", "max-w-", "maxWidth",
+            "text-overflow",
+            "overflow:",
+            "overflow-hidden",
+            "truncate",
+            "line-clamp",
+            "whitespace-nowrap",
+            "text-ellipsis",
+            "word-break",
+            "overflow-wrap",
+            "break-word",
+            "break-all",
+            "max-width",
+            "max-w-",
+            "maxWidth",
         ],
     },
     DefensivePatternCategory {
         name: "animation-transition",
         bdd_triggers: &[
-            "animat", "transition", "fade", "slide", "visual feedback",
+            "animat",
+            "transition",
+            "fade",
+            "slide",
+            "visual feedback",
             "smooth",
         ],
         code_patterns: &[
-            "transition", "@keyframes", "animation", "animate-",
-            "transform", "opacity", "fade", "slide",
-            "framer-motion", "react-spring", "gsap",
+            "transition",
+            "@keyframes",
+            "animation",
+            "animate-",
+            "transform",
+            "opacity",
+            "fade",
+            "slide",
+            "framer-motion",
+            "react-spring",
+            "gsap",
         ],
     },
     DefensivePatternCategory {
         name: "timer-scheduling",
         bdd_triggers: &[
-            "timer", "delay", "auto-save", "autosave", "auto save",
-            "interval", "countdown", "timeout", "schedule",
+            "timer",
+            "delay",
+            "auto-save",
+            "autosave",
+            "auto save",
+            "interval",
+            "countdown",
+            "timeout",
+            "schedule",
         ],
         code_patterns: &[
-            "setTimeout", "setInterval", "requestAnimationFrame",
-            "set_timeout", "set_interval", "clearTimeout",
+            "setTimeout",
+            "setInterval",
+            "requestAnimationFrame",
+            "set_timeout",
+            "set_interval",
+            "clearTimeout",
             "clearInterval",
         ],
     },
     DefensivePatternCategory {
         name: "keyboard-accessibility",
         bdd_triggers: &[
-            "keyboard", "key press", "keypress", "enter key",
-            "escape", "tab", "focus", "aria-",
+            "keyboard",
+            "key press",
+            "keypress",
+            "enter key",
+            "escape",
+            "tab",
+            "focus",
+            "aria-",
         ],
         code_patterns: &[
-            "onKeyDown", "onKeyPress", "onKeyUp", "keydown",
-            "keypress", "keyup", "event.key", "e.key",
-            "aria-", "role=", "tabIndex", "tabindex",
+            "onKeyDown",
+            "onKeyPress",
+            "onKeyUp",
+            "keydown",
+            "keypress",
+            "keyup",
+            "event.key",
+            "e.key",
+            "aria-",
+            "role=",
+            "tabIndex",
+            "tabindex",
         ],
     },
     DefensivePatternCategory {
         name: "empty-state",
         bdd_triggers: &[
-            "empty", "no items", "no tasks", "no results",
-            "zero state", "placeholder",
+            "empty",
+            "no items",
+            "no tasks",
+            "no results",
+            "zero state",
+            "placeholder",
         ],
         code_patterns: &[
-            ".length === 0", ".length == 0", ".is_empty()",
-            "length === 0", "!items", "!tasks", "no items",
-            "empty", "placeholder",
+            ".length === 0",
+            ".length == 0",
+            ".is_empty()",
+            "length === 0",
+            "!items",
+            "!tasks",
+            "no items",
+            "empty",
+            "placeholder",
         ],
     },
 ];
@@ -700,10 +784,7 @@ fn pattern_precheck(bdd_text: &str, source_files: &str) -> Option<String> {
 // ---------------------------------------------------------------------------
 
 /// Build a result where all scenarios fail (used when build itself failed).
-fn build_all_failed_result(
-    kilroy_run_id: Uuid,
-    scenarios: &ScenarioSetV1,
-) -> SatisfactionResultV1 {
+fn build_all_failed_result(kilroy_run_id: Uuid, scenarios: &ScenarioSetV1) -> SatisfactionResultV1 {
     let scenario_results: Vec<ScenarioResult> = scenarios
         .scenarios
         .iter()
@@ -757,87 +838,96 @@ pub fn check_definition_of_done(
     factory_output: &FactoryOutputV1,
     satisfaction: &SatisfactionResultV1,
 ) -> Vec<DoDCheckResult> {
-    spec.definition_of_done.iter().map(|dod| {
-        if !dod.mechanically_checkable {
-            return DoDCheckResult {
-                criterion: dod.criterion.clone(),
-                passed: true, // Assume pass for non-mechanical items
-                check_method: "manual".into(),
-                detail: "Requires manual review — assumed pass.".into(),
-            };
-        }
+    spec.definition_of_done
+        .iter()
+        .map(|dod| {
+            if !dod.mechanically_checkable {
+                return DoDCheckResult {
+                    criterion: dod.criterion.clone(),
+                    passed: true, // Assume pass for non-mechanical items
+                    check_method: "manual".into(),
+                    detail: "Requires manual review — assumed pass.".into(),
+                };
+            }
 
-        // Mechanical checks based on factory output state
-        let criterion_lower = dod.criterion.to_lowercase();
+            // Mechanical checks based on factory output state
+            let criterion_lower = dod.criterion.to_lowercase();
 
-        // Check: Build succeeds
-        if criterion_lower.contains("build") || criterion_lower.contains("compile") {
-            let passed = factory_output.build_status == BuildStatus::Success
-                || factory_output.build_status == BuildStatus::PartialSuccess;
-            return DoDCheckResult {
-                criterion: dod.criterion.clone(),
-                passed,
-                check_method: "mechanical".into(),
-                detail: format!("Build status: {:?}", factory_output.build_status),
-            };
-        }
+            // Check: Build succeeds
+            if criterion_lower.contains("build") || criterion_lower.contains("compile") {
+                let passed = factory_output.build_status == BuildStatus::Success
+                    || factory_output.build_status == BuildStatus::PartialSuccess;
+                return DoDCheckResult {
+                    criterion: dod.criterion.clone(),
+                    passed,
+                    check_method: "mechanical".into(),
+                    detail: format!("Build status: {:?}", factory_output.build_status),
+                };
+            }
 
-        // Check: Tests/scenarios pass
-        if criterion_lower.contains("test") || criterion_lower.contains("scenario")
-            || criterion_lower.contains("pass")
-        {
-            return DoDCheckResult {
+            // Check: Tests/scenarios pass
+            if criterion_lower.contains("test")
+                || criterion_lower.contains("scenario")
+                || criterion_lower.contains("pass")
+            {
+                return DoDCheckResult {
+                    criterion: dod.criterion.clone(),
+                    passed: satisfaction.gates_passed,
+                    check_method: "mechanical".into(),
+                    detail: format!(
+                        "Gates: critical={:.0}%, high={:.0}%, medium={:.0}%",
+                        satisfaction.critical_pass_rate * 100.0,
+                        satisfaction.high_pass_rate * 100.0,
+                        satisfaction.medium_pass_rate * 100.0,
+                    ),
+                };
+            }
+
+            // Check: Persist/save/store keywords → look at scenario results
+            if criterion_lower.contains("persist")
+                || criterion_lower.contains("save")
+                || criterion_lower.contains("store")
+                || criterion_lower.contains("data")
+            {
+                // Check if any scenario about data persistence passed
+                let data_scenarios_pass = satisfaction
+                    .scenario_results
+                    .iter()
+                    .filter(|r| {
+                        let id_lower = r.scenario_id.to_lowercase();
+                        id_lower.contains("persist")
+                            || id_lower.contains("data")
+                            || id_lower.contains("save")
+                    })
+                    .all(|r| r.majority_pass);
+
+                // If no specific scenarios found, fall back to critical pass rate
+                let passed = if satisfaction.scenario_results.iter().any(|r| {
+                    r.scenario_id.to_lowercase().contains("persist")
+                        || r.scenario_id.to_lowercase().contains("data")
+                }) {
+                    data_scenarios_pass
+                } else {
+                    satisfaction.critical_pass_rate >= 1.0
+                };
+
+                return DoDCheckResult {
+                    criterion: dod.criterion.clone(),
+                    passed,
+                    check_method: "mechanical".into(),
+                    detail: "Checked via data-related scenario results.".into(),
+                };
+            }
+
+            // Default: use overall gate result for mechanically-checkable items
+            DoDCheckResult {
                 criterion: dod.criterion.clone(),
                 passed: satisfaction.gates_passed,
                 check_method: "mechanical".into(),
-                detail: format!(
-                    "Gates: critical={:.0}%, high={:.0}%, medium={:.0}%",
-                    satisfaction.critical_pass_rate * 100.0,
-                    satisfaction.high_pass_rate * 100.0,
-                    satisfaction.medium_pass_rate * 100.0,
-                ),
-            };
-        }
-
-        // Check: Persist/save/store keywords → look at scenario results
-        if criterion_lower.contains("persist") || criterion_lower.contains("save")
-            || criterion_lower.contains("store") || criterion_lower.contains("data")
-        {
-            // Check if any scenario about data persistence passed
-            let data_scenarios_pass = satisfaction.scenario_results.iter()
-                .filter(|r| {
-                    let id_lower = r.scenario_id.to_lowercase();
-                    id_lower.contains("persist") || id_lower.contains("data")
-                        || id_lower.contains("save")
-                })
-                .all(|r| r.majority_pass);
-
-            // If no specific scenarios found, fall back to critical pass rate
-            let passed = if satisfaction.scenario_results.iter()
-                .any(|r| r.scenario_id.to_lowercase().contains("persist")
-                    || r.scenario_id.to_lowercase().contains("data"))
-            {
-                data_scenarios_pass
-            } else {
-                satisfaction.critical_pass_rate >= 1.0
-            };
-
-            return DoDCheckResult {
-                criterion: dod.criterion.clone(),
-                passed,
-                check_method: "mechanical".into(),
-                detail: "Checked via data-related scenario results.".into(),
-            };
-        }
-
-        // Default: use overall gate result for mechanically-checkable items
-        DoDCheckResult {
-            criterion: dod.criterion.clone(),
-            passed: satisfaction.gates_passed,
-            check_method: "mechanical".into(),
-            detail: "Checked via overall gate result.".into(),
-        }
-    }).collect()
+                detail: "Checked via overall gate result.".into(),
+            }
+        })
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -871,7 +961,8 @@ mod tests {
 
     #[test]
     fn parse_eval_with_code_fences() {
-        let content = "```json\n{\"score\": 1.0, \"passed\": true, \"reasoning\": \"Perfect\"}\n```";
+        let content =
+            "```json\n{\"score\": 1.0, \"passed\": true, \"reasoning\": \"Perfect\"}\n```";
         let result = parse_eval_response(content);
         assert!(result.is_ok());
         assert!((result.unwrap().score - 1.0).abs() < 0.01);
@@ -890,17 +981,15 @@ mod tests {
         let scenarios = ScenarioSetV1 {
             project_id: Uuid::new_v4(),
             nlspec_version: "1.0".into(),
-            scenarios: vec![
-                Scenario {
-                    id: "SC-CRIT-1".into(),
-                    tier: ScenarioTier::Critical,
-                    title: "Test".into(),
-                    bdd_text: "Given/When/Then".into(),
-                    dtu_deps: vec![],
-                    traces_to_anchors: vec![],
-                    source_criterion: None,
-                },
-            ],
+            scenarios: vec![Scenario {
+                id: "SC-CRIT-1".into(),
+                tier: ScenarioTier::Critical,
+                title: "Test".into(),
+                bdd_text: "Given/When/Then".into(),
+                dtu_deps: vec![],
+                traces_to_anchors: vec![],
+                source_criterion: None,
+            }],
             isolation_context_id: Uuid::new_v4(),
             ralph_augmented: false,
         };
@@ -980,12 +1069,10 @@ mod tests {
             architectural_constraints: vec![],
             phase1_contracts: None,
             external_dependencies: vec![],
-            definition_of_done: vec![
-                DoDItem {
-                    criterion: "Build compiles without errors".into(),
-                    mechanically_checkable: true,
-                },
-            ],
+            definition_of_done: vec![DoDItem {
+                criterion: "Build compiles without errors".into(),
+                mechanically_checkable: true,
+            }],
             satisfaction_criteria: vec![],
             open_questions: vec![],
             out_of_scope: vec![],
@@ -1034,12 +1121,10 @@ mod tests {
             architectural_constraints: vec![],
             phase1_contracts: None,
             external_dependencies: vec![],
-            definition_of_done: vec![
-                DoDItem {
-                    criterion: "Build compiles without errors".into(),
-                    mechanically_checkable: true,
-                },
-            ],
+            definition_of_done: vec![DoDItem {
+                criterion: "Build compiles without errors".into(),
+                mechanically_checkable: true,
+            }],
             satisfaction_criteria: vec![],
             open_questions: vec![],
             out_of_scope: vec![],
@@ -1088,12 +1173,10 @@ mod tests {
             architectural_constraints: vec![],
             phase1_contracts: None,
             external_dependencies: vec![],
-            definition_of_done: vec![
-                DoDItem {
-                    criterion: "Code is clean and readable".into(),
-                    mechanically_checkable: false,
-                },
-            ],
+            definition_of_done: vec![DoDItem {
+                criterion: "Code is clean and readable".into(),
+                mechanically_checkable: false,
+            }],
             satisfaction_criteria: vec![],
             open_questions: vec![],
             out_of_scope: vec![],
@@ -1142,12 +1225,10 @@ mod tests {
             architectural_constraints: vec![],
             phase1_contracts: None,
             external_dependencies: vec![],
-            definition_of_done: vec![
-                DoDItem {
-                    criterion: "All scenarios pass their tests".into(),
-                    mechanically_checkable: true,
-                },
-            ],
+            definition_of_done: vec![DoDItem {
+                criterion: "All scenarios pass their tests".into(),
+                mechanically_checkable: true,
+            }],
             satisfaction_criteria: vec![],
             open_questions: vec![],
             out_of_scope: vec![],
@@ -1239,7 +1320,10 @@ function App() {
 "#;
 
         let evidence = pattern_precheck(bdd_text, source_files);
-        assert!(evidence.is_none(), "No defensive pattern triggers in BDD text");
+        assert!(
+            evidence.is_none(),
+            "No defensive pattern triggers in BDD text"
+        );
     }
 
     #[test]
@@ -1257,7 +1341,10 @@ function App() {
 "#;
 
         let evidence = pattern_precheck(bdd_text, source_files);
-        assert!(evidence.is_none(), "Trigger matched but no code patterns found");
+        assert!(
+            evidence.is_none(),
+            "Trigger matched but no code patterns found"
+        );
     }
 
     #[test]
@@ -1282,7 +1369,8 @@ export function TaskItem({ task }) {
 
     #[test]
     fn pattern_precheck_multiple_categories() {
-        let bdd_text = "Given the user rapidly clicks Add with a very long task name that overflows\n\
+        let bdd_text =
+            "Given the user rapidly clicks Add with a very long task name that overflows\n\
                         When double-click registers\n\
                         Then only one truncated task appears";
 
@@ -1320,6 +1408,10 @@ setIsSubmitting(true);
         let block = evidence.unwrap();
         // "isSubmitting" should appear only once per file in the evidence
         let issubmitting_count = block.matches("Pattern `isSubmitting`").count();
-        assert_eq!(issubmitting_count, 1, "Should deduplicate per file, got {}", issubmitting_count);
+        assert_eq!(
+            issubmitting_count, 1,
+            "Should deduplicate per file, got {}",
+            issubmitting_count
+        );
     }
 }

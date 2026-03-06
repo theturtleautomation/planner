@@ -15,7 +15,7 @@ use planner_core::cxdb::CxdbEngine;
 use planner_core::llm::providers::LlmRouter;
 use planner_core::llm::{CompletionRequest, CompletionResponse, LlmClient, LlmError};
 use planner_core::pipeline::steps::factory_worker::MockFactoryWorker;
-use planner_core::pipeline::{PipelineConfig, run_full_pipeline};
+use planner_core::pipeline::{run_full_pipeline, PipelineConfig};
 use planner_schemas::*;
 use uuid::Uuid;
 
@@ -54,9 +54,7 @@ impl LlmClient for MockLlmClient {
             mock_ar_review_json()
         } else if system.contains("NLSpec Refiner") {
             mock_ar_refinement_json()
-        } else if system.contains("Scenario Augmentation")
-            || system.contains("Ralph")
-        {
+        } else if system.contains("Scenario Augmentation") || system.contains("Ralph") {
             mock_ralph_augment_json()
         } else if system.contains("Scenario Validator") || system.contains("evaluate whether") {
             mock_validate_json()
@@ -317,9 +315,12 @@ async fn tier1_intake_gateway_with_mock() {
     let router = mock_router();
     let project_id = Uuid::new_v4();
 
-    let result =
-        planner_core::pipeline::steps::intake::execute_intake(&router, project_id, "Build me a countdown timer")
-            .await;
+    let result = planner_core::pipeline::steps::intake::execute_intake(
+        &router,
+        project_id,
+        "Build me a countdown timer",
+    )
+    .await;
 
     assert!(result.is_ok(), "Intake should succeed: {:?}", result.err());
     let intake = result.unwrap();
@@ -348,7 +349,9 @@ async fn tier1_compile_spec_with_mock() {
     let project_id = Uuid::new_v4();
 
     // First produce an IntakeV1 from the mock
-    let intake_result = intake::execute_intake(&router, project_id, "Build a timer").await.unwrap();
+    let intake_result = intake::execute_intake(&router, project_id, "Build a timer")
+        .await
+        .unwrap();
 
     // Now compile the spec
     let spec_result = compile::compile_spec(&router, &intake_result, None).await;
@@ -380,8 +383,12 @@ async fn tier1_adversarial_review_with_mock() {
     let router = mock_router();
     let project_id = Uuid::new_v4();
 
-    let intake_result = intake::execute_intake(&router, project_id, "Build a timer").await.unwrap();
-    let spec = compile::compile_spec(&router, &intake_result, None).await.unwrap();
+    let intake_result = intake::execute_intake(&router, project_id, "Build a timer")
+        .await
+        .unwrap();
+    let spec = compile::compile_spec(&router, &intake_result, None)
+        .await
+        .unwrap();
 
     let ar_result = ar::execute_adversarial_review(&router, &spec, project_id, None).await;
     assert!(
@@ -392,8 +399,14 @@ async fn tier1_adversarial_review_with_mock() {
 
     let report = ar_result.unwrap();
     // Our mock returns advisory-only findings, so no blocking
-    assert!(!report.has_blocking, "Mock AR should have no blocking findings");
-    assert!(report.advisory_count >= 1, "Mock AR should have advisory findings");
+    assert!(
+        !report.has_blocking,
+        "Mock AR should have no blocking findings"
+    );
+    assert!(
+        report.advisory_count >= 1,
+        "Mock AR should have advisory findings"
+    );
 }
 
 /// Test 4: Full Front-Office pipeline with mock LLM.
@@ -450,7 +463,10 @@ async fn tier1_full_pipeline_with_mock_and_storage() {
     // Set up worktree root in temp dir
     let run_id = Uuid::new_v4();
     let worktree_root = std::env::temp_dir().join(format!("planner-tier1-full-{}", run_id));
-    std::env::set_var("PLANNER_WORKTREE_ROOT", worktree_root.to_string_lossy().to_string());
+    std::env::set_var(
+        "PLANNER_WORKTREE_ROOT",
+        worktree_root.to_string_lossy().to_string(),
+    );
 
     let worker = MockFactoryWorker::success(
         "Implemented all requirements successfully",
@@ -479,7 +495,11 @@ async fn tier1_full_pipeline_with_mock_and_storage() {
 
     // Git
     assert!(!output.git_result.commit.commit_hash.is_empty());
-    assert!(output.git_result.commit.message.contains("mock-timer-widget"));
+    assert!(output
+        .git_result
+        .commit
+        .message
+        .contains("mock-timer-widget"));
 
     // Budget tracking
     assert!(output.budget.current_spend_usd >= 0.0);
@@ -528,9 +548,18 @@ async fn tier3_live_intake_smoke() {
 
     match result {
         Ok(intake) => {
-            assert!(!intake.project_name.is_empty(), "Project name should not be empty");
-            assert!(!intake.feature_slug.is_empty(), "Feature slug should not be empty");
-            assert!(!intake.sacred_anchors.is_empty(), "Should have at least one Sacred Anchor");
+            assert!(
+                !intake.project_name.is_empty(),
+                "Project name should not be empty"
+            );
+            assert!(
+                !intake.feature_slug.is_empty(),
+                "Feature slug should not be empty"
+            );
+            assert!(
+                !intake.sacred_anchors.is_empty(),
+                "Should have at least one Sacred Anchor"
+            );
             assert!(
                 !intake.satisfaction_criteria_seeds.is_empty(),
                 "Should have at least one satisfaction criterion"

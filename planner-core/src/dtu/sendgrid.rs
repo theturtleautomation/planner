@@ -15,8 +15,8 @@ use std::sync::RwLock;
 
 use serde_json::{json, Value};
 
-use planner_schemas::{DtuConfigV1, DtuProviderInfo, DtuRequest, DtuResponse};
 use super::DtuProvider;
+use planner_schemas::{DtuConfigV1, DtuProviderInfo, DtuRequest, DtuResponse};
 
 // ---------------------------------------------------------------------------
 // SendGrid DTU Clone
@@ -99,11 +99,13 @@ impl SendGridDtu {
             };
         }
 
-        let from = body.pointer("/from/email")
+        let from = body
+            .pointer("/from/email")
             .and_then(|v| v.as_str())
             .unwrap_or("unknown@example.com")
             .to_string();
-        let subject = body.get("subject")
+        let subject = body
+            .get("subject")
             .and_then(|v| v.as_str())
             .unwrap_or("(no subject)")
             .to_string();
@@ -129,15 +131,19 @@ impl SendGridDtu {
 
     fn list_messages(&self) -> DtuResponse {
         let state = self.state.read().unwrap();
-        let messages: Vec<Value> = state.messages.values().map(|m| {
-            json!({
-                "msg_id": m.msg_id,
-                "from_email": m.from,
-                "to_email": m.to.first().unwrap_or(&String::new()),
-                "subject": m.subject,
-                "status": m.status,
+        let messages: Vec<Value> = state
+            .messages
+            .values()
+            .map(|m| {
+                json!({
+                    "msg_id": m.msg_id,
+                    "from_email": m.from,
+                    "to_email": m.to.first().unwrap_or(&String::new()),
+                    "subject": m.subject,
+                    "status": m.status,
+                })
             })
-        }).collect();
+            .collect();
 
         DtuResponse {
             status_code: 200,
@@ -173,23 +179,28 @@ fn extract_recipients(body: &Value) -> Vec<String> {
     body.get("personalizations")
         .and_then(|p| p.as_array())
         .map(|arr| {
-            arr.iter().flat_map(|p| {
-                p.get("to")
-                    .and_then(|t| t.as_array())
-                    .map(|to_arr| {
-                        to_arr.iter()
-                            .filter_map(|r| r.get("email").and_then(|e| e.as_str()))
-                            .map(String::from)
-                            .collect::<Vec<_>>()
-                    })
-                    .unwrap_or_default()
-            }).collect()
+            arr.iter()
+                .flat_map(|p| {
+                    p.get("to")
+                        .and_then(|t| t.as_array())
+                        .map(|to_arr| {
+                            to_arr
+                                .iter()
+                                .filter_map(|r| r.get("email").and_then(|e| e.as_str()))
+                                .map(String::from)
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default()
+                })
+                .collect()
         })
         .unwrap_or_default()
 }
 
 impl DtuProvider for SendGridDtu {
-    fn info(&self) -> &DtuProviderInfo { &self.info }
+    fn info(&self) -> &DtuProviderInfo {
+        &self.info
+    }
 
     fn handle_request(&self, request: &DtuRequest) -> DtuResponse {
         if let Some(failure) = self.check_failure(&request.path) {
@@ -226,9 +237,24 @@ impl DtuProvider for SendGridDtu {
             if seed.entity_type == "message" {
                 let msg = EmailMessage {
                     msg_id: seed.entity_id.clone(),
-                    from: seed.initial_state.get("from").and_then(|v| v.as_str()).unwrap_or("seed@example.com").to_string(),
-                    to: vec![seed.initial_state.get("to").and_then(|v| v.as_str()).unwrap_or("test@example.com").to_string()],
-                    subject: seed.initial_state.get("subject").and_then(|v| v.as_str()).unwrap_or("Seeded").to_string(),
+                    from: seed
+                        .initial_state
+                        .get("from")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("seed@example.com")
+                        .to_string(),
+                    to: vec![seed
+                        .initial_state
+                        .get("to")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("test@example.com")
+                        .to_string()],
+                    subject: seed
+                        .initial_state
+                        .get("subject")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Seeded")
+                        .to_string(),
                     status: "delivered".into(),
                 };
                 state.messages.insert(msg.msg_id.clone(), msg);
@@ -278,7 +304,8 @@ mod tests {
         DtuRequest {
             method: "POST".into(),
             path: "/v3/mail/send".into(),
-            query_params: vec![], headers: vec![],
+            query_params: vec![],
+            headers: vec![],
             body: Some(body),
         }
     }
@@ -286,7 +313,10 @@ mod tests {
     #[test]
     fn send_mail_returns_202() {
         let dtu = SendGridDtu::new();
-        let resp = dtu.handle_request(&make_send_request(send_mail_body("test@example.com", "Hello")));
+        let resp = dtu.handle_request(&make_send_request(send_mail_body(
+            "test@example.com",
+            "Hello",
+        )));
         assert_eq!(resp.status_code, 202);
         assert!(resp.headers.iter().any(|(k, _)| k == "X-Message-Id"));
     }
@@ -301,22 +331,37 @@ mod tests {
     #[test]
     fn list_messages_after_send() {
         let dtu = SendGridDtu::new();
-        dtu.handle_request(&make_send_request(send_mail_body("test@example.com", "Hello")));
+        dtu.handle_request(&make_send_request(send_mail_body(
+            "test@example.com",
+            "Hello",
+        )));
 
         let resp = dtu.handle_request(&DtuRequest {
-            method: "GET".into(), path: "/v3/messages".into(),
-            query_params: vec![], headers: vec![], body: None,
+            method: "GET".into(),
+            path: "/v3/messages".into(),
+            query_params: vec![],
+            headers: vec![],
+            body: None,
         });
         assert_eq!(resp.status_code, 200);
-        let messages = resp.body.get("messages").and_then(|m| m.as_array()).unwrap();
+        let messages = resp
+            .body
+            .get("messages")
+            .and_then(|m| m.as_array())
+            .unwrap();
         assert_eq!(messages.len(), 1);
     }
 
     #[test]
     fn get_message_by_id() {
         let dtu = SendGridDtu::new();
-        let send_resp = dtu.handle_request(&make_send_request(send_mail_body("test@example.com", "Test Email")));
-        let msg_id = send_resp.headers.iter()
+        let send_resp = dtu.handle_request(&make_send_request(send_mail_body(
+            "test@example.com",
+            "Test Email",
+        )));
+        let msg_id = send_resp
+            .headers
+            .iter()
             .find(|(k, _)| k == "X-Message-Id")
             .map(|(_, v)| v.clone())
             .unwrap();
@@ -324,18 +369,26 @@ mod tests {
         let resp = dtu.handle_request(&DtuRequest {
             method: "GET".into(),
             path: format!("/v3/messages/{}", msg_id),
-            query_params: vec![], headers: vec![], body: None,
+            query_params: vec![],
+            headers: vec![],
+            body: None,
         });
         assert_eq!(resp.status_code, 200);
-        assert_eq!(resp.body.get("subject").and_then(|v| v.as_str()).unwrap(), "Test Email");
+        assert_eq!(
+            resp.body.get("subject").and_then(|v| v.as_str()).unwrap(),
+            "Test Email"
+        );
     }
 
     #[test]
     fn get_nonexistent_message_404() {
         let dtu = SendGridDtu::new();
         let resp = dtu.handle_request(&DtuRequest {
-            method: "GET".into(), path: "/v3/messages/nonexistent".into(),
-            query_params: vec![], headers: vec![], body: None,
+            method: "GET".into(),
+            path: "/v3/messages/nonexistent".into(),
+            query_params: vec![],
+            headers: vec![],
+            body: None,
         });
         assert_eq!(resp.status_code, 404);
     }
@@ -343,16 +396,26 @@ mod tests {
     #[test]
     fn failure_injection() {
         let dtu = SendGridDtu::new();
-        dtu.inject_failure("/v3/mail/send", 429, json!({"errors": [{"message": "Rate limit"}]}));
+        dtu.inject_failure(
+            "/v3/mail/send",
+            429,
+            json!({"errors": [{"message": "Rate limit"}]}),
+        );
 
-        let resp = dtu.handle_request(&make_send_request(send_mail_body("test@example.com", "Test")));
+        let resp = dtu.handle_request(&make_send_request(send_mail_body(
+            "test@example.com",
+            "Test",
+        )));
         assert_eq!(resp.status_code, 429);
     }
 
     #[test]
     fn reset_clears_all_state() {
         let dtu = SendGridDtu::new();
-        dtu.handle_request(&make_send_request(send_mail_body("test@example.com", "Hello")));
+        dtu.handle_request(&make_send_request(send_mail_body(
+            "test@example.com",
+            "Hello",
+        )));
         assert_eq!(dtu.state.read().unwrap().messages.len(), 1);
 
         dtu.reset();
@@ -363,8 +426,11 @@ mod tests {
     fn unknown_endpoint_404() {
         let dtu = SendGridDtu::new();
         let resp = dtu.handle_request(&DtuRequest {
-            method: "GET".into(), path: "/v3/unknown".into(),
-            query_params: vec![], headers: vec![], body: None,
+            method: "GET".into(),
+            path: "/v3/unknown".into(),
+            query_params: vec![],
+            headers: vec![],
+            body: None,
         });
         assert_eq!(resp.status_code, 404);
     }

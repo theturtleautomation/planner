@@ -18,11 +18,11 @@
 
 use uuid::Uuid;
 
-use crate::llm::{CompletionRequest, DefaultModels, Message, Role};
-use crate::llm::providers::LlmRouter;
-use planner_schemas::*;
-use super::{StepResult, StepError};
 use super::linter;
+use super::{StepError, StepResult};
+use crate::llm::providers::LlmRouter;
+use crate::llm::{CompletionRequest, DefaultModels, Message, Role};
+use planner_schemas::*;
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -121,13 +121,19 @@ pub async fn execute_ar_refinement(
 
     let mut all_open_questions = Vec::new();
     let mut all_amendment_entries = Vec::new();
-    let mut blocking_findings: Vec<ArFinding> = ar_report.findings.iter()
+    let mut blocking_findings: Vec<ArFinding> = ar_report
+        .findings
+        .iter()
         .filter(|f| f.severity == ArSeverity::Blocking)
         .cloned()
         .collect();
 
     for iteration in 1..=MAX_REFINEMENT_ITERATIONS {
-        tracing::info!("  Refinement iteration {}/{}", iteration, MAX_REFINEMENT_ITERATIONS);
+        tracing::info!(
+            "  Refinement iteration {}/{}",
+            iteration,
+            MAX_REFINEMENT_ITERATIONS
+        );
 
         // Build the refinement request
         let spec_text = super::ar::render_spec_for_review(&spec);
@@ -156,11 +162,15 @@ pub async fn execute_ar_refinement(
         }
 
         // Collect open questions
-        let new_oqs: Vec<OpenQuestion> = refinement.open_questions.iter().map(|q| OpenQuestion {
-            question: q.clone(),
-            raised_by: format!("ar-refiner-iter-{}", iteration),
-            resolution: None,
-        }).collect();
+        let new_oqs: Vec<OpenQuestion> = refinement
+            .open_questions
+            .iter()
+            .map(|q| OpenQuestion {
+                question: q.clone(),
+                raised_by: format!("ar-refiner-iter-{}", iteration),
+                resolution: None,
+            })
+            .collect();
         all_open_questions.extend(refinement.open_questions.clone());
         spec.open_questions.extend(new_oqs);
 
@@ -192,15 +202,19 @@ pub async fn execute_ar_refinement(
                     violations.len());
                 // Convert lint violations into pseudo-blocking ArFinding objects
                 // so the next refinement iteration has concrete findings to address.
-                blocking_findings = violations.iter().enumerate().map(|(i, msg)| ArFinding {
-                    id: format!("LINT-{:02}", i + 1),
-                    severity: ArSeverity::Blocking,
-                    reviewer: ArReviewer::Opus,
-                    description: msg.clone(),
-                    affected_section: "spec".into(),
-                    affected_requirements: vec![],
-                    suggested_resolution: Some(format!("Fix lint violation: {}", msg)),
-                }).collect();
+                blocking_findings = violations
+                    .iter()
+                    .enumerate()
+                    .map(|(i, msg)| ArFinding {
+                        id: format!("LINT-{:02}", i + 1),
+                        severity: ArSeverity::Blocking,
+                        reviewer: ArReviewer::Opus,
+                        description: msg.clone(),
+                        affected_section: "spec".into(),
+                        affected_requirements: vec![],
+                        suggested_resolution: Some(format!("Fix lint violation: {}", msg)),
+                    })
+                    .collect();
             }
             Err(e) => return Err(e),
         }
@@ -230,8 +244,9 @@ pub fn generate_oq_consequence_cards(
     open_questions: &[String],
     project_id: Uuid,
 ) -> Vec<ConsequenceCardV1> {
-    open_questions.iter().map(|oq| {
-        ConsequenceCardV1 {
+    open_questions
+        .iter()
+        .map(|oq| ConsequenceCardV1 {
             card_id: Uuid::new_v4(),
             project_id,
             trigger: CardTrigger::OpenQuestion,
@@ -250,8 +265,8 @@ pub fn generate_oq_consequence_cards(
             ],
             status: CardStatus::Pending,
             resolution: None,
-        }
-    }).collect()
+        })
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -259,18 +274,25 @@ pub fn generate_oq_consequence_cards(
 // ---------------------------------------------------------------------------
 
 fn render_blocking_findings(findings: &[ArFinding]) -> String {
-    findings.iter().enumerate().map(|(i, f)| {
-        format!(
-            "{}. [{}] {}: {}\n   Section: {}\n   Affected: {:?}\n   Suggested fix: {}",
-            i + 1,
-            f.id,
-            format!("{:?}", f.reviewer),
-            f.description,
-            f.affected_section,
-            f.affected_requirements,
-            f.suggested_resolution.as_deref().unwrap_or("(none provided)"),
-        )
-    }).collect::<Vec<_>>().join("\n\n")
+    findings
+        .iter()
+        .enumerate()
+        .map(|(i, f)| {
+            format!(
+                "{}. [{}] {}: {}\n   Section: {}\n   Affected: {:?}\n   Suggested fix: {}",
+                i + 1,
+                f.id,
+                format!("{:?}", f.reviewer),
+                f.description,
+                f.affected_section,
+                f.affected_requirements,
+                f.suggested_resolution
+                    .as_deref()
+                    .unwrap_or("(none provided)"),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n")
 }
 
 #[derive(Debug)]
@@ -324,18 +346,23 @@ fn parse_refinement_response(content: &str) -> StepResult<ParsedRefinement> {
     let json: RefinementJson = serde_json::from_str(&cleaned).map_err(|e| {
         StepError::JsonError(format!(
             "Failed to parse AR refinement response: {}. Raw: {}",
-            e, &content[..content.len().min(300)]
+            e,
+            &content[..content.len().min(300)]
         ))
     })?;
 
-    let amendments = json.amendments.into_iter().map(|a| ParsedAmendment {
-        finding_id: a.finding_id,
-        section: a.section,
-        action: a.action,
-        target_id: a.target_id,
-        new_content: a.new_content,
-        rationale: a.rationale,
-    }).collect();
+    let amendments = json
+        .amendments
+        .into_iter()
+        .map(|a| ParsedAmendment {
+            finding_id: a.finding_id,
+            section: a.section,
+            action: a.action,
+            target_id: a.target_id,
+            new_content: a.new_content,
+            rationale: a.rationale,
+        })
+        .collect();
 
     Ok(ParsedRefinement {
         amendments,
@@ -353,30 +380,27 @@ fn apply_amendment(spec: &mut NLSpecV1, amendment: &ParsedAmendment) {
     let action = amendment.action.to_lowercase();
 
     match section.as_str() {
-        "requirements" | "functional requirements" => {
-            match action.as_str() {
-                "modify" => {
-                    if let Some(target_id) = &amendment.target_id {
-                        if let Some(req) = spec.requirements.iter_mut()
-                            .find(|r| r.id == *target_id) {
-                            req.statement = amendment.new_content.clone();
-                            tracing::info!("      Amended {} statement", target_id);
-                        }
+        "requirements" | "functional requirements" => match action.as_str() {
+            "modify" => {
+                if let Some(target_id) = &amendment.target_id {
+                    if let Some(req) = spec.requirements.iter_mut().find(|r| r.id == *target_id) {
+                        req.statement = amendment.new_content.clone();
+                        tracing::info!("      Amended {} statement", target_id);
                     }
                 }
-                "add" => {
-                    let new_id = format!("FR-{}", spec.requirements.len() + 1);
-                    spec.requirements.push(Requirement {
-                        id: new_id.clone(),
-                        statement: amendment.new_content.clone(),
-                        priority: Priority::Must,
-                        traces_to: vec![],
-                    });
-                    tracing::info!("      Added requirement {}", new_id);
-                }
-                _ => {}
             }
-        }
+            "add" => {
+                let new_id = format!("FR-{}", spec.requirements.len() + 1);
+                spec.requirements.push(Requirement {
+                    id: new_id.clone(),
+                    statement: amendment.new_content.clone(),
+                    priority: Priority::Must,
+                    traces_to: vec![],
+                });
+                tracing::info!("      Added requirement {}", new_id);
+            }
+            _ => {}
+        },
         "definition of done" | "dod" => {
             match action.as_str() {
                 "modify" => {
@@ -405,7 +429,8 @@ fn apply_amendment(spec: &mut NLSpecV1, amendment: &ParsedAmendment) {
         }
         "architectural constraints" | "constraints" => {
             if action == "add" {
-                spec.architectural_constraints.push(amendment.new_content.clone());
+                spec.architectural_constraints
+                    .push(amendment.new_content.clone());
                 tracing::info!("      Added architectural constraint");
             }
         }
@@ -495,7 +520,9 @@ mod tests {
         };
 
         apply_amendment(&mut spec, &amendment);
-        assert!(spec.requirements[0].statement.contains("reject non-positive"));
+        assert!(spec.requirements[0]
+            .statement
+            .contains("reject non-positive"));
     }
 
     #[test]
@@ -514,7 +541,12 @@ mod tests {
 
         apply_amendment(&mut spec, &amendment);
         assert_eq!(spec.requirements.len(), original_count + 1);
-        assert!(spec.requirements.last().unwrap().statement.contains("zero-length"));
+        assert!(spec
+            .requirements
+            .last()
+            .unwrap()
+            .statement
+            .contains("zero-length"));
     }
 
     #[test]
@@ -560,17 +592,16 @@ mod tests {
             line_count: 50,
             created_from: "test".into(),
             intent_summary: Some("Build a timer".into()),
-            sacred_anchors: Some(vec![
-                NLSpecAnchor { id: "SA-1".into(), statement: "Never negative".into() },
-            ]),
-            requirements: vec![
-                Requirement {
-                    id: "FR-1".into(),
-                    statement: "The system must accept a positive integer duration in seconds".into(),
-                    priority: Priority::Must,
-                    traces_to: vec!["SA-1".into()],
-                },
-            ],
+            sacred_anchors: Some(vec![NLSpecAnchor {
+                id: "SA-1".into(),
+                statement: "Never negative".into(),
+            }]),
+            requirements: vec![Requirement {
+                id: "FR-1".into(),
+                statement: "The system must accept a positive integer duration in seconds".into(),
+                priority: Priority::Must,
+                traces_to: vec!["SA-1".into()],
+            }],
             architectural_constraints: vec!["React only".into()],
             phase1_contracts: Some(vec![Phase1Contract {
                 name: "TimerState".into(),
@@ -578,16 +609,15 @@ mod tests {
                 consumed_by: vec!["ui".into()],
             }]),
             external_dependencies: vec![],
-            definition_of_done: vec![
-                DoDItem { criterion: "Timer works".into(), mechanically_checkable: true },
-            ],
-            satisfaction_criteria: vec![
-                SatisfactionCriterion {
-                    id: "SC-1".into(),
-                    description: "Counts down to zero".into(),
-                    tier_hint: ScenarioTierHint::Critical,
-                },
-            ],
+            definition_of_done: vec![DoDItem {
+                criterion: "Timer works".into(),
+                mechanically_checkable: true,
+            }],
+            satisfaction_criteria: vec![SatisfactionCriterion {
+                id: "SC-1".into(),
+                description: "Counts down to zero".into(),
+                tier_hint: ScenarioTierHint::Critical,
+            }],
             open_questions: vec![],
             out_of_scope: vec!["Sound alerts".into()],
             amendment_log: vec![],

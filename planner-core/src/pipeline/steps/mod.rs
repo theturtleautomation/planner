@@ -19,20 +19,20 @@
 //! - `telemetry`       — Factory output → plain English + Consequence Cards
 //! - `git`             — Behavioral approval → standard Git commit
 
-pub mod intake;
-pub mod compile;
-pub mod linter;
-pub mod chunk_planner;
-pub mod context_pack;
 pub mod ar;
 pub mod ar_refinement;
-pub mod ralph;
+pub mod chunk_planner;
+pub mod compile;
+pub mod context_pack;
 pub mod factory;
 pub mod factory_worker;
-pub mod validate;
-pub mod telemetry;
 pub mod git;
+pub mod intake;
+pub mod linter;
+pub mod ralph;
 pub mod socratic;
+pub mod telemetry;
+pub mod validate;
 
 /// Result type for pipeline step execution.
 pub type StepResult<T> = Result<T, StepError>;

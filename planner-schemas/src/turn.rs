@@ -91,8 +91,8 @@ impl<T: ArtifactPayload> Turn<T> {
         execution_id: impl Into<String>,
     ) -> Self {
         let type_id = T::TYPE_ID.to_string();
-        let blob_bytes = rmp_serde::to_vec(&payload)
-            .expect("payload must be serializable to msgpack");
+        let blob_bytes =
+            rmp_serde::to_vec(&payload).expect("payload must be serializable to msgpack");
         let blob_hash = blake3::hash(&blob_bytes).to_hex().to_string();
 
         Turn {
@@ -133,8 +133,8 @@ impl<T: ArtifactPayload> Turn<T> {
     /// Recompute and verify the blob hash. Returns `true` if the payload
     /// matches the stored hash (integrity check).
     pub fn verify_integrity(&self) -> bool {
-        let blob_bytes = rmp_serde::to_vec(&self.payload)
-            .expect("payload must be serializable to msgpack");
+        let blob_bytes =
+            rmp_serde::to_vec(&self.payload).expect("payload must be serializable to msgpack");
         let computed = blake3::hash(&blob_bytes).to_hex().to_string();
         computed == self.blob_hash
     }
@@ -159,13 +159,7 @@ mod tests {
         let payload = TestPayload {
             value: "hello".into(),
         };
-        let turn = Turn::new(
-            payload,
-            None,
-            Uuid::new_v4(),
-            "test",
-            "test-step-0",
-        );
+        let turn = Turn::new(payload, None, Uuid::new_v4(), "test", "test-step-0");
 
         assert_eq!(turn.type_id, "test.payload.v1");
         assert!(turn.verify_integrity());
@@ -174,22 +168,19 @@ mod tests {
     #[test]
     fn turn_new_with_project_sets_project_id() {
         let pid = Uuid::new_v4();
-        let payload = TestPayload { value: "proj".into() };
-        let turn = Turn::new_with_project(
-            payload,
-            None,
-            Uuid::new_v4(),
-            "test",
-            "step-0",
-            pid,
-        );
+        let payload = TestPayload {
+            value: "proj".into(),
+        };
+        let turn = Turn::new_with_project(payload, None, Uuid::new_v4(), "test", "step-0", pid);
         assert_eq!(turn.metadata.project_id, Some(pid));
         assert!(turn.verify_integrity());
     }
 
     #[test]
     fn turn_new_without_project_has_none() {
-        let payload = TestPayload { value: "no-proj".into() };
+        let payload = TestPayload {
+            value: "no-proj".into(),
+        };
         let turn = Turn::new(payload, None, Uuid::new_v4(), "test", "step-0");
         assert_eq!(turn.metadata.project_id, None);
     }
@@ -199,13 +190,7 @@ mod tests {
         let payload = TestPayload {
             value: "original".into(),
         };
-        let mut turn = Turn::new(
-            payload,
-            None,
-            Uuid::new_v4(),
-            "test",
-            "test-step-0",
-        );
+        let mut turn = Turn::new(payload, None, Uuid::new_v4(), "test", "test-step-0");
 
         // Tamper with the payload after construction
         turn.payload.value = "tampered".into();

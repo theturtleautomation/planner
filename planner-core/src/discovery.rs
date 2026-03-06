@@ -86,8 +86,9 @@ impl ProposalStore {
 
         let proposals = if proposals_path.exists() {
             let bytes = std::fs::read(&proposals_path)?;
-            rmp_serde::from_slice::<Vec<ProposedNode>>(&bytes)
-                .map_err(|err| std::io::Error::other(format!("failed to decode proposals: {}", err)))?
+            rmp_serde::from_slice::<Vec<ProposedNode>>(&bytes).map_err(|err| {
+                std::io::Error::other(format!("failed to decode proposals: {}", err))
+            })?
         } else {
             Vec::new()
         };
@@ -211,9 +212,7 @@ pub fn scan_cargo_toml(project_root: &Path, blueprints: &BlueprintStore) -> Scan
         let contents = match std::fs::read_to_string(&manifest) {
             Ok(contents) => contents,
             Err(err) => {
-                output
-                    .errors
-                    .push(format!("{}: {}", relative, err));
+                output.errors.push(format!("{}: {}", relative, err));
                 continue;
             }
         };
@@ -243,7 +242,10 @@ pub fn scan_cargo_toml(project_root: &Path, blueprints: &BlueprintStore) -> Scan
                 id: Uuid::new_v4().to_string(),
                 node,
                 source: DiscoverySource::CargoToml,
-                reason: format!("Dependency '{}' discovered in {}", dependency.name, relative),
+                reason: format!(
+                    "Dependency '{}' discovered in {}",
+                    dependency.name, relative
+                ),
                 status: ProposalStatus::Pending,
                 proposed_at: now_iso(),
                 reviewed_at: None,
@@ -265,7 +267,11 @@ pub fn scan_directory_structure(project_root: &Path, blueprints: &BlueprintStore
     for path in directory_candidates(project_root) {
         let relative = relative_display(project_root, &path);
         let key = relative.to_lowercase();
-        let component_name = humanize_name(path.file_name().and_then(|name| name.to_str()).unwrap_or("component"));
+        let component_name = humanize_name(
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("component"),
+        );
         if !seen.insert(key) || existing_names.contains(&component_name.to_lowercase()) {
             output.skipped_count += 1;
             continue;
@@ -407,7 +413,17 @@ fn is_conventional_component_dir(name: &str) -> bool {
     let normalized = name.to_lowercase();
     matches!(
         normalized.as_str(),
-        "api" | "app" | "cli" | "core" | "db" | "lib" | "pipeline" | "services" | "store" | "ui" | "web"
+        "api"
+            | "app"
+            | "cli"
+            | "core"
+            | "db"
+            | "lib"
+            | "pipeline"
+            | "services"
+            | "store"
+            | "ui"
+            | "web"
     )
 }
 
@@ -528,11 +544,15 @@ fn infer_component_type(path: &str) -> ComponentType {
     let normalized = path.to_lowercase();
     if normalized.contains("pipeline") {
         ComponentType::Pipeline
-    } else if normalized.contains("api") || normalized.contains("service") || normalized.ends_with("server") {
+    } else if normalized.contains("api")
+        || normalized.contains("service")
+        || normalized.ends_with("server")
+    {
         ComponentType::Service
     } else if normalized.contains("store") || normalized.contains("db") {
         ComponentType::Store
-    } else if normalized.contains("web") || normalized.contains("ui") || normalized.contains("cli") {
+    } else if normalized.contains("web") || normalized.contains("ui") || normalized.contains("cli")
+    {
         ComponentType::Interface
     } else if normalized.contains("core") || normalized.contains("lib") {
         ComponentType::Library
@@ -561,7 +581,8 @@ mod tests {
     use super::*;
 
     fn temp_dir(prefix: &str) -> PathBuf {
-        let path = std::env::temp_dir().join(format!("planner-discovery-{}-{}", prefix, Uuid::new_v4()));
+        let path =
+            std::env::temp_dir().join(format!("planner-discovery-{}-{}", prefix, Uuid::new_v4()));
         std::fs::create_dir_all(&path).unwrap();
         path
     }
@@ -646,7 +667,9 @@ mod tests {
         };
 
         store.insert_many(vec![proposal.clone()]).unwrap();
-        store.mark_rejected(&proposal.id, Some("not needed".into())).unwrap();
+        store
+            .mark_rejected(&proposal.id, Some("not needed".into()))
+            .unwrap();
 
         let reopened = ProposalStore::open(&dir).unwrap();
         let rejected = reopened.list(Some(ProposalStatus::Rejected));

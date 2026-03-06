@@ -313,7 +313,9 @@ This agent owns the entire countdown-timer feature.
 /// are tested via their unit tests + canned data here.
 #[tokio::test]
 async fn e2e_phase0_pipeline_simulation() {
-    use planner_core::pipeline::steps::{factory, factory_worker::MockFactoryWorker, git, linter, telemetry};
+    use planner_core::pipeline::steps::{
+        factory, factory_worker::MockFactoryWorker, git, linter, telemetry,
+    };
 
     let project_id = Uuid::new_v4();
     let run_id = Uuid::new_v4();
@@ -369,10 +371,7 @@ async fn e2e_phase0_pipeline_simulation() {
 
     assert_eq!(factory_output.build_status, BuildStatus::Success);
     assert!(!factory_output.node_results.is_empty());
-    assert!(factory_output
-        .node_results
-        .iter()
-        .all(|n| n.success));
+    assert!(factory_output.node_results.iter().all(|n| n.success));
 
     // Verify worktree output directory was created
     let output_path = std::path::Path::new(&factory_output.output_path);
@@ -694,16 +693,14 @@ async fn e2e_phase1_dod_checker_integration() {
         spend_usd: 0.50,
         checkpoint_path: "/tmp/cp.json".into(),
         dod_results: vec![],
-        node_results: vec![
-            NodeResult {
-                node_name: "implement".into(),
-                success: true,
-                attempts: 1,
-                spend_usd: 0.30,
-                duration_secs: 20.0,
-                error: None,
-            },
-        ],
+        node_results: vec![NodeResult {
+            node_name: "implement".into(),
+            success: true,
+            attempts: 1,
+            spend_usd: 0.30,
+            duration_secs: 20.0,
+            error: None,
+        }],
         output_path: "/tmp/output".into(),
     };
 
@@ -716,11 +713,7 @@ async fn e2e_phase1_dod_checker_integration() {
         scenario_results: vec![],
     };
 
-    let dod_results = validate::check_definition_of_done(
-        &spec,
-        &factory_output,
-        &satisfaction,
-    );
+    let dod_results = validate::check_definition_of_done(&spec, &factory_output, &satisfaction);
 
     // The test spec has 3 DoD items, all mechanically checkable
     assert_eq!(dod_results.len(), 3);
@@ -740,11 +733,8 @@ async fn e2e_phase1_dod_checker_integration() {
         ..satisfaction.clone()
     };
 
-    let dod_fail_results = validate::check_definition_of_done(
-        &spec,
-        &failed_factory,
-        &failed_satisfaction,
-    );
+    let dod_fail_results =
+        validate::check_definition_of_done(&spec, &failed_factory, &failed_satisfaction);
 
     // Build-related DoD items should fail
     assert!(dod_fail_results.iter().any(|r| !r.passed));
@@ -765,16 +755,14 @@ async fn e2e_phase1_high_gate_failure_consequence_card() {
         spend_usd: 0.75,
         checkpoint_path: "/tmp/cp.json".into(),
         dod_results: vec![],
-        node_results: vec![
-            NodeResult {
-                node_name: "implement".into(),
-                success: true,
-                attempts: 1,
-                spend_usd: 0.75,
-                duration_secs: 30.0,
-                error: None,
-            },
-        ],
+        node_results: vec![NodeResult {
+            node_name: "implement".into(),
+            success: true,
+            attempts: 1,
+            spend_usd: 0.75,
+            duration_secs: 30.0,
+            error: None,
+        }],
         output_path: "/tmp/out".into(),
     };
 
@@ -785,19 +773,17 @@ async fn e2e_phase1_high_gate_failure_consequence_card() {
         high_pass_rate: 0.80,
         medium_pass_rate: 0.95,
         gates_passed: false,
-        scenario_results: vec![
-            ScenarioResult {
-                scenario_id: "SC-HIGH-1".into(),
-                tier: ScenarioTier::High,
-                runs: [0.3, 0.4, 0.2],
-                majority_pass: false,
-                score: 0.3,
-                generalized_error: Some(GeneralizedError {
-                    category: "state-management".into(),
-                    severity: Severity::High,
-                }),
-            },
-        ],
+        scenario_results: vec![ScenarioResult {
+            scenario_id: "SC-HIGH-1".into(),
+            tier: ScenarioTier::High,
+            runs: [0.3, 0.4, 0.2],
+            majority_pass: false,
+            score: 0.3,
+            generalized_error: Some(GeneralizedError {
+                category: "state-management".into(),
+                severity: Severity::High,
+            }),
+        }],
     };
 
     let budget = RunBudgetV1::new_phase0(project_id, Uuid::new_v4());
@@ -983,19 +969,25 @@ async fn e2e_phase2_ar_refinement_applies_amendments() {
     assert!(spec.amendment_log.is_empty());
 
     // Simulate: modify FR-1 statement
-    let fr1 = spec.requirements.iter_mut().find(|r| r.id == "FR-1").unwrap();
+    let fr1 = spec
+        .requirements
+        .iter_mut()
+        .find(|r| r.id == "FR-1")
+        .unwrap();
     fr1.statement = "The system must accept a positive integer duration in seconds and reject non-positive values with an error message".into();
 
     // Simulate: add a new requirement
     spec.requirements.push(Requirement {
         id: "FR-5".into(),
-        statement: "The system must handle zero-length durations by displaying 00:00 immediately".into(),
+        statement: "The system must handle zero-length durations by displaying 00:00 immediately"
+            .into(),
         priority: Priority::Should,
         traces_to: vec!["SA-1".into()],
     });
 
     // Simulate: add out-of-scope item
-    spec.out_of_scope.push("Timer persistence across browser sessions".into());
+    spec.out_of_scope
+        .push("Timer persistence across browser sessions".into());
 
     // Simulate: add amendment log entry
     spec.amendment_log.push(Amendment {
@@ -1007,7 +999,9 @@ async fn e2e_phase2_ar_refinement_applies_amendments() {
 
     // Verify amended spec
     assert_eq!(spec.requirements.len(), 5);
-    assert!(spec.requirements[0].statement.contains("reject non-positive"));
+    assert!(spec.requirements[0]
+        .statement
+        .contains("reject non-positive"));
     assert_eq!(spec.requirements[4].id, "FR-5");
     assert_eq!(spec.out_of_scope.len(), 4);
     assert!(spec.out_of_scope.last().unwrap().contains("persistence"));
@@ -1063,18 +1057,33 @@ async fn e2e_phase2_spec_rendering_for_review() {
 
     // Check all sections are present
     assert!(rendered.contains("# NLSpec"), "Missing header");
-    assert!(rendered.contains("Intent Summary"), "Missing intent summary");
-    assert!(rendered.contains("Sacred Anchors"), "Missing sacred anchors");
+    assert!(
+        rendered.contains("Intent Summary"),
+        "Missing intent summary"
+    );
+    assert!(
+        rendered.contains("Sacred Anchors"),
+        "Missing sacred anchors"
+    );
     assert!(rendered.contains("SA-1"), "Missing SA-1");
     assert!(rendered.contains("SA-2"), "Missing SA-2");
-    assert!(rendered.contains("Functional Requirements"), "Missing requirements");
+    assert!(
+        rendered.contains("Functional Requirements"),
+        "Missing requirements"
+    );
     assert!(rendered.contains("FR-1"), "Missing FR-1");
     assert!(rendered.contains("FR-2"), "Missing FR-2");
     assert!(rendered.contains("FR-3"), "Missing FR-3");
     assert!(rendered.contains("FR-4"), "Missing FR-4");
-    assert!(rendered.contains("Architectural Constraints"), "Missing constraints");
+    assert!(
+        rendered.contains("Architectural Constraints"),
+        "Missing constraints"
+    );
     assert!(rendered.contains("Phase 1 Contracts"), "Missing contracts");
-    assert!(rendered.contains("TimerState"), "Missing TimerState contract");
+    assert!(
+        rendered.contains("TimerState"),
+        "Missing TimerState contract"
+    );
     assert!(rendered.contains("Definition of Done"), "Missing DoD");
     assert!(rendered.contains("Satisfaction Criteria"), "Missing SC");
     assert!(rendered.contains("SC-1"), "Missing SC-1");
@@ -1142,29 +1151,33 @@ async fn e2e_phase2_ar_severity_classification() {
     report.recalculate();
 
     // Verify `has_blocking` is set correctly
-    assert!(report.has_blocking, "Report with Blocking findings must set has_blocking=true");
+    assert!(
+        report.has_blocking,
+        "Report with Blocking findings must set has_blocking=true"
+    );
 
     // Verify each severity bucket is counted correctly
     assert_eq!(report.blocking_count, 2, "Expected 2 blocking findings");
     assert_eq!(report.advisory_count, 1, "Expected 1 advisory finding");
-    assert_eq!(report.informational_count, 1, "Expected 1 informational finding");
+    assert_eq!(
+        report.informational_count, 1,
+        "Expected 1 informational finding"
+    );
 
     // A report with only advisory/informational should NOT set has_blocking
     let mut clean_report = ArReportV1 {
         project_id,
         chunk_name: "root".into(),
         nlspec_version: "1.0".into(),
-        findings: vec![
-            ArFinding {
-                id: String::new(),
-                reviewer: ArReviewer::Gpt,
-                severity: ArSeverity::Advisory,
-                affected_section: "DoD".into(),
-                affected_requirements: vec![],
-                description: "Minor suggestion".into(),
-                suggested_resolution: None,
-            },
-        ],
+        findings: vec![ArFinding {
+            id: String::new(),
+            reviewer: ArReviewer::Gpt,
+            severity: ArSeverity::Advisory,
+            affected_section: "DoD".into(),
+            affected_requirements: vec![],
+            description: "Minor suggestion".into(),
+            suggested_resolution: None,
+        }],
         reviewer_summaries: vec![],
         has_blocking: false,
         blocking_count: 0,
@@ -1172,7 +1185,10 @@ async fn e2e_phase2_ar_severity_classification() {
         informational_count: 0,
     };
     clean_report.recalculate();
-    assert!(!clean_report.has_blocking, "Report with only advisory findings must NOT set has_blocking");
+    assert!(
+        !clean_report.has_blocking,
+        "Report with only advisory findings must NOT set has_blocking"
+    );
     assert_eq!(clean_report.blocking_count, 0);
     assert_eq!(clean_report.advisory_count, 1);
 }
@@ -1192,20 +1208,37 @@ async fn e2e_phase2_recipe_includes_ar_steps() {
     // ---- 1. Total step count ----
     // The Phase 0 recipe has 17 steps (intake through git-projection).
     assert_eq!(
-        recipe.steps.len(), 17,
+        recipe.steps.len(),
+        17,
         "Phase 0 recipe should have exactly 17 steps; found {}: {:?}",
         recipe.steps.len(),
-        recipe.steps.iter().map(|s| s.step_id.as_str()).collect::<Vec<_>>(),
+        recipe
+            .steps
+            .iter()
+            .map(|s| s.step_id.as_str())
+            .collect::<Vec<_>>(),
     );
 
     // ---- 2. Required step IDs are present ----
     let step_ids: Vec<&str> = recipe.steps.iter().map(|s| s.step_id.as_str()).collect();
     for expected in &[
-        "intake", "chunk-plan", "compile-spec", "lint-spec",
-        "adversarial-review", "ar-refinement", "generate-scenarios",
-        "ralph-loop", "compile-graph-dot", "compile-agents-manifest",
-        "factory-handoff", "factory-poll", "validate-scenarios",
-        "deploy-sandbox", "present-telemetry", "await-approval", "git-projection",
+        "intake",
+        "chunk-plan",
+        "compile-spec",
+        "lint-spec",
+        "adversarial-review",
+        "ar-refinement",
+        "generate-scenarios",
+        "ralph-loop",
+        "compile-graph-dot",
+        "compile-agents-manifest",
+        "factory-handoff",
+        "factory-poll",
+        "validate-scenarios",
+        "deploy-sandbox",
+        "present-telemetry",
+        "await-approval",
+        "git-projection",
     ] {
         assert!(
             step_ids.contains(expected),
@@ -1218,58 +1251,148 @@ async fn e2e_phase2_recipe_includes_ar_steps() {
     let pos = |id: &str| step_ids.iter().position(|&s| s == id).unwrap();
 
     // intake → chunk-plan → compile-spec → lint-spec → adversarial-review → ar-refinement
-    assert!(pos("intake")              < pos("chunk-plan"),         "intake before chunk-plan");
-    assert!(pos("chunk-plan")          < pos("compile-spec"),       "chunk-plan before compile-spec");
-    assert!(pos("compile-spec")        < pos("lint-spec"),          "compile-spec before lint-spec");
-    assert!(pos("lint-spec")           < pos("adversarial-review"), "lint-spec before adversarial-review");
-    assert!(pos("adversarial-review")  < pos("ar-refinement"),      "AR before refinement");
+    assert!(
+        pos("intake") < pos("chunk-plan"),
+        "intake before chunk-plan"
+    );
+    assert!(
+        pos("chunk-plan") < pos("compile-spec"),
+        "chunk-plan before compile-spec"
+    );
+    assert!(
+        pos("compile-spec") < pos("lint-spec"),
+        "compile-spec before lint-spec"
+    );
+    assert!(
+        pos("lint-spec") < pos("adversarial-review"),
+        "lint-spec before adversarial-review"
+    );
+    assert!(
+        pos("adversarial-review") < pos("ar-refinement"),
+        "AR before refinement"
+    );
 
     // ar-refinement → generate-scenarios → ralph-loop → compile-graph-dot
-    assert!(pos("ar-refinement")       < pos("generate-scenarios"), "refinement before scenarios");
-    assert!(pos("generate-scenarios")  < pos("ralph-loop"),         "scenarios before ralph");
-    assert!(pos("ralph-loop")          < pos("compile-graph-dot"),  "ralph before graph-dot");
+    assert!(
+        pos("ar-refinement") < pos("generate-scenarios"),
+        "refinement before scenarios"
+    );
+    assert!(
+        pos("generate-scenarios") < pos("ralph-loop"),
+        "scenarios before ralph"
+    );
+    assert!(
+        pos("ralph-loop") < pos("compile-graph-dot"),
+        "ralph before graph-dot"
+    );
 
     // factory-handoff → factory-poll → validate-scenarios → present-telemetry → git-projection
-    assert!(pos("factory-handoff")     < pos("factory-poll"),       "handoff before poll");
-    assert!(pos("factory-poll")        < pos("validate-scenarios"), "poll before validate");
-    assert!(pos("validate-scenarios")  < pos("present-telemetry"),  "validate before telemetry");
-    assert!(pos("present-telemetry")   < pos("await-approval"),     "telemetry before approval");
-    assert!(pos("await-approval")      < pos("git-projection"),     "approval before git");
+    assert!(
+        pos("factory-handoff") < pos("factory-poll"),
+        "handoff before poll"
+    );
+    assert!(
+        pos("factory-poll") < pos("validate-scenarios"),
+        "poll before validate"
+    );
+    assert!(
+        pos("validate-scenarios") < pos("present-telemetry"),
+        "validate before telemetry"
+    );
+    assert!(
+        pos("present-telemetry") < pos("await-approval"),
+        "telemetry before approval"
+    );
+    assert!(
+        pos("await-approval") < pos("git-projection"),
+        "approval before git"
+    );
 
     // ---- 4. Dependency checks (spot-check key wires) ----
-    let ar_step = recipe.steps.iter().find(|s| s.step_id == "adversarial-review").unwrap();
-    assert!(ar_step.depends_on.contains(&"lint-spec".to_string()),
-        "adversarial-review should depend on lint-spec");
+    let ar_step = recipe
+        .steps
+        .iter()
+        .find(|s| s.step_id == "adversarial-review")
+        .unwrap();
+    assert!(
+        ar_step.depends_on.contains(&"lint-spec".to_string()),
+        "adversarial-review should depend on lint-spec"
+    );
 
-    let refine_step = recipe.steps.iter().find(|s| s.step_id == "ar-refinement").unwrap();
-    assert!(refine_step.depends_on.contains(&"adversarial-review".to_string()),
-        "ar-refinement should depend on adversarial-review");
+    let refine_step = recipe
+        .steps
+        .iter()
+        .find(|s| s.step_id == "ar-refinement")
+        .unwrap();
+    assert!(
+        refine_step
+            .depends_on
+            .contains(&"adversarial-review".to_string()),
+        "ar-refinement should depend on adversarial-review"
+    );
 
-    let graph_step = recipe.steps.iter().find(|s| s.step_id == "compile-graph-dot").unwrap();
-    assert!(graph_step.depends_on.contains(&"ralph-loop".to_string()),
-        "compile-graph-dot should depend on ralph-loop");
+    let graph_step = recipe
+        .steps
+        .iter()
+        .find(|s| s.step_id == "compile-graph-dot")
+        .unwrap();
+    assert!(
+        graph_step.depends_on.contains(&"ralph-loop".to_string()),
+        "compile-graph-dot should depend on ralph-loop"
+    );
 
-    let handoff_step = recipe.steps.iter().find(|s| s.step_id == "factory-handoff").unwrap();
-    assert!(handoff_step.depends_on.contains(&"compile-graph-dot".to_string()),
-        "factory-handoff should depend on compile-graph-dot");
-    assert!(handoff_step.depends_on.contains(&"generate-scenarios".to_string()),
-        "factory-handoff should depend on generate-scenarios");
-    assert!(handoff_step.depends_on.contains(&"compile-agents-manifest".to_string()),
-        "factory-handoff should depend on compile-agents-manifest");
+    let handoff_step = recipe
+        .steps
+        .iter()
+        .find(|s| s.step_id == "factory-handoff")
+        .unwrap();
+    assert!(
+        handoff_step
+            .depends_on
+            .contains(&"compile-graph-dot".to_string()),
+        "factory-handoff should depend on compile-graph-dot"
+    );
+    assert!(
+        handoff_step
+            .depends_on
+            .contains(&"generate-scenarios".to_string()),
+        "factory-handoff should depend on generate-scenarios"
+    );
+    assert!(
+        handoff_step
+            .depends_on
+            .contains(&"compile-agents-manifest".to_string()),
+        "factory-handoff should depend on compile-agents-manifest"
+    );
 
     // ---- 5. Step types ----
     assert!(matches!(ar_step.step_type, StepType::AdversarialReview));
     assert!(matches!(refine_step.step_type, StepType::ArRefinement));
     assert!(matches!(
-        recipe.steps.iter().find(|s| s.step_id == "chunk-plan").unwrap().step_type,
+        recipe
+            .steps
+            .iter()
+            .find(|s| s.step_id == "chunk-plan")
+            .unwrap()
+            .step_type,
         StepType::ChunkPlan
     ));
     assert!(matches!(
-        recipe.steps.iter().find(|s| s.step_id == "ralph-loop").unwrap().step_type,
+        recipe
+            .steps
+            .iter()
+            .find(|s| s.step_id == "ralph-loop")
+            .unwrap()
+            .step_type,
         StepType::RalphLoop
     ));
     assert!(matches!(
-        recipe.steps.iter().find(|s| s.step_id == "git-projection").unwrap().step_type,
+        recipe
+            .steps
+            .iter()
+            .find(|s| s.step_id == "git-projection")
+            .unwrap()
+            .step_type,
         StepType::GitProjection
     ));
 }
@@ -1288,17 +1411,15 @@ async fn e2e_phase2_refinement_no_blocking_passthrough() {
         project_id,
         chunk_name: "root".into(),
         nlspec_version: "1.0".into(),
-        findings: vec![
-            ArFinding {
-                id: "AR-A-1".into(),
-                reviewer: ArReviewer::Gpt,
-                severity: ArSeverity::Advisory,
-                affected_section: "DoD".into(),
-                affected_requirements: vec![],
-                description: "Minor suggestion".into(),
-                suggested_resolution: None,
-            },
-        ],
+        findings: vec![ArFinding {
+            id: "AR-A-1".into(),
+            reviewer: ArReviewer::Gpt,
+            severity: ArSeverity::Advisory,
+            affected_section: "DoD".into(),
+            affected_requirements: vec![],
+            description: "Minor suggestion".into(),
+            suggested_resolution: None,
+        }],
         reviewer_summaries: vec![],
         has_blocking: false,
         blocking_count: 0,
@@ -1309,24 +1430,36 @@ async fn e2e_phase2_refinement_no_blocking_passthrough() {
     // has_blocking=false → execute_ar_refinement should short-circuit immediately.
     // We use a no-op router since no LLM call should be made.
     let router = planner_core::llm::providers::LlmRouter::from_env();
-    let result = ar_refinement::execute_ar_refinement(
-        &router,
-        spec.clone(),
-        &report,
-        project_id,
-    ).await;
+    let result =
+        ar_refinement::execute_ar_refinement(&router, spec.clone(), &report, project_id).await;
 
-    assert!(result.is_ok(), "Non-blocking report refinement should not fail: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Non-blocking report refinement should not fail: {:?}",
+        result.err()
+    );
     let refinement = result.unwrap();
 
     // Short-circuit path: 0 iterations (no LLM call needed)
-    assert_eq!(refinement.iterations, 0, "Non-blocking report should return with 0 iterations");
+    assert_eq!(
+        refinement.iterations, 0,
+        "Non-blocking report should return with 0 iterations"
+    );
     // The spec comes back untouched
-    assert!(refinement.resolved, "Non-blocking report should be marked resolved");
+    assert!(
+        refinement.resolved,
+        "Non-blocking report should be marked resolved"
+    );
     // No open questions should be generated
-    assert!(refinement.open_questions.is_empty(), "Non-blocking report should have no OQs");
+    assert!(
+        refinement.open_questions.is_empty(),
+        "Non-blocking report should have no OQs"
+    );
     // No amendment log entries
-    assert!(refinement.amendment_entries.is_empty(), "Non-blocking report should have no amendments");
+    assert!(
+        refinement.amendment_entries.is_empty(),
+        "Non-blocking report should have no amendments"
+    );
     // The returned spec should match the input
     assert_eq!(refinement.spec.project_id, spec.project_id);
     assert_eq!(refinement.spec.requirements.len(), spec.requirements.len());
@@ -1401,9 +1534,18 @@ fn build_multi_chunk_root_spec(project_id: Uuid) -> NLSpecV1 {
             "Full-stack e-commerce API with auth, product catalog, cart, and payments.".into(),
         ),
         sacred_anchors: Some(vec![
-            NLSpecAnchor { id: "SA-1".into(), statement: "Passwords must never be stored in plain text".into() },
-            NLSpecAnchor { id: "SA-2".into(), statement: "Payment operations must always be idempotent".into() },
-            NLSpecAnchor { id: "SA-3".into(), statement: "API responses must always include proper error codes".into() },
+            NLSpecAnchor {
+                id: "SA-1".into(),
+                statement: "Passwords must never be stored in plain text".into(),
+            },
+            NLSpecAnchor {
+                id: "SA-2".into(),
+                statement: "Payment operations must always be idempotent".into(),
+            },
+            NLSpecAnchor {
+                id: "SA-3".into(),
+                statement: "API responses must always include proper error codes".into(),
+            },
         ]),
         requirements: vec![
             Requirement {
@@ -1438,7 +1580,8 @@ fn build_multi_chunk_root_spec(project_id: Uuid) -> NLSpecV1 {
             },
             Phase1Contract {
                 name: "Product".into(),
-                type_definition: "{ id: string, name: string, price: number, stock: number }".into(),
+                type_definition: "{ id: string, name: string, price: number, stock: number }"
+                    .into(),
                 consumed_by: vec!["api".into(), "ui".into()],
             },
             Phase1Contract {
@@ -1449,8 +1592,14 @@ fn build_multi_chunk_root_spec(project_id: Uuid) -> NLSpecV1 {
         ]),
         external_dependencies: vec![],
         definition_of_done: vec![
-            DoDItem { criterion: "All endpoints respond with JSON".into(), mechanically_checkable: true },
-            DoDItem { criterion: "Auth endpoints require no token for register/login".into(), mechanically_checkable: true },
+            DoDItem {
+                criterion: "All endpoints respond with JSON".into(),
+                mechanically_checkable: true,
+            },
+            DoDItem {
+                criterion: "Auth endpoints require no token for register/login".into(),
+                mechanically_checkable: true,
+            },
         ],
         satisfaction_criteria: vec![
             SatisfactionCriterion {
@@ -1474,11 +1623,15 @@ fn build_auth_domain_spec(project_id: Uuid) -> NLSpecV1 {
     NLSpecV1 {
         project_id,
         version: "1.0".into(),
-        chunk: ChunkType::Domain { name: "auth".into() },
+        chunk: ChunkType::Domain {
+            name: "auth".into(),
+        },
         status: NLSpecStatus::Draft,
         line_count: 80,
         created_from: "root-ecommerce-api".into(),
-        intent_summary: Some("Authentication domain: user registration, login, and JWT management.".into()),
+        intent_summary: Some(
+            "Authentication domain: user registration, login, and JWT management.".into(),
+        ),
         sacred_anchors: None, // Domain chunks inherit from root
         requirements: vec![
             Requirement {
@@ -1495,7 +1648,8 @@ fn build_auth_domain_spec(project_id: Uuid) -> NLSpecV1 {
             },
             Requirement {
                 id: "FR-AUTH-3".into(),
-                statement: "The auth module must never expose password hashes in API responses".into(),
+                statement: "The auth module must never expose password hashes in API responses"
+                    .into(),
                 priority: Priority::Must,
                 traces_to: vec!["SA-1".into()],
             },
@@ -1503,16 +1657,15 @@ fn build_auth_domain_spec(project_id: Uuid) -> NLSpecV1 {
         architectural_constraints: vec!["bcrypt for password hashing".into()],
         phase1_contracts: None,
         external_dependencies: vec![],
-        definition_of_done: vec![
-            DoDItem { criterion: "Login returns JWT on valid credentials".into(), mechanically_checkable: true },
-        ],
-        satisfaction_criteria: vec![
-            SatisfactionCriterion {
-                id: "SC-AUTH-1".into(),
-                description: "Registration + login flow succeeds".into(),
-                tier_hint: ScenarioTierHint::Critical,
-            },
-        ],
+        definition_of_done: vec![DoDItem {
+            criterion: "Login returns JWT on valid credentials".into(),
+            mechanically_checkable: true,
+        }],
+        satisfaction_criteria: vec![SatisfactionCriterion {
+            id: "SC-AUTH-1".into(),
+            description: "Registration + login flow succeeds".into(),
+            tier_hint: ScenarioTierHint::Critical,
+        }],
         open_questions: vec![],
         out_of_scope: vec!["OAuth providers".into()],
         amendment_log: vec![],
@@ -1527,7 +1680,9 @@ fn build_api_domain_spec(project_id: Uuid) -> NLSpecV1 {
         status: NLSpecStatus::Draft,
         line_count: 90,
         created_from: "root-ecommerce-api".into(),
-        intent_summary: Some("API domain: product catalog, shopping cart, and payment endpoints.".into()),
+        intent_summary: Some(
+            "API domain: product catalog, shopping cart, and payment endpoints.".into(),
+        ),
         sacred_anchors: None,
         requirements: vec![
             Requirement {
@@ -1546,16 +1701,15 @@ fn build_api_domain_spec(project_id: Uuid) -> NLSpecV1 {
         architectural_constraints: vec!["Stripe for payments".into()],
         phase1_contracts: None,
         external_dependencies: vec![],
-        definition_of_done: vec![
-            DoDItem { criterion: "GET /products returns paginated JSON".into(), mechanically_checkable: true },
-        ],
-        satisfaction_criteria: vec![
-            SatisfactionCriterion {
-                id: "SC-API-1".into(),
-                description: "Product listing with pagination works".into(),
-                tier_hint: ScenarioTierHint::Critical,
-            },
-        ],
+        definition_of_done: vec![DoDItem {
+            criterion: "GET /products returns paginated JSON".into(),
+            mechanically_checkable: true,
+        }],
+        satisfaction_criteria: vec![SatisfactionCriterion {
+            id: "SC-API-1".into(),
+            description: "Product listing with pagination works".into(),
+            tier_hint: ScenarioTierHint::Critical,
+        }],
         open_questions: vec![],
         out_of_scope: vec!["Product search".into()],
         amendment_log: vec![],
@@ -1574,7 +1728,11 @@ async fn e2e_phase3_lint_spec_set_valid() {
 
     let specs = vec![root, auth, api];
     let result = linter::lint_spec_set(&specs);
-    assert!(result.is_ok(), "Valid multi-chunk spec set should pass lint: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Valid multi-chunk spec set should pass lint: {:?}",
+        result.err()
+    );
 }
 
 /// Test multi-chunk lint catches duplicate FR IDs across chunks.
@@ -1596,7 +1754,10 @@ async fn e2e_phase3_lint_spec_set_duplicate_fr_ids() {
 
     let specs = vec![root, auth];
     let result = linter::lint_spec_set(&specs);
-    assert!(result.is_err(), "Duplicate FR ID across chunks should fail lint");
+    assert!(
+        result.is_err(),
+        "Duplicate FR ID across chunks should fail lint"
+    );
 }
 
 /// Test multi-chunk lint catches uncovered Sacred Anchors.
@@ -1616,14 +1777,17 @@ async fn e2e_phase3_lint_spec_set_uncovered_anchor() {
 
     let specs = vec![root, auth];
     let result = linter::lint_spec_set(&specs);
-    assert!(result.is_err(), "Uncovered Sacred Anchor SA-2 should fail lint");
+    assert!(
+        result.is_err(),
+        "Uncovered Sacred Anchor SA-2 should fail lint"
+    );
 }
 
 /// Test chunk planner: MicroTool is always single-chunk (no LLM call needed).
 #[tokio::test]
 async fn e2e_phase3_chunk_planner_microtool_single_chunk() {
-    use planner_core::pipeline::steps::chunk_planner;
     use planner_core::llm::providers::LlmRouter;
+    use planner_core::pipeline::steps::chunk_planner;
 
     let project_id = Uuid::new_v4();
     let intake = build_test_intake(project_id); // MicroTool countdown timer
@@ -1631,10 +1795,17 @@ async fn e2e_phase3_chunk_planner_microtool_single_chunk() {
 
     // MicroTool triggers the heuristic short-circuit — no LLM call needed
     let plan = chunk_planner::plan_chunks(&router, &intake, project_id).await;
-    assert!(plan.is_ok(), "MicroTool plan should succeed without LLM: {:?}", plan.err());
+    assert!(
+        plan.is_ok(),
+        "MicroTool plan should succeed without LLM: {:?}",
+        plan.err()
+    );
     let plan = plan.unwrap();
 
-    assert!(!plan.is_multi_chunk, "MicroTool should always be single-chunk");
+    assert!(
+        !plan.is_multi_chunk,
+        "MicroTool should always be single-chunk"
+    );
     assert_eq!(plan.chunks.len(), 1);
     assert_eq!(plan.chunks[0].chunk_id, "root");
 }
@@ -1657,18 +1828,45 @@ async fn e2e_phase3_context_pack_full_budget() {
 
     // Check all expected sections are present
     let section_names: Vec<&str> = pack.sections.iter().map(|s| s.name.as_str()).collect();
-    assert!(section_names.contains(&"sacred_anchors"), "Missing sacred_anchors section");
-    assert!(section_names.contains(&"intent_summary"), "Missing intent_summary section");
-    assert!(section_names.contains(&"requirements"), "Missing requirements section");
-    assert!(section_names.contains(&"satisfaction_criteria"), "Missing satisfaction_criteria section");
+    assert!(
+        section_names.contains(&"sacred_anchors"),
+        "Missing sacred_anchors section"
+    );
+    assert!(
+        section_names.contains(&"intent_summary"),
+        "Missing intent_summary section"
+    );
+    assert!(
+        section_names.contains(&"requirements"),
+        "Missing requirements section"
+    );
+    assert!(
+        section_names.contains(&"satisfaction_criteria"),
+        "Missing satisfaction_criteria section"
+    );
 
     // Render and verify output
     let rendered = render_context_pack(&pack);
-    assert!(rendered.contains("SACRED ANCHORS"), "Rendered output missing SACRED ANCHORS header");
-    assert!(rendered.contains("REQUIREMENTS"), "Rendered output missing REQUIREMENTS header");
-    assert!(rendered.contains("SA-1"), "Rendered output missing anchor SA-1");
-    assert!(rendered.contains("FR-1"), "Rendered output missing requirement FR-1");
-    assert!(!rendered.contains("[Context truncated"), "Should not show truncation notice");
+    assert!(
+        rendered.contains("SACRED ANCHORS"),
+        "Rendered output missing SACRED ANCHORS header"
+    );
+    assert!(
+        rendered.contains("REQUIREMENTS"),
+        "Rendered output missing REQUIREMENTS header"
+    );
+    assert!(
+        rendered.contains("SA-1"),
+        "Rendered output missing anchor SA-1"
+    );
+    assert!(
+        rendered.contains("FR-1"),
+        "Rendered output missing requirement FR-1"
+    );
+    assert!(
+        !rendered.contains("[Context truncated"),
+        "Should not show truncation notice"
+    );
 }
 
 /// Test Context Pack truncation under a tight token budget.
@@ -1684,10 +1882,16 @@ async fn e2e_phase3_context_pack_truncated() {
 
     assert!(pack.was_truncated, "Tiny budget should truncate");
     // Priority 0 sections (sacred anchors, intent) should still appear
-    assert!(!pack.sections.is_empty(), "Must-include sections should be present even when truncated");
+    assert!(
+        !pack.sections.is_empty(),
+        "Must-include sections should be present even when truncated"
+    );
 
     let rendered = render_context_pack(&pack);
-    assert!(rendered.contains("[Context truncated"), "Should show truncation notice");
+    assert!(
+        rendered.contains("[Context truncated"),
+        "Should show truncation notice"
+    );
 }
 
 /// Test Context Pack domain compiler target prioritizes contracts.
@@ -1700,7 +1904,9 @@ async fn e2e_phase3_context_pack_domain_compiler_priorities() {
 
     let pack = build_spec_context_pack(
         &spec,
-        ContextTarget::DomainCompiler { domain_name: "auth".into() },
+        ContextTarget::DomainCompiler {
+            domain_name: "auth".into(),
+        },
         50000,
     );
 
@@ -1708,8 +1914,15 @@ async fn e2e_phase3_context_pack_domain_compiler_priorities() {
 
     // Phase 1 contracts should be priority 0 for domain compilation
     let contracts = pack.sections.iter().find(|s| s.name == "phase1_contracts");
-    assert!(contracts.is_some(), "Domain compiler pack should include contracts");
-    assert_eq!(contracts.unwrap().priority, 0, "Contracts should be priority 0 for domain compiler");
+    assert!(
+        contracts.is_some(),
+        "Domain compiler pack should include contracts"
+    );
+    assert_eq!(
+        contracts.unwrap().priority,
+        0,
+        "Contracts should be priority 0 for domain compiler"
+    );
 }
 
 /// Test Ralph GeneTransfusion detects auth patterns in a spec.
@@ -1726,12 +1939,18 @@ async fn e2e_phase3_ralph_gene_transfusion_auth() {
     assert!(!findings.is_empty(), "Should find auth-related pitfalls");
 
     // Auth findings should be present
-    let auth_findings: Vec<_> = findings.iter()
+    let auth_findings: Vec<_> = findings
+        .iter()
         .filter(|f| f.affected_pattern == "auth")
         .collect();
-    assert!(!auth_findings.is_empty(), "Should have auth-pattern findings");
     assert!(
-        auth_findings.iter().any(|f| f.severity == ralph::RalphSeverity::High),
+        !auth_findings.is_empty(),
+        "Should have auth-pattern findings"
+    );
+    assert!(
+        auth_findings
+            .iter()
+            .any(|f| f.severity == ralph::RalphSeverity::High),
         "Should have at least one high-severity auth finding"
     );
 
@@ -1758,7 +1977,8 @@ async fn e2e_phase3_ralph_gene_transfusion_payment() {
 
     // API spec mentions payment and idempotency — should match payment patterns
     // It also mentions "api" so may match api patterns too
-    let payment_findings: Vec<_> = findings.iter()
+    let payment_findings: Vec<_> = findings
+        .iter()
         .filter(|f| f.affected_pattern == "payment")
         .collect();
 
@@ -1806,7 +2026,11 @@ async fn e2e_phase3_ralph_consequence_cards() {
 
     let cards = ralph::surface_consequence_cards(&findings, project_id);
 
-    assert_eq!(cards.len(), 1, "Only high-severity findings should produce cards");
+    assert_eq!(
+        cards.len(),
+        1,
+        "Only high-severity findings should produce cards"
+    );
     assert_eq!(cards[0].trigger, CardTrigger::RalphFinding);
     assert_eq!(cards[0].status, CardStatus::Pending);
     assert!(cards[0].problem.contains("Password reset tokens"));
@@ -1838,17 +2062,15 @@ async fn e2e_phase3_ar_report_per_chunk() {
         project_id,
         chunk_name: "auth".into(),
         nlspec_version: "1.0".into(),
-        findings: vec![
-            ArFinding {
-                id: "AR-A-1".into(),
-                reviewer: ArReviewer::Opus,
-                severity: ArSeverity::Advisory,
-                affected_section: "Requirements".into(),
-                affected_requirements: vec!["FR-AUTH-1".into()],
-                description: "Consider adding password complexity requirements".into(),
-                suggested_resolution: Some("Add min length + complexity FR".into()),
-            },
-        ],
+        findings: vec![ArFinding {
+            id: "AR-A-1".into(),
+            reviewer: ArReviewer::Opus,
+            severity: ArSeverity::Advisory,
+            affected_section: "Requirements".into(),
+            affected_requirements: vec!["FR-AUTH-1".into()],
+            description: "Consider adding password complexity requirements".into(),
+            suggested_resolution: Some("Add min length + complexity FR".into()),
+        }],
         reviewer_summaries: vec![],
         has_blocking: false,
         blocking_count: 0,
@@ -1878,7 +2100,8 @@ async fn e2e_phase3_token_estimation() {
     assert_eq!(estimate_tokens("a".repeat(400).as_str()), 101); // 400/4 + 1 = 101
 
     // Realistic spec text
-    let spec_text = "The system must accept a positive integer duration in seconds and display a countdown.";
+    let spec_text =
+        "The system must accept a positive integer duration in seconds and display a countdown.";
     let tokens = estimate_tokens(spec_text);
     assert!(tokens > 10, "Realistic text should estimate > 10 tokens");
     assert!(tokens < 100, "Short text should estimate < 100 tokens");
@@ -1898,18 +2121,16 @@ async fn e2e_storage_turn_lifecycle() {
     let intake = build_test_intake(project_id);
     let turn: Turn<IntakeV1> = Turn::new(
         intake,
-        None,              // parent_id
+        None, // parent_id
         run_id,
-        "intake-gateway",  // produced_by
-        "e2e-test",        // execution_id
+        "intake-gateway", // produced_by
+        "e2e-test",       // execution_id
     );
 
     store.store_turn(&turn).unwrap();
 
     // Retrieve it
-    let latest: Option<Turn<IntakeV1>> = store
-        .get_latest_turn(run_id, IntakeV1::TYPE_ID)
-        .unwrap();
+    let latest: Option<Turn<IntakeV1>> = store.get_latest_turn(run_id, IntakeV1::TYPE_ID).unwrap();
     assert!(latest.is_some());
 
     let retrieved = latest.unwrap();
@@ -1946,15 +2167,11 @@ fn e2e_phase6_durable_cxdb_roundtrip() {
     assert!(retrieved.verify_integrity());
 
     // Retrieve by type
-    let all: Vec<Turn<IntakeV1>> = engine
-        .get_turns_by_type(run_id, IntakeV1::TYPE_ID)
-        .unwrap();
+    let all: Vec<Turn<IntakeV1>> = engine.get_turns_by_type(run_id, IntakeV1::TYPE_ID).unwrap();
     assert_eq!(all.len(), 1);
 
     // Retrieve latest
-    let latest: Option<Turn<IntakeV1>> = engine
-        .get_latest_turn(run_id, IntakeV1::TYPE_ID)
-        .unwrap();
+    let latest: Option<Turn<IntakeV1>> = engine.get_latest_turn(run_id, IntakeV1::TYPE_ID).unwrap();
     assert!(latest.is_some());
     assert_eq!(latest.unwrap().turn_id, turn_id);
 
@@ -2069,27 +2286,30 @@ fn e2e_phase6_project_registry() {
     let mut registry = ProjectRegistry::new();
     assert_eq!(registry.count(), 0);
 
-    let project = registry.register(
-        "Test Project".to_string(),
-        "test-project".to_string(),
-        vec!["e2e".to_string()],
-    ).unwrap();
+    let project = registry
+        .register(
+            "Test Project".to_string(),
+            "test-project".to_string(),
+            vec!["e2e".to_string()],
+        )
+        .unwrap();
 
     assert_eq!(registry.count(), 1);
     assert!(registry.get(project.project_id).is_some());
     assert!(registry.get_by_slug("test-project").is_some());
 
     // Verify duplicate slug is rejected
-    let dup = registry.register(
-        "Another".to_string(),
-        "test-project".to_string(),
-        vec![],
-    );
+    let dup = registry.register("Another".to_string(), "test-project".to_string(), vec![]);
     assert!(dup.is_err());
 
     // Verify status update
-    registry.update_status(project.project_id, ProjectStatus::Completed).unwrap();
-    assert_eq!(registry.get(project.project_id).unwrap().status, ProjectStatus::Completed);
+    registry
+        .update_status(project.project_id, ProjectStatus::Completed)
+        .unwrap();
+    assert_eq!(
+        registry.get(project.project_id).unwrap().status,
+        ProjectStatus::Completed
+    );
 }
 
 /// Phase 6.7: Verification generates Lean4 propositions from spec.
@@ -2103,23 +2323,38 @@ fn e2e_phase6_verification_propositions() {
     let propositions = verification::generate_propositions(&spec);
 
     // Should have at least: anchor traceability + requirement uniqueness + coverage
-    assert!(!propositions.is_empty(), "Should generate at least some propositions");
+    assert!(
+        !propositions.is_empty(),
+        "Should generate at least some propositions"
+    );
 
     // Check anchor traceability propositions exist
-    let anchor_props: Vec<_> = propositions.iter()
+    let anchor_props: Vec<_> = propositions
+        .iter()
         .filter(|p| p.category == verification::PropositionCategory::AnchorTraceability)
         .collect();
-    assert!(!anchor_props.is_empty(), "Should have anchor traceability propositions");
+    assert!(
+        !anchor_props.is_empty(),
+        "Should have anchor traceability propositions"
+    );
 
     // Check uniqueness propositions exist
-    let unique_props: Vec<_> = propositions.iter()
+    let unique_props: Vec<_> = propositions
+        .iter()
         .filter(|p| p.category == verification::PropositionCategory::Uniqueness)
         .collect();
-    assert!(!unique_props.is_empty(), "Should have uniqueness propositions");
+    assert!(
+        !unique_props.is_empty(),
+        "Should have uniqueness propositions"
+    );
 
     // All propositions should have non-empty Lean4 source
     for prop in &propositions {
-        assert!(!prop.lean4_source.is_empty(), "Proposition {} should have Lean4 source", prop.id);
+        assert!(
+            !prop.lean4_source.is_empty(),
+            "Proposition {} should have Lean4 source",
+            prop.id
+        );
     }
 }
 
@@ -2136,8 +2371,11 @@ fn e2e_phase6_audit_lock_in() {
     // Report should have basic structure
     assert_eq!(report.project_id, project_id);
     // Risk score should be between 0 and 1
-    assert!(report.risk_score >= 0.0 && report.risk_score <= 1.0,
-        "Risk score should be 0-1, got {}", report.risk_score);
+    assert!(
+        report.risk_score >= 0.0 && report.risk_score <= 1.0,
+        "Risk score should be 0-1, got {}",
+        report.risk_score
+    );
     // Should have some recommendations (our test spec has external deps)
     // Even if no deps, the audit should run without panicking
 }
@@ -2148,8 +2386,8 @@ fn e2e_phase6_audit_lock_in() {
 fn e2e_phase6_pipeline_config_persist() {
     use planner_core::cxdb::durable::DurableCxdbEngine;
     use planner_core::cxdb::TurnStore;
-    use planner_core::pipeline::PipelineConfig;
     use planner_core::llm::providers::LlmRouter;
+    use planner_core::pipeline::PipelineConfig;
     use planner_schemas::Turn;
 
     let dir = std::env::temp_dir().join(format!("cxdb-e2e-config-{}", Uuid::new_v4()));
@@ -2207,7 +2445,11 @@ async fn e2e_phase7_mock_worker_produces_factory_output() {
 
     let worker = MockFactoryWorker::success(
         "Generated: src/main.rs, src/lib.rs, Cargo.toml",
-        vec!["src/main.rs".into(), "src/lib.rs".into(), "Cargo.toml".into()],
+        vec![
+            "src/main.rs".into(),
+            "src/lib.rs".into(),
+            "Cargo.toml".into(),
+        ],
     );
 
     let output = factory::execute_factory_with_worker(
@@ -2238,12 +2480,14 @@ fn e2e_phase7_worktree_manager_lifecycle() {
     let mgr = WorktreeManager::new(&root);
     let run_id = Uuid::new_v4();
 
-    let info = mgr.prepare(
-        run_id,
-        "# Spec\n## Requirements\n- FR-1: Build a widget",
-        "digraph { start -> build -> test -> exit; }",
-        "# AGENTS\n- implementer\n- reviewer",
-    ).unwrap();
+    let info = mgr
+        .prepare(
+            run_id,
+            "# Spec\n## Requirements\n- FR-1: Build a widget",
+            "digraph { start -> build -> test -> exit; }",
+            "# AGENTS\n- implementer\n- reviewer",
+        )
+        .unwrap();
 
     // Verify structure
     assert!(info.path.exists());
@@ -2271,7 +2515,9 @@ fn e2e_phase7_worktree_manager_lifecycle() {
 /// Phase 7.3: FactoryWorker trait is object-safe and can be used as dyn dispatch.
 #[tokio::test]
 async fn e2e_phase7_factory_worker_dyn_dispatch() {
-    use planner_core::pipeline::steps::factory_worker::{FactoryWorker, MockFactoryWorker, WorkerConfig};
+    use planner_core::pipeline::steps::factory_worker::{
+        FactoryWorker, MockFactoryWorker, WorkerConfig,
+    };
 
     let workers: Vec<Box<dyn FactoryWorker>> = vec![
         Box::new(MockFactoryWorker::success("output1", vec!["a.rs".into()])),
@@ -2394,14 +2640,19 @@ fn e2e_phase7_codex_prompt_assembly() {
 /// and the single-chunk fallback path separately.
 #[tokio::test]
 async fn e2e_phase3_chunk_planner_fullapp_multi_chunk() {
-    use planner_core::pipeline::steps::chunk_planner;
     use planner_core::llm::providers::LlmRouter;
+    use planner_core::pipeline::steps::chunk_planner;
 
     let project_id = Uuid::new_v4();
     let intake = build_multi_chunk_intake(project_id);
 
     // Validate the fixture: FullApp with 3 domains, 3 sacred anchors, 4 satisfaction seeds
-    assert!(matches!(intake.output_domain, OutputDomain::FullApp { estimated_domains: 3 }));
+    assert!(matches!(
+        intake.output_domain,
+        OutputDomain::FullApp {
+            estimated_domains: 3
+        }
+    ));
     assert_eq!(intake.sacred_anchors.len(), 3);
     assert_eq!(intake.satisfaction_criteria_seeds.len(), 4);
     assert_eq!(intake.project_name, "E-Commerce API");

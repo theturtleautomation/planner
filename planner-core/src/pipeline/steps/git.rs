@@ -11,8 +11,8 @@
 use std::path::Path;
 use uuid::Uuid;
 
+use super::{StepError, StepResult};
 use planner_schemas::*;
-use super::{StepResult, StepError};
 
 // ---------------------------------------------------------------------------
 // GitProjectionResult — what we return after committing
@@ -77,11 +77,7 @@ pub async fn execute_git_projection(
 
     // Configure Git identity (needed for commit)
     run_git_command(output_path, &["config", "user.name", "Planner v2"]).await?;
-    run_git_command(
-        output_path,
-        &["config", "user.email", "planner@localhost"],
-    )
-    .await?;
+    run_git_command(output_path, &["config", "user.email", "planner@localhost"]).await?;
 
     // Stage all files
     run_git_command(output_path, &["add", "-A"]).await?;
@@ -97,7 +93,11 @@ pub async fn execute_git_projection(
         factory_output.spend_usd,
     );
 
-    run_git_command(output_path, &["commit", "-m", &commit_message, "--allow-empty"]).await?;
+    run_git_command(
+        output_path,
+        &["commit", "-m", &commit_message, "--allow-empty"],
+    )
+    .await?;
 
     // Get the commit hash
     let hash = get_git_hash(output_path).await?;
@@ -186,7 +186,9 @@ async fn get_committed_files(cwd: &Path) -> StepResult<Vec<String>> {
             .collect()),
         Err(_) => {
             // If there's only one commit, list all tracked files
-            let all_files = run_git_command(cwd, &["ls-files"]).await.unwrap_or_default();
+            let all_files = run_git_command(cwd, &["ls-files"])
+                .await
+                .unwrap_or_default();
             Ok(all_files
                 .lines()
                 .map(|l| l.trim().to_string())
@@ -232,13 +234,8 @@ mod tests {
         let factory_output = sample_factory_output();
         let project_id = Uuid::new_v4();
 
-        let result = execute_git_projection(
-            &factory_output,
-            project_id,
-            "Test Widget",
-            "test-widget",
-        )
-        .await;
+        let result =
+            execute_git_projection(&factory_output, project_id, "Test Widget", "test-widget").await;
 
         assert!(result.is_ok());
         let projection = result.unwrap();

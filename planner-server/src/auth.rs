@@ -267,8 +267,8 @@ mod tests {
 
     #[test]
     fn extract_token_from_bearer_header() {
-        use axum::http::Request;
         use axum::body::Body;
+        use axum::http::Request;
 
         let req = Request::builder()
             .header("authorization", "Bearer mytoken123")
@@ -280,8 +280,8 @@ mod tests {
 
     #[test]
     fn extract_token_from_query_param() {
-        use axum::http::Request;
         use axum::body::Body;
+        use axum::http::Request;
 
         let req = Request::builder()
             .uri("/?token=qtokenvalue")
@@ -293,8 +293,8 @@ mod tests {
 
     #[test]
     fn extract_token_none_when_missing() {
-        use axum::http::Request;
         use axum::body::Body;
+        use axum::http::Request;
 
         let req = Request::builder()
             .uri("/health")
@@ -306,8 +306,8 @@ mod tests {
 
     #[test]
     fn extract_token_bearer_takes_priority_over_query() {
-        use axum::http::Request;
         use axum::body::Body;
+        use axum::http::Request;
 
         let req = Request::builder()
             .uri("/?token=query_token")

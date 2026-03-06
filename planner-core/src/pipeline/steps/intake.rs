@@ -16,10 +16,10 @@
 use chrono::Utc;
 use uuid::Uuid;
 
-use crate::llm::{CompletionRequest, CompletionResponse, DefaultModels, Message, Role};
+use super::{StepError, StepResult};
 use crate::llm::providers::LlmRouter;
+use crate::llm::{CompletionRequest, CompletionResponse, DefaultModels, Message, Role};
 use planner_schemas::*;
-use super::{StepResult, StepError};
 
 // ---------------------------------------------------------------------------
 // System prompt for the Intake Gateway
@@ -153,15 +153,19 @@ fn parse_intake_response(
     let content = crate::llm::json_repair::try_repair_json(&response.content)
         .unwrap_or_else(|| strip_code_fences(&response.content));
 
-    let json: IntakeJson = serde_json::from_str(&content)
-        .map_err(|e| StepError::JsonError(format!(
+    let json: IntakeJson = serde_json::from_str(&content).map_err(|e| {
+        StepError::JsonError(format!(
             "Failed to parse Intake Gateway response: {}. Raw content: {}",
             e,
             &response.content[..response.content.len().min(500)]
-        )))?;
+        ))
+    })?;
 
     // Map output domain
-    let output_domain = match (json.output_domain.domain_type.as_str(), json.output_domain.variant.as_str()) {
+    let output_domain = match (
+        json.output_domain.domain_type.as_str(),
+        json.output_domain.variant.as_str(),
+    ) {
         ("micro_tool", "react_widget") => OutputDomain::MicroTool {
             variant: MicroToolVariant::ReactWidget,
         },
@@ -186,7 +190,9 @@ fn parse_intake_response(
     };
 
     // Map sacred anchors
-    let sacred_anchors: Vec<SacredAnchor> = json.sacred_anchors.into_iter()
+    let sacred_anchors: Vec<SacredAnchor> = json
+        .sacred_anchors
+        .into_iter()
         .map(|a| SacredAnchor {
             id: a.id,
             statement: a.statement,
@@ -204,7 +210,10 @@ fn parse_intake_response(
         },
         ConversationTurn {
             role: "system".into(),
-            content: format!("[Intake Gateway produced structured output using {}]", response.model),
+            content: format!(
+                "[Intake Gateway produced structured output using {}]",
+                response.model
+            ),
             timestamp: now,
         },
     ];
@@ -294,7 +303,8 @@ mod tests {
                     "Adding a task and refreshing the page shows the task still present"
                 ],
                 "out_of_scope": ["Multi-user collaboration", "Cloud sync"]
-            }"#.to_string(),
+            }"#
+            .to_string(),
             model: "claude-opus-4-6".into(),
             input_tokens: 100,
             output_tokens: 200,
@@ -309,7 +319,12 @@ mod tests {
         assert_eq!(intake.feature_slug, "task-tracker-widget");
         assert_eq!(intake.sacred_anchors.len(), 1);
         assert_eq!(intake.sacred_anchors[0].id, "SA-1");
-        assert!(matches!(intake.output_domain, OutputDomain::MicroTool { variant: MicroToolVariant::ReactWidget }));
+        assert!(matches!(
+            intake.output_domain,
+            OutputDomain::MicroTool {
+                variant: MicroToolVariant::ReactWidget
+            }
+        ));
         assert_eq!(intake.satisfaction_criteria_seeds.len(), 1);
         assert_eq!(intake.out_of_scope.len(), 2);
         assert_eq!(intake.conversation_log.len(), 2);

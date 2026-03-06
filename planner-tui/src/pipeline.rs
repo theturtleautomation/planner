@@ -36,7 +36,7 @@
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
 
-use planner_core::observability::{ChannelEventSink, EventSink, PlannerEvent, EventSource};
+use planner_core::observability::{ChannelEventSink, EventSink, EventSource, PlannerEvent};
 use planner_schemas::SocraticEvent;
 
 // ---------------------------------------------------------------------------
@@ -100,7 +100,10 @@ impl planner_core::pipeline::steps::socratic::SocraticIO for TuiSocraticIO {
             PlannerEvent::info(
                 EventSource::SocraticEngine,
                 "socratic.question.generated",
-                format!("Question generated for dimension '{}'", output.target_dimension.label()),
+                format!(
+                    "Question generated for dimension '{}'",
+                    output.target_dimension.label()
+                ),
             )
             .with_session(self.session_id)
             .with_metadata(serde_json::json!({
@@ -286,7 +289,12 @@ pub fn spawn_socratic_interview(
                 planner_core::pipeline::steps::socratic::run_interview::<
                     TuiSocraticIO,
                     planner_core::cxdb::CxdbEngine,
-                >(&router, &*io, None::<&planner_core::cxdb::CxdbEngine>, &initial_message)
+                >(
+                    &router,
+                    &*io,
+                    None::<&planner_core::cxdb::CxdbEngine>,
+                    &initial_message,
+                )
                 .await
             }
         };
@@ -368,8 +376,12 @@ pub fn spawn_pipeline(
                     blueprints: blueprints.as_deref(),
                 };
                 planner_core::pipeline::run_full_pipeline(
-                    &config, &worker, project_id, &description,
-                ).await
+                    &config,
+                    &worker,
+                    project_id,
+                    &description,
+                )
+                .await
             }
             None => {
                 let config =
@@ -380,8 +392,12 @@ pub fn spawn_pipeline(
                         blueprints: blueprints.as_deref(),
                     };
                 planner_core::pipeline::run_full_pipeline(
-                    &config, &worker, project_id, &description,
-                ).await
+                    &config,
+                    &worker,
+                    project_id,
+                    &description,
+                )
+                .await
             }
         };
 
@@ -390,9 +406,18 @@ pub fn spawn_pipeline(
                 // Emit StepComplete events for each stage so the TUI progress
                 // tracker advances stage-by-stage on success.
                 for stage in [
-                    "Intake", "Chunk", "Compile", "Lint",
-                    "AR Review", "Refine", "Scenarios", "Ralph",
-                    "Graph", "Factory", "Validate", "Git",
+                    "Intake",
+                    "Chunk",
+                    "Compile",
+                    "Lint",
+                    "AR Review",
+                    "Refine",
+                    "Scenarios",
+                    "Ralph",
+                    "Graph",
+                    "Factory",
+                    "Validate",
+                    "Git",
                 ] {
                     let _ = tx.send(PipelineEvent::StepComplete(stage.to_string()));
                 }

@@ -20,15 +20,15 @@ use uuid::Uuid;
 
 use planner_schemas::*;
 
-use crate::llm::providers::LlmRouter;
 use crate::cxdb::TurnStore;
+use crate::llm::providers::LlmRouter;
 
 use super::super::StepResult;
-use super::domain_classifier;
 use super::belief_state;
 use super::constitution;
-use super::question_planner;
 use super::convergence;
+use super::domain_classifier;
+use super::question_planner;
 use super::speculative_draft;
 
 // ---------------------------------------------------------------------------
@@ -101,14 +101,16 @@ pub async fn run_interview<IO: SocraticIO, S: TurnStore>(
     let run_id = Uuid::new_v4();
 
     // --- Phase 1: Domain Classification ---
-    io.send_message("Analyzing your project description...").await;
+    io.send_message("Analyzing your project description...")
+        .await;
 
     let classification = domain_classifier::classify_domain(router, initial_message).await?;
 
     io.send_classification(&classification).await;
     io.send_event(&SocraticEvent::Classified {
         classification: classification.clone(),
-    }).await;
+    })
+    .await;
 
     io.send_message(&format!(
         "Classified as: {} ({}). Let's dig into your requirements.",
@@ -118,7 +120,8 @@ pub async fn run_interview<IO: SocraticIO, S: TurnStore>(
             ComplexityTier::Standard => "standard",
             ComplexityTier::Deep => "complex",
         },
-    )).await;
+    ))
+    .await;
 
     // --- Phase 2: Initialize State ---
     let mut belief_state = RequirementsBeliefState::from_classification(&classification);
@@ -137,12 +140,8 @@ pub async fn run_interview<IO: SocraticIO, S: TurnStore>(
     };
 
     // --- Phase 3: Process initial message through verifier ---
-    let verifier_output = belief_state::verify_and_update(
-        router,
-        &mut belief_state,
-        initial_message,
-        None,
-    ).await?;
+    let verifier_output =
+        belief_state::verify_and_update(router, &mut belief_state, initial_message, None).await?;
 
     // Record the initial exchange
     engine_state.session.conversation.push(SocraticTurn {
@@ -150,7 +149,9 @@ pub async fn run_interview<IO: SocraticIO, S: TurnStore>(
         role: SocraticRole::User,
         content: initial_message.to_string(),
         target_dimension: None,
-        slots_updated: verifier_output.filled_updates.iter()
+        slots_updated: verifier_output
+            .filled_updates
+            .iter()
             .filter_map(|u| belief_state::parse_dimension(&u.dimension))
             .collect(),
         timestamp: Utc::now().to_rfc3339(),
@@ -160,7 +161,8 @@ pub async fn run_interview<IO: SocraticIO, S: TurnStore>(
     io.send_belief_state(&belief_state).await;
     io.send_event(&SocraticEvent::BeliefStateUpdate {
         state: belief_state.clone(),
-    }).await;
+    })
+    .await;
 
     // Persist
     if let Some(store) = store {
@@ -184,7 +186,8 @@ pub async fn run_interview<IO: SocraticIO, S: TurnStore>(
             io.send_convergence(&conv_result).await;
             io.send_event(&SocraticEvent::Converged {
                 result: conv_result.clone(),
-            }).await;
+            })
+            .await;
 
             engine_state.session.is_complete = true;
             engine_state.session.convergence_result = Some(conv_result);
@@ -193,29 +196,35 @@ pub async fn run_interview<IO: SocraticIO, S: TurnStore>(
         }
 
         // Check if we should show a speculative draft
-        let draft_already_shown = engine_state.draft_shown_at_turn
+        let draft_already_shown = engine_state
+            .draft_shown_at_turn
             .map(|t| belief_state.turn_count - t < 3)
             .unwrap_or(false);
 
-        let last_msg_len = engine_state.session.conversation.last()
+        let last_msg_len = engine_state
+            .session
+            .conversation
+            .last()
             .map(|t| t.content.len())
             .unwrap_or(0);
 
-        if speculative_draft::should_trigger_draft(&belief_state, last_msg_len, draft_already_shown) {
+        if speculative_draft::should_trigger_draft(&belief_state, last_msg_len, draft_already_shown)
+        {
             match speculative_draft::generate_draft(router, &belief_state).await {
                 Ok(draft) => {
                     io.send_draft(&draft).await;
                     io.send_event(&SocraticEvent::SpeculativeDraftReady {
                         draft: draft.clone(),
-                    }).await;
+                    })
+                    .await;
                     engine_state.draft_shown_at_turn = Some(belief_state.turn_count);
 
                     // Wait for user reaction to the draft
                     if let Some(reaction) = io.receive_input().await {
                         // Process draft reaction through verifier
                         let pre_filled = belief_state.filled.len();
-                        let pre_confs: Vec<f32> = belief_state.uncertain.values()
-                            .map(|(_, c)| *c).collect();
+                        let pre_confs: Vec<f32> =
+                            belief_state.uncertain.values().map(|(_, c)| *c).collect();
 
                         let verifier_output = belief_state::verify_and_update(
                             router,
@@ -224,10 +233,15 @@ pub async fn run_interview<IO: SocraticIO, S: TurnStore>(
                             Some("Review the speculative draft above and correct anything that's wrong."),
                         ).await?;
 
-                        let post_confs: Vec<f32> = belief_state.uncertain.values()
-                            .map(|(_, c)| *c).collect();
+                        let post_confs: Vec<f32> =
+                            belief_state.uncertain.values().map(|(_, c)| *c).collect();
 
-                        if convergence::is_stale_turn(pre_filled, belief_state.filled.len(), &pre_confs, &post_confs) {
+                        if convergence::is_stale_turn(
+                            pre_filled,
+                            belief_state.filled.len(),
+                            &pre_confs,
+                            &post_confs,
+                        ) {
                             engine_state.stale_turns += 1;
                         } else {
                             engine_state.stale_turns = 0;
@@ -238,7 +252,9 @@ pub async fn run_interview<IO: SocraticIO, S: TurnStore>(
                             role: SocraticRole::User,
                             content: reaction,
                             target_dimension: None,
-                            slots_updated: verifier_output.filled_updates.iter()
+                            slots_updated: verifier_output
+                                .filled_updates
+                                .iter()
                                 .filter_map(|u| belief_state::parse_dimension(&u.dimension))
                                 .collect(),
                             timestamp: Utc::now().to_rfc3339(),
@@ -247,7 +263,8 @@ pub async fn run_interview<IO: SocraticIO, S: TurnStore>(
                         io.send_belief_state(&belief_state).await;
                         io.send_event(&SocraticEvent::BeliefStateUpdate {
                             state: belief_state.clone(),
-                        }).await;
+                        })
+                        .await;
 
                         if let Some(store) = store {
                             let _ = belief_state::persist_to_cxdb(store, run_id, &belief_state);
@@ -256,7 +273,10 @@ pub async fn run_interview<IO: SocraticIO, S: TurnStore>(
                         // Check convergence again after draft reaction
                         if verifier_output.user_wants_to_stop {
                             let conv_result = convergence::check_convergence(
-                                &belief_state, &constitution, true, engine_state.stale_turns,
+                                &belief_state,
+                                &constitution,
+                                true,
+                                engine_state.stale_turns,
                             );
                             io.send_convergence(&conv_result).await;
                             engine_state.session.is_complete = true;
@@ -274,7 +294,8 @@ pub async fn run_interview<IO: SocraticIO, S: TurnStore>(
                 }
                 Err(e) => {
                     // Draft generation failed — not fatal, continue with questions
-                    io.send_message(&format!("(Draft generation skipped: {})", e)).await;
+                    io.send_message(&format!("(Draft generation skipped: {})", e))
+                        .await;
                 }
             }
         }
@@ -285,7 +306,8 @@ pub async fn run_interview<IO: SocraticIO, S: TurnStore>(
             &belief_state,
             &constitution,
             &engine_state.session.conversation,
-        ).await?;
+        )
+        .await?;
 
         let question_output = match question_output {
             Some(q) => q,
@@ -308,7 +330,8 @@ pub async fn run_interview<IO: SocraticIO, S: TurnStore>(
         io.send_question(&question_output).await;
         io.send_event(&SocraticEvent::Question {
             output: question_output.clone(),
-        }).await;
+        })
+        .await;
 
         last_question = Some(question_output.question.clone());
 
@@ -350,21 +373,25 @@ pub async fn run_interview<IO: SocraticIO, S: TurnStore>(
 
         // Process user response through verifier
         let pre_filled = belief_state.filled.len();
-        let pre_confs: Vec<f32> = belief_state.uncertain.values()
-            .map(|(_, c)| *c).collect();
+        let pre_confs: Vec<f32> = belief_state.uncertain.values().map(|(_, c)| *c).collect();
 
         let verifier_output = belief_state::verify_and_update(
             router,
             &mut belief_state,
             &user_response,
             last_question.as_deref(),
-        ).await?;
+        )
+        .await?;
 
-        let post_confs: Vec<f32> = belief_state.uncertain.values()
-            .map(|(_, c)| *c).collect();
+        let post_confs: Vec<f32> = belief_state.uncertain.values().map(|(_, c)| *c).collect();
 
         // Track staleness
-        if convergence::is_stale_turn(pre_filled, belief_state.filled.len(), &pre_confs, &post_confs) {
+        if convergence::is_stale_turn(
+            pre_filled,
+            belief_state.filled.len(),
+            &pre_confs,
+            &post_confs,
+        ) {
             engine_state.stale_turns += 1;
         } else {
             engine_state.stale_turns = 0;
@@ -376,7 +403,9 @@ pub async fn run_interview<IO: SocraticIO, S: TurnStore>(
             role: SocraticRole::User,
             content: user_response,
             target_dimension: Some(question_output.target_dimension),
-            slots_updated: verifier_output.filled_updates.iter()
+            slots_updated: verifier_output
+                .filled_updates
+                .iter()
                 .filter_map(|u| belief_state::parse_dimension(&u.dimension))
                 .collect(),
             timestamp: Utc::now().to_rfc3339(),
@@ -386,14 +415,16 @@ pub async fn run_interview<IO: SocraticIO, S: TurnStore>(
         io.send_belief_state(&belief_state).await;
         io.send_event(&SocraticEvent::BeliefStateUpdate {
             state: belief_state.clone(),
-        }).await;
+        })
+        .await;
 
         // Send contradiction alerts
         for contradiction in &belief_state.contradictions {
             if !contradiction.resolved {
                 io.send_event(&SocraticEvent::ContradictionDetected {
                     contradiction: contradiction.clone(),
-                }).await;
+                })
+                .await;
             }
         }
 
@@ -405,7 +436,10 @@ pub async fn run_interview<IO: SocraticIO, S: TurnStore>(
         // Check if user wants to stop (detected by verifier)
         if verifier_output.user_wants_to_stop {
             let conv_result = convergence::check_convergence(
-                &belief_state, &constitution, true, engine_state.stale_turns,
+                &belief_state,
+                &constitution,
+                true,
+                engine_state.stale_turns,
             );
             io.send_convergence(&conv_result).await;
             engine_state.session.is_complete = true;
@@ -420,14 +454,13 @@ pub async fn run_interview<IO: SocraticIO, S: TurnStore>(
 ///
 /// This bridges the Socratic engine output into the existing pipeline's
 /// expected input format.
-pub fn session_to_intake(
-    session: &SocraticSession,
-    project_id: Uuid,
-) -> IntakeV1 {
+pub fn session_to_intake(session: &SocraticSession, project_id: Uuid) -> IntakeV1 {
     let bs = &session.belief_state;
 
     // Extract project name from goal or core features
-    let project_name = bs.filled.get(&Dimension::Goal)
+    let project_name = bs
+        .filled
+        .get(&Dimension::Goal)
         .map(|v| {
             // Try to extract a short name from the goal
             let goal = &v.value;
@@ -460,9 +493,11 @@ pub fn session_to_intake(
         Some(ProjectType::WebApp) => OutputDomain::MicroTool {
             variant: MicroToolVariant::ReactWidget,
         },
-        Some(ProjectType::ApiBackend) | Some(ProjectType::DataPipeline) => OutputDomain::MicroTool {
-            variant: MicroToolVariant::FastApiBackend,
-        },
+        Some(ProjectType::ApiBackend) | Some(ProjectType::DataPipeline) => {
+            OutputDomain::MicroTool {
+                variant: MicroToolVariant::FastApiBackend,
+            }
+        }
         _ => OutputDomain::MicroTool {
             variant: MicroToolVariant::ReactWidget,
         },
@@ -471,9 +506,14 @@ pub fn session_to_intake(
     // Extract environment info
     let (language, framework) = match bs.classification.as_ref().map(|c| &c.project_type) {
         Some(ProjectType::WebApp) => ("TypeScript".to_string(), "React".to_string()),
-        Some(ProjectType::ApiBackend) | Some(ProjectType::DataPipeline) => ("Python".to_string(), "FastAPI".to_string()),
+        Some(ProjectType::ApiBackend) | Some(ProjectType::DataPipeline) => {
+            ("Python".to_string(), "FastAPI".to_string())
+        }
         _ => {
-            let tech = bs.filled.get(&Dimension::TechStack).map(|v| v.value.clone());
+            let tech = bs
+                .filled
+                .get(&Dimension::TechStack)
+                .map(|v| v.value.clone());
             if let Some(ref t) = tech {
                 let lower = t.to_lowercase();
                 if lower.contains("python") || lower.contains("fastapi") {
@@ -531,16 +571,18 @@ pub fn session_to_intake(
     }
 
     // Conversation log
-    let conversation_log: Vec<ConversationTurn> = session.conversation.iter().map(|t| {
-        ConversationTurn {
+    let conversation_log: Vec<ConversationTurn> = session
+        .conversation
+        .iter()
+        .map(|t| ConversationTurn {
             role: match t.role {
                 SocraticRole::User => "user".into(),
                 SocraticRole::Interviewer => "system".into(),
             },
             content: t.content.clone(),
             timestamp: t.timestamp.clone(),
-        }
-    }).collect();
+        })
+        .collect();
 
     IntakeV1 {
         project_id,
@@ -574,34 +616,41 @@ mod tests {
         };
 
         let mut belief_state = RequirementsBeliefState::from_classification(&classification);
-        belief_state.fill(Dimension::Goal, SlotValue {
-            value: "Task tracker for team visibility".into(),
-            source_turn: 1,
-            source_quote: Some("I want a task tracker".into()),
-        });
-        belief_state.fill(Dimension::CoreFeatures, SlotValue {
-            value: "Create, assign, complete tasks with Kanban board".into(),
-            source_turn: 2,
-            source_quote: None,
-        });
-        belief_state.fill(Dimension::SuccessCriteria, SlotValue {
-            value: "Tasks never fall through the cracks".into(),
-            source_turn: 3,
-            source_quote: None,
-        });
+        belief_state.fill(
+            Dimension::Goal,
+            SlotValue {
+                value: "Task tracker for team visibility".into(),
+                source_turn: 1,
+                source_quote: Some("I want a task tracker".into()),
+            },
+        );
+        belief_state.fill(
+            Dimension::CoreFeatures,
+            SlotValue {
+                value: "Create, assign, complete tasks with Kanban board".into(),
+                source_turn: 2,
+                source_quote: None,
+            },
+        );
+        belief_state.fill(
+            Dimension::SuccessCriteria,
+            SlotValue {
+                value: "Tasks never fall through the cracks".into(),
+                source_turn: 3,
+                source_quote: None,
+            },
+        );
 
         SocraticSession {
             belief_state,
-            conversation: vec![
-                SocraticTurn {
-                    turn_number: 1,
-                    role: SocraticRole::User,
-                    content: "I want a task tracker for my team".into(),
-                    target_dimension: None,
-                    slots_updated: vec![Dimension::Goal],
-                    timestamp: Utc::now().to_rfc3339(),
-                },
-            ],
+            conversation: vec![SocraticTurn {
+                turn_number: 1,
+                role: SocraticRole::User,
+                content: "I want a task tracker for my team".into(),
+                target_dimension: None,
+                slots_updated: vec![Dimension::Goal],
+                timestamp: Utc::now().to_rfc3339(),
+            }],
             constitution: InterviewerConstitution::default_constitution(),
             is_complete: true,
             convergence_result: Some(ConvergenceResult {

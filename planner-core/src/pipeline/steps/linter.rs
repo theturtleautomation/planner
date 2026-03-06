@@ -6,8 +6,8 @@
 //! Phase 3 adds `lint_spec_set()` for cross-chunk reference validation
 //! across the full set of root + domain chunks.
 
+use super::{StepError, StepResult};
 use planner_schemas::*;
-use super::{StepResult, StepError};
 
 /// Validate an NLSpec chunk against the 12 linting rules.
 pub fn lint_spec(spec: &NLSpecV1) -> StepResult<()> {
@@ -34,7 +34,9 @@ pub fn lint_spec(spec: &NLSpecV1) -> StepResult<()> {
     // Rule 3: All Sacred Anchors have ≥1 corresponding FR
     if let Some(anchors) = &spec.sacred_anchors {
         for anchor in anchors {
-            let has_fr = spec.requirements.iter()
+            let has_fr = spec
+                .requirements
+                .iter()
                 .any(|r| r.traces_to.contains(&anchor.id));
             if !has_fr {
                 violations.push(format!(
@@ -58,7 +60,9 @@ pub fn lint_spec(spec: &NLSpecV1) -> StepResult<()> {
     }
 
     // Rule 5: Open Questions list is empty
-    let unresolved = spec.open_questions.iter()
+    let unresolved = spec
+        .open_questions
+        .iter()
         .filter(|oq| oq.resolution.is_none())
         .count();
     if unresolved > 0 {
@@ -120,12 +124,12 @@ pub fn lint_spec(spec: &NLSpecV1) -> StepResult<()> {
     }
 
     // Rule 11: Satisfaction Criteria has ≥1 critical scenario seed
-    let has_critical = spec.satisfaction_criteria.iter()
+    let has_critical = spec
+        .satisfaction_criteria
+        .iter()
         .any(|sc| sc.tier_hint == ScenarioTierHint::Critical);
     if !has_critical {
-        violations.push(
-            "Rule 11: Satisfaction Criteria has no critical scenario seed".into()
-        );
+        violations.push("Rule 11: Satisfaction Criteria has no critical scenario seed".into());
     }
 
     // Rule 12: Amendment Log is append-only (structural check only —
@@ -162,7 +166,10 @@ pub fn lint_spec_set(specs: &[NLSpecV1]) -> StepResult<()> {
 
     // Step 1: Lint each chunk individually
     for spec in specs {
-        if let Err(StepError::LintFailure { violations: chunk_violations }) = lint_spec(spec) {
+        if let Err(StepError::LintFailure {
+            violations: chunk_violations,
+        }) = lint_spec(spec)
+        {
             let chunk_label = match &spec.chunk {
                 ChunkType::Root => "root".to_string(),
                 ChunkType::Domain { name } => format!("domain:{}", name),
@@ -183,8 +190,8 @@ pub fn lint_spec_set(specs: &[NLSpecV1]) -> StepResult<()> {
             ChunkType::Domain { name } => name.clone(),
         };
         for req in &spec.requirements {
-            if let Some((_existing_id, existing_chunk)) = all_fr_ids.iter()
-                .find(|(id, _)| id == &req.id)
+            if let Some((_existing_id, existing_chunk)) =
+                all_fr_ids.iter().find(|(id, _)| id == &req.id)
             {
                 violations.push(format!(
                     "Rule 9d: Duplicate FR ID '{}' found in chunks '{}' and '{}'",
@@ -197,7 +204,8 @@ pub fn lint_spec_set(specs: &[NLSpecV1]) -> StepResult<()> {
 
     // Step 3: Every Sacred Anchor must be covered by at least one FR across all chunks (Rule 9b)
     if let Some(anchors) = &root.sacred_anchors {
-        let all_traced_anchors: Vec<&str> = specs.iter()
+        let all_traced_anchors: Vec<&str> = specs
+            .iter()
             .flat_map(|s| s.requirements.iter())
             .flat_map(|r| r.traces_to.iter())
             .map(|s| s.as_str())
@@ -229,7 +237,9 @@ pub fn lint_spec_set(specs: &[NLSpecV1]) -> StepResult<()> {
     }
 
     // Step 5: All traces_to references in domain chunks must reference valid anchor IDs (Rule 9a)
-    let valid_anchor_ids: Vec<&str> = root.sacred_anchors.as_ref()
+    let valid_anchor_ids: Vec<&str> = root
+        .sacred_anchors
+        .as_ref()
         .map(|anchors| anchors.iter().map(|a| a.id.as_str()).collect())
         .unwrap_or_default();
 
@@ -375,7 +385,9 @@ mod tests {
         let err = lint_spec(&spec).unwrap_err();
         match err {
             StepError::LintFailure { violations } => {
-                assert!(violations.iter().any(|v| v.contains("Rule 3") && v.contains("SA-2")));
+                assert!(violations
+                    .iter()
+                    .any(|v| v.contains("Rule 3") && v.contains("SA-2")));
             }
             _ => panic!("Expected LintFailure"),
         }
@@ -388,7 +400,9 @@ mod tests {
         NLSpecV1 {
             project_id: Uuid::new_v4(),
             version: "1.0".into(),
-            chunk: ChunkType::Domain { name: domain_name.to_string() },
+            chunk: ChunkType::Domain {
+                name: domain_name.to_string(),
+            },
             status: NLSpecStatus::Draft,
             line_count: 100,
             created_from: format!("test:domain:{}", domain_name),
@@ -434,7 +448,9 @@ mod tests {
         let err = lint_spec_set(&[root, auth]).unwrap_err();
         match err {
             StepError::LintFailure { violations } => {
-                assert!(violations.iter().any(|v| v.contains("Rule 9d") && v.contains("FR-1")));
+                assert!(violations
+                    .iter()
+                    .any(|v| v.contains("Rule 9d") && v.contains("FR-1")));
             }
             _ => panic!("Expected LintFailure"),
         }
@@ -451,7 +467,9 @@ mod tests {
         let err = lint_spec_set(&[root, auth]).unwrap_err();
         match err {
             StepError::LintFailure { violations } => {
-                assert!(violations.iter().any(|v| v.contains("Rule 9b") && v.contains("SA-99")));
+                assert!(violations
+                    .iter()
+                    .any(|v| v.contains("Rule 9b") && v.contains("SA-99")));
             }
             _ => panic!("Expected LintFailure"),
         }
@@ -465,7 +483,9 @@ mod tests {
         let err = lint_spec_set(&[root, auth]).unwrap_err();
         match err {
             StepError::LintFailure { violations } => {
-                assert!(violations.iter().any(|v| v.contains("Rule 9a") && v.contains("SA-999")));
+                assert!(violations
+                    .iter()
+                    .any(|v| v.contains("Rule 9a") && v.contains("SA-999")));
             }
             _ => panic!("Expected LintFailure"),
         }

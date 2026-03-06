@@ -58,9 +58,7 @@ impl SatisfactionResultV1 {
             && self.medium_pass_rate >= 0.90
         {
             "Everything works as described."
-        } else if self.critical_pass_rate >= 1.0
-            && self.high_pass_rate >= 0.95
-        {
+        } else if self.critical_pass_rate >= 1.0 && self.high_pass_rate >= 0.95 {
             "Your app works. A few minor behaviors didn't match expectations."
         } else if self.critical_pass_rate >= 1.0 {
             "Your app is mostly right but some important behaviors need attention."

@@ -92,7 +92,8 @@ fn check_rule(
             ];
 
             if implementation_dims.contains(target_dimension) {
-                let functional_covered = functional_dims.iter().any(|d| state.filled.contains_key(d));
+                let functional_covered =
+                    functional_dims.iter().any(|d| state.filled.contains_key(d));
                 if !functional_covered {
                     return Some(ConstitutionViolation {
                         rule_id: 4,
@@ -141,11 +142,11 @@ fn check_rule(
 /// Check if a question is about resolving a contradiction.
 fn is_contradiction_question(question: &str) -> bool {
     let lower = question.to_lowercase();
-    lower.contains("conflict") ||
-    lower.contains("contradict") ||
-    lower.contains("incompatible") ||
-    lower.contains("which is more important") ||
-    lower.contains("you mentioned") && lower.contains("but also")
+    lower.contains("conflict")
+        || lower.contains("contradict")
+        || lower.contains("incompatible")
+        || lower.contains("which is more important")
+        || lower.contains("you mentioned") && lower.contains("but also")
 }
 
 /// Check coverage rules at convergence time.
@@ -177,8 +178,15 @@ pub fn check_coverage(
 
         // Rule 8: stakeholders required for multi-user systems
         if rule.id == 8 {
-            let is_multi_user = state.classification.as_ref()
-                .map(|c| matches!(c.project_type, ProjectType::WebApp | ProjectType::ApiBackend | ProjectType::Hybrid))
+            let is_multi_user = state
+                .classification
+                .as_ref()
+                .map(|c| {
+                    matches!(
+                        c.project_type,
+                        ProjectType::WebApp | ProjectType::ApiBackend | ProjectType::Hybrid
+                    )
+                })
                 .unwrap_or(false);
 
             if is_multi_user {
@@ -193,8 +201,8 @@ pub fn check_coverage(
 
         // Rule 9: out-of-scope must be addressed
         if rule.id == 9 {
-            let oos_covered = state.filled.contains_key(&Dimension::OutOfScope)
-                || state.out_of_scope.len() > 0;
+            let oos_covered =
+                state.filled.contains_key(&Dimension::OutOfScope) || state.out_of_scope.len() > 0;
             if !oos_covered {
                 uncovered.push(Dimension::OutOfScope);
             }
@@ -281,11 +289,14 @@ mod tests {
     #[test]
     fn rule4_implementation_after_scope() {
         let mut state = make_state();
-        state.fill(Dimension::Goal, SlotValue {
-            value: "Task tracker".into(),
-            source_turn: 1,
-            source_quote: None,
-        });
+        state.fill(
+            Dimension::Goal,
+            SlotValue {
+                value: "Task tracker".into(),
+                source_turn: 1,
+                source_quote: None,
+            },
+        );
 
         let c = load_constitution();
 

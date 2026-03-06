@@ -21,11 +21,11 @@ use std::sync::Arc;
 use axum::Router;
 use tower_http::cors::{Any, CorsLayer};
 
-use planner_server::AppState;
 use planner_server::api;
 use planner_server::auth::AuthConfig;
 use planner_server::rate_limit;
 use planner_server::session::SessionStore;
+use planner_server::AppState;
 
 #[tokio::main]
 async fn main() {
@@ -76,54 +76,73 @@ async fn main() {
         Ok(store) => {
             tracing::info!(
                 "Session persistence enabled: {}/sessions/ ({} sessions loaded)",
-                data_dir, store.count(),
+                data_dir,
+                store.count(),
             );
             store
         }
         Err(e) => {
-            tracing::warn!("Session persistence unavailable ({}), falling back to in-memory only", e);
+            tracing::warn!(
+                "Session persistence unavailable ({}), falling back to in-memory only",
+                e
+            );
             SessionStore::new()
         }
     };
 
     // Initialize Blueprint store — disk-backed alongside sessions.
-    let blueprint_store = match planner_core::blueprint::BlueprintStore::open(std::path::Path::new(&data_dir)) {
+    let blueprint_store =
+        match planner_core::blueprint::BlueprintStore::open(std::path::Path::new(&data_dir)) {
+            Ok(store) => {
+                let (nodes, edges) = store.counts();
+                tracing::info!(
+                    "Blueprint persistence enabled: {}/blueprint/ ({} nodes, {} edges loaded)",
+                    data_dir,
+                    nodes,
+                    edges,
+                );
+                store
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Blueprint persistence unavailable ({}), falling back to in-memory only",
+                    e
+                );
+                planner_core::blueprint::BlueprintStore::new()
+            }
+        };
+
+    let proposal_store = match planner_core::discovery::ProposalStore::open(std::path::Path::new(
+        &data_dir,
+    )) {
         Ok(store) => {
-            let (nodes, edges) = store.counts();
             tracing::info!(
-                "Blueprint persistence enabled: {}/blueprint/ ({} nodes, {} edges loaded)",
-                data_dir, nodes, edges,
+                "Discovery proposal persistence enabled: {}/blueprint/proposals.msgpack",
+                data_dir
             );
             store
         }
         Err(e) => {
-            tracing::warn!("Blueprint persistence unavailable ({}), falling back to in-memory only", e);
-            planner_core::blueprint::BlueprintStore::new()
-        }
-    };
-
-    let proposal_store = match planner_core::discovery::ProposalStore::open(std::path::Path::new(&data_dir)) {
-        Ok(store) => {
-            tracing::info!("Discovery proposal persistence enabled: {}/blueprint/proposals.msgpack", data_dir);
-            store
-        }
-        Err(e) => {
-            tracing::warn!("Discovery proposal persistence unavailable ({}), falling back to in-memory only", e);
+            tracing::warn!(
+                "Discovery proposal persistence unavailable ({}), falling back to in-memory only",
+                e
+            );
             planner_core::discovery::ProposalStore::new()
         }
     };
 
     // Initialize event persistence
-    let event_store = match planner_core::observability::EventStore::new(std::path::Path::new(&data_dir)) {
-        Ok(store) => {
-            tracing::info!("Event persistence enabled: {}/events/", data_dir);
-            Some(store)
-        }
-        Err(e) => {
-            tracing::warn!("Event persistence disabled: {}", e);
-            None
-        }
-    };
+    let event_store =
+        match planner_core::observability::EventStore::new(std::path::Path::new(&data_dir)) {
+            Ok(store) => {
+                tracing::info!("Event persistence enabled: {}/events/", data_dir);
+                Some(store)
+            }
+            Err(e) => {
+                tracing::warn!("Event persistence disabled: {}", e);
+                None
+            }
+        };
 
     // Initialize durable CXDB engine for pipeline Turn persistence.
     let cxdb_path = std::path::Path::new(&data_dir).join("cxdb");
@@ -132,12 +151,17 @@ async fn main() {
             let stats = engine.stats();
             tracing::info!(
                 "CXDB persistence enabled: {} ({} turns, {} blobs)",
-                cxdb_path.display(), stats.total_turns, stats.total_blobs,
+                cxdb_path.display(),
+                stats.total_turns,
+                stats.total_blobs,
             );
             Some(engine)
         }
         Err(e) => {
-            tracing::warn!("CXDB persistence unavailable ({}), pipeline runs without durable storage", e);
+            tracing::warn!(
+                "CXDB persistence unavailable ({}), pipeline runs without durable storage",
+                e
+            );
             None
         }
     };
@@ -226,12 +250,9 @@ async fn main() {
     // Add static file serving if directory exists
     let app = if std::path::Path::new(&static_dir).exists() {
         tracing::info!("Serving static files from: {}", static_dir);
-        app.fallback_service(
-            tower_http::services::ServeDir::new(&static_dir)
-                .fallback(tower_http::services::ServeFile::new(
-                    format!("{}/index.html", static_dir),
-                )),
-        )
+        app.fallback_service(tower_http::services::ServeDir::new(&static_dir).fallback(
+            tower_http::services::ServeFile::new(format!("{}/index.html", static_dir)),
+        ))
     } else {
         tracing::warn!("Static directory not found: {} — API only mode", static_dir);
         app
@@ -258,9 +279,8 @@ async fn main() {
     let shutdown = async move {
         let ctrl_c = tokio::signal::ctrl_c();
         #[cfg(unix)]
-        let mut sigterm = tokio::signal::unix::signal(
-            tokio::signal::unix::SignalKind::terminate(),
-        ).expect("failed to register SIGTERM handler");
+        let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("failed to register SIGTERM handler");
         #[cfg(unix)]
         let sigterm_recv = sigterm.recv();
         #[cfg(not(unix))]

@@ -50,12 +50,21 @@ impl ArtifactPayload for ArReportV1 {
 impl ArReportV1 {
     /// Recalculate counts and `has_blocking` from findings.
     pub fn recalculate(&mut self) {
-        self.blocking_count = self.findings.iter()
-            .filter(|f| f.severity == ArSeverity::Blocking).count() as u32;
-        self.advisory_count = self.findings.iter()
-            .filter(|f| f.severity == ArSeverity::Advisory).count() as u32;
-        self.informational_count = self.findings.iter()
-            .filter(|f| f.severity == ArSeverity::Informational).count() as u32;
+        self.blocking_count = self
+            .findings
+            .iter()
+            .filter(|f| f.severity == ArSeverity::Blocking)
+            .count() as u32;
+        self.advisory_count = self
+            .findings
+            .iter()
+            .filter(|f| f.severity == ArSeverity::Advisory)
+            .count() as u32;
+        self.informational_count = self
+            .findings
+            .iter()
+            .filter(|f| f.severity == ArSeverity::Informational)
+            .count() as u32;
         self.has_blocking = self.blocking_count > 0;
     }
 }
