@@ -199,6 +199,32 @@ pub struct HistoryListResponse {
     pub snapshots: Vec<SnapshotEntry>,
 }
 
+/// Query parameters for `GET /blueprint/events`.
+#[derive(Debug, Deserialize)]
+pub struct BlueprintEventsQuery {
+    /// Filter to events for a specific node.
+    pub node_id: Option<String>,
+    /// Maximum number of events to return (default: all).
+    pub limit: Option<usize>,
+}
+
+/// API response for the event log.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BlueprintEventsResponse {
+    pub events: Vec<BlueprintEventPayload>,
+    pub total: usize,
+}
+
+/// A single event in the API response.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BlueprintEventPayload {
+    pub event_type: String,
+    pub summary: String,
+    pub timestamp: String,
+    /// Full event data.
+    pub data: serde_json::Value,
+}
+
 // ---------------------------------------------------------------------------
 // Admin response types
 // ---------------------------------------------------------------------------
@@ -279,6 +305,7 @@ pub fn routes(state: Arc<AppState>) -> Router {
         .route("/blueprint/nodes/{nodeId}", get(get_blueprint_node).patch(update_blueprint_node).delete(delete_blueprint_node))
         .route("/blueprint/edges", post(create_blueprint_edge).delete(delete_blueprint_edge))
         .route("/blueprint/history", get(list_blueprint_history))
+        .route("/blueprint/events", get(list_blueprint_events))
         .route("/blueprint/impact-preview", post(impact_preview))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
@@ -1258,6 +1285,43 @@ async fn list_blueprint_history(
         filename: fname,
     }).collect();
     Json(HistoryListResponse { snapshots })
+}
+
+/// GET /blueprint/events — List the event log, optionally filtered by node.
+async fn list_blueprint_events(
+    State(state): State<Arc<AppState>>,
+    _claims: Claims,
+    Query(query): Query<BlueprintEventsQuery>,
+) -> Json<BlueprintEventsResponse> {
+    let all_events = match &query.node_id {
+        Some(nid) => state.blueprints.events_for_node(nid),
+        None => state.blueprints.events(),
+    };
+
+    let total = all_events.len();
+
+    // Most recent first, with optional limit.
+    let events: Vec<BlueprintEventPayload> = all_events.iter().rev()
+        .take(query.limit.unwrap_or(usize::MAX))
+        .map(|e| {
+            // Derive event_type tag from the variant.
+            let event_type = match e {
+                planner_schemas::artifacts::blueprint::BlueprintEvent::NodeCreated { .. } => "node_created",
+                planner_schemas::artifacts::blueprint::BlueprintEvent::NodeUpdated { .. } => "node_updated",
+                planner_schemas::artifacts::blueprint::BlueprintEvent::NodeDeleted { .. } => "node_deleted",
+                planner_schemas::artifacts::blueprint::BlueprintEvent::EdgeCreated { .. } => "edge_created",
+                planner_schemas::artifacts::blueprint::BlueprintEvent::EdgesDeleted { .. } => "edges_deleted",
+            };
+            BlueprintEventPayload {
+                event_type: event_type.to_string(),
+                summary: e.summary(),
+                timestamp: e.timestamp().to_string(),
+                data: serde_json::to_value(e).unwrap_or_default(),
+            }
+        })
+        .collect();
+
+    Json(BlueprintEventsResponse { events, total })
 }
 
 /// POST /blueprint/impact-preview — Analyze downstream impact of a node change.
@@ -2357,5 +2421,79 @@ mod tests {
         let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
         let history: HistoryListResponse = serde_json::from_slice(&body).unwrap();
         assert!(history.snapshots.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_list_blueprint_events_empty() {
+        let state = test_state();
+        let app = routes(state);
+
+        let req = Request::builder()
+            .uri("/blueprint/events")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let events: BlueprintEventsResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(events.total, 0);
+        assert!(events.events.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_blueprint_events_after_crud() {
+        let state = test_state();
+
+        // Create a node — should produce a NodeCreated event.
+        let app = routes(state.clone());
+        let req = Request::builder()
+            .method("POST")
+            .uri("/blueprint/nodes")
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_string(&sample_decision_json()).unwrap()))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::CREATED);
+
+        // Check events.
+        let app = routes(state.clone());
+        let req = Request::builder()
+            .uri("/blueprint/events")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let events: BlueprintEventsResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(events.total, 1);
+        assert_eq!(events.events[0].event_type, "node_created");
+    }
+
+    #[tokio::test]
+    async fn test_blueprint_events_filtered_by_node() {
+        let state = test_state();
+
+        // Create two nodes.
+        let dec: planner_schemas::artifacts::blueprint::BlueprintNode =
+            serde_json::from_value(sample_decision_json()).unwrap();
+        let tech: planner_schemas::artifacts::blueprint::BlueprintNode =
+            serde_json::from_value(sample_technology_json()).unwrap();
+        state.blueprints.upsert_node(dec);
+        state.blueprints.upsert_node(tech);
+
+        // Should have 2 events total.
+        assert_eq!(state.blueprints.event_count(), 2);
+
+        // Filter to decision node only.
+        let app = routes(state.clone());
+        let req = Request::builder()
+            .uri("/blueprint/events?node_id=dec-use-msgpack-a1b2c3d4")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let events: BlueprintEventsResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(events.total, 1);
+        assert_eq!(events.events[0].event_type, "node_created");
     }
 }

@@ -17,6 +17,7 @@ import type {
   NodeListResponse,
   BlueprintNode,
   ImpactReport,
+  BlueprintEventsResponse,
 } from '../types/blueprint.ts';
 
 export { ApiError };
@@ -186,6 +187,15 @@ export function createApiClient(getToken: GetTokenFn) {
     /** GET /blueprint/history — List history snapshots. */
     listBlueprintHistory(): Promise<{ snapshots: { timestamp: string; filename: string }[] }> {
       return apiFetch<{ snapshots: { timestamp: string; filename: string }[] }>(getToken, '/blueprint/history');
+    },
+
+    /** GET /blueprint/events — List event log, optionally filtered by node. */
+    listBlueprintEvents(params?: { nodeId?: string; limit?: number }): Promise<BlueprintEventsResponse> {
+      const qs = new URLSearchParams();
+      if (params?.nodeId) qs.set('node_id', params.nodeId);
+      if (params?.limit !== undefined) qs.set('limit', String(params.limit));
+      const query = qs.toString() ? `?${qs.toString()}` : '';
+      return apiFetch<BlueprintEventsResponse>(getToken, `/blueprint/events${query}`);
     },
 
     /** POST /blueprint/impact-preview — Analyze impact of changing a node. */

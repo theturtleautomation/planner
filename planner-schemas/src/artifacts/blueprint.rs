@@ -579,6 +579,94 @@ impl From<&BlueprintNode> for NodeSummary {
 }
 
 // ---------------------------------------------------------------------------
+// Event Sourcing
+// ---------------------------------------------------------------------------
+
+/// A single immutable event recording a mutation to the Blueprint graph.
+///
+/// Events are append-only and serve as the source of truth for the
+/// blueprint's change history. The current state can always be
+/// reconstructed by replaying events from the initial empty state.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "event_type", rename_all = "snake_case")]
+pub enum BlueprintEvent {
+    /// A node was created (first upsert for this ID).
+    NodeCreated {
+        node: BlueprintNode,
+        timestamp: String,
+    },
+    /// A node was updated (upsert for an existing ID).
+    NodeUpdated {
+        node_id: String,
+        before: BlueprintNode,
+        after: BlueprintNode,
+        timestamp: String,
+    },
+    /// A node and its incident edges were deleted.
+    NodeDeleted {
+        node_id: String,
+        node: BlueprintNode,
+        /// Edges that were removed along with the node.
+        removed_edges: Vec<Edge>,
+        timestamp: String,
+    },
+    /// An edge was created.
+    EdgeCreated {
+        edge: Edge,
+        timestamp: String,
+    },
+    /// One or more edges were deleted.
+    EdgesDeleted {
+        edges: Vec<Edge>,
+        timestamp: String,
+    },
+}
+
+impl BlueprintEvent {
+    /// The ISO-8601 timestamp of the event.
+    pub fn timestamp(&self) -> &str {
+        match self {
+            Self::NodeCreated { timestamp, .. }
+            | Self::NodeUpdated { timestamp, .. }
+            | Self::NodeDeleted { timestamp, .. }
+            | Self::EdgeCreated { timestamp, .. }
+            | Self::EdgesDeleted { timestamp, .. } => timestamp,
+        }
+    }
+
+    /// Short human-readable description of the event.
+    pub fn summary(&self) -> String {
+        match self {
+            Self::NodeCreated { node, .. } => {
+                format!("Created {} '{}'", node.type_name(), node.name())
+            }
+            Self::NodeUpdated { node_id, after, .. } => {
+                format!("Updated {} '{}'", after.type_name(), node_id)
+            }
+            Self::NodeDeleted { node_id, node, removed_edges, .. } => {
+                let edge_note = if removed_edges.is_empty() {
+                    String::new()
+                } else {
+                    format!(" ({} edges removed)", removed_edges.len())
+                };
+                format!("Deleted {} '{}'{}", node.type_name(), node_id, edge_note)
+            }
+            Self::EdgeCreated { edge, .. } => {
+                format!("Edge {} -[{}]-> {}", edge.source, edge.edge_type, edge.target)
+            }
+            Self::EdgesDeleted { edges, .. } => {
+                if edges.len() == 1 {
+                    let e = &edges[0];
+                    format!("Removed edge {} -[{}]-> {}", e.source, e.edge_type, e.target)
+                } else {
+                    format!("Removed {} edges", edges.len())
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 

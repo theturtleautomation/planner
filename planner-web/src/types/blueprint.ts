@@ -206,6 +206,27 @@ export interface ImpactReport {
   timestamp: string;
 }
 
+// ─── Event sourcing ───────────────────────────────────────────────────────
+
+export type BlueprintEventType =
+  | 'node_created'
+  | 'node_updated'
+  | 'node_deleted'
+  | 'edge_created'
+  | 'edges_deleted';
+
+export interface BlueprintEventPayload {
+  event_type: BlueprintEventType;
+  summary: string;
+  timestamp: string;
+  data: Record<string, unknown>;
+}
+
+export interface BlueprintEventsResponse {
+  events: BlueprintEventPayload[];
+  total: number;
+}
+
 // ─── D3 simulation types ────────────────────────────────────────────────────
 
 export interface GraphNode extends NodeSummary {

@@ -12,6 +12,7 @@
 //!   │   ├── {node_id}.msgpack       # One file per node
 //!   │   └── ...
 //!   ├── edges.msgpack               # All edges in a single file
+//!   ├── events.msgpack              # Append-only event log
 //!   └── history/
 //!       ├── {timestamp}.msgpack     # Snapshot before edit
 //!       └── ...
@@ -400,6 +401,7 @@ impl Blueprint {
 /// tracking + periodic flush with atomic rename + fsync.
 pub struct BlueprintStore {
     blueprint: RwLock<Blueprint>,
+    events: RwLock<Vec<BlueprintEvent>>,
     dirty: RwLock<bool>,
     blueprint_dir: Option<PathBuf>,
 }
@@ -409,6 +411,7 @@ impl BlueprintStore {
     pub fn new() -> Self {
         BlueprintStore {
             blueprint: RwLock::new(Blueprint::new()),
+            events: RwLock::new(Vec::new()),
             dirty: RwLock::new(false),
             blueprint_dir: None,
         }
@@ -493,6 +496,7 @@ impl BlueprintStore {
 
         Ok(BlueprintStore {
             blueprint: RwLock::new(blueprint),
+            events: RwLock::new(Self::load_events(&blueprint_dir)),
             dirty: RwLock::new(false),
             blueprint_dir: Some(blueprint_dir),
         })
@@ -553,21 +557,81 @@ impl BlueprintStore {
         self.blueprint.read().impact_analysis(node_id, change_description)
     }
 
+    /// Return a clone of the full event log.
+    pub fn events(&self) -> Vec<BlueprintEvent> {
+        self.events.read().clone()
+    }
+
+    /// Return events filtered to a specific node.
+    pub fn events_for_node(&self, node_id: &str) -> Vec<BlueprintEvent> {
+        self.events.read().iter().filter(|e| match e {
+            BlueprintEvent::NodeCreated { node, .. } => node.id().0 == node_id,
+            BlueprintEvent::NodeUpdated { node_id: nid, .. } => nid == node_id,
+            BlueprintEvent::NodeDeleted { node_id: nid, .. } => nid == node_id,
+            BlueprintEvent::EdgeCreated { edge, .. } => edge.source.0 == node_id || edge.target.0 == node_id,
+            BlueprintEvent::EdgesDeleted { edges, .. } => edges.iter().any(|e| e.source.0 == node_id || e.target.0 == node_id),
+        }).cloned().collect()
+    }
+
+    /// Total number of events in the log.
+    pub fn event_count(&self) -> usize {
+        self.events.read().len()
+    }
+
     // -----------------------------------------------------------------------
-    // Write operations (mark dirty)
+    // Write operations (mark dirty + emit events)
     // -----------------------------------------------------------------------
+
+    fn now_iso() -> String {
+        chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+    }
+
+    fn append_event(&self, event: BlueprintEvent) {
+        tracing::debug!("Blueprint event: {}", event.summary());
+        self.events.write().push(event);
+    }
 
     /// Insert or replace a node.
     pub fn upsert_node(&self, node: BlueprintNode) {
-        self.blueprint.write().upsert_node(node);
+        let ts = Self::now_iso();
+        let node_id = node.id().0.clone();
+        let before = self.blueprint.read().get_node(&node_id).cloned();
+        self.blueprint.write().upsert_node(node.clone());
         self.mark_dirty();
+
+        if let Some(before) = before {
+            self.append_event(BlueprintEvent::NodeUpdated {
+                node_id,
+                before,
+                after: node,
+                timestamp: ts,
+            });
+        } else {
+            self.append_event(BlueprintEvent::NodeCreated {
+                node,
+                timestamp: ts,
+            });
+        }
     }
 
     /// Remove a node and all incident edges.
     pub fn remove_node(&self, node_id: &str) -> Option<BlueprintNode> {
+        let ts = Self::now_iso();
+        // Capture incident edges before removal.
+        let removed_edges: Vec<Edge> = self.blueprint.read().edges.iter()
+            .filter(|e| e.source.0 == node_id || e.target.0 == node_id)
+            .cloned()
+            .collect();
+
         let removed = self.blueprint.write().remove_node(node_id);
-        if removed.is_some() {
+        if let Some(ref node) = removed {
             self.mark_dirty();
+            self.append_event(BlueprintEvent::NodeDeleted {
+                node_id: node_id.to_string(),
+                node: node.clone(),
+                removed_edges,
+                timestamp: ts,
+            });
         }
         removed
     }
@@ -577,13 +641,21 @@ impl BlueprintStore {
     where
         F: FnOnce(&mut BlueprintNode),
     {
+        let ts = Self::now_iso();
         let mut bp = self.blueprint.write();
         if let Some(node) = bp.nodes.get_mut(node_id) {
+            let before = node.clone();
             f(node);
-            let result = node.clone();
+            let after = node.clone();
             drop(bp);
             self.mark_dirty();
-            Some(result)
+            self.append_event(BlueprintEvent::NodeUpdated {
+                node_id: node_id.to_string(),
+                before,
+                after: after.clone(),
+                timestamp: ts,
+            });
+            Some(after)
         } else {
             None
         }
@@ -591,15 +663,31 @@ impl BlueprintStore {
 
     /// Add an edge.
     pub fn add_edge(&self, edge: Edge) {
-        self.blueprint.write().add_edge(edge);
+        let ts = Self::now_iso();
+        self.blueprint.write().add_edge(edge.clone());
         self.mark_dirty();
+        self.append_event(BlueprintEvent::EdgeCreated {
+            edge,
+            timestamp: ts,
+        });
     }
 
     /// Remove edges matching a predicate.
     pub fn remove_edges_where<F: Fn(&Edge) -> bool>(&self, predicate: F) -> usize {
+        let ts = Self::now_iso();
+        // Capture edges that will be removed.
+        let edges_to_remove: Vec<Edge> = self.blueprint.read().edges.iter()
+            .filter(|e| predicate(e))
+            .cloned()
+            .collect();
+
         let removed = self.blueprint.write().remove_edges_where(predicate);
         if removed > 0 {
             self.mark_dirty();
+            self.append_event(BlueprintEvent::EdgesDeleted {
+                edges: edges_to_remove,
+                timestamp: ts,
+            });
         }
         removed
     }
@@ -685,6 +773,9 @@ impl BlueprintStore {
         // Clear dirty flag only after all writes succeed.
         *self.dirty.write() = false;
 
+        // Flush event log (append-only, separate from dirty tracking).
+        let _ = self.flush_events(blueprint_dir);
+
         tracing::debug!(
             "Blueprint flush: {} nodes, {} edges written",
             snapshot.nodes.len(),
@@ -692,6 +783,47 @@ impl BlueprintStore {
         );
 
         Ok(true)
+    }
+
+    /// Load events from disk.
+    fn load_events(blueprint_dir: &Path) -> Vec<BlueprintEvent> {
+        let events_path = blueprint_dir.join("events.msgpack");
+        match std::fs::read(&events_path) {
+            Ok(bytes) => {
+                match rmp_serde::from_slice::<Vec<BlueprintEvent>>(&bytes) {
+                    Ok(events) => {
+                        tracing::info!("Blueprint: loaded {} events from disk", events.len());
+                        events
+                    }
+                    Err(e) => {
+                        tracing::warn!("Blueprint: failed to decode events: {}", e);
+                        Vec::new()
+                    }
+                }
+            }
+            Err(_) => Vec::new(), // No events file yet — normal for fresh stores.
+        }
+    }
+
+    /// Flush the event log to disk (atomic write).
+    fn flush_events(&self, blueprint_dir: &Path) -> std::io::Result<()> {
+        let events = self.events.read().clone();
+        if events.is_empty() {
+            return Ok(());
+        }
+
+        let bytes = rmp_serde::to_vec_named(&events)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        let final_path = blueprint_dir.join("events.msgpack");
+        let tmp_path = blueprint_dir.join("events.msgpack.tmp");
+
+        let mut file = std::fs::File::create(&tmp_path)?;
+        file.write_all(&bytes)?;
+        file.sync_all()?;
+        std::fs::rename(&tmp_path, &final_path)?;
+
+        tracing::debug!("Blueprint: flushed {} events to disk", events.len());
+        Ok(())
     }
 
     /// Save a history snapshot (before an edit).
