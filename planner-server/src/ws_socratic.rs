@@ -25,8 +25,7 @@
 use std::sync::Arc;
 
 use axum::extract::ws::{Message, WebSocket};
-use tokio::sync::mpsc;
-use tokio::sync::Mutex;
+use tokio::sync::{broadcast, mpsc, Mutex};
 use uuid::Uuid;
 
 use planner_core::observability::EventSink;
@@ -40,10 +39,7 @@ use planner_schemas::{
     SocraticEvent, SpeculativeDraft,
 };
 
-// Import SocraticIO trait so we can call .send_message() on Arc<WsSocraticIO>
-// inside the spawned engine task's error handler.
-use planner_core::pipeline::steps::socratic::SocraticIO;
-
+use crate::runtime::{AttachError, RuntimeAttachment, SessionRuntime};
 use crate::ws::{ClientMessage, ServerMessage};
 use crate::AppState;
 
@@ -305,12 +301,50 @@ impl planner_core::pipeline::steps::socratic::SocraticIO for WsSocraticIO {
     }
 }
 
+fn mark_interview_runtime_attached(state: &Arc<AppState>, session_id: Uuid) {
+    let _ = state.sessions.update(session_id, |s| {
+        s.intake_phase = "interviewing".into();
+        s.interview_runtime_active = true;
+        s.interview_live_attached = true;
+        s.ensure_socratic_run_id();
+    });
+}
+
 fn mark_interview_detached_if_active(state: &Arc<AppState>, session_id: Uuid) {
     let _ = state.sessions.update(session_id, |s| {
         if s.intake_phase == "interviewing" {
+            s.interview_runtime_active = true;
             s.interview_live_attached = false;
         }
     });
+}
+
+fn clear_interview_runtime_state(state: &Arc<AppState>, session_id: Uuid) {
+    let _ = state.sessions.update(session_id, |s| {
+        s.interview_runtime_active = false;
+        s.interview_live_attached = false;
+    });
+}
+
+pub fn expire_detached_runtimes(state: &Arc<AppState>) {
+    for (session_id, runtime) in state.socratic_runtimes.expire_detached() {
+        tracing::info!(
+            "Session {}: live interview runtime lease expired; falling back to checkpoint resume",
+            session_id
+        );
+        runtime.close_input();
+        clear_interview_runtime_state(state, session_id);
+    }
+}
+
+async fn send_ws_message(socket: &mut WebSocket, msg: &ServerMessage) -> Result<(), ()> {
+    let json = serde_json::to_string(msg).map_err(|e| {
+        tracing::warn!("failed to serialize websocket message: {}", e);
+    })?;
+
+    socket.send(Message::Text(json.into())).await.map_err(|e| {
+        tracing::debug!("websocket send failed: {}", e);
+    })
 }
 
 fn sorted_uncertain_confidences(state: &RequirementsBeliefState) -> Vec<f32> {
@@ -449,117 +483,28 @@ fn build_checkpoint_resume_state(
     })
 }
 
-// ---------------------------------------------------------------------------
-// handle_socratic_ws — main WebSocket handler
-// ---------------------------------------------------------------------------
+enum InterviewStartMode {
+    Fresh { initial_description: String },
+    CheckpointResume { resume_state: CheckpointResumeState },
+}
 
-/// Drive a Socratic interview session over a WebSocket connection.
-///
-/// ## Protocol
-///
-/// 1. The first `SocraticResponse` (or `StartPipeline`) message carries the
-///    initial project description and starts `run_interview`.
-/// 2. Subsequent `SocraticResponse` / `SkipQuestion` / `Done` messages are
-///    forwarded to the engine via `input_tx`.
-/// 3. After convergence the session transitions to pipeline mode and the
-///    existing `api::run_pipeline_for_session` task is spawned.
-///
-/// The caller is responsible for verifying session ownership before invoking
-/// this function.
-pub async fn handle_socratic_ws(mut socket: WebSocket, state: Arc<AppState>, session_id: Uuid) {
-    // Verify the session exists.
-    if state.sessions.get(session_id).is_none() {
-        let err = ServerMessage::Error {
-            message: format!("Session {} not found", session_id),
-        };
-        if let Ok(json) = serde_json::to_string(&err) {
-            let _ = socket.send(Message::Text(json.into())).await;
-        }
-        return;
-    }
-
-    // Attach-only resume for non-waiting terminal/build phases.
-    let (intake_phase, checkpoint_resume_state) = state
-        .sessions
-        .get(session_id)
-        .map(|s| {
-            let resume_state = if s.intake_phase == "interviewing" && !s.interview_live_attached {
-                build_checkpoint_resume_state(&s)
-            } else {
-                None
-            };
-            (s.intake_phase.clone(), resume_state)
-        })
-        .unwrap_or_else(|| ("waiting".to_string(), None));
-    if intake_phase == "pipeline_running" || intake_phase == "complete" || intake_phase == "error" {
-        handle_resume_ws(socket, state, session_id).await;
-        return;
-    }
-
-    // Channel: engine → WebSocket (outbound events)
+async fn run_interview_runtime(
+    state: Arc<AppState>,
+    session_id: Uuid,
+    runtime: Arc<SessionRuntime>,
+    input_rx: Arc<Mutex<mpsc::UnboundedReceiver<String>>>,
+    start_mode: InterviewStartMode,
+) {
     let (event_tx, mut event_rx) = mpsc::unbounded_channel::<ServerMessage>();
+    let (event_sink, mut planner_event_rx) = planner_core::observability::ChannelEventSink::new();
+    let event_sink: Arc<dyn planner_core::observability::EventSink> = Arc::new(event_sink);
 
-    // Channel: WebSocket → engine (inbound user text)
-    let (input_tx, input_rx) = mpsc::unbounded_channel::<String>();
-    let input_rx = Arc::new(Mutex::new(input_rx));
-
-    enum InterviewStartMode {
-        Fresh { initial_description: String },
-        CheckpointResume { resume_state: CheckpointResumeState },
-    }
-
-    let start_mode = if let Some(resume_state) = checkpoint_resume_state {
-        let _ = state.sessions.update(session_id, |s| {
-            s.intake_phase = "interviewing".into();
-            s.interview_live_attached = true;
-            s.ensure_socratic_run_id();
-        });
-        InterviewStartMode::CheckpointResume { resume_state }
-    } else {
-        // Wait for the first SocraticResponse / StartPipeline to get the
-        // initial project description before launching the engine.
-        let initial_description = loop {
-            match socket.recv().await {
-                Some(Ok(Message::Text(text))) => match serde_json::from_str::<ClientMessage>(&text)
-                {
-                    Ok(ClientMessage::SocraticResponse { content }) => break content,
-                    Ok(ClientMessage::StartPipeline { description }) => break description,
-                    Ok(ClientMessage::Done) => {
-                        // User quit immediately — nothing to do.
-                        return;
-                    }
-                    Ok(_) => continue, // ignore other messages while waiting
-                    Err(e) => {
-                        tracing::warn!(
-                            "Session {}: failed to parse initial client message: {}",
-                            session_id,
-                            e
-                        );
-                        continue;
-                    }
-                },
-                Some(Ok(Message::Close(_))) | None => {
-                    mark_interview_detached_if_active(&state, session_id);
-                    return;
-                }
-                _ => continue,
-            }
-        };
-
-        // Mark session as interviewing and ensure a stable Socratic run ID.
-        let _ = state.sessions.update(session_id, |s| {
-            s.intake_phase = "interviewing".into();
-            s.interview_live_attached = true;
-            let run_id = s.ensure_socratic_run_id();
-            s.checkpoint = Some(crate::session::InterviewCheckpoint::new(run_id));
-            s.has_checkpoint = true;
-            s.add_message("user", &initial_description);
-        });
-
-        InterviewStartMode::Fresh {
-            initial_description,
-        }
-    };
+    let io = Arc::new(WsSocraticIO::new(
+        event_tx,
+        input_rx,
+        Some(event_sink.clone()),
+        session_id,
+    ));
 
     let run_id = state
         .sessions
@@ -567,33 +512,12 @@ pub async fn handle_socratic_ws(mut socket: WebSocket, state: Arc<AppState>, ses
         .and_then(|s| s.socratic_run_id)
         .unwrap_or_else(Uuid::new_v4);
 
-    // Build the IO bridge and spawn the engine.
-    // Note: we pass a *clone* of event_tx to the IO bridge and drop the
-    // original immediately so the channel closes when the engine task
-    // finishes (its Arc<WsSocraticIO> drops), allowing event_rx.recv()
-    // to return None and unblock the I/O loop.
-
-    // Create the observability event sink and its receiver.
-    let (event_sink, mut planner_event_rx) = planner_core::observability::ChannelEventSink::new();
-    let event_sink: Arc<dyn planner_core::observability::EventSink> = Arc::new(event_sink);
-
-    let io = Arc::new(WsSocraticIO::new(
-        event_tx.clone(),
-        input_rx,
-        Some(event_sink.clone()),
-        session_id,
-    ));
-    drop(event_tx); // keep channel alive only through io's clone
-
     let router = state.llm_router.clone();
     let requires_immediate_llm = match &start_mode {
         InterviewStartMode::Fresh { .. } => true,
-        InterviewStartMode::CheckpointResume { resume_state } => {
-            resume_state.pending_prompt.is_none()
-        }
+        InterviewStartMode::CheckpointResume { resume_state } => resume_state.pending_prompt.is_none(),
     };
 
-    // Pre-flight check: warn if no LLM providers are available.
     let available = router.available_providers();
     if requires_immediate_llm && available.is_empty() {
         tracing::error!(
@@ -602,20 +526,21 @@ pub async fn handle_socratic_ws(mut socket: WebSocket, state: Arc<AppState>, ses
         );
         let err_msg = "No LLM providers available. The planner service user needs at least one of the following CLI tools installed in /opt/planner/bin/ and authenticated: `claude` (Anthropic), `gemini` (Google), or `codex` (OpenAI). Run 'sudo ./deploy/install.sh --update' to install them.";
 
-        // Send error directly on the socket (the I/O loop hasn't started yet).
-        let error_msg = ServerMessage::Error {
+        runtime.publish(ServerMessage::Error {
             message: err_msg.to_string(),
-        };
-        if let Ok(json) = serde_json::to_string(&error_msg) {
-            let _ = socket.send(Message::Text(json.into())).await;
-        }
+        });
         state.sessions.update(session_id, |s| {
             s.intake_phase = "error".into();
             s.interview_live_attached = false;
+            s.interview_runtime_active = false;
             s.add_message("system", err_msg);
         });
+        runtime.close_input();
+        runtime.signal_closed();
+        let _ = state.socratic_runtimes.remove(session_id);
         return;
     }
+
     if available.is_empty() {
         tracing::warn!(
             "Session {}: resuming from checkpoint prompt without pre-flight providers; LLM will be required after the next user response",
@@ -629,7 +554,6 @@ pub async fn handle_socratic_ws(mut socket: WebSocket, state: Arc<AppState>, ses
         );
     }
 
-    // Emit the session-start lifecycle event.
     event_sink.emit(
         planner_core::observability::PlannerEvent::info(
             planner_core::observability::EventSource::System,
@@ -643,12 +567,10 @@ pub async fn handle_socratic_ws(mut socket: WebSocket, state: Arc<AppState>, ses
     );
 
     let state_for_engine = state.clone();
-    let start_mode_for_engine = start_mode;
-
-    // Spawn the interview engine as a background task.
+    let runtime_for_engine = runtime.clone();
     let sink = event_sink.clone();
     let engine_handle = tokio::spawn(async move {
-        let result = match start_mode_for_engine {
+        let result = match start_mode {
             InterviewStartMode::Fresh {
                 initial_description,
             } => match state_for_engine.cxdb.as_ref() {
@@ -707,7 +629,6 @@ pub async fn handle_socratic_ws(mut socket: WebSocket, state: Arc<AppState>, ses
                     .map(|r| r.is_done)
                     .unwrap_or(false);
 
-                // Persist belief state to the server session.
                 state_for_engine.sessions.update(session_id, |s| {
                     s.belief_state = Some(session.belief_state.clone());
                     s.classification = session.belief_state.classification.clone();
@@ -723,6 +644,7 @@ pub async fn handle_socratic_ws(mut socket: WebSocket, state: Arc<AppState>, ses
                     if did_converge {
                         s.intake_phase = "pipeline_running".into();
                         s.interview_live_attached = false;
+                        s.interview_runtime_active = false;
                     }
                 });
 
@@ -736,7 +658,6 @@ pub async fn handle_socratic_ws(mut socket: WebSocket, state: Arc<AppState>, ses
                         .with_session(session_id),
                     );
 
-                    // Build the description from the completed belief state.
                     let intake = planner_core::pipeline::steps::socratic::session_to_intake(
                         &session,
                         Uuid::new_v4(),
@@ -767,16 +688,14 @@ pub async fn handle_socratic_ws(mut socket: WebSocket, state: Arc<AppState>, ses
                     .with_session(session_id),
                 );
 
-                // Send the error to the client so the UI doesn't hang.
-                io.send(ServerMessage::Error {
+                runtime_for_engine.publish(ServerMessage::Error {
                     message: err_msg.clone(),
                 });
-                io.send_message(&format!("Error: {}", err_msg)).await;
 
-                // Mark session as errored.
                 state_for_engine.sessions.update(session_id, |s| {
                     s.intake_phase = "error".into();
                     s.interview_live_attached = false;
+                    s.interview_runtime_active = false;
                     s.add_message("system", &err_msg);
                 });
 
@@ -785,46 +704,42 @@ pub async fn handle_socratic_ws(mut socket: WebSocket, state: Arc<AppState>, ses
         }
     });
 
-    // Drive the WebSocket I/O loop while the engine runs.
+    let mut engine_handle = Box::pin(engine_handle);
+    let mut engine_finished = false;
+    let mut description = None;
 
     loop {
         tokio::select! {
-            // Forward engine events to the client.
             msg = event_rx.recv() => {
                 match msg {
                     Some(server_msg) => {
                         apply_checkpoint_from_server_message(&state, session_id, &server_msg);
-                        if let Ok(json) = serde_json::to_string(&server_msg) {
-                            if socket.send(Message::Text(json.into())).await.is_err() {
-                                mark_interview_detached_if_active(&state, session_id);
-                                return; // client disconnected
-                            }
-                        }
+                        runtime.publish(server_msg);
                     }
                     None => {
-                        // event_tx dropped — engine finished.
-                        break;
+                        if engine_finished {
+                            break;
+                        }
                     }
                 }
             }
-
-            // Forward observability events to the client and record in session.
             planner_evt = planner_event_rx.recv() => {
                 if let Some(evt) = planner_evt {
-                    // Record in session.
                     state.sessions.update(session_id, |s| {
                         s.record_event(evt.clone());
                     });
-                    // Persist to disk if event store is available.
                     if let Some(ref store) = state.event_store {
                         if let Some(session) = state.sessions.get(session_id) {
                             if let Err(e) = store.save_session_events(session_id, &session.events) {
-                                tracing::warn!("Failed to persist events for session {}: {}", session_id, e);
+                                tracing::warn!(
+                                    "Failed to persist events for session {}: {}",
+                                    session_id,
+                                    e
+                                );
                             }
                         }
                     }
-                    // Forward to WebSocket client.
-                    let ws_msg = ServerMessage::PlannerEvent {
+                    runtime.publish(ServerMessage::PlannerEvent {
                         id: evt.id.to_string(),
                         timestamp: evt.timestamp.to_rfc3339(),
                         level: format!("{}", evt.level),
@@ -833,106 +748,35 @@ pub async fn handle_socratic_ws(mut socket: WebSocket, state: Arc<AppState>, ses
                         message: evt.message.clone(),
                         duration_ms: evt.duration_ms,
                         metadata: evt.metadata.clone(),
-                    };
-                    if let Ok(json) = serde_json::to_string(&ws_msg) {
-                        if socket.send(Message::Text(json.into())).await.is_err() {
-                            mark_interview_detached_if_active(&state, session_id);
-                            return;
-                        }
-                    }
+                    });
                 }
             }
-
-            // Forward client messages to the engine.
-            client_msg = socket.recv() => {
-                match client_msg {
-                    Some(Ok(Message::Text(text))) => {
-                        match serde_json::from_str::<ClientMessage>(&text) {
-                            Ok(ClientMessage::SocraticResponse { content }) => {
-                                // Record in session and forward to engine.
-                                state.sessions.update(session_id, |s| {
-                                    s.add_message("user", &content);
-                                });
-                                let _ = input_tx.send(content);
-                            }
-                            Ok(ClientMessage::SkipQuestion) => {
-                                let _ = input_tx.send("skip".into());
-                            }
-                            Ok(ClientMessage::Done) => {
-                                // Signal the engine that the user wants to stop.
-                                let _ = input_tx.send("done".into());
-                            }
-                            Ok(ClientMessage::DraftReaction { target, action, correction }) => {
-                                // Forward draft reactions to the engine as structured input.
-                                // The engine's receive_input() will parse these prefixed commands.
-                                let corr_str = correction.as_deref().unwrap_or("(no correction)");
-                                let msg = if correction.is_some() {
-                                    format!("[draft_reaction] target={} action={} correction={}", target, action, corr_str)
-                                } else {
-                                    format!("[draft_reaction] target={} action={}", target, action)
-                                };
-                                state.sessions.update(session_id, |s| {
-                                    s.add_message("user", &format!("Draft feedback: {} section {} — {}",
-                                        action, target, corr_str));
-                                });
-                                let _ = input_tx.send(msg);
-
-                                // Immediately acknowledge the reaction so the frontend can
-                                // persist the confirmed state without waiting for a full
-                                // round-trip through the engine.
-                                let ack = ServerMessage::DraftReactionAck {
-                                    target: target.clone(),
-                                    action: action.clone(),
-                                };
-                                if let Ok(json) = serde_json::to_string(&ack) {
-                                    if socket.send(Message::Text(json.into())).await.is_err() {
-                                        mark_interview_detached_if_active(&state, session_id);
-                                        return; // client disconnected
-                                    }
-                                }
-                            }
-                            Ok(ClientMessage::DimensionEdit { dimension, new_value }) => {
-                                // Forward dimension edits to the engine.
-                                let msg = format!("[dimension_edit] {}={}", dimension, new_value);
-                                state.sessions.update(session_id, |s| {
-                                    s.add_message("user", &format!("Edited dimension '{}' → '{}'", dimension, new_value));
-                                });
-                                let _ = input_tx.send(msg);
-                            }
-                            Ok(_) => {} // ignore other message types
-                            Err(e) => {
-                                tracing::warn!(
-                                    "Session {}: failed to parse client message: {}",
-                                    session_id, e
-                                );
-                            }
-                        }
-                    }
-                    Some(Ok(Message::Close(_))) | None => {
-                        // Client disconnected — drop input_tx to unblock engine.
-                        mark_interview_detached_if_active(&state, session_id);
-                        return;
-                    }
-                    _ => {}
+            result = &mut engine_handle => {
+                engine_finished = true;
+                description = result.ok().flatten();
+                if event_rx.is_closed() {
+                    break;
                 }
             }
         }
     }
 
-    // Wait for the engine task to finish, then start the pipeline if converged.
-    let description = engine_handle.await.ok().flatten();
+    clear_interview_runtime_state(&state, session_id);
+    let _ = state.socratic_runtimes.remove(session_id);
+    runtime.close_input();
+    runtime.signal_closed();
 
-    if description.is_some() {
-        let description = description.unwrap_or_else(|| {
-            // Fall back to raw belief state summary if engine produced nothing.
+    if let Some(description) = description {
+        let description = if description.trim().is_empty() {
             state
                 .sessions
                 .get(session_id)
                 .and_then(|s| s.project_description.clone())
                 .unwrap_or_else(|| "Project requirements gathered via Socratic interview".into())
-        });
+        } else {
+            description
+        };
 
-        // Mark pipeline as running.
         let was_running = state
             .sessions
             .get(session_id)
@@ -950,135 +794,304 @@ pub async fn handle_socratic_ws(mut socket: WebSocket, state: Arc<AppState>, ses
             });
 
             let state_clone = state.clone();
-            let desc = description.clone();
             tokio::spawn(async move {
-                crate::api::run_pipeline_for_session(state_clone, session_id, desc).await;
+                crate::api::run_pipeline_for_session(state_clone, session_id, description).await;
             });
         }
+    }
+}
 
-        // Continue in pipeline-poll mode (same behaviour as handle_ws).
-        let mut last_msg_count = state
-            .sessions
-            .get(session_id)
-            .map(|s| s.messages.len())
-            .unwrap_or(0);
-        let mut last_sent_stages: Vec<(String, String)> = Vec::new();
-        let mut interval = tokio::time::interval(std::time::Duration::from_millis(500));
+fn start_interview_runtime(
+    state: &Arc<AppState>,
+    session_id: Uuid,
+    start_mode: InterviewStartMode,
+) -> Result<Arc<SessionRuntime>, Arc<SessionRuntime>> {
+    let (runtime, input_rx) = SessionRuntime::new();
+    if let Err(existing) = state
+        .socratic_runtimes
+        .try_insert(session_id, runtime.clone())
+    {
+        return Err(existing);
+    }
 
-        loop {
-            tokio::select! {
-                _ = interval.tick() => {
-                    let session = match state.sessions.get(session_id) {
-                        Some(s) => s,
-                        None => return,
-                    };
+    tokio::spawn(run_interview_runtime(
+        state.clone(),
+        session_id,
+        runtime.clone(),
+        input_rx,
+        start_mode,
+    ));
 
-                    // Forward new chat messages.
-                    let current_count = session.messages.len();
-                    for msg in session.messages.iter().skip(last_msg_count) {
-                        let server_msg = ServerMessage::ChatMessage {
-                            id: msg.id.to_string(),
-                            role: msg.role.clone(),
-                            content: msg.content.clone(),
-                            timestamp: msg.timestamp.clone(),
-                        };
-                        if let Ok(json) = serde_json::to_string(&server_msg) {
-                            if socket.send(Message::Text(json.into())).await.is_err() {
-                                return;
-                            }
+    Ok(runtime)
+}
+
+async fn wait_for_initial_description(
+    socket: &mut WebSocket,
+    session_id: Uuid,
+) -> Option<String> {
+    loop {
+        match socket.recv().await {
+            Some(Ok(Message::Text(text))) => match serde_json::from_str::<ClientMessage>(&text) {
+                Ok(ClientMessage::SocraticResponse { content }) => return Some(content),
+                Ok(ClientMessage::StartPipeline { description }) => return Some(description),
+                Ok(ClientMessage::Done) => return None,
+                Ok(_) => continue,
+                Err(e) => {
+                    tracing::warn!(
+                        "Session {}: failed to parse initial client message: {}",
+                        session_id,
+                        e
+                    );
+                }
+            },
+            Some(Ok(Message::Close(_))) | None => return None,
+            _ => {}
+        }
+    }
+}
+
+async fn handle_live_runtime_ws(
+    mut socket: WebSocket,
+    state: Arc<AppState>,
+    session_id: Uuid,
+    runtime: Arc<SessionRuntime>,
+    attachment: RuntimeAttachment,
+) {
+    let RuntimeAttachment {
+        input_tx,
+        mut outbound_rx,
+    } = attachment;
+    let mut shutdown_rx = runtime.subscribe_shutdown();
+
+    mark_interview_runtime_attached(&state, session_id);
+
+    loop {
+        tokio::select! {
+            msg = outbound_rx.recv() => {
+                match msg {
+                    Ok(server_msg) => {
+                        if send_ws_message(&mut socket, &server_msg).await.is_err() {
+                            runtime.mark_detached();
+                            mark_interview_detached_if_active(&state, session_id);
+                            return;
                         }
                     }
-                    last_msg_count = current_count;
+                    Err(broadcast::error::RecvError::Lagged(skipped)) => {
+                        tracing::warn!(
+                            "Session {}: websocket subscriber lagged behind live runtime by {} messages",
+                            session_id,
+                            skipped
+                        );
+                    }
+                    Err(broadcast::error::RecvError::Closed) => break,
+                }
+            }
+            changed = shutdown_rx.changed() => {
+                if changed.is_err() || *shutdown_rx.borrow() {
+                    break;
+                }
+            }
+            client_msg = socket.recv() => {
+                match client_msg {
+                    Some(Ok(Message::Text(text))) => {
+                        match serde_json::from_str::<ClientMessage>(&text) {
+                            Ok(ClientMessage::SocraticResponse { content }) => {
+                                state.sessions.update(session_id, |s| {
+                                    s.add_message("user", &content);
+                                });
+                                let _ = input_tx.send(content);
+                            }
+                            Ok(ClientMessage::SkipQuestion) => {
+                                let _ = input_tx.send("skip".into());
+                            }
+                            Ok(ClientMessage::Done) => {
+                                let _ = input_tx.send("done".into());
+                            }
+                            Ok(ClientMessage::DraftReaction { target, action, correction }) => {
+                                let corr_str = correction.as_deref().unwrap_or("(no correction)");
+                                let msg = if correction.is_some() {
+                                    format!("[draft_reaction] target={} action={} correction={}", target, action, corr_str)
+                                } else {
+                                    format!("[draft_reaction] target={} action={}", target, action)
+                                };
+                                state.sessions.update(session_id, |s| {
+                                    s.add_message("user", &format!("Draft feedback: {} section {} — {}",
+                                        action, target, corr_str));
+                                });
+                                let _ = input_tx.send(msg);
 
-                    // Forward changed stage statuses.
-                    let current_stages: Vec<(String, String)> = session.stages
-                        .iter()
-                        .map(|s| (s.name.clone(), s.status.clone()))
-                        .collect();
-
-                    for stage in &session.stages {
-                        let last_status = last_sent_stages
-                            .iter()
-                            .find(|(name, _)| name == &stage.name)
-                            .map(|(_, status)| status.as_str());
-
-                        if last_status != Some(stage.status.as_str()) {
-                            let server_msg = ServerMessage::StageUpdate {
-                                stage: stage.name.clone(),
-                                status: stage.status.clone(),
-                            };
-                            if let Ok(json) = serde_json::to_string(&server_msg) {
-                                if socket.send(Message::Text(json.into())).await.is_err() {
+                                let ack = ServerMessage::DraftReactionAck {
+                                    target: target.clone(),
+                                    action: action.clone(),
+                                };
+                                if send_ws_message(&mut socket, &ack).await.is_err() {
+                                    runtime.mark_detached();
+                                    mark_interview_detached_if_active(&state, session_id);
                                     return;
                                 }
                             }
+                            Ok(ClientMessage::DimensionEdit { dimension, new_value }) => {
+                                let msg = format!("[dimension_edit] {}={}", dimension, new_value);
+                                state.sessions.update(session_id, |s| {
+                                    s.add_message("user", &format!("Edited dimension '{}' → '{}'", dimension, new_value));
+                                });
+                                let _ = input_tx.send(msg);
+                            }
+                            Ok(_) => {}
+                            Err(e) => {
+                                tracing::warn!(
+                                    "Session {}: failed to parse client message: {}",
+                                    session_id,
+                                    e
+                                );
+                            }
                         }
                     }
-                    last_sent_stages = current_stages;
-
-                    // Close when pipeline finishes.
-                    if !session.pipeline_running && session.project_description.is_some() {
-                        let success = session.stages.iter().all(|s| s.status == "complete");
-                        let server_msg = ServerMessage::PipelineComplete {
-                            success,
-                            summary: "Pipeline finished".into(),
-                        };
-                        if let Ok(json) = serde_json::to_string(&server_msg) {
-                            let _ = socket.send(Message::Text(json.into())).await;
-                        }
-
-                        // Update intake_phase.
-                        state.sessions.update(session_id, |s| {
-                            s.intake_phase = "complete".into();
-                        });
-
+                    Some(Ok(Message::Close(_))) | None => {
+                        runtime.mark_detached();
+                        mark_interview_detached_if_active(&state, session_id);
                         return;
                     }
-                }
-
-                // Forward observability events to the client and record in session.
-                planner_evt = planner_event_rx.recv() => {
-                    if let Some(evt) = planner_evt {
-                        // Record in session.
-                        state.sessions.update(session_id, |s| {
-                            s.record_event(evt.clone());
-                        });
-                        // Persist to disk if event store is available.
-                        if let Some(ref store) = state.event_store {
-                            if let Some(session) = state.sessions.get(session_id) {
-                                if let Err(e) = store.save_session_events(session_id, &session.events) {
-                                    tracing::warn!("Failed to persist events for session {}: {}", session_id, e);
-                                }
-                            }
-                        }
-                        // Forward to WebSocket client.
-                        let ws_msg = ServerMessage::PlannerEvent {
-                            id: evt.id.to_string(),
-                            timestamp: evt.timestamp.to_rfc3339(),
-                            level: format!("{}", evt.level),
-                            source: format!("{}", evt.source),
-                            step: evt.step.clone(),
-                            message: evt.message.clone(),
-                            duration_ms: evt.duration_ms,
-                            metadata: evt.metadata.clone(),
-                        };
-                        if let Ok(json) = serde_json::to_string(&ws_msg) {
-                            if socket.send(Message::Text(json.into())).await.is_err() {
-                                return;
-                            }
-                        }
-                    }
-                }
-
-                msg = socket.recv() => {
-                    match msg {
-                        Some(Ok(Message::Close(_))) | None => return,
-                        _ => {}
-                    }
+                    _ => {}
                 }
             }
         }
     }
+
+    let phase = state
+        .sessions
+        .get(session_id)
+        .map(|s| s.intake_phase)
+        .unwrap_or_default();
+
+    if phase == "pipeline_running" || phase == "complete" {
+        handle_resume_ws(socket, state, session_id).await;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// handle_socratic_ws — main WebSocket handler
+// ---------------------------------------------------------------------------
+
+/// Drive a Socratic interview session over a WebSocket connection.
+///
+/// ## Protocol
+///
+/// 1. The first `SocraticResponse` (or `StartPipeline`) message carries the
+///    initial project description and starts `run_interview`.
+/// 2. Subsequent `SocraticResponse` / `SkipQuestion` / `Done` messages are
+///    forwarded to the engine via `input_tx`.
+/// 3. After convergence the session transitions to pipeline mode and the
+///    existing `api::run_pipeline_for_session` task is spawned.
+///
+/// The caller is responsible for verifying session ownership before invoking
+/// this function.
+pub async fn handle_socratic_ws(mut socket: WebSocket, state: Arc<AppState>, session_id: Uuid) {
+    // Verify the session exists.
+    if state.sessions.get(session_id).is_none() {
+        let err = ServerMessage::Error {
+            message: format!("Session {} not found", session_id),
+        };
+        let _ = send_ws_message(&mut socket, &err).await;
+        return;
+    }
+
+    // Fast path: attach to an existing live interview runtime.
+    if let Some(runtime) = state.socratic_runtimes.get(session_id) {
+        match runtime.try_attach() {
+            Ok(attachment) => {
+                handle_live_runtime_ws(socket, state, session_id, runtime, attachment).await;
+                return;
+            }
+            Err(AttachError::AlreadyAttached) => {
+                let err = ServerMessage::Error {
+                    message: "A live interview connection is already attached to this session".into(),
+                };
+                let _ = send_ws_message(&mut socket, &err).await;
+                return;
+            }
+            Err(AttachError::Closed) => {
+                let _ = state.socratic_runtimes.remove(session_id);
+                clear_interview_runtime_state(&state, session_id);
+            }
+        }
+    }
+
+    let mut session = match state.sessions.get(session_id) {
+        Some(session) => session,
+        None => return,
+    };
+    if session.intake_phase == "interviewing" && session.interview_live_attached {
+        clear_interview_runtime_state(&state, session_id);
+        session = match state.sessions.get(session_id) {
+            Some(session) => session,
+            None => return,
+        };
+    }
+    if session.intake_phase == "pipeline_running"
+        || session.intake_phase == "complete"
+        || session.intake_phase == "error"
+    {
+        handle_resume_ws(socket, state, session_id).await;
+        return;
+    }
+
+    let checkpoint_resume_state = if session.intake_phase == "interviewing" {
+        build_checkpoint_resume_state(&session)
+    } else {
+        None
+    };
+
+    let start_mode = if let Some(resume_state) = checkpoint_resume_state {
+        let _ = state.sessions.update(session_id, |s| {
+            s.intake_phase = "interviewing".into();
+            s.ensure_socratic_run_id();
+        });
+        InterviewStartMode::CheckpointResume { resume_state }
+    } else {
+        let Some(initial_description) = wait_for_initial_description(&mut socket, session_id).await else {
+            return;
+        };
+
+        let _ = state.sessions.update(session_id, |s| {
+            s.intake_phase = "interviewing".into();
+            let run_id = s.ensure_socratic_run_id();
+            s.checkpoint = Some(crate::session::InterviewCheckpoint::new(run_id));
+            s.has_checkpoint = true;
+            s.interview_runtime_active = false;
+            s.interview_live_attached = false;
+            s.add_message("user", &initial_description);
+        });
+
+        InterviewStartMode::Fresh { initial_description }
+    };
+
+    let runtime = match start_interview_runtime(&state, session_id, start_mode) {
+        Ok(runtime) => runtime,
+        Err(existing) => existing,
+    };
+
+    let attachment = match runtime.try_attach() {
+        Ok(attachment) => attachment,
+        Err(AttachError::AlreadyAttached) => {
+            let err = ServerMessage::Error {
+                message: "A live interview connection is already attached to this session".into(),
+            };
+            let _ = send_ws_message(&mut socket, &err).await;
+            return;
+        }
+        Err(AttachError::Closed) => {
+            let _ = state.socratic_runtimes.remove(session_id);
+            clear_interview_runtime_state(&state, session_id);
+            let err = ServerMessage::Error {
+                message: "The live interview runtime closed before this websocket could attach".into(),
+            };
+            let _ = send_ws_message(&mut socket, &err).await;
+            return;
+        }
+    };
+
+    handle_live_runtime_ws(socket, state, session_id, runtime, attachment).await;
 }
 
 /// Attach to an already-started session without restarting interview state.
@@ -1220,6 +1233,9 @@ mod tests {
             event_store: None,
             cxdb: None,
             llm_router: Arc::new(planner_core::llm::providers::LlmRouter::from_env()),
+            socratic_runtimes: crate::runtime::SessionRuntimeRegistry::new(
+                std::time::Duration::from_secs(30),
+            ),
             started_at: std::time::Instant::now(),
             blueprints: planner_core::blueprint::BlueprintStore::new(),
             proposals: planner_core::discovery::ProposalStore::new(),

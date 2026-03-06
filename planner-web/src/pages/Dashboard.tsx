@@ -323,6 +323,8 @@ function getPrimaryActionLabel(session: Session): string {
 function getInterviewResumeLabel(session: Session): string | null {
   if (session.intake_phase !== 'interviewing') return null;
   switch (session.resume_status) {
+    case 'live_attach_available':
+      return 'live-reattach';
     case 'interview_attached':
       return 'attached';
     case 'interview_checkpoint_resumable':
@@ -531,7 +533,7 @@ function SessionCard({ session, onClick }: SessionCardProps) {
           )}
           {interviewResumeLabel && (
             <span style={{
-              color: interviewResumeLabel === 'resumable'
+              color: interviewResumeLabel === 'resumable' || interviewResumeLabel === 'live-reattach'
                 ? 'var(--color-primary)'
                 : 'var(--color-gold)',
               fontSize: '10px',

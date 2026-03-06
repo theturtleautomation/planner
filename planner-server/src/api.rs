@@ -1182,10 +1182,15 @@ async fn start_socratic(
     }
 
     // Store the initial description in the session for reference.
+    if let Some(runtime) = state.socratic_runtimes.remove(id) {
+        runtime.close_input();
+        runtime.signal_closed();
+    }
     state.sessions.update(id, |s| {
         s.project_description = Some(req.description.clone());
         s.intake_phase = "interviewing".into();
         s.interview_live_attached = false;
+        s.interview_runtime_active = false;
         s.ensure_socratic_run_id();
         s.checkpoint = None;
         s.has_checkpoint = false;
@@ -2039,6 +2044,9 @@ mod tests {
             event_store: None,
             cxdb: None, // no durable storage in unit tests
             llm_router: Arc::new(planner_core::llm::providers::LlmRouter::from_env()),
+            socratic_runtimes: crate::runtime::SessionRuntimeRegistry::new(
+                std::time::Duration::from_secs(30),
+            ),
             started_at: std::time::Instant::now(),
         })
     }
@@ -2079,6 +2087,9 @@ mod tests {
             event_store: None,
             cxdb: None,
             llm_router: Arc::new(planner_core::llm::providers::LlmRouter::from_env()),
+            socratic_runtimes: crate::runtime::SessionRuntimeRegistry::new(
+                std::time::Duration::from_secs(30),
+            ),
             started_at: std::time::Instant::now(),
         });
         let app = routes(state);
@@ -2317,6 +2328,9 @@ mod tests {
             event_store: None,
             cxdb: None,
             llm_router: Arc::new(planner_core::llm::providers::LlmRouter::from_env()),
+            socratic_runtimes: crate::runtime::SessionRuntimeRegistry::new(
+                std::time::Duration::from_secs(30),
+            ),
             started_at: std::time::Instant::now(),
         });
         let app = routes(state);

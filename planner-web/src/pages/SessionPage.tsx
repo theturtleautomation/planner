@@ -18,6 +18,11 @@ function getInterviewResumeNotice(status: ResumeStatus):
   | { tone: 'warning' | 'info'; text: string }
   | null {
   switch (status) {
+    case 'live_attach_available':
+      return {
+        tone: 'info',
+        text: 'A live interview runtime is still available for this session. Reconnecting now…',
+      };
     case 'interview_attached':
       return {
         tone: 'info',

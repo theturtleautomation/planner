@@ -29,6 +29,7 @@ use planner_core::llm::providers::LlmRouter;
 use planner_core::llm::{CompletionRequest, CompletionResponse, LlmClient, LlmError};
 use planner_server::api;
 use planner_server::session::{ResumeStatus, SessionStore};
+use planner_server::ws_socratic;
 use planner_server::AppState;
 
 // ===========================================================================
@@ -41,12 +42,19 @@ fn test_state() -> Arc<AppState> {
 }
 
 fn test_state_with_router(router: LlmRouter) -> Arc<AppState> {
+    test_state_with_router_and_lease(router, Duration::from_secs(30))
+}
+
+fn test_state_with_router_and_lease(router: LlmRouter, lease: Duration) -> Arc<AppState> {
     Arc::new(AppState {
         sessions: SessionStore::new(),
         auth_config: None,
         event_store: None,
         cxdb: None,
         llm_router: Arc::new(router),
+        socratic_runtimes: planner_server::runtime::SessionRuntimeRegistry::new(
+            lease,
+        ),
         started_at: std::time::Instant::now(),
         blueprints: planner_core::blueprint::BlueprintStore::new(),
         proposals: planner_core::discovery::ProposalStore::new(),
@@ -321,11 +329,19 @@ async fn tier2_session_capability_mapping() {
         s.interview_live_attached = true;
     });
 
+    let interviewing_live_detached = state.sessions.create("dev|local");
+    state.sessions.update(interviewing_live_detached.id, |s| {
+        s.intake_phase = "interviewing".into();
+        s.project_description = Some("Build timer".into());
+        s.interview_runtime_active = true;
+        s.interview_live_attached = false;
+    });
+
     let interviewing_checkpoint = state.sessions.create("dev|local");
     state.sessions.update(interviewing_checkpoint.id, |s| {
         s.intake_phase = "interviewing".into();
         s.project_description = Some("Build timer".into());
-        s.has_checkpoint = true;
+        s.ensure_checkpoint();
         s.interview_live_attached = false;
     });
 
@@ -420,6 +436,21 @@ async fn tier2_session_capability_mapping() {
     assert_eq!(
         interviewing_attached_session["interview_live_attached"],
         true
+    );
+
+    let interviewing_live_detached_session = fetch_session(interviewing_live_detached.id).await;
+    assert_eq!(
+        interviewing_live_detached_session["resume_status"],
+        "live_attach_available"
+    );
+    assert_eq!(interviewing_live_detached_session["can_resume_live"], true);
+    assert_eq!(
+        interviewing_live_detached_session["can_resume_checkpoint"],
+        false
+    );
+    assert_eq!(
+        interviewing_live_detached_session["interview_live_attached"],
+        false
     );
 
     let interviewing_checkpoint_session = fetch_session(interviewing_checkpoint.id).await;
@@ -830,11 +861,9 @@ async fn tier2_socratic_ws_reconnect_checkpoint_reemits_question() {
     let after = state.sessions.get(session_id).unwrap();
     assert_eq!(after.intake_phase, "interviewing");
     assert_eq!(after.interview_live_attached, false);
-    assert_eq!(
-        after.resume_status,
-        ResumeStatus::InterviewCheckpointResumable
-    );
-    assert_eq!(after.can_resume_checkpoint, true);
+    assert_eq!(after.resume_status, ResumeStatus::LiveAttachAvailable);
+    assert_eq!(after.can_resume_live, true);
+    assert_eq!(after.can_resume_checkpoint, false);
 
     handle.abort();
 }
@@ -897,11 +926,9 @@ async fn tier2_socratic_ws_reconnect_checkpoint_reemits_draft() {
     let after = state.sessions.get(session_id).unwrap();
     assert_eq!(after.intake_phase, "interviewing");
     assert_eq!(after.interview_live_attached, false);
-    assert_eq!(
-        after.resume_status,
-        ResumeStatus::InterviewCheckpointResumable
-    );
-    assert_eq!(after.can_resume_checkpoint, true);
+    assert_eq!(after.resume_status, ResumeStatus::LiveAttachAvailable);
+    assert_eq!(after.can_resume_live, true);
+    assert_eq!(after.can_resume_checkpoint, false);
 
     handle.abort();
 }
@@ -1015,5 +1042,254 @@ async fn tier2_socratic_ws_resume_answer_progresses_to_next_question() {
     let _ = ws.close(None).await;
     tokio::time::sleep(Duration::from_millis(250)).await;
 
+    handle.abort();
+}
+
+/// Test 13: Disconnecting from a live interview runtime keeps the runtime
+/// available for fast reattach within the lease window.
+#[tokio::test]
+async fn tier2_socratic_ws_live_runtime_reattach_within_lease() {
+    use planner_schemas::{
+        ComplexityTier, Dimension, DomainClassification, ProjectType, QuestionOutput,
+        RequirementsBeliefState,
+    };
+
+    let state = test_state_with_router_and_lease(
+        LlmRouter::with_mock(Box::new(ResumeFlowMockLlm)),
+        Duration::from_secs(5),
+    );
+    let session = state.sessions.create("dev|local");
+    let session_id = session.id;
+
+    let classification = DomainClassification {
+        project_type: ProjectType::WebApp,
+        complexity: ComplexityTier::Standard,
+        detected_signals: vec!["web".into()],
+        required_dimensions: Dimension::required_for(&ProjectType::WebApp),
+    };
+    let belief_state = RequirementsBeliefState::from_classification(&classification);
+
+    state.sessions.update(session_id, |s| {
+        s.intake_phase = "interviewing".into();
+        s.project_description = Some("Build a timer app".into());
+        s.classification = Some(classification.clone());
+        s.belief_state = Some(belief_state.clone());
+        let checkpoint = s.ensure_checkpoint();
+        checkpoint.classification = Some(classification.clone());
+        checkpoint.belief_state = Some(belief_state.clone());
+        checkpoint.current_question = Some(QuestionOutput {
+            question: "What is the main goal of this tool?".into(),
+            target_dimension: Dimension::Goal,
+            quick_options: Vec::new(),
+            allow_skip: false,
+        });
+        checkpoint.pending_draft = None;
+        checkpoint.touch();
+    });
+
+    let app = test_app(state.clone());
+    let (addr, handle) = spawn_test_server(app).await;
+    let ws_url = format!("ws://{}/sessions/{}/socratic/ws", addr, session_id);
+
+    let (mut ws1, _) = connect_async(&ws_url).await.unwrap();
+    let resumed_question = wait_for_ws_message_type(&mut ws1, "question").await;
+    assert_eq!(
+        resumed_question["text"],
+        "What is the main goal of this tool?"
+    );
+
+    let _ = ws1.close(None).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    let detached = state.sessions.get(session_id).unwrap();
+    assert_eq!(detached.intake_phase, "interviewing");
+    assert_eq!(detached.resume_status, ResumeStatus::LiveAttachAvailable);
+    assert!(detached.can_resume_live);
+    assert!(!detached.can_resume_checkpoint);
+    assert!(!detached.interview_live_attached);
+
+    let (mut ws2, _) = connect_async(&ws_url).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    ws2.send(Message::Text(
+        serde_json::json!({
+            "type": "socratic_response",
+            "content": "I want a countdown timer for workouts."
+        })
+        .to_string()
+        .into(),
+    ))
+    .await
+    .unwrap();
+
+    let belief_update = wait_for_ws_message_type(&mut ws2, "belief_state_update").await;
+    assert_eq!(
+        belief_update["filled"]["Goal / Purpose"]["value"],
+        "Build a countdown timer for workouts"
+    );
+    let next_question = wait_for_ws_message_type(&mut ws2, "question").await;
+    assert_eq!(
+        next_question["text"],
+        "What are the must-have features in the first version?"
+    );
+
+    let attached_again = state.sessions.get(session_id).unwrap();
+    assert_eq!(attached_again.resume_status, ResumeStatus::InterviewAttached);
+    assert!(attached_again.interview_live_attached);
+
+    let _ = ws2.close(None).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    handle.abort();
+}
+
+/// Test 14: When the live runtime lease expires, the session falls back to
+/// checkpoint-only resume and the next attach restores from checkpoint.
+#[tokio::test]
+async fn tier2_socratic_ws_live_runtime_lease_expiry_falls_back_to_checkpoint() {
+    use planner_schemas::{
+        ComplexityTier, Dimension, DomainClassification, ProjectType, QuestionOutput,
+        RequirementsBeliefState,
+    };
+
+    let state = test_state_with_router_and_lease(
+        LlmRouter::with_mock(Box::new(ResumeFlowMockLlm)),
+        Duration::from_millis(50),
+    );
+    let session = state.sessions.create("dev|local");
+    let session_id = session.id;
+
+    let classification = DomainClassification {
+        project_type: ProjectType::WebApp,
+        complexity: ComplexityTier::Standard,
+        detected_signals: vec!["web".into()],
+        required_dimensions: Dimension::required_for(&ProjectType::WebApp),
+    };
+    let belief_state = RequirementsBeliefState::from_classification(&classification);
+
+    state.sessions.update(session_id, |s| {
+        s.intake_phase = "interviewing".into();
+        s.project_description = Some("Build a timer app".into());
+        s.classification = Some(classification.clone());
+        s.belief_state = Some(belief_state.clone());
+        let checkpoint = s.ensure_checkpoint();
+        checkpoint.classification = Some(classification.clone());
+        checkpoint.belief_state = Some(belief_state.clone());
+        checkpoint.current_question = Some(QuestionOutput {
+            question: "What is the main goal of this tool?".into(),
+            target_dimension: Dimension::Goal,
+            quick_options: Vec::new(),
+            allow_skip: false,
+        });
+        checkpoint.pending_draft = None;
+        checkpoint.touch();
+    });
+
+    let app = test_app(state.clone());
+    let (addr, handle) = spawn_test_server(app).await;
+    let ws_url = format!("ws://{}/sessions/{}/socratic/ws", addr, session_id);
+
+    let (mut ws1, _) = connect_async(&ws_url).await.unwrap();
+    let _ = wait_for_ws_message_type(&mut ws1, "question").await;
+    let _ = ws1.close(None).await;
+
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    ws_socratic::expire_detached_runtimes(&state);
+    tokio::time::sleep(Duration::from_millis(250)).await;
+
+    let fallback = state.sessions.get(session_id).unwrap();
+    assert_eq!(
+        fallback.resume_status,
+        ResumeStatus::InterviewCheckpointResumable
+    );
+    assert!(!fallback.can_resume_live);
+    assert!(fallback.can_resume_checkpoint);
+    assert!(!fallback.interview_live_attached);
+
+    let (mut ws2, _) = connect_async(&ws_url).await.unwrap();
+    let resumed_question = wait_for_ws_message_type(&mut ws2, "question").await;
+    assert_eq!(
+        resumed_question["text"],
+        "What is the main goal of this tool?"
+    );
+
+    let _ = ws2.close(None).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    handle.abort();
+}
+
+/// Test 15: A second websocket cannot steal an actively attached live
+/// interview runtime from the current client.
+#[tokio::test]
+async fn tier2_socratic_ws_duplicate_live_attach_is_rejected() {
+    use planner_schemas::{
+        ComplexityTier, Dimension, DomainClassification, ProjectType, QuestionOutput,
+        RequirementsBeliefState,
+    };
+
+    let state = test_state_with_router_and_lease(
+        LlmRouter::with_mock(Box::new(ResumeFlowMockLlm)),
+        Duration::from_secs(5),
+    );
+    let session = state.sessions.create("dev|local");
+    let session_id = session.id;
+
+    let classification = DomainClassification {
+        project_type: ProjectType::WebApp,
+        complexity: ComplexityTier::Standard,
+        detected_signals: vec!["web".into()],
+        required_dimensions: Dimension::required_for(&ProjectType::WebApp),
+    };
+    let belief_state = RequirementsBeliefState::from_classification(&classification);
+
+    state.sessions.update(session_id, |s| {
+        s.intake_phase = "interviewing".into();
+        s.project_description = Some("Build a timer app".into());
+        s.classification = Some(classification.clone());
+        s.belief_state = Some(belief_state.clone());
+        let checkpoint = s.ensure_checkpoint();
+        checkpoint.classification = Some(classification.clone());
+        checkpoint.belief_state = Some(belief_state.clone());
+        checkpoint.current_question = Some(QuestionOutput {
+            question: "What is the main goal of this tool?".into(),
+            target_dimension: Dimension::Goal,
+            quick_options: Vec::new(),
+            allow_skip: false,
+        });
+        checkpoint.pending_draft = None;
+        checkpoint.touch();
+    });
+
+    let app = test_app(state.clone());
+    let (addr, handle) = spawn_test_server(app).await;
+    let ws_url = format!("ws://{}/sessions/{}/socratic/ws", addr, session_id);
+
+    let (mut ws1, _) = connect_async(&ws_url).await.unwrap();
+    let _ = wait_for_ws_message_type(&mut ws1, "question").await;
+
+    let (mut ws2, _) = connect_async(&ws_url).await.unwrap();
+    let error = wait_for_ws_message_type(&mut ws2, "error").await;
+    assert!(error["message"]
+        .as_str()
+        .unwrap_or("")
+        .contains("already attached"));
+
+    ws1.send(Message::Text(
+        serde_json::json!({
+            "type": "socratic_response",
+            "content": "I want a countdown timer for workouts."
+        })
+        .to_string()
+        .into(),
+    ))
+    .await
+    .unwrap();
+    let belief_update = wait_for_ws_message_type(&mut ws1, "belief_state_update").await;
+    assert_eq!(
+        belief_update["filled"]["Goal / Purpose"]["value"],
+        "Build a countdown timer for workouts"
+    );
+
+    let _ = ws2.close(None).await;
+    let _ = ws1.close(None).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
     handle.abort();
 }

@@ -150,6 +150,12 @@ pub struct Session {
     #[serde(default)]
     pub interview_live_attached: bool,
 
+    /// Whether an in-memory interview runtime currently exists for this session.
+    ///
+    /// This is server-local state and should not be persisted or exposed.
+    #[serde(skip)]
+    pub interview_runtime_active: bool,
+
     /// Whether this session can currently be resumed via a live runtime attach.
     #[serde(default)]
     pub can_resume_live: bool,
@@ -264,6 +270,7 @@ impl Session {
             checkpoint: None,
             intake_phase: "waiting".into(),
             interview_live_attached: false,
+            interview_runtime_active: false,
             can_resume_live: false,
             can_resume_checkpoint: false,
             can_restart_from_description: false,
@@ -314,9 +321,9 @@ impl Session {
     /// rather than client-side phase inference.
     pub fn recompute_capabilities(&mut self) {
         let has_description = self.has_saved_description();
-
-        if self.checkpoint.is_some() {
-            self.has_checkpoint = true;
+        self.has_checkpoint = self.checkpoint.is_some();
+        if self.interview_live_attached {
+            self.interview_runtime_active = true;
         }
 
         self.can_resume_checkpoint = false;
@@ -324,6 +331,7 @@ impl Session {
 
         match self.intake_phase.as_str() {
             "waiting" => {
+                self.interview_runtime_active = false;
                 self.can_resume_live = false;
                 self.can_restart_from_description = false;
                 self.resume_status = ResumeStatus::ReadyToStart;
@@ -334,6 +342,9 @@ impl Session {
                 self.can_restart_from_description = has_description;
                 if self.interview_live_attached {
                     self.resume_status = ResumeStatus::InterviewAttached;
+                } else if self.interview_runtime_active {
+                    self.can_resume_live = true;
+                    self.resume_status = ResumeStatus::LiveAttachAvailable;
                 } else if self.has_checkpoint {
                     self.can_resume_checkpoint = true;
                     self.resume_status = ResumeStatus::InterviewCheckpointResumable;
@@ -344,12 +355,14 @@ impl Session {
                 }
             }
             "pipeline_running" | "complete" | "error" => {
+                self.interview_runtime_active = false;
                 self.can_resume_live = true;
                 self.can_restart_from_description = has_description;
                 self.resume_status = ResumeStatus::LiveAttachAvailable;
                 self.interview_live_attached = false;
             }
             _ => {
+                self.interview_runtime_active = false;
                 self.can_resume_live = false;
                 self.can_restart_from_description = has_description;
                 self.resume_status = ResumeStatus::InterviewResumeUnknown;
@@ -517,6 +530,10 @@ impl SessionStore {
             match std::fs::read(&path) {
                 Ok(bytes) => match rmp_serde::from_slice::<Session>(&bytes) {
                     Ok(mut session) => {
+                        if session.intake_phase == "interviewing" {
+                            session.interview_live_attached = false;
+                            session.interview_runtime_active = false;
+                        }
                         session.recompute_capabilities();
                         tracing::debug!("Loaded session {} from disk", id);
                         sessions.insert(id, session);
@@ -899,10 +916,25 @@ mod tests {
         assert!(!interviewing_attached.can_resume_live);
         assert!(!interviewing_attached.can_resume_checkpoint);
 
+        let interviewing_live_detached = store
+            .update(id, |s| {
+                s.intake_phase = "interviewing".into();
+                s.project_description = Some("Build timer".into());
+                s.interview_live_attached = false;
+            })
+            .unwrap();
+        assert_eq!(
+            interviewing_live_detached.resume_status,
+            ResumeStatus::LiveAttachAvailable
+        );
+        assert!(interviewing_live_detached.can_resume_live);
+        assert!(!interviewing_live_detached.can_resume_checkpoint);
+
         let interviewing_restart = store
             .update(id, |s| {
                 s.intake_phase = "interviewing".into();
                 s.project_description = Some("Build timer".into());
+                s.interview_runtime_active = false;
                 s.interview_live_attached = false;
             })
             .unwrap();
@@ -918,6 +950,7 @@ mod tests {
                 s.intake_phase = "interviewing".into();
                 s.project_description = None;
                 s.has_checkpoint = false;
+                s.interview_runtime_active = false;
                 s.interview_live_attached = false;
             })
             .unwrap();
@@ -932,7 +965,8 @@ mod tests {
             .update(id, |s| {
                 s.intake_phase = "interviewing".into();
                 s.project_description = Some("Build timer".into());
-                s.has_checkpoint = true;
+                s.ensure_checkpoint();
+                s.interview_runtime_active = false;
                 s.interview_live_attached = false;
             })
             .unwrap();

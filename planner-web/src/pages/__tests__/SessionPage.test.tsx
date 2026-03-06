@@ -154,6 +154,26 @@ describe('SessionPage resume behavior', () => {
     expect(mockAttach).not.toHaveBeenCalled();
   });
 
+  it('attaches for detached interviewing sessions when a live runtime is available', async () => {
+    const session = makeSession({
+      intake_phase: 'interviewing',
+      pipeline_running: false,
+      can_resume_live: true,
+      resume_status: 'live_attach_available',
+      project_description: 'Build timer',
+    });
+    mockGetSession.mockResolvedValue({ session });
+
+    renderSessionPage('/session/abc');
+
+    await waitFor(() => {
+      expect(mockGetSession).toHaveBeenCalledWith('abc');
+    });
+    await waitFor(() => {
+      expect(mockAttach).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it('shows restart-only warning for detached interviewing sessions', async () => {
     const session = makeSession({
       intake_phase: 'interviewing',

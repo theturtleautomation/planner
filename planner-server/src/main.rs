@@ -166,6 +166,14 @@ async fn main() {
     };
 
     let llm_router = Arc::new(planner_core::llm::providers::LlmRouter::from_env());
+    let live_runtime_lease_secs = std::env::var("PLANNER_LIVE_RUNTIME_LEASE_SECS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(30);
+    tracing::info!(
+        "Live Socratic runtime lease: {}s after websocket detach",
+        live_runtime_lease_secs
+    );
 
     // Create shared state
     let state = Arc::new(AppState {
@@ -176,6 +184,9 @@ async fn main() {
         event_store,
         cxdb,
         llm_router: llm_router.clone(),
+        socratic_runtimes: planner_server::runtime::SessionRuntimeRegistry::new(
+            std::time::Duration::from_secs(live_runtime_lease_secs),
+        ),
         started_at: std::time::Instant::now(),
     });
 
@@ -245,6 +256,18 @@ async fn main() {
             loop {
                 interval.tick().await;
                 cleanup_state.sessions.cleanup_expired(3600);
+            }
+        });
+    }
+
+    // Start background live-runtime cleanup task.
+    {
+        let runtime_state = state.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
+            loop {
+                interval.tick().await;
+                planner_server::ws_socratic::expire_detached_runtimes(&runtime_state);
             }
         });
     }

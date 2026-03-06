@@ -6,6 +6,7 @@
 pub mod api;
 pub mod auth;
 pub mod rate_limit;
+pub mod runtime;
 pub mod rbac;
 pub mod session;
 pub mod ws;
@@ -31,6 +32,8 @@ pub struct AppState {
     pub cxdb: Option<planner_core::cxdb::durable::DurableCxdbEngine>,
     /// Shared LLM router used by API and WebSocket flows.
     pub llm_router: std::sync::Arc<planner_core::llm::providers::LlmRouter>,
+    /// Live Socratic interview runtimes that survive short disconnects.
+    pub socratic_runtimes: runtime::SessionRuntimeRegistry,
     /// Server start time for uptime calculation.
     pub started_at: std::time::Instant,
 }
