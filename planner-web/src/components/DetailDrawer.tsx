@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react';
-import type { BlueprintNode, EdgePayload, DecisionNode, TechnologyNode, ComponentNode, ConstraintNode, PatternNode, QualityRequirementNode } from '../types/blueprint.ts';
+import type { BlueprintNode, EdgePayload, DecisionNode, TechnologyNode, ComponentNode, ConstraintNode, PatternNode, QualityRequirementNode, BlueprintEventPayload } from '../types/blueprint.ts';
 import type { ApiClient } from '../api/client.ts';
 import { useState, useCallback } from 'react';
 import EditNodeForm from './EditNodeForm.tsx';
@@ -46,13 +46,18 @@ export default function DetailDrawer({
   const [loading, setLoading] = useState(false);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [activeTab, setActiveTab] = useState<'details' | 'history'>('details');
+  const [events, setEvents] = useState<BlueprintEventPayload[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(false);
 
   const isOpen = nodeId !== null;
 
-  // Reset edit mode when node changes
+  // Reset edit mode and tab when node changes
   useEffect(() => {
     setEditing(false);
     setSaving(false);
+    setActiveTab('details');
+    setEvents([]);
   }, [nodeId]);
 
   // Fetch full node detail
@@ -66,6 +71,18 @@ export default function DetailDrawer({
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [nodeId, api]);
+
+  // Fetch events when history tab is activated
+  useEffect(() => {
+    if (activeTab !== 'history' || !nodeId) return;
+    let cancelled = false;
+    setEventsLoading(true);
+    api.listBlueprintEvents({ nodeId, limit: 50 })
+      .then(res => { if (!cancelled) setEvents(res.events); })
+      .catch(() => { if (!cancelled) setEvents([]); })
+      .finally(() => { if (!cancelled) setEventsLoading(false); });
+    return () => { cancelled = true; };
+  }, [activeTab, nodeId, api]);
 
   // Connected edges
   const connections = useMemo(() => {
@@ -380,6 +397,24 @@ export default function DetailDrawer({
           </button>
         </div>
 
+        {/* Tab bar — only visible in view mode */}
+        {!loading && node && !editing && (
+          <div className="drawer-tabs">
+            <button
+              className={`drawer-tab${activeTab === 'details' ? ' active' : ''}`}
+              onClick={() => setActiveTab('details')}
+            >
+              Details
+            </button>
+            <button
+              className={`drawer-tab${activeTab === 'history' ? ' active' : ''}`}
+              onClick={() => setActiveTab('history')}
+            >
+              History
+            </button>
+          </div>
+        )}
+
         <div className="drawer-body">
           {loading && (
             <div style={{ display: 'flex', justifyContent: 'center', padding: 'var(--space-8)' }}>
@@ -396,7 +431,8 @@ export default function DetailDrawer({
             />
           )}
 
-          {!loading && node && !editing && (
+          {/* ─── Details tab ─── */}
+          {!loading && node && !editing && activeTab === 'details' && (
             <>
               {/* ID */}
               <div className="drawer-id">{nodeId}</div>
@@ -472,6 +508,50 @@ export default function DetailDrawer({
                 </div>
               )}
             </>
+          )}
+
+          {/* ─── History tab ─── */}
+          {!loading && node && !editing && activeTab === 'history' && (
+            <div className="event-timeline">
+              {eventsLoading && (
+                <div style={{ display: 'flex', justifyContent: 'center', padding: 'var(--space-8)' }}>
+                  <div className="skeleton-pulse" />
+                </div>
+              )}
+              {!eventsLoading && events.length === 0 && (
+                <div style={{
+                  textAlign: 'center', padding: 'var(--space-8)',
+                  color: 'var(--color-text-faint)', fontSize: 'var(--text-sm)',
+                }}>
+                  No events recorded for this node.
+                </div>
+              )}
+              {!eventsLoading && events.map((evt, i) => (
+                <div key={i} className="event-timeline-item">
+                  <div className="event-timeline-dot-container">
+                    <div className={`event-timeline-dot event-dot-${evt.event_type}`} />
+                    {i < events.length - 1 && <div className="event-timeline-line" />}
+                  </div>
+                  <div className="event-timeline-content">
+                    <div className="event-timeline-header">
+                      <span className={`event-type-badge event-badge-${evt.event_type}`}>
+                        {evt.event_type.replace(/_/g, ' ')}
+                      </span>
+                      <span className="event-timeline-time">
+                        {new Date(evt.timestamp).toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="event-timeline-summary">{evt.summary}</div>
+                    {evt.data && Object.keys(evt.data).length > 0 && (
+                      <details className="event-timeline-data">
+                        <summary>Details</summary>
+                        <pre>{JSON.stringify(evt.data, null, 2)}</pre>
+                      </details>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
         </div>
 

@@ -61,12 +61,35 @@ const STATUS_COLORS: Record<string, string> = {
   active: 'var(--color-success)',
 };
 
+const STALE_THRESHOLD_DAYS = 30;
+
 function defaultColumns(edges: EdgePayload[]): ColumnDef[] {
   return [
     {
       key: 'name',
       label: 'Name',
-      render: (n) => <span style={{ fontWeight: 500 }}>{n.name}</span>,
+      render: (n, edgeList) => {
+        // Stale detection: node not updated in STALE_THRESHOLD_DAYS
+        const updatedMs = new Date(n.updated_at).getTime();
+        const isStale = !isNaN(updatedMs) && (Date.now() - updatedMs) > STALE_THRESHOLD_DAYS * 86400000;
+        // Orphan detection: node with no edges
+        const isOrphan = !edgeList.some(e => e.source === n.id || e.target === n.id);
+        return (
+          <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ fontWeight: 500 }}>{n.name}</span>
+            {isStale && (
+              <span className="health-badge health-stale" title={`Not updated in ${STALE_THRESHOLD_DAYS}+ days`}>
+                stale
+              </span>
+            )}
+            {isOrphan && (
+              <span className="health-badge health-orphan" title="No edges — isolated node">
+                orphan
+              </span>
+            )}
+          </span>
+        );
+      },
       sortValue: (n) => n.name.toLowerCase(),
     },
     {

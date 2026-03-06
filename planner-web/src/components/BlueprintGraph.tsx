@@ -340,6 +340,36 @@ export default function BlueprintGraph({
       .attr('font-family', 'var(--font-body)')
       .text(d => displayName(d.name));
 
+    // Health indicators (stale/orphan dots)
+    const STALE_DAYS = 30;
+    const nowMs = Date.now();
+    nodeSel.each(function(d) {
+      const updMs = new Date(d.updated_at).getTime();
+      const isStale = !isNaN(updMs) && (nowMs - updMs) > STALE_DAYS * 86400000;
+      const isOrphan = !edgeData.some(e => e.source === d.id || e.target === d.id);
+      if (!isStale && !isOrphan) return;
+      const s = NODE_SIZES[d.node_type] || NODE_SIZES.decision;
+      const g = d3.select(this);
+      let xOff = s.w / 2 - 8;
+      if (isStale) {
+        g.append('circle')
+          .attr('cx', xOff).attr('cy', -s.h / 2 + 8)
+          .attr('r', 4)
+          .attr('fill', 'var(--color-warning)')
+          .attr('stroke', 'var(--color-surface)').attr('stroke-width', 1.5);
+        g.append('title').text(`Stale: not updated in ${STALE_DAYS}+ days`);
+        xOff -= 10;
+      }
+      if (isOrphan) {
+        g.append('circle')
+          .attr('cx', xOff).attr('cy', -s.h / 2 + 8)
+          .attr('r', 4)
+          .attr('fill', 'var(--color-error)')
+          .attr('stroke', 'var(--color-surface)').attr('stroke-width', 1.5);
+        if (!isStale) g.append('title').text('Orphan: no connected edges');
+      }
+    });
+
     // Hover interactions
     nodeSel
       .on('mouseenter', function (_event, d) {

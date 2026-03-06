@@ -1,7 +1,7 @@
 # Blueprint Implementation — Status Tracker
 
 **Started:** March 5, 2026
-**Last Updated:** March 5, 2026 (Phase E complete)
+**Last Updated:** March 5, 2026 (Phase F complete)
 
 ## Research Documents (committed to repo)
 - `docs/blueprint-research/BLUEPRINT_DEEP_DIVE.md` — Decision audit, spec vs. code gap analysis
@@ -168,7 +168,28 @@
   - Disabled d3 dblclick-to-zoom to prevent conflict
   - Coexists with type filter (focus takes priority when active)
 - [x] E.5 — Verification: `tsc --noEmit` clean, 166/166 vitest passing, Vite build succeeds
-### Phase F: Lifecycle & History — PENDING
+### Phase F: Lifecycle & History [COMPLETE]
+- [x] F.1 — Per-node event timeline tab in DetailDrawer
+  - Added "Details" / "History" tab bar below drawer header (only in view mode)
+  - History tab fetches events via `api.listBlueprintEvents({ nodeId })` on activation
+  - Vertical timeline with color-coded dots per event type (created=green, updated=blue, deleted=red, edge=warning)
+  - Each event shows: type badge, timestamp, summary, expandable JSON details
+  - Lazy loading — events only fetched when History tab is selected
+  - Tab and event state reset when navigating to a different node
+- [x] F.2 — Global `EventTimelinePage.tsx` (171 lines)
+  - Full-page event log at `/events` route with sidebar navigation (activity icon)
+  - Filter chips: All Events, Created, Updated, Deleted, Edge Created, Edges Deleted
+  - Configurable limit selector: Last 50 / 100 / 250 / 500
+  - Relative timestamps (just now, Xm ago, Xh ago, Xd ago)
+  - Refresh button, error/empty states, loading skeleton
+  - Lazy-loaded route with ProtectedRoute wrapper
+- [x] F.3 — Stale node detection + orphan node detection
+  - **NodeListPanel**: "stale" badge (yellow) on nodes not updated in 30+ days,
+    "orphan" badge (red) on nodes with zero edges — both in Name column
+  - **BlueprintGraph**: health indicator dots at top-right of node shapes
+    (yellow dot = stale, red dot = orphan) with title tooltips
+  - CSS: `.health-badge`, `.health-stale`, `.health-orphan` classes
+- [x] F.4 — Verification: `tsc --noEmit` clean, 166/166 vitest passing, Vite build succeeds
 ### Phase G: Automated Discovery — PENDING
 ### Phase H: TUI Blueprint Table — PENDING
 
@@ -245,6 +266,20 @@
 ### Phase E — TypeScript (frontend)
 - `planner-web/src/components/BlueprintGraph.tsx` — Pre-bake simulation (E.1), adaptive charge (E.2),
   minimap with viewport rect (E.3), neighborhood focus dblclick mode (E.4)
+
+### Phase F — TypeScript (frontend)
+- `planner-web/src/components/DetailDrawer.tsx` — Added History tab (tab bar, event state, event fetch,
+  timeline view with dots/badges/details), import BlueprintEventPayload type
+- `planner-web/src/pages/EventTimelinePage.tsx` — NEW (171 lines) global event log page with
+  filter chips, limit selector, relative timestamps, refresh, error/empty states
+- `planner-web/src/components/NodeListPanel.tsx` — Stale/orphan detection badges in Name column
+  (STALE_THRESHOLD_DAYS=30, edge-count check for orphans)
+- `planner-web/src/components/BlueprintGraph.tsx` — Health indicator dots on graph nodes
+  (stale=warning, orphan=error circles at top-right of node shapes)
+- `planner-web/src/App.tsx` — Added lazy-loaded `/events` route with ProtectedRoute
+- `planner-web/src/components/Layout.tsx` — Added 'Events' sidebar item + activity icon
+- `planner-web/src/index.css` — Added drawer-tabs, event-timeline, global-event-timeline,
+  event-filters, health-badge CSS classes
 
 ## Test Results
 - Frontend: 166/166 tests passing (11 test files)
