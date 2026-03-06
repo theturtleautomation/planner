@@ -18,6 +18,8 @@ import type {
   BlueprintNode,
   ImpactReport,
   BlueprintEventsResponse,
+  ReconvergenceRequest,
+  ReconvergenceResult,
 } from '../types/blueprint.ts';
 
 export { ApiError };
@@ -203,6 +205,14 @@ export function createApiClient(getToken: GetTokenFn) {
       return apiFetch<ImpactReport>(getToken, '/blueprint/impact-preview', {
         method: 'POST',
         body: JSON.stringify({ node_id: nodeId, change_description: changeDescription }),
+      });
+    },
+
+    /** POST /blueprint/reconverge — Execute reconvergence from an impact report. */
+    reconvergeBlueprint(req: ReconvergenceRequest): Promise<ReconvergenceResult> {
+      return apiFetch<ReconvergenceResult>(getToken, '/blueprint/reconverge', {
+        method: 'POST',
+        body: JSON.stringify(req),
       });
     },
   };

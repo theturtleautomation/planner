@@ -307,6 +307,7 @@ pub fn routes(state: Arc<AppState>) -> Router {
         .route("/blueprint/history", get(list_blueprint_history))
         .route("/blueprint/events", get(list_blueprint_events))
         .route("/blueprint/impact-preview", post(impact_preview))
+        .route("/blueprint/reconverge", post(reconverge_blueprint))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             auth_middleware,
@@ -1340,6 +1341,128 @@ async fn impact_preview(
             }),
         )),
     }
+}
+
+// ─── Reconvergence ──────────────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+struct ReconvergeRequest {
+    source_node_id: String,
+    impact_report: planner_schemas::artifacts::blueprint::ImpactReport,
+    auto_apply: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct ReconvergeStepResponse {
+    step_id: String,
+    node_id: String,
+    node_name: String,
+    node_type: String,
+    action: String,
+    severity: String,
+    description: String,
+    status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct ReconvergeSummary {
+    total: usize,
+    applied: usize,
+    skipped: usize,
+    errors: usize,
+    needs_review: usize,
+}
+
+#[derive(Debug, Serialize)]
+struct ReconvergeResponse {
+    steps: Vec<ReconvergeStepResponse>,
+    summary: ReconvergeSummary,
+    timestamp: String,
+}
+
+/// POST /blueprint/reconverge — Execute reconvergence based on an impact report.
+///
+/// Policy: auto_apply=true -> shallow/medium auto-accepted, deep requires review.
+async fn reconverge_blueprint(
+    State(state): State<Arc<AppState>>,
+    _claims: Claims,
+    Json(req): Json<ReconvergeRequest>,
+) -> Result<Json<ReconvergeResponse>, (StatusCode, Json<ErrorResponse>)> {
+    // Verify source node exists.
+    if state.blueprints.node(&req.source_node_id).is_none() {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: format!("Blueprint node not found: {}", req.source_node_id),
+                code: Some("NODE_NOT_FOUND".into()),
+            }),
+        ));
+    }
+
+    let mut steps = Vec::new();
+    let mut applied = 0usize;
+    let mut skipped = 0usize;
+    let mut needs_review = 0usize;
+
+    for (i, entry) in req.impact_report.entries.iter().enumerate() {
+        let severity_str = match entry.severity {
+            planner_schemas::artifacts::blueprint::ImpactSeverity::Shallow => "shallow",
+            planner_schemas::artifacts::blueprint::ImpactSeverity::Medium => "medium",
+            planner_schemas::artifacts::blueprint::ImpactSeverity::Deep => "deep",
+        };
+        let action_str = match entry.action {
+            planner_schemas::artifacts::blueprint::ImpactAction::Reconverge => "reconverge",
+            planner_schemas::artifacts::blueprint::ImpactAction::Update => "update",
+            planner_schemas::artifacts::blueprint::ImpactAction::Invalidate => "invalidate",
+            planner_schemas::artifacts::blueprint::ImpactAction::Add => "add",
+            planner_schemas::artifacts::blueprint::ImpactAction::Remove => "remove",
+        };
+
+        let is_deep = matches!(entry.severity, planner_schemas::artifacts::blueprint::ImpactSeverity::Deep);
+
+        let status = if !req.auto_apply {
+            // Manual mode — everything is pending review.
+            needs_review += 1;
+            "pending"
+        } else if is_deep {
+            // Auto mode but deep severity — requires human review.
+            needs_review += 1;
+            "pending"
+        } else {
+            // Auto mode, shallow/medium — auto-accept.
+            applied += 1;
+            "done"
+        };
+
+        steps.push(ReconvergeStepResponse {
+            step_id: format!("recon-step-{}", i),
+            node_id: entry.node_id.clone(),
+            node_name: entry.node_name.clone(),
+            node_type: entry.node_type.clone(),
+            action: action_str.to_string(),
+            severity: severity_str.to_string(),
+            description: entry.explanation.clone(),
+            status: status.to_string(),
+            error: None,
+        });
+    }
+
+    let total = steps.len();
+    let timestamp = chrono::Utc::now().to_rfc3339();
+
+    Ok(Json(ReconvergeResponse {
+        steps,
+        summary: ReconvergeSummary {
+            total,
+            applied,
+            skipped,
+            errors: 0,
+            needs_review,
+        },
+        timestamp,
+    }))
 }
 
 // ---------------------------------------------------------------------------

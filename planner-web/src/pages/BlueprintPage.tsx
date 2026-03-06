@@ -8,9 +8,10 @@ import ImpactPreviewModal from '../components/ImpactPreviewModal.tsx';
 import CreateNodeModal from '../components/CreateNodeModal.tsx';
 import DeleteNodeDialog from '../components/DeleteNodeDialog.tsx';
 import AddEdgeModal from '../components/AddEdgeModal.tsx';
+import ReconvergencePanel from '../components/ReconvergencePanel.tsx';
 import { createApiClient } from '../api/client.ts';
 import { useGetAccessToken } from '../auth/useAuthenticatedFetch.ts';
-import type { BlueprintResponse, BlueprintNode, NodeType, NodeSummary, ImpactReport, EdgeType } from '../types/blueprint.ts';
+import type { BlueprintResponse, BlueprintNode, NodeType, NodeSummary, ImpactReport, EdgeType, ReconvergenceResult } from '../types/blueprint.ts';
 
 // ─── View types ─────────────────────────────────────────────────────────────
 
@@ -66,6 +67,11 @@ export default function BlueprintPage() {
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [addEdgeModalOpen, setAddEdgeModalOpen] = useState(false);
 
+  // Reconvergence state
+  const [reconResult, setReconResult] = useState<ReconvergenceResult | null>(null);
+  const [reconLoading, setReconLoading] = useState(false);
+  const [reconVisible, setReconVisible] = useState(false);
+
   // Delete node dialog state
   const [deleteNodeId, setDeleteNodeId] = useState<string | null>(null);
   const [deleteNodeName, setDeleteNodeName] = useState<string | null>(null);
@@ -112,10 +118,38 @@ export default function BlueprintPage() {
     setImpactLoading(false);
   }, []);
 
-  const handleImpactApply = useCallback(() => {
-    // Future: apply reconvergence
+  const handleImpactApply = useCallback(async () => {
+    if (!impactNodeId || !impactReport) {
+      handleImpactClose();
+      return;
+    }
+    // Close the impact modal and open the reconvergence panel
     handleImpactClose();
-  }, [handleImpactClose]);
+    setReconVisible(true);
+    setReconLoading(true);
+    setReconResult(null);
+    try {
+      const result = await api.reconvergeBlueprint({
+        source_node_id: impactNodeId,
+        impact_report: impactReport,
+        auto_apply: true, // per decision #3: auto-accept shallow/medium, review deep
+      });
+      setReconResult(result);
+    } catch {
+      // Show panel anyway with null result
+      setReconResult(null);
+    } finally {
+      setReconLoading(false);
+    }
+  }, [impactNodeId, impactReport, api, handleImpactClose]);
+
+  const handleReconClose = useCallback(() => {
+    setReconVisible(false);
+    setReconResult(null);
+    setReconLoading(false);
+    // Refresh blueprint data after reconvergence
+    void loadBlueprint();
+  }, [loadBlueprint]);
 
   // ─── Create node ────────────────────────────────────────────────────────
 
@@ -494,6 +528,15 @@ export default function BlueprintPage() {
           onClose={() => setAddEdgeModalOpen(false)}
           onCreate={handleCreateEdge}
         />
+
+        {/* Reconvergence panel */}
+        {reconVisible && (
+          <ReconvergencePanel
+            result={reconResult}
+            loading={reconLoading}
+            onClose={handleReconClose}
+          />
+        )}
       </div>
     </Layout>
   );

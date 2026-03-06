@@ -227,6 +227,44 @@ export interface BlueprintEventsResponse {
   total: number;
 }
 
+// ─── Reconvergence engine ─────────────────────────────────────────────────
+
+export type ReconvergenceStepStatus = 'pending' | 'running' | 'done' | 'skipped' | 'error';
+
+/** A single step in the reconvergence process (e.g., update a downstream node). */
+export interface ReconvergenceStep {
+  step_id: string;
+  node_id: string;
+  node_name: string;
+  node_type: string;
+  action: ImpactAction;
+  severity: ImpactSeverity;
+  description: string;
+  status: ReconvergenceStepStatus;
+  error?: string;
+}
+
+/** Request body for POST /blueprint/reconverge. */
+export interface ReconvergenceRequest {
+  source_node_id: string;
+  impact_report: ImpactReport;
+  /** If true, auto-accept shallow/medium severity; prompt for deep. */
+  auto_apply: boolean;
+}
+
+/** Response from POST /blueprint/reconverge. */
+export interface ReconvergenceResult {
+  steps: ReconvergenceStep[];
+  summary: {
+    total: number;
+    applied: number;
+    skipped: number;
+    errors: number;
+    needs_review: number;
+  };
+  timestamp: string;
+}
+
 // ─── D3 simulation types ────────────────────────────────────────────────────
 
 export interface GraphNode extends NodeSummary {

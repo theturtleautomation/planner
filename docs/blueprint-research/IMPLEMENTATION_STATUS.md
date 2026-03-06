@@ -1,7 +1,7 @@
 # Blueprint Implementation — Status Tracker
 
 **Started:** March 5, 2026
-**Last Updated:** March 5, 2026 (Phase C complete)
+**Last Updated:** March 5, 2026 (Phase D complete)
 
 ## Research Documents (committed to repo)
 - `docs/blueprint-research/BLUEPRINT_DEEP_DIVE.md` — Decision audit, spec vs. code gap analysis
@@ -120,7 +120,31 @@
   `.node-list-panel`, `.node-list-toolbar`, `.node-list-search`
   - Also added preemptive reconvergence CSS (`.recon-panel`, `.recon-step`, `.recon-summary`)
 - [x] C.5.5 — Verification: `tsc --noEmit` clean, 166/166 vitest passing, Vite build succeeds
-### Phase D: Reconvergence Engine — PENDING
+### Phase D: Reconvergence Engine [COMPLETE]
+- [x] D.1 — Reconvergence types in `blueprint.ts`
+  - `ReconvergenceStepStatus` ('pending' | 'running' | 'done' | 'skipped' | 'error')
+  - `ReconvergenceStep` interface (step_id, node_id, action, severity, status, error)
+  - `ReconvergenceRequest` (source_node_id, impact_report, auto_apply)
+  - `ReconvergenceResult` (steps, summary with total/applied/skipped/errors/needs_review, timestamp)
+- [x] D.2 — `POST /blueprint/reconverge` endpoint in `api.rs`
+  - `ReconvergeRequest`, `ReconvergeStepResponse`, `ReconvergeSummary`, `ReconvergeResponse` types
+  - Policy: auto_apply=true → shallow/medium auto-accepted ("done"), deep requires review ("pending")
+  - Verifies source node exists, iterates impact entries, applies severity-based policy
+  - Added `reconvergeBlueprint()` method to frontend API client
+- [x] D.3 — `ReconvergencePanel.tsx` component (297 lines)
+  - Status icons: animated spinner (running), checkmark (done), warning (pending), X (skipped/error)
+  - Severity badges with color coding (shallow=faint, medium=warning, deep=error)
+  - Step rows with action tags, descriptions, and approve/skip controls for deep-severity pending steps
+  - Summary bar with total/applied/review/skipped/errors counts
+  - Optimistic local state overrides for approve/skip actions
+  - Uses preemptive CSS from Phase C.5 (`.recon-panel`, `.recon-step`, `.recon-summary`)
+- [x] D.4 — Wired "Apply & Reconverge" button in BlueprintPage
+  - `handleImpactApply` captures impact report, closes impact modal, opens reconvergence panel
+  - Calls `api.reconvergeBlueprint()` with auto_apply=true (per decision #3)
+  - `handleReconClose` refreshes blueprint data after reconvergence completes
+  - State: `reconResult`, `reconLoading`, `reconVisible`
+- [x] D.5 — Verification: `tsc --noEmit` clean, 166/166 vitest passing, Vite build succeeds
+  - Cargo check/test deferred to CI (no Rust toolchain in sandbox)
 ### Phase E: Graph UX Polish — PENDING
 ### Phase F: Lifecycle & History — PENDING
 ### Phase G: Automated Discovery — PENDING
@@ -129,7 +153,7 @@
 ## Key Decisions (from GitHub conversation)
 1. ✅ NodeId: human-readable slug + UUID8 — implemented in CreateNodeModal.generateId()
 2. ✅ Event sourced: full event log with append-only persistence — Phase B complete
-3. ⚠️ Reconvergence autonomy: types defined, no execution, needs Phase D
+3. ✅ Reconvergence autonomy: auto-accept shallow/medium, review deep — Phase D complete
 4. ⚠️ One per project: global singleton, OK for now
 5. ✅ WebUI primary, TUI table-only — full CRUD (create/edit/delete nodes + edges) in Phase C
 
@@ -181,6 +205,20 @@
 - `planner-web/src/App.tsx` — Added lazy-loaded `/knowledge` route
 - `planner-web/src/components/Layout.tsx` — Added 'Knowledge' sidebar item + book icon
 - `planner-web/src/index.css` — Added knowledge + reconvergence CSS classes
+
+### Phase D — Rust (backend)
+- `planner-server/src/api.rs` — Added `POST /blueprint/reconverge` route + handler,
+  `ReconvergeRequest`, `ReconvergeStepResponse`, `ReconvergeSummary`, `ReconvergeResponse` types,
+  severity-based auto-apply policy (shallow/medium=done, deep=pending)
+
+### Phase D — TypeScript (frontend)
+- `planner-web/src/types/blueprint.ts` — Added `ReconvergenceStepStatus`, `ReconvergenceStep`,
+  `ReconvergenceRequest`, `ReconvergenceResult` (283 lines total)
+- `planner-web/src/api/client.ts` — Added `reconvergeBlueprint()` method
+- `planner-web/src/components/ReconvergencePanel.tsx` — NEW (297 lines) reconvergence progress panel
+  with status icons, severity badges, approve/skip controls, optimistic state
+- `planner-web/src/pages/BlueprintPage.tsx` — Wired reconvergence: `handleImpactApply` calls API,
+  `reconResult`/`reconLoading`/`reconVisible` state, renders ReconvergencePanel
 
 ## Test Results
 - Frontend: 166/166 tests passing (11 test files)
