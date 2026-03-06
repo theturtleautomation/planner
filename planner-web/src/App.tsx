@@ -9,6 +9,7 @@ import AdminPage from './pages/AdminPage.tsx';
 const BlueprintPage = lazy(() => import('./pages/BlueprintPage.tsx'));
 const KnowledgeLibraryPage = lazy(() => import('./pages/KnowledgeLibraryPage.tsx'));
 const EventTimelinePage = lazy(() => import('./pages/EventTimelinePage.tsx'));
+const DiscoveryPage = lazy(() => import('./pages/DiscoveryPage.tsx'));
 import ProtectedRoute from './auth/ProtectedRoute.tsx';
 
 // ─── Auth0-dependent pages ───────────────────────────────────────────────────
@@ -105,6 +106,16 @@ export default function App() {
           <ProtectedRoute>
             <Suspense fallback={<AuthLoadingFallback />}>
               <EventTimelinePage />
+            </Suspense>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/discovery"
+        element={
+          <ProtectedRoute>
+            <Suspense fallback={<AuthLoadingFallback />}>
+              <DiscoveryPage />
             </Suspense>
           </ProtectedRoute>
         }

@@ -282,3 +282,54 @@ export interface GraphLink {
   edge_type: EdgeType;
   metadata?: string;
 }
+
+// ─── Discovery / Proposed Nodes ───────────────────────────────────────────────
+
+export type DiscoverySource = 'cargo_toml' | 'directory_scan' | 'pipeline_run' | 'manual';
+
+export type ProposalStatus = 'pending' | 'accepted' | 'rejected' | 'merged';
+
+export interface ProposedNode {
+  id: string;
+  /** The node data that would be created */
+  node: BlueprintNode;
+  /** Where this proposal came from */
+  source: DiscoverySource;
+  /** Human-readable reason for the proposal */
+  reason: string;
+  /** Current review status */
+  status: ProposalStatus;
+  /** ISO timestamp of when it was proposed */
+  proposed_at: string;
+  /** ISO timestamp of when it was reviewed */
+  reviewed_at?: string;
+  /** Confidence score from scanner (0-1) */
+  confidence: number;
+  /** File path or artifact that triggered the proposal */
+  source_artifact?: string;
+}
+
+export interface DiscoveryScanRequest {
+  /** Which scanners to run */
+  scanners: ('cargo_toml' | 'directory_structure' | 'all')[];
+  /** Root path to scan (relative to project) */
+  root_path?: string;
+}
+
+export interface DiscoveryScanResult {
+  scanner: string;
+  proposed_count: number;
+  skipped_count: number;
+  errors: string[];
+  duration_ms: number;
+}
+
+export interface DiscoveryRunResponse {
+  results: DiscoveryScanResult[];
+  total_proposed: number;
+}
+
+export interface ProposedNodesResponse {
+  proposals: ProposedNode[];
+  total: number;
+}

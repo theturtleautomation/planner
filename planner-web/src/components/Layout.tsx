@@ -46,6 +46,7 @@ const REGISTRY_ITEMS = [
   { label: 'Blueprint', path: '/blueprint', icon: 'globe' },
   { label: 'Knowledge', path: '/knowledge', icon: 'book' },
   { label: 'Events', path: '/events', icon: 'activity' },
+  { label: 'Discovery', path: '/discovery', icon: 'search' },
   { label: 'Admin', path: '/admin', icon: 'terminal' },
 ];
 
@@ -64,6 +65,8 @@ function SidebarIcon({ name }: { name: string }) {
       return <svg {...props}><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>;
     case 'activity':
       return <svg {...props}><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>;
+    case 'search':
+      return <svg {...props}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>;
     default:
       return <svg {...props}><circle cx="12" cy="12" r="4"/></svg>;
   }

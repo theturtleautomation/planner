@@ -20,6 +20,9 @@ import type {
   BlueprintEventsResponse,
   ReconvergenceRequest,
   ReconvergenceResult,
+  DiscoveryScanRequest,
+  DiscoveryRunResponse,
+  ProposedNodesResponse,
 } from '../types/blueprint.ts';
 
 export { ApiError };
@@ -221,6 +224,37 @@ export function createApiClient(getToken: GetTokenFn) {
       return apiFetch<ReconvergenceResult>(getToken, '/blueprint/reconverge', {
         method: 'POST',
         body: JSON.stringify(req),
+      });
+    },
+
+    // ─── Discovery ────────────────────────────────────────────────────────
+
+    /** POST /blueprint/discovery/scan — Trigger automated scanner(s). */
+    runDiscoveryScan(req: DiscoveryScanRequest): Promise<DiscoveryRunResponse> {
+      return apiFetch<DiscoveryRunResponse>(getToken, '/blueprint/discovery/scan', {
+        method: 'POST',
+        body: JSON.stringify(req),
+      });
+    },
+
+    /** GET /blueprint/discovery/proposals — List proposed nodes from scanners. */
+    listProposedNodes(status?: string): Promise<ProposedNodesResponse> {
+      const qs = status ? `?status=${encodeURIComponent(status)}` : '';
+      return apiFetch<ProposedNodesResponse>(getToken, `/blueprint/discovery/proposals${qs}`);
+    },
+
+    /** POST /blueprint/discovery/proposals/:id/accept — Accept a proposed node into blueprint. */
+    acceptProposal(proposalId: string): Promise<{ node_id: string; message: string }> {
+      return apiFetch<{ node_id: string; message: string }>(getToken, `/blueprint/discovery/proposals/${encodeURIComponent(proposalId)}/accept`, {
+        method: 'POST',
+      });
+    },
+
+    /** POST /blueprint/discovery/proposals/:id/reject — Reject a proposed node. */
+    rejectProposal(proposalId: string, reason?: string): Promise<{ message: string }> {
+      return apiFetch<{ message: string }>(getToken, `/blueprint/discovery/proposals/${encodeURIComponent(proposalId)}/reject`, {
+        method: 'POST',
+        body: JSON.stringify({ reason }),
       });
     },
   };
