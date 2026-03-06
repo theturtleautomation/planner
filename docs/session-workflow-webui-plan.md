@@ -22,11 +22,13 @@ loading the entire system into working memory.
 - Phase 2.4: complete (checkpoint fields exposed and rendered in web UI)
 - Phase 2.5: complete (checkpoint persistence + payload tests added)
 
-- Phase 3 status: complete for checkpoint resume path
+- Phase 3 status: mostly complete (one test-coverage item still open)
 - Phase 3.1: complete (server accepts detached `interviewing` checkpoint reconnect without new initial `socratic_response`)
 - Phase 3.2: complete (pending question/draft re-emitted; regenerate-next-prompt path when no pending prompt)
 - Phase 3.3: complete (capability-driven auto-attach + resumable session UI copy/state)
-- Phase 3.4: complete (integration tests for checkpoint reconnect prompt replay + session-page resume behavior tests)
+- Phase 3.4: partial (integration tests cover checkpoint reconnect + prompt replay and session-page resume behavior; remaining gap is one full end-to-end automated test that answers a resumed question and validates continued progression)
+- Phase 3 remaining:
+  - add a single end-to-end resume test for: reconnect -> answer resumed question -> next-state progression
 
 ---
 
