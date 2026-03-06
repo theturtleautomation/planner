@@ -52,9 +52,7 @@ fn test_state_with_router_and_lease(router: LlmRouter, lease: Duration) -> Arc<A
         event_store: None,
         cxdb: None,
         llm_router: Arc::new(router),
-        socratic_runtimes: planner_server::runtime::SessionRuntimeRegistry::new(
-            lease,
-        ),
+        socratic_runtimes: planner_server::runtime::SessionRuntimeRegistry::new(lease),
         started_at: std::time::Instant::now(),
         blueprints: planner_core::blueprint::BlueprintStore::new(),
         proposals: planner_core::discovery::ProposalStore::new(),
@@ -562,6 +560,100 @@ async fn tier2_session_exposes_interview_checkpoint_payload() {
     );
     assert_eq!(checkpoint["stale_turns"], 1);
     assert!(checkpoint["last_checkpoint_at"].is_string());
+}
+
+/// Test 4c: Restart-from-description resets transient interview state without
+/// requiring the client to resend the saved description to the REST API.
+#[tokio::test]
+async fn tier2_restart_from_description_resets_session_state() {
+    let state = test_state();
+    let session = state.sessions.create("dev|local");
+    let session_id = session.id;
+
+    state.sessions.update(session_id, |s| {
+        s.project_description = Some("Build a timer app".into());
+        s.intake_phase = "interviewing".into();
+        s.add_message("user", "Old description");
+        s.add_message("planner", "Old follow-up");
+        s.current_step = Some("socratic.question.generated".into());
+        s.error_message = Some("stale error".into());
+        s.ensure_checkpoint();
+        s.record_event(planner_core::observability::PlannerEvent::warn(
+            planner_core::observability::EventSource::SocraticEngine,
+            "socratic.detached",
+            "Detached",
+        ));
+    });
+
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/sessions/{}/restart-from-description", session_id))
+        .header("content-type", "application/json")
+        .body(Body::from("{}"))
+        .unwrap();
+
+    let resp = test_app(state.clone()).oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let parsed: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let session = &parsed["session"];
+
+    assert_eq!(session["intake_phase"], "interviewing");
+    assert_eq!(session["project_description"], "Build a timer app");
+    assert_eq!(session["messages"].as_array().unwrap().len(), 1);
+    assert_eq!(session["events"].as_array().unwrap().len(), 0);
+    assert!(session["checkpoint"].is_null());
+    assert_eq!(session["current_step"], serde_json::Value::Null);
+    assert_eq!(session["error_message"], serde_json::Value::Null);
+}
+
+/// Test 4d: Retry-pipeline is only available for sessions with a failed
+/// pipeline state and immediately returns the session to pipeline_running.
+#[tokio::test]
+async fn tier2_retry_pipeline_restarts_failed_pipeline_state() {
+    let state = test_state();
+    let session = state.sessions.create("dev|local");
+    let session_id = session.id;
+
+    state.sessions.update(session_id, |s| {
+        s.project_description = Some("Build a timer app".into());
+        s.intake_phase = "error".into();
+        s.pipeline_running = false;
+        s.stages[0].status = "complete".into();
+        s.stages[1].status = "failed".into();
+        s.error_message = Some("Pipeline failed".into());
+        s.record_event(planner_core::observability::PlannerEvent::error(
+            planner_core::observability::EventSource::Pipeline,
+            "pipeline.error",
+            "Pipeline failed",
+        ));
+    });
+
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/sessions/{}/retry-pipeline", session_id))
+        .header("content-type", "application/json")
+        .body(Body::from("{}"))
+        .unwrap();
+
+    let resp = test_app(state.clone()).oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let parsed: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let session = &parsed["session"];
+
+    assert_eq!(session["intake_phase"], "pipeline_running");
+    assert_eq!(session["pipeline_running"], true);
+    assert_eq!(session["error_message"], serde_json::Value::Null);
+    assert_eq!(session["events"].as_array().unwrap().len(), 0);
+    assert_eq!(session["stages"][0]["status"], "running");
+    assert_eq!(session["stages"][1]["status"], "pending");
 }
 
 /// Test 4: Sending a message triggers the pipeline.
@@ -1133,7 +1225,10 @@ async fn tier2_socratic_ws_live_runtime_reattach_within_lease() {
     );
 
     let attached_again = state.sessions.get(session_id).unwrap();
-    assert_eq!(attached_again.resume_status, ResumeStatus::InterviewAttached);
+    assert_eq!(
+        attached_again.resume_status,
+        ResumeStatus::InterviewAttached
+    );
     assert!(attached_again.interview_live_attached);
 
     let _ = ws2.close(None).await;

@@ -314,8 +314,8 @@ function formatDuration(ms: number): string {
 function getPrimaryActionLabel(session: Session): string {
   if (session.can_resume_checkpoint) return 'Resume Interview';
   if (session.can_resume_live) return 'Reconnect';
-  if (session.can_restart_from_description) return 'Restart from Description';
   if (session.can_retry_pipeline) return 'Retry Pipeline';
+  if (session.can_restart_from_description) return 'Restart from Description';
   if (session.resume_status === 'ready_to_start') return 'Start Interview';
   return 'Open Session';
 }

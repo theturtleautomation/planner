@@ -57,6 +57,26 @@ function normalizeDimensionLabel(value: unknown): string {
   return JSON.stringify(value);
 }
 
+function buildInitialSessionSignature(
+  session: Session | null,
+  sessionId: string | null,
+): string | null {
+  if (!session || !sessionId || session.id !== sessionId) return null;
+
+  return [
+    session.id,
+    session.intake_phase,
+    session.pipeline_running ? '1' : '0',
+    session.resume_status,
+    String(session.messages?.length ?? 0),
+    String(session.events?.length ?? 0),
+    session.current_step ?? '',
+    session.error_message ?? '',
+    session.checkpoint?.last_checkpoint_at ?? '',
+    session.stages?.map((stage) => `${stage.name}:${stage.status}`).join('|') ?? '',
+  ].join('::');
+}
+
 type GetTokenFn = () => Promise<string>;
 
 /** The current question being posed to the user, if any. */
@@ -165,7 +185,7 @@ export function useSocraticWebSocket({
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
   const sessionIdRef = useRef(sessionId);
-  const hydratedSessionIdRef = useRef<string | null>(null);
+  const hydratedSnapshotRef = useRef<string | null>(null);
 
   useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
 
@@ -432,7 +452,7 @@ export function useSocraticWebSocket({
   useEffect(() => {
     mountedRef.current = true;
     retryCountRef.current = 0;
-    hydratedSessionIdRef.current = null;
+    hydratedSnapshotRef.current = null;
 
     // Reset all state when session changes
     setIsConnected(false);
@@ -467,9 +487,10 @@ export function useSocraticWebSocket({
 
   // Seed local websocket state from REST session snapshot.
   useEffect(() => {
+    const signature = buildInitialSessionSignature(initialSession, sessionId);
     if (!initialSession || !sessionId) return;
     if (initialSession.id !== sessionId) return;
-    if (hydratedSessionIdRef.current === sessionId) return;
+    if (signature === null || hydratedSnapshotRef.current === signature) return;
 
     const checkpoint = initialSession.checkpoint ?? null;
     const checkpointBeliefState = checkpoint?.belief_state ?? null;
@@ -524,7 +545,7 @@ export function useSocraticWebSocket({
     setPipelineComplete(initialSession.intake_phase === 'complete');
     setPipelineSummary(initialSession.intake_phase === 'complete' ? 'Pipeline finished' : null);
 
-    hydratedSessionIdRef.current = sessionId;
+    hydratedSnapshotRef.current = signature;
   }, [initialSession, sessionId]);
 
   // -------------------------------------------------------------------------

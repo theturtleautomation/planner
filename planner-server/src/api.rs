@@ -362,6 +362,11 @@ pub fn routes(state: Arc<AppState>) -> Router {
         .route("/sessions", get(list_sessions).post(create_session))
         .route("/sessions/{id}", get(get_session))
         .route("/sessions/{id}/message", post(send_message))
+        .route(
+            "/sessions/{id}/restart-from-description",
+            post(restart_from_description),
+        )
+        .route("/sessions/{id}/retry-pipeline", post(retry_pipeline))
         .route("/sessions/{id}/ws", get(ws_handler))
         .route("/sessions/{id}/socratic", post(start_socratic))
         .route("/sessions/{id}/socratic/ws", get(socratic_ws_handler))
@@ -659,6 +664,162 @@ async fn get_session(
     }
 }
 
+fn stop_session_runtime(state: &Arc<AppState>, session_id: Uuid) {
+    if let Some(runtime) = state.socratic_runtimes.remove(session_id) {
+        runtime.close_input();
+        runtime.signal_closed();
+    }
+}
+
+async fn restart_from_description(
+    State(state): State<Arc<AppState>>,
+    claims: Claims,
+    Path(id): Path<Uuid>,
+) -> Result<Json<GetSessionResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let session = match state.sessions.get_if_owned(id, &claims.sub) {
+        Ok(session) => session,
+        Err(Some(())) => {
+            return Err((
+                StatusCode::FORBIDDEN,
+                Json(ErrorResponse {
+                    error: "Access denied".into(),
+                    code: None,
+                }),
+            ));
+        }
+        Err(None) => {
+            return Err((
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: format!("Session not found: {}", id),
+                    code: None,
+                }),
+            ));
+        }
+    };
+
+    if !session
+        .project_description
+        .as_deref()
+        .map(|value| !value.trim().is_empty())
+        .unwrap_or(false)
+    {
+        return Err((
+            StatusCode::CONFLICT,
+            Json(ErrorResponse {
+                error: "Restart from description is unavailable for this session".into(),
+                code: Some("restart_unavailable".into()),
+            }),
+        ));
+    }
+
+    if session.pipeline_running {
+        return Err((
+            StatusCode::CONFLICT,
+            Json(ErrorResponse {
+                error: "Cannot restart while the pipeline is still running".into(),
+                code: Some("pipeline_running".into()),
+            }),
+        ));
+    }
+
+    stop_session_runtime(&state, id);
+
+    let session = state.sessions.update(id, |s| {
+        s.reset_for_interview_restart();
+    });
+
+    match session {
+        Some(session) => Ok(Json(GetSessionResponse { session })),
+        None => Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: format!("Session not found: {}", id),
+                code: None,
+            }),
+        )),
+    }
+}
+
+async fn retry_pipeline(
+    State(state): State<Arc<AppState>>,
+    claims: Claims,
+    Path(id): Path<Uuid>,
+) -> Result<Json<GetSessionResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let session = match state.sessions.get_if_owned(id, &claims.sub) {
+        Ok(session) => session,
+        Err(Some(())) => {
+            return Err((
+                StatusCode::FORBIDDEN,
+                Json(ErrorResponse {
+                    error: "Access denied".into(),
+                    code: None,
+                }),
+            ));
+        }
+        Err(None) => {
+            return Err((
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: format!("Session not found: {}", id),
+                    code: None,
+                }),
+            ));
+        }
+    };
+
+    if session.pipeline_running {
+        return Err((
+            StatusCode::CONFLICT,
+            Json(ErrorResponse {
+                error: "Pipeline is already running for this session".into(),
+                code: Some("pipeline_running".into()),
+            }),
+        ));
+    }
+
+    if !session
+        .project_description
+        .as_deref()
+        .map(|value| !value.trim().is_empty())
+        .unwrap_or(false)
+        || !session.pipeline_has_failed()
+    {
+        return Err((
+            StatusCode::CONFLICT,
+            Json(ErrorResponse {
+                error: "Retry pipeline is unavailable for this session".into(),
+                code: Some("retry_unavailable".into()),
+            }),
+        ));
+    }
+
+    stop_session_runtime(&state, id);
+
+    let description = session.project_description.clone().unwrap_or_default();
+    let session = state.sessions.update(id, |s| {
+        s.prepare_for_pipeline_retry();
+        s.add_message("planner", "Retrying pipeline from the saved description.");
+    });
+
+    match session {
+        Some(session) => {
+            let state_clone = state.clone();
+            tokio::spawn(async move {
+                run_pipeline_for_session(state_clone, id, description).await;
+            });
+            Ok(Json(GetSessionResponse { session }))
+        }
+        None => Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: format!("Session not found: {}", id),
+                code: None,
+            }),
+        )),
+    }
+}
+
 async fn send_message(
     State(state): State<Arc<AppState>>,
     claims: Claims,
@@ -798,7 +959,12 @@ pub async fn run_pipeline_for_session(state: Arc<AppState>, session_id: Uuid, de
         Err(e) => {
             state.sessions.update(session_id, |s| {
                 s.add_message("planner", &format!("Pipeline setup failed: {}", e));
+                if let Some(stage) = s.stages.iter_mut().find(|stage| stage.status == "running") {
+                    stage.status = "failed".into();
+                }
                 s.pipeline_running = false;
+                s.intake_phase = "error".into();
+                s.error_message = Some(format!("Pipeline setup failed: {}", e));
             });
             return;
         }
@@ -854,6 +1020,8 @@ pub async fn run_pipeline_for_session(state: Arc<AppState>, session_id: Uuid, de
                             ),
                         );
                         s.pipeline_running = false;
+                        s.intake_phase = "complete".into();
+                        s.error_message = None;
                     });
                     tracing::info!("Session {}: pipeline complete", session_id);
                 }
@@ -867,6 +1035,8 @@ pub async fn run_pipeline_for_session(state: Arc<AppState>, session_id: Uuid, de
                             }
                         }
                         s.pipeline_running = false;
+                        s.intake_phase = "error".into();
+                        s.error_message = Some(format!("Pipeline failed: {}", e));
                     });
                     tracing::warn!("Session {}: pipeline failed: {}", session_id, e);
                 }
@@ -904,6 +1074,8 @@ pub async fn run_pipeline_for_session(state: Arc<AppState>, session_id: Uuid, de
                             ),
                         );
                         s.pipeline_running = false;
+                        s.intake_phase = "complete".into();
+                        s.error_message = None;
                     });
                     tracing::info!("Session {}: pipeline complete", session_id);
                 }
@@ -917,6 +1089,8 @@ pub async fn run_pipeline_for_session(state: Arc<AppState>, session_id: Uuid, de
                             }
                         }
                         s.pipeline_running = false;
+                        s.intake_phase = "error".into();
+                        s.error_message = Some(format!("Pipeline failed: {}", e));
                     });
                     tracing::warn!("Session {}: pipeline failed: {}", session_id, e);
                 }

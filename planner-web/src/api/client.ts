@@ -114,6 +114,20 @@ export function createApiClient(getToken: GetTokenFn) {
       });
     },
 
+    restartFromDescription(id: string): Promise<GetSessionResponse> {
+      return apiFetch<GetSessionResponse>(getToken, `/sessions/${id}/restart-from-description`, {
+        method: 'POST',
+        body: '{}',
+      });
+    },
+
+    retryPipeline(id: string): Promise<GetSessionResponse> {
+      return apiFetch<GetSessionResponse>(getToken, `/sessions/${id}/retry-pipeline`, {
+        method: 'POST',
+        body: '{}',
+      });
+    },
+
     getBeliefState(id: string): Promise<BeliefStateResponse> {
       return apiFetch<BeliefStateResponse>(getToken, `/sessions/${id}/belief-state`);
     },

@@ -9,6 +9,7 @@ import BeliefStatePanel from '../components/BeliefStatePanel.tsx';
 import SpeculativeDraftView from '../components/SpeculativeDraftView.tsx';
 import EventLogPanel from '../components/EventLogPanel.tsx';
 import SessionStatusHeader from '../components/SessionStatusHeader.tsx';
+import type { SessionHeaderAction } from '../components/SessionStatusHeader.tsx';
 import { createApiClient } from '../api/client.ts';
 import { useGetAccessToken } from '../auth/useAuthenticatedFetch.ts';
 import { useSocraticWebSocket } from '../hooks/useSocraticWebSocket.ts';
@@ -93,6 +94,7 @@ export default function SessionPage() {
   const getToken = useGetAccessToken();
 
   const api = useMemo(() => createApiClient(getToken), [getToken]);
+  const isExistingSessionRoute = Boolean(routeId && routeId !== 'new');
 
   // Core session state
   const [session, setSession] = useState<Session | null>(null);
@@ -105,6 +107,8 @@ export default function SessionPage() {
   const [description, setDescription] = useState('');
   const [isStarting, setIsStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
+  const [workflowError, setWorkflowError] = useState<string | null>(null);
+  const [workflowAction, setWorkflowAction] = useState<'restart' | 'retry' | null>(null);
 
   // Right panel tab: 'belief' | 'draft'
   type RightPanelTab = 'belief' | 'draft';
@@ -140,6 +144,7 @@ export default function SessionPage() {
           const s = resp.session ?? resp;
           setSession(s as Session);
           setSessionId((s as Session).id);
+          setDescription((s as Session).project_description ?? '');
           void navigate(`/session/${(s as Session).id}`, { replace: true });
         } else {
           // Load existing session
@@ -148,6 +153,7 @@ export default function SessionPage() {
           const s = resp.session ?? resp;
           setSession(s as Session);
           setSessionId((s as Session).id);
+          setDescription((s as Session).project_description ?? '');
         }
       } catch (err) {
         if (cancelled) return;
@@ -178,6 +184,7 @@ export default function SessionPage() {
     if (!sessionId || !description.trim()) return;
     setIsStarting(true);
     setStartError(null);
+    setWorkflowError(null);
     try {
       // 1. Create the server-side Socratic session
       await api.startSocratic(sessionId, description.trim());
@@ -192,6 +199,60 @@ export default function SessionPage() {
       setIsStarting(false);
     }
   }, [sessionId, description, api, socratic]);
+
+  const applySessionSnapshot = useCallback((nextSession: Session): void => {
+    autoAttachAttemptedRef.current = null;
+    setSession(nextSession);
+    setDescription(nextSession.project_description ?? '');
+    setStartError(null);
+    setWorkflowError(null);
+    setRightTab('belief');
+  }, []);
+
+  const handleResume = useCallback((): void => {
+    setWorkflowError(null);
+    socratic.attach();
+  }, [socratic]);
+
+  const handleRestartFromDescription = useCallback(async (): Promise<void> => {
+    if (!sessionId) return;
+    setWorkflowAction('restart');
+    setWorkflowError(null);
+
+    try {
+      const resp = await api.restartFromDescription(sessionId);
+      const nextSession = resp.session;
+      const savedDescription = nextSession.project_description?.trim();
+      if (!savedDescription) {
+        throw new Error('Saved project description is unavailable for this session.');
+      }
+      applySessionSnapshot(nextSession);
+      socratic.sendDescription(savedDescription);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[SessionPage] restartFromDescription error:', msg);
+      setWorkflowError('Failed to restart from the saved description. Please try again.');
+    } finally {
+      setWorkflowAction(null);
+    }
+  }, [sessionId, api, applySessionSnapshot, socratic]);
+
+  const handleRetryPipeline = useCallback(async (): Promise<void> => {
+    if (!sessionId) return;
+    setWorkflowAction('retry');
+    setWorkflowError(null);
+
+    try {
+      const resp = await api.retryPipeline(sessionId);
+      applySessionSnapshot(resp.session);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[SessionPage] retryPipeline error:', msg);
+      setWorkflowError('Failed to retry the pipeline. Please try again.');
+    } finally {
+      setWorkflowAction(null);
+    }
+  }, [sessionId, api, applySessionSnapshot]);
 
   // Textarea auto-grow ref
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -208,6 +269,57 @@ export default function SessionPage() {
   const effectivePhase = socratic.intakePhase !== 'waiting'
     ? socratic.intakePhase
     : (session?.intake_phase ?? 'waiting');
+
+  const sessionActions = useMemo<SessionHeaderAction[]>(() => {
+    const actions: SessionHeaderAction[] = [];
+
+    if (session && !socratic.isConnected && (session.can_resume_live || session.can_resume_checkpoint)) {
+      actions.push({
+        key: 'resume',
+        label: session.can_resume_checkpoint ? 'Resume Checkpoint' : 'Reconnect Live',
+        onClick: handleResume,
+        tone: 'primary',
+      });
+    }
+
+    if (session?.can_restart_from_description) {
+      actions.push({
+        key: 'restart',
+        label: workflowAction === 'restart' ? 'Restarting…' : 'Restart from Description',
+        onClick: () => { void handleRestartFromDescription(); },
+        disabled: workflowAction !== null || isStarting,
+      });
+    }
+
+    if (session?.can_retry_pipeline) {
+      actions.push({
+        key: 'retry',
+        label: workflowAction === 'retry' ? 'Retrying…' : 'Retry Pipeline',
+        onClick: () => { void handleRetryPipeline(); },
+        disabled: workflowAction !== null || isStarting,
+      });
+    }
+
+    if (sessionId) {
+      actions.push({
+        key: 'back',
+        label: 'Back to Dashboard',
+        onClick: () => { void navigate('/'); },
+      });
+    }
+
+    return actions;
+  }, [
+    handleResume,
+    handleRestartFromDescription,
+    handleRetryPipeline,
+    isStarting,
+    navigate,
+    session,
+    sessionId,
+    socratic.isConnected,
+    workflowAction,
+  ]);
 
   // ── Right panel content ──
   const rightPanelContent = (() => {
@@ -303,6 +415,20 @@ export default function SessionPage() {
     </div>
   );
 
+  const workflowErrorBanner = workflowError && (
+    <div style={{
+      padding: '8px 16px',
+      background: 'rgba(255,68,68,0.10)',
+      borderBottom: '1px solid var(--color-error)',
+      color: 'var(--color-error)',
+      fontSize: '12px',
+      textAlign: 'center',
+      flexShrink: 0,
+    }}>
+      {workflowError}
+    </div>
+  );
+
   // ─────────────────────────────────────────────────────────────────
   // PHASE: waiting — show description form
   // ─────────────────────────────────────────────────────────────────
@@ -316,6 +442,15 @@ export default function SessionPage() {
           overflow: 'hidden',
         }}>
           {reconnectBanner}
+          {workflowErrorBanner}
+          {sessionActions.length > 0 && (
+            <SessionStatusHeader
+              currentStep={null}
+              events={[]}
+              isError={false}
+              actions={sessionActions}
+            />
+          )}
           <div style={{
             flex: 1,
             display: 'flex',
@@ -487,7 +622,6 @@ export default function SessionPage() {
   const isPipelineRunning = effectivePhase === 'pipeline_running';
   const isComplete = effectivePhase === 'complete';
   const isError = effectivePhase === 'error';
-  const isExistingSessionRoute = Boolean(routeId && routeId !== 'new');
   const interviewResumeNotice =
     isExistingSessionRoute &&
     session?.intake_phase === 'interviewing' &&
@@ -513,6 +647,7 @@ export default function SessionPage() {
         overflow: 'hidden',
       }}>
         {reconnectBanner}
+        {workflowErrorBanner}
 
         {/* Error banner */}
         {isError && (
@@ -600,12 +735,13 @@ export default function SessionPage() {
         )}
 
         {/* Status header + Top progress bar */}
-        {(isInterviewing || isPipelineRunning || isComplete) && (
+        {(isInterviewing || isPipelineRunning || isComplete || isError || sessionActions.length > 0) && (
           <SessionStatusHeader
             currentStep={socratic.currentStep}
             events={socratic.events}
             isError={isError}
             errorMessage={session?.error_message}
+            actions={sessionActions}
           />
         )}
 

@@ -293,6 +293,53 @@ impl Session {
             .unwrap_or(false)
     }
 
+    pub fn pipeline_has_failed(&self) -> bool {
+        self.stages.iter().any(|stage| stage.status == "failed")
+    }
+
+    fn reset_stage_statuses(&mut self) {
+        for stage in &mut self.stages {
+            stage.status = "pending".into();
+        }
+    }
+
+    pub fn reset_for_interview_restart(&mut self) {
+        self.pipeline_running = false;
+        self.belief_state = None;
+        self.classification = None;
+        self.socratic_run_id = None;
+        self.checkpoint = None;
+        self.has_checkpoint = false;
+        self.intake_phase = "interviewing".into();
+        self.interview_live_attached = false;
+        self.interview_runtime_active = false;
+        self.events.clear();
+        self.current_step = None;
+        self.error_message = None;
+        self.cxdb_project_id = None;
+        self.reset_stage_statuses();
+
+        if self.messages.len() > 1 {
+            self.messages.truncate(1);
+        }
+    }
+
+    pub fn prepare_for_pipeline_retry(&mut self) {
+        self.pipeline_running = true;
+        self.intake_phase = "pipeline_running".into();
+        self.interview_live_attached = false;
+        self.interview_runtime_active = false;
+        self.events.clear();
+        self.current_step = None;
+        self.error_message = None;
+        self.cxdb_project_id = None;
+        self.reset_stage_statuses();
+
+        if let Some(stage) = self.stages.first_mut() {
+            stage.status = "running".into();
+        }
+    }
+
     /// Ensure this session has a stable Socratic run ID and return it.
     pub fn ensure_socratic_run_id(&mut self) -> Uuid {
         if let Some(id) = self.socratic_run_id {
@@ -354,7 +401,14 @@ impl Session {
                     self.resume_status = ResumeStatus::InterviewResumeUnknown;
                 }
             }
-            "pipeline_running" | "complete" | "error" => {
+            "pipeline_running" => {
+                self.interview_runtime_active = false;
+                self.can_resume_live = true;
+                self.can_restart_from_description = false;
+                self.resume_status = ResumeStatus::LiveAttachAvailable;
+                self.interview_live_attached = false;
+            }
+            "complete" | "error" => {
                 self.interview_runtime_active = false;
                 self.can_resume_live = true;
                 self.can_restart_from_description = has_description;
@@ -369,6 +423,9 @@ impl Session {
                 self.interview_live_attached = false;
             }
         }
+
+        self.can_retry_pipeline =
+            self.has_saved_description() && !self.pipeline_running && self.pipeline_has_failed();
     }
 
     /// Count LLM calls from the event log.
@@ -985,6 +1042,17 @@ mod tests {
             .unwrap();
         assert_eq!(live_attach.resume_status, ResumeStatus::LiveAttachAvailable);
         assert!(live_attach.can_resume_live);
+        assert!(!live_attach.can_restart_from_description);
+
+        let retryable_failure = store
+            .update(id, |s| {
+                s.intake_phase = "error".into();
+                s.project_description = Some("Build timer".into());
+                s.stages[2].status = "failed".into();
+                s.pipeline_running = false;
+            })
+            .unwrap();
+        assert!(retryable_failure.can_retry_pipeline);
     }
 
     #[test]

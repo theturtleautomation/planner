@@ -10,11 +10,23 @@
 import { useEffect, useRef, useState } from 'react';
 import type { PlannerEvent } from '../types.ts';
 
+export type SessionHeaderActionTone = 'default' | 'primary' | 'danger';
+
+export interface SessionHeaderAction {
+  key: string;
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  title?: string;
+  tone?: SessionHeaderActionTone;
+}
+
 export interface SessionStatusHeaderProps {
   currentStep: string | null;
   events: PlannerEvent[];
   isError: boolean;
   errorMessage?: string | null;
+  actions?: SessionHeaderAction[];
 }
 
 /** Number of LLM call completions — events from llm_router with step starting with "llm.call.complete" */
@@ -56,6 +68,7 @@ export default function SessionStatusHeader({
   events,
   isError,
   errorMessage,
+  actions = [],
 }: SessionStatusHeaderProps) {
   // Track when the current step last changed so we can show elapsed time
   const stepStartRef = useRef<number>(Date.now());
@@ -85,15 +98,16 @@ export default function SessionStatusHeader({
   return (
     <div
       style={{
-        height: '28px',
+        minHeight: '36px',
         background: 'var(--color-surface)',
         borderBottom: '1px solid var(--color-border)',
         display: 'flex',
         alignItems: 'center',
         flexShrink: 0,
-        padding: '0 12px',
+        padding: '4px 12px',
         gap: '10px',
         overflow: 'hidden',
+        flexWrap: 'wrap',
       }}
     >
       {/* ── Left: status dot + step + elapsed ── */}
@@ -188,6 +202,68 @@ export default function SessionStatusHeader({
           </>
         )}
       </div>
+
+      {actions.length > 0 && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            flexWrap: 'wrap',
+            justifyContent: 'flex-end',
+          }}
+        >
+          {actions.map((action) => {
+            const tone = action.tone ?? 'default';
+            const borderColor = tone === 'primary'
+              ? 'var(--color-primary)'
+              : tone === 'danger'
+              ? 'var(--color-error)'
+              : 'var(--color-border)';
+            const textColor = action.disabled
+              ? 'var(--color-text-muted)'
+              : tone === 'primary'
+              ? 'var(--color-primary)'
+              : tone === 'danger'
+              ? 'var(--color-error)'
+              : 'var(--color-text-muted)';
+            const background = action.disabled
+              ? 'transparent'
+              : tone === 'primary'
+              ? 'rgba(0,212,255,0.08)'
+              : tone === 'danger'
+              ? 'rgba(255,68,68,0.08)'
+              : 'transparent';
+
+            return (
+              <button
+                key={action.key}
+                type="button"
+                onClick={action.onClick}
+                disabled={action.disabled}
+                title={action.title}
+                style={{
+                  background,
+                  border: `1px solid ${borderColor}`,
+                  color: textColor,
+                  padding: '4px 10px',
+                  borderRadius: '999px',
+                  fontSize: '10px',
+                  fontWeight: 700,
+                  letterSpacing: '0.05em',
+                  textTransform: 'uppercase',
+                  fontFamily: 'inherit',
+                  cursor: action.disabled ? 'not-allowed' : 'pointer',
+                  opacity: action.disabled ? 0.55 : 1,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {action.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* ── Right: LLM call counter ── */}
       <div

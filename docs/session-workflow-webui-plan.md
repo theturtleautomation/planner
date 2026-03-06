@@ -28,6 +28,12 @@ loading the entire system into working memory.
 - Phase 3.3: complete (capability-driven auto-attach + resumable session UI copy/state)
 - Phase 3.4: complete (integration tests cover checkpoint reconnect + prompt replay, resumed answer progression, and session-page resume behavior)
 
+- Phase 5 status: complete
+- Phase 5.1: complete (session page now renders a capability-driven workflow action bar in the status header)
+- Phase 5.2: complete (explicit `restart-from-description` backend endpoint resets transient interview state for a fresh run)
+- Phase 5.3: complete (explicit `retry-pipeline` backend endpoint restarts failed pipeline runs from saved description)
+- Phase 5.4: complete (web and server tests cover workflow-control visibility and restart/retry behavior)
+
 ---
 
 ## Phase 0: Make The Current UI Truthful

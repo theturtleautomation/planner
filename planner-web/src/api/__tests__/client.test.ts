@@ -174,6 +174,32 @@ describe('createApiClient', () => {
     expect(result).toEqual(responseData);
   });
 
+  it('restartFromDescription makes POST request to /sessions/:id/restart-from-description', async () => {
+    const responseData = {
+      session: { id: 'sess-1', messages: [], stages: [], pipeline_running: false, intake_phase: 'interviewing' },
+    };
+    fetchSpy.mockResolvedValue(makeFetchResponse(responseData));
+    const api = createApiClient(mockGetToken);
+    await api.restartFromDescription('sess-1');
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/sessions/sess-1/restart-from-description',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
+  it('retryPipeline makes POST request to /sessions/:id/retry-pipeline', async () => {
+    const responseData = {
+      session: { id: 'sess-1', messages: [], stages: [], pipeline_running: true, intake_phase: 'pipeline_running' },
+    };
+    fetchSpy.mockResolvedValue(makeFetchResponse(responseData));
+    const api = createApiClient(mockGetToken);
+    await api.retryPipeline('sess-1');
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/sessions/sess-1/retry-pipeline',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
   it('getBeliefState makes GET request to /sessions/:id/belief-state', async () => {
     const responseData = {
       session_id: 'sess-1',

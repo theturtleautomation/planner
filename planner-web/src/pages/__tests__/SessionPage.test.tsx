@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import SessionPage from '../SessionPage';
@@ -8,6 +9,8 @@ import { useSocraticWebSocket } from '../../hooks/useSocraticWebSocket';
 const mockCreateSession = vi.fn();
 const mockGetSession = vi.fn();
 const mockStartSocratic = vi.fn();
+const mockRestartFromDescription = vi.fn();
+const mockRetryPipeline = vi.fn();
 const mockAttach = vi.fn();
 const mockSendDescription = vi.fn();
 
@@ -16,6 +19,8 @@ vi.mock('../../api/client.ts', () => ({
     createSession: mockCreateSession,
     getSession: mockGetSession,
     startSocratic: mockStartSocratic,
+    restartFromDescription: mockRestartFromDescription,
+    retryPipeline: mockRetryPipeline,
   })),
 }));
 
@@ -251,5 +256,93 @@ describe('SessionPage resume behavior', () => {
     expect(screen.getByText(/saved interview checkpoint/i)).toBeInTheDocument();
     expect(screen.getByText(/current question: what are the core user roles\?/i)).toBeInTheDocument();
     expect(screen.getByText(/pending draft: goal/i)).toBeInTheDocument();
+  });
+
+  it('renders workflow actions from backend capabilities', async () => {
+    const session = makeSession({
+      intake_phase: 'interviewing',
+      project_description: 'Build timer',
+      can_restart_from_description: true,
+      can_retry_pipeline: true,
+      resume_status: 'interview_restart_only',
+    });
+    mockGetSession.mockResolvedValue({ session });
+
+    renderSessionPage('/session/abc');
+
+    await waitFor(() => {
+      expect(mockGetSession).toHaveBeenCalledWith('abc');
+    });
+
+    expect(screen.getByRole('button', { name: /restart from description/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /retry pipeline/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /back to dashboard/i })).toBeInTheDocument();
+  });
+
+  it('restarts from the saved description via the explicit workflow endpoint', async () => {
+    const user = userEvent.setup();
+    const session = makeSession({
+      intake_phase: 'interviewing',
+      project_description: 'Build timer',
+      can_restart_from_description: true,
+      resume_status: 'interview_restart_only',
+    });
+    mockGetSession.mockResolvedValue({ session });
+    mockRestartFromDescription.mockResolvedValue({
+      session: makeSession({
+        intake_phase: 'interviewing',
+        project_description: 'Build timer',
+        can_restart_from_description: true,
+        resume_status: 'interview_restart_only',
+      }),
+    });
+
+    renderSessionPage('/session/abc');
+
+    await waitFor(() => {
+      expect(mockGetSession).toHaveBeenCalledWith('abc');
+    });
+
+    await user.click(screen.getByRole('button', { name: /restart from description/i }));
+
+    await waitFor(() => {
+      expect(mockRestartFromDescription).toHaveBeenCalledWith('abc');
+    });
+    expect(mockSendDescription).toHaveBeenCalledWith('Build timer');
+  });
+
+  it('retries a failed pipeline and reattaches to live progress updates', async () => {
+    const user = userEvent.setup();
+    const session = makeSession({
+      intake_phase: 'error',
+      project_description: 'Build timer',
+      can_retry_pipeline: true,
+      error_message: 'Pipeline failed',
+    });
+    mockGetSession.mockResolvedValue({ session });
+    mockRetryPipeline.mockResolvedValue({
+      session: makeSession({
+        intake_phase: 'pipeline_running',
+        pipeline_running: true,
+        project_description: 'Build timer',
+        can_resume_live: true,
+        resume_status: 'live_attach_available',
+      }),
+    });
+
+    renderSessionPage('/session/abc');
+
+    await waitFor(() => {
+      expect(mockGetSession).toHaveBeenCalledWith('abc');
+    });
+
+    await user.click(screen.getByRole('button', { name: /retry pipeline/i }));
+
+    await waitFor(() => {
+      expect(mockRetryPipeline).toHaveBeenCalledWith('abc');
+    });
+    await waitFor(() => {
+      expect(mockAttach).toHaveBeenCalledTimes(1);
+    });
   });
 });
