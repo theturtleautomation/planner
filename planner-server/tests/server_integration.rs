@@ -16,14 +16,17 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use async_trait::async_trait;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use futures_util::StreamExt;
+use futures_util::{SinkExt, StreamExt};
 use tokio::net::TcpListener;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use tower::ServiceExt;
 use uuid::Uuid;
 
+use planner_core::llm::providers::LlmRouter;
+use planner_core::llm::{CompletionRequest, CompletionResponse, LlmClient, LlmError};
 use planner_server::api;
 use planner_server::session::{ResumeStatus, SessionStore};
 use planner_server::AppState;
@@ -34,15 +37,70 @@ use planner_server::AppState;
 
 /// Create shared state in dev mode (no auth required).
 fn test_state() -> Arc<AppState> {
+    test_state_with_router(LlmRouter::from_env())
+}
+
+fn test_state_with_router(router: LlmRouter) -> Arc<AppState> {
     Arc::new(AppState {
         sessions: SessionStore::new(),
         auth_config: None,
         event_store: None,
         cxdb: None,
+        llm_router: Arc::new(router),
         started_at: std::time::Instant::now(),
         blueprints: planner_core::blueprint::BlueprintStore::new(),
         proposals: planner_core::discovery::ProposalStore::new(),
     })
+}
+
+struct ResumeFlowMockLlm;
+
+#[async_trait]
+impl LlmClient for ResumeFlowMockLlm {
+    async fn complete(&self, request: CompletionRequest) -> Result<CompletionResponse, LlmError> {
+        let system = request.system.as_deref().unwrap_or("");
+        let content = if system.contains("Belief State Verifier") {
+            r#"{
+              "filled_updates": [
+                {
+                  "dimension": "goal",
+                  "value": "Build a countdown timer for workouts",
+                  "source_quote": "I want a countdown timer for workouts."
+                }
+              ],
+              "uncertain_updates": [],
+              "out_of_scope": [],
+              "contradictions": [],
+              "expertise_level": "intermediate",
+              "user_wants_to_stop": false
+            }"#
+            .to_string()
+        } else if system.contains("Generate ONE focused question about the target dimension") {
+            r#"{
+              "question": "What are the must-have features in the first version?",
+              "quick_options": [],
+              "allow_skip": true
+            }"#
+            .to_string()
+        } else {
+            return Err(LlmError::Other(format!(
+                "unexpected mock request system prompt: {}",
+                &system[..system.len().min(120)]
+            )));
+        };
+
+        Ok(CompletionResponse {
+            content,
+            model: request.model,
+            input_tokens: 0,
+            output_tokens: 0,
+            estimated_cost_usd: 0.0,
+        })
+    }
+
+    fn provider_name(&self) -> &str {
+        "mock"
+    }
 }
 
 /// Build the full API router with the given state.
@@ -844,6 +902,118 @@ async fn tier2_socratic_ws_reconnect_checkpoint_reemits_draft() {
         ResumeStatus::InterviewCheckpointResumable
     );
     assert_eq!(after.can_resume_checkpoint, true);
+
+    handle.abort();
+}
+
+/// Test 12: Reconnecting to a checkpoint-resumable interview can accept an
+/// answer to the resumed question and continue the interview loop.
+#[tokio::test]
+async fn tier2_socratic_ws_resume_answer_progresses_to_next_question() {
+    use planner_schemas::{
+        ComplexityTier, Dimension, DomainClassification, ProjectType, QuestionOutput,
+        RequirementsBeliefState,
+    };
+
+    let state = test_state_with_router(LlmRouter::with_mock(Box::new(ResumeFlowMockLlm)));
+    let session = state.sessions.create("dev|local");
+    let session_id = session.id;
+
+    let classification = DomainClassification {
+        project_type: ProjectType::WebApp,
+        complexity: ComplexityTier::Standard,
+        detected_signals: vec!["web".into()],
+        required_dimensions: Dimension::required_for(&ProjectType::WebApp),
+    };
+    let belief_state = RequirementsBeliefState::from_classification(&classification);
+
+    state.sessions.update(session_id, |s| {
+        s.intake_phase = "interviewing".into();
+        s.project_description = Some("Build a timer app".into());
+        s.interview_live_attached = false;
+        s.classification = Some(classification.clone());
+        s.belief_state = Some(belief_state.clone());
+        let checkpoint = s.ensure_checkpoint();
+        checkpoint.classification = Some(classification.clone());
+        checkpoint.belief_state = Some(belief_state.clone());
+        checkpoint.current_question = Some(QuestionOutput {
+            question: "What is the main goal of this tool?".into(),
+            target_dimension: Dimension::Goal,
+            quick_options: Vec::new(),
+            allow_skip: false,
+        });
+        checkpoint.pending_draft = None;
+        checkpoint.touch();
+    });
+
+    let app = test_app(state.clone());
+    let (addr, handle) = spawn_test_server(app).await;
+    let ws_url = format!("ws://{}/sessions/{}/socratic/ws", addr, session_id);
+
+    let (mut ws, _) = connect_async(ws_url).await.unwrap();
+    let resumed_question = wait_for_ws_message_type(&mut ws, "question").await;
+    assert_eq!(
+        resumed_question["text"],
+        "What is the main goal of this tool?"
+    );
+
+    ws.send(Message::Text(
+        serde_json::json!({
+            "type": "socratic_response",
+            "content": "I want a countdown timer for workouts."
+        })
+        .to_string()
+        .into(),
+    ))
+    .await
+    .unwrap();
+
+    let belief_update = wait_for_ws_message_type(&mut ws, "belief_state_update").await;
+    assert_eq!(
+        belief_update["filled"]["Goal / Purpose"]["value"],
+        "Build a countdown timer for workouts"
+    );
+
+    let next_question = wait_for_ws_message_type(&mut ws, "question").await;
+    assert_eq!(
+        next_question["text"],
+        "What are the must-have features in the first version?"
+    );
+
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    let after = state.sessions.get(session_id).unwrap();
+    assert_eq!(after.intake_phase, "interviewing");
+    assert_eq!(after.interview_live_attached, true);
+
+    let checkpoint = after
+        .checkpoint
+        .as_ref()
+        .expect("checkpoint should remain present after resumed answer");
+    let checkpoint_state = checkpoint
+        .belief_state
+        .as_ref()
+        .expect("checkpoint belief state should be updated after resumed answer");
+    assert_eq!(
+        checkpoint_state
+            .filled
+            .get(&Dimension::Goal)
+            .expect("goal should be filled")
+            .value,
+        "Build a countdown timer for workouts"
+    );
+    assert_eq!(
+        checkpoint
+            .current_question
+            .as_ref()
+            .expect("next question should be checkpointed")
+            .question,
+        "What are the must-have features in the first version?"
+    );
+    assert!(checkpoint.pending_draft.is_none());
+
+    let _ = ws.close(None).await;
+    tokio::time::sleep(Duration::from_millis(250)).await;
 
     handle.abort();
 }

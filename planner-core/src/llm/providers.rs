@@ -1025,6 +1025,9 @@ impl LlmRouter {
     /// Report which CLI providers are available.
     pub fn available_providers(&self) -> Vec<&str> {
         let mut providers = Vec::new();
+        if self.mock.is_some() {
+            providers.push("mock");
+        }
         if self.anthropic.is_some() {
             providers.push("anthropic (claude)");
         }

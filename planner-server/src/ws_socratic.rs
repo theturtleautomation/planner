@@ -585,7 +585,7 @@ pub async fn handle_socratic_ws(mut socket: WebSocket, state: Arc<AppState>, ses
     ));
     drop(event_tx); // keep channel alive only through io's clone
 
-    let router = planner_core::llm::providers::LlmRouter::from_env();
+    let router = state.llm_router.clone();
     let requires_immediate_llm = match &start_mode {
         InterviewStartMode::Fresh { .. } => true,
         InterviewStartMode::CheckpointResume { resume_state } => {
@@ -1219,6 +1219,7 @@ mod tests {
             auth_config: None,
             event_store: None,
             cxdb: None,
+            llm_router: Arc::new(planner_core::llm::providers::LlmRouter::from_env()),
             started_at: std::time::Instant::now(),
             blueprints: planner_core::blueprint::BlueprintStore::new(),
             proposals: planner_core::discovery::ProposalStore::new(),

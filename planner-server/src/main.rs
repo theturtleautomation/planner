@@ -165,6 +165,8 @@ async fn main() {
         }
     };
 
+    let llm_router = Arc::new(planner_core::llm::providers::LlmRouter::from_env());
+
     // Create shared state
     let state = Arc::new(AppState {
         sessions: session_store,
@@ -173,6 +175,7 @@ async fn main() {
         auth_config,
         event_store,
         cxdb,
+        llm_router: llm_router.clone(),
         started_at: std::time::Instant::now(),
     });
 
@@ -261,8 +264,7 @@ async fn main() {
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
 
     // Report LLM provider status at startup.
-    let router = planner_core::llm::providers::LlmRouter::from_env();
-    let providers = router.available_providers();
+    let providers = llm_router.available_providers();
     if providers.is_empty() {
         tracing::warn!("No LLM CLI providers detected! Install and authenticate at least one: claude, gemini, codex");
     } else {

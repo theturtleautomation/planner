@@ -416,8 +416,8 @@ pub fn routes(state: Arc<AppState>) -> Router {
 // ---------------------------------------------------------------------------
 
 async fn health(State(state): State<Arc<AppState>>) -> Json<HealthResponse> {
-    let router = planner_core::llm::providers::LlmRouter::from_env();
-    let providers: Vec<String> = router
+    let providers: Vec<String> = state
+        .llm_router
         .available_providers()
         .iter()
         .map(|s| s.to_string())
@@ -791,7 +791,7 @@ async fn send_message(
 pub async fn run_pipeline_for_session(state: Arc<AppState>, session_id: Uuid, description: String) {
     tracing::info!("Session {}: pipeline task started", session_id);
 
-    let router = planner_core::llm::providers::LlmRouter::from_env();
+    let router = state.llm_router.clone();
 
     let worker = match planner_core::pipeline::steps::factory_worker::CodexFactoryWorker::new() {
         Ok(w) => w,
@@ -825,7 +825,7 @@ pub async fn run_pipeline_for_session(state: Arc<AppState>, session_id: Uuid, de
             }
 
             let config = planner_core::pipeline::PipelineConfig {
-                router: &router,
+                router: router.as_ref(),
                 store: Some(engine),
                 dtu_registry: None,
                 blueprints: Some(&state.blueprints),
@@ -875,7 +875,7 @@ pub async fn run_pipeline_for_session(state: Arc<AppState>, session_id: Uuid, de
         None => {
             // No durable storage — run with in-memory CxdbEngine (store: None).
             let config = planner_core::pipeline::PipelineConfig::<planner_core::cxdb::CxdbEngine> {
-                router: &router,
+                router: router.as_ref(),
                 store: None,
                 dtu_registry: None,
                 blueprints: Some(&state.blueprints),
@@ -2038,6 +2038,7 @@ mod tests {
             auth_config: None, // dev mode for tests
             event_store: None,
             cxdb: None, // no durable storage in unit tests
+            llm_router: Arc::new(planner_core::llm::providers::LlmRouter::from_env()),
             started_at: std::time::Instant::now(),
         })
     }
@@ -2077,6 +2078,7 @@ mod tests {
             }),
             event_store: None,
             cxdb: None,
+            llm_router: Arc::new(planner_core::llm::providers::LlmRouter::from_env()),
             started_at: std::time::Instant::now(),
         });
         let app = routes(state);
@@ -2314,6 +2316,7 @@ mod tests {
             }),
             event_store: None,
             cxdb: None,
+            llm_router: Arc::new(planner_core::llm::providers::LlmRouter::from_env()),
             started_at: std::time::Instant::now(),
         });
         let app = routes(state);

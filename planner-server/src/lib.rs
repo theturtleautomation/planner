@@ -29,6 +29,8 @@ pub struct AppState {
     /// Durable CXDB engine for persisting pipeline Turn records.
     /// None if CXDB initialization failed (pipeline runs without persistence).
     pub cxdb: Option<planner_core::cxdb::durable::DurableCxdbEngine>,
+    /// Shared LLM router used by API and WebSocket flows.
+    pub llm_router: std::sync::Arc<planner_core::llm::providers::LlmRouter>,
     /// Server start time for uptime calculation.
     pub started_at: std::time::Instant,
 }
