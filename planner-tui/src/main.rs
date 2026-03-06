@@ -18,6 +18,7 @@
 //!   └──────────────────────────────────────────────────────────┘
 
 mod app;
+mod blueprint_table;
 mod ui;
 mod events;
 mod pipeline;
@@ -119,7 +120,7 @@ async fn run_app<B: Backend>(
         // ── Pipeline spawn ──────────────────────────────────────────────────
         // Interview converged → spawn the full planning pipeline.
         if let Some(description) = app.take_pending_pipeline() {
-            let rx = pipeline::spawn_pipeline(description);
+            let rx = pipeline::spawn_pipeline(description, Some(app.blueprint_store.clone()));
             app.pipeline_rx = Some(rx);
         }
 

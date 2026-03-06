@@ -1,4 +1,4 @@
-import { API_BASE } from '../config.ts';
+import { API_BASE, WS_PROTOCOL } from '../config.ts';
 import { ApiError } from '../types.ts';
 import type {
   HealthResponse,
@@ -57,6 +57,16 @@ async function apiFetch<T>(
   }
 
   return response.json() as Promise<T>;
+}
+
+function buildWebSocketUrl(path: string, token: string): string {
+  const url = new URL(API_BASE, window.location.origin);
+  url.protocol = WS_PROTOCOL;
+  url.pathname = `${url.pathname.replace(/\/$/, '')}${path}`;
+  if (token) {
+    url.searchParams.set('token', token);
+  }
+  return url.toString();
 }
 
 // ─── Factory ─────────────────────────────────────────────────────────────────
@@ -158,9 +168,9 @@ export function createApiClient(getToken: GetTokenFn) {
       return apiFetch<BlueprintNode>(getToken, `/blueprint/nodes/${encodeURIComponent(nodeId)}`);
     },
 
-    /** PATCH /blueprint/nodes/:id — Replace a node. */
-    updateBlueprintNode(nodeId: string, node: BlueprintNode): Promise<{ id: string; message: string }> {
-      return apiFetch<{ id: string; message: string }>(getToken, `/blueprint/nodes/${encodeURIComponent(nodeId)}`, {
+    /** PATCH /blueprint/nodes/:id — Apply a JSON Merge Patch or send a full node. */
+    updateBlueprintNode(nodeId: string, node: Partial<BlueprintNode> | BlueprintNode): Promise<BlueprintNode> {
+      return apiFetch<BlueprintNode>(getToken, `/blueprint/nodes/${encodeURIComponent(nodeId)}`, {
         method: 'PATCH',
         body: JSON.stringify(node),
       });
@@ -225,6 +235,49 @@ export function createApiClient(getToken: GetTokenFn) {
         method: 'POST',
         body: JSON.stringify(req),
       });
+    },
+
+    async reconvergeBlueprintWs(
+      req: ReconvergenceRequest,
+      callbacks: {
+        onStep: (step: ReconvergenceResult['steps'][number]) => void;
+        onComplete: (summary: ReconvergenceResult['summary']) => void;
+        onError: (message: string) => void;
+      },
+    ): Promise<WebSocket> {
+      const token = await getToken();
+      const ws = new WebSocket(buildWebSocketUrl('/blueprint/reconverge/ws', token));
+
+      ws.addEventListener('open', () => {
+        ws.send(JSON.stringify(req));
+      });
+
+      ws.addEventListener('message', event => {
+        try {
+          const payload = JSON.parse(event.data as string) as
+            | { type: 'step'; step_id: string; node_id: string; node_name: string; node_type: string; action: string; severity: string; description: string; status: string; error?: string }
+            | { type: 'summary'; total: number; applied: number; skipped: number; errors: number; needs_review: number }
+            | { type: 'error'; message: string };
+
+          if (payload.type === 'step') {
+            callbacks.onStep(payload as ReconvergenceResult['steps'][number]);
+            return;
+          }
+          if (payload.type === 'summary') {
+            callbacks.onComplete(payload);
+            return;
+          }
+          callbacks.onError(payload.message);
+        } catch (error) {
+          callbacks.onError(error instanceof Error ? error.message : 'Failed to parse reconvergence stream');
+        }
+      });
+
+      ws.addEventListener('error', () => {
+        callbacks.onError('WebSocket connection failed');
+      });
+
+      return ws;
     },
 
     // ─── Discovery ────────────────────────────────────────────────────────

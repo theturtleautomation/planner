@@ -15,13 +15,21 @@
 
 use chrono::Utc;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use std::sync::Arc;
 use uuid::Uuid;
 
+use planner_core::blueprint::BlueprintStore;
 use planner_schemas::{
     RequirementsBeliefState, DomainClassification, QuestionOutput, SpeculativeDraft, SocraticEvent,
 };
 
+use crate::blueprint_table::BlueprintTableState;
 use crate::pipeline::{PipelineEvent, PipelineReceiver};
+
+fn open_blueprint_store() -> BlueprintStore {
+    let data_dir = std::env::var("PLANNER_DATA_DIR").unwrap_or_else(|_| "./data".to_string());
+    BlueprintStore::open(std::path::Path::new(&data_dir)).unwrap_or_else(|_| BlueprintStore::new())
+}
 
 // ---------------------------------------------------------------------------
 // Provider Status
@@ -131,12 +139,20 @@ pub enum RightPaneMode {
     Logs,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AppView {
+    Socratic,
+    Blueprint,
+}
+
 // ---------------------------------------------------------------------------
 // App State
 // ---------------------------------------------------------------------------
 
 /// The main TUI application state.
 pub struct App {
+    /// Which top-level view is active.
+    pub view: AppView,
     /// Should the app exit?
     pub should_quit: bool,
     /// Current input buffer.
@@ -242,11 +258,18 @@ pub struct App {
     /// Receive structured PlannerEvents from the Socratic engine.
     /// Set by `pipeline::spawn_socratic_interview()`.
     pub planner_events_rx: Option<tokio::sync::mpsc::UnboundedReceiver<planner_core::observability::PlannerEvent>>,
+
+    /// Shared blueprint store for TUI browsing and pipeline emission.
+    pub blueprint_store: Arc<BlueprintStore>,
+
+    /// Blueprint table/browser state.
+    pub blueprint: BlueprintTableState,
 }
 
 impl App {
     pub fn new() -> Self {
         let now = Utc::now();
+        let blueprint_store = Arc::new(open_blueprint_store());
 
         let stages = vec![
             PipelineStage { name: "Intake".into(),    status: StageStatus::Pending },
@@ -282,6 +305,7 @@ impl App {
         ];
 
         let mut app = App {
+            view: AppView::Socratic,
             should_quit: false,
             input: String::new(),
             cursor_position: 0,
@@ -313,6 +337,8 @@ impl App {
             logs_filter: None,
             providers,
             planner_events_rx: None,
+            blueprint_store,
+            blueprint: BlueprintTableState::default(),
         };
 
         app.add_system_message(
@@ -423,6 +449,16 @@ impl App {
             return;
         }
 
+        if key.code == KeyCode::Char('b') && key.modifiers.contains(KeyModifiers::CONTROL) {
+            self.toggle_view();
+            return;
+        }
+
+        if self.view == AppView::Blueprint {
+            self.handle_blueprint_key(key);
+            return;
+        }
+
         // Tab cycles focus regardless of current mode (when not in pipeline-only phase)
         if key.code == KeyCode::Tab {
             self.cycle_focus();
@@ -435,6 +471,16 @@ impl App {
             FocusMode::BeliefStatePane => self.handle_belief_pane_key(key),
             FocusMode::LogsPane => self.handle_logs_pane_key(key),
         }
+    }
+
+    fn toggle_view(&mut self) {
+        self.view = match self.view {
+            AppView::Socratic => {
+                self.blueprint.load_blueprint(self.blueprint_store.as_ref());
+                AppView::Blueprint
+            }
+            AppView::Blueprint => AppView::Socratic,
+        };
     }
 
     fn cycle_focus(&mut self) {
@@ -547,6 +593,63 @@ impl App {
             }
             KeyCode::Up => {
                 self.focus = FocusMode::ChatScroll;
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_blueprint_key(&mut self, key: KeyEvent) {
+        if self.blueprint.search_mode {
+            match key.code {
+                KeyCode::Esc => self.blueprint.clear_search(),
+                KeyCode::Enter => {
+                    self.blueprint.search_mode = false;
+                    self.blueprint.load_selected_detail(self.blueprint_store.as_ref());
+                }
+                KeyCode::Backspace => self.blueprint.pop_filter_char(),
+                KeyCode::Char(c) => self.blueprint.push_filter_char(c),
+                _ => {}
+            }
+            return;
+        }
+
+        match key.code {
+            KeyCode::Char('q') | KeyCode::Esc => {
+                if self.blueprint.filter.is_empty() {
+                    self.view = AppView::Socratic;
+                } else {
+                    self.blueprint.clear_search();
+                    self.blueprint.load_selected_detail(self.blueprint_store.as_ref());
+                }
+            }
+            KeyCode::Char('j') | KeyCode::Down => {
+                self.blueprint.move_down();
+                self.blueprint.load_selected_detail(self.blueprint_store.as_ref());
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                self.blueprint.move_up();
+                self.blueprint.load_selected_detail(self.blueprint_store.as_ref());
+            }
+            KeyCode::Char('g') | KeyCode::Home => {
+                self.blueprint.jump_top();
+                self.blueprint.load_selected_detail(self.blueprint_store.as_ref());
+            }
+            KeyCode::Char('G') | KeyCode::End => {
+                self.blueprint.jump_bottom();
+                self.blueprint.load_selected_detail(self.blueprint_store.as_ref());
+            }
+            KeyCode::Char('/') => {
+                self.blueprint.search_mode = true;
+            }
+            KeyCode::Char('t') => {
+                self.blueprint.cycle_type_filter();
+                self.blueprint.load_selected_detail(self.blueprint_store.as_ref());
+            }
+            KeyCode::Enter | KeyCode::Tab => {
+                self.blueprint.detail_expanded = !self.blueprint.detail_expanded;
+                if self.blueprint.detail_expanded {
+                    self.blueprint.load_selected_detail(self.blueprint_store.as_ref());
+                }
             }
             _ => {}
         }

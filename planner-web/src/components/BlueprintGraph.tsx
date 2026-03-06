@@ -107,7 +107,7 @@ interface BlueprintGraphProps {
 export default function BlueprintGraph({
   nodes,
   edges,
-  selectedNodeId,
+  selectedNodeId: _selectedNodeId,
   onSelectNode,
   onHoverNode,
   filterType,

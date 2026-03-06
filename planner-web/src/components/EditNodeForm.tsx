@@ -35,6 +35,26 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
+function DocumentationField({
+  value,
+  onChange,
+}: {
+  value?: string;
+  onChange: (value?: string) => void;
+}) {
+  return (
+    <>
+      <label className="field-label">Documentation (markdown)</label>
+      <textarea
+        className="field-input"
+        rows={6}
+        value={value ?? ''}
+        onChange={e => onChange(e.target.value.trim() ? e.target.value : undefined)}
+      />
+    </>
+  );
+}
+
 // ─── Decision form ──────────────────────────────────────────────────────────
 
 function EditDecision({ node, onChange }: { node: DecisionNode; onChange: (n: DecisionNode) => void }) {
@@ -158,6 +178,8 @@ function EditDecision({ node, onChange }: { node: DecisionNode; onChange: (n: De
 
       <label className="field-label">Tags (comma-separated)</label>
       <input className="field-input" value={node.tags.join(', ')} onChange={e => setField('tags', e.target.value.split(',').map(s => s.trim()).filter(Boolean))} />
+
+      <DocumentationField value={node.documentation} onChange={value => setField('documentation', value)} />
     </>
   );
 }
@@ -198,6 +220,8 @@ function EditTechnology({ node, onChange }: { node: TechnologyNode; onChange: (n
 
       <label className="field-label">Tags (comma-separated)</label>
       <input className="field-input" value={node.tags.join(', ')} onChange={e => setField('tags', e.target.value.split(',').map(s => s.trim()).filter(Boolean))} />
+
+      <DocumentationField value={node.documentation} onChange={value => setField('documentation', value)} />
     </>
   );
 }
@@ -239,6 +263,8 @@ function EditComponent({ node, onChange }: { node: ComponentNode; onChange: (n: 
 
       <label className="field-label">Tags (comma-separated)</label>
       <input className="field-input" value={node.tags.join(', ')} onChange={e => setField('tags', e.target.value.split(',').map(s => s.trim()).filter(Boolean))} />
+
+      <DocumentationField value={node.documentation} onChange={value => setField('documentation', value)} />
     </>
   );
 }
@@ -269,6 +295,8 @@ function EditConstraint({ node, onChange }: { node: ConstraintNode; onChange: (n
 
       <label className="field-label">Tags (comma-separated)</label>
       <input className="field-input" value={node.tags.join(', ')} onChange={e => setField('tags', e.target.value.split(',').map(s => s.trim()).filter(Boolean))} />
+
+      <DocumentationField value={node.documentation} onChange={value => setField('documentation', value)} />
     </>
   );
 }
@@ -292,6 +320,8 @@ function EditPattern({ node, onChange }: { node: PatternNode; onChange: (n: Patt
 
       <label className="field-label">Tags (comma-separated)</label>
       <input className="field-input" value={node.tags.join(', ')} onChange={e => setField('tags', e.target.value.split(',').map(s => s.trim()).filter(Boolean))} />
+
+      <DocumentationField value={node.documentation} onChange={value => setField('documentation', value)} />
     </>
   );
 }
@@ -323,6 +353,8 @@ function EditQualityRequirement({ node, onChange }: { node: QualityRequirementNo
 
       <label className="field-label">Tags (comma-separated)</label>
       <input className="field-input" value={node.tags.join(', ')} onChange={e => setField('tags', e.target.value.split(',').map(s => s.trim()).filter(Boolean))} />
+
+      <DocumentationField value={node.documentation} onChange={value => setField('documentation', value)} />
     </>
   );
 }

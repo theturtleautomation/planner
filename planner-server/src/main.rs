@@ -102,6 +102,17 @@ async fn main() {
         }
     };
 
+    let proposal_store = match planner_core::discovery::ProposalStore::open(std::path::Path::new(&data_dir)) {
+        Ok(store) => {
+            tracing::info!("Discovery proposal persistence enabled: {}/blueprint/proposals.msgpack", data_dir);
+            store
+        }
+        Err(e) => {
+            tracing::warn!("Discovery proposal persistence unavailable ({}), falling back to in-memory only", e);
+            planner_core::discovery::ProposalStore::new()
+        }
+    };
+
     // Initialize event persistence
     let event_store = match planner_core::observability::EventStore::new(std::path::Path::new(&data_dir)) {
         Ok(store) => {
@@ -135,6 +146,7 @@ async fn main() {
     let state = Arc::new(AppState {
         sessions: session_store,
         blueprints: blueprint_store,
+        proposals: proposal_store,
         auth_config,
         event_store,
         cxdb,

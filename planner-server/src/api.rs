@@ -2,9 +2,10 @@
 //!
 //! Provides REST API for the Socratic Lobby web frontend.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 use axum::{
-    extract::{Path, Query, State, WebSocketUpgrade},
+    extract::{ws::{Message, WebSocket}, Path, Query, State, WebSocketUpgrade},
     http::StatusCode,
     response::{IntoResponse, Json},
     routing::{get, post},
@@ -18,6 +19,32 @@ use crate::auth::{auth_middleware, Claims};
 use crate::session::Session;
 use crate::ws;
 use crate::ws_socratic;
+
+fn apply_json_merge_patch(target: &mut serde_json::Value, patch: serde_json::Value) {
+    match patch {
+        serde_json::Value::Object(patch_map) => {
+            if !target.is_object() {
+                *target = serde_json::Value::Object(serde_json::Map::new());
+            }
+
+            let target_map = target.as_object_mut().expect("target must be object after initialization");
+            for (key, value) in patch_map {
+                if value.is_null() {
+                    target_map.remove(&key);
+                    continue;
+                }
+
+                match target_map.get_mut(&key) {
+                    Some(existing) => apply_json_merge_patch(existing, value),
+                    None => {
+                        target_map.insert(key, value);
+                    }
+                }
+            }
+        }
+        other => *target = other,
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Request/Response types
@@ -225,6 +252,46 @@ pub struct BlueprintEventPayload {
     pub data: serde_json::Value,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct DiscoveryScanRequest {
+    pub scanners: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub root_path: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DiscoveryScanResult {
+    pub scanner: String,
+    pub proposed_count: usize,
+    pub skipped_count: usize,
+    pub errors: Vec<String>,
+    pub duration_ms: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DiscoveryRunResponse {
+    pub results: Vec<DiscoveryScanResult>,
+    pub total_proposed: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ProposedNodesResponse {
+    pub proposals: Vec<planner_core::discovery::ProposedNode>,
+    pub total: usize,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ProposedNodesQuery {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RejectProposalRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
 // ---------------------------------------------------------------------------
 // Admin response types
 // ---------------------------------------------------------------------------
@@ -308,6 +375,11 @@ pub fn routes(state: Arc<AppState>) -> Router {
         .route("/blueprint/events", get(list_blueprint_events))
         .route("/blueprint/impact-preview", post(impact_preview))
         .route("/blueprint/reconverge", post(reconverge_blueprint))
+        .route("/blueprint/reconverge/ws", get(reconverge_ws_handler))
+        .route("/blueprint/discovery/scan", post(run_discovery_scan))
+        .route("/blueprint/discovery/proposals", get(list_proposals))
+        .route("/blueprint/discovery/proposals/{id}/accept", post(accept_proposal))
+        .route("/blueprint/discovery/proposals/{id}/reject", post(reject_proposal))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             auth_middleware,
@@ -1168,23 +1240,76 @@ async fn get_blueprint_node(
     }
 }
 
-/// PATCH /blueprint/nodes/{nodeId} — Replace a node (full replacement under its ID).
-///
-/// For v1, PATCH does a full replacement of the node at the given ID.
-/// The incoming payload must be a complete BlueprintNode with the same ID.
+/// PATCH /blueprint/nodes/{nodeId} — Apply a JSON Merge Patch to a node.
 async fn update_blueprint_node(
     State(state): State<Arc<AppState>>,
     _claims: Claims,
     Path(node_id): Path<String>,
-    Json(node): Json<planner_schemas::artifacts::blueprint::BlueprintNode>,
+    Json(patch): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
-    // Verify the node exists before upserting.
-    if state.blueprints.get_node(&node_id).is_none() {
-        return Err((
+    let existing_node = state.blueprints.get_node(&node_id).ok_or_else(|| {
+        (
             StatusCode::NOT_FOUND,
-            Json(ErrorResponse { error: format!("Blueprint node not found: {}", node_id), code: Some("NODE_NOT_FOUND".into()) }),
+            Json(ErrorResponse {
+                error: format!("Blueprint node not found: {}", node_id),
+                code: Some("NODE_NOT_FOUND".into()),
+            }),
+        )
+    })?;
+
+    if let Some(patch_type) = patch.get("node_type").and_then(|value| value.as_str()) {
+        if patch_type != existing_node.type_name() {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: format!(
+                        "Blueprint node type mismatch: expected '{}', got '{}'",
+                        existing_node.type_name(),
+                        patch_type,
+                    ),
+                    code: Some("NODE_TYPE_MISMATCH".into()),
+                }),
+            ));
+        }
+    }
+
+    let mut merged = serde_json::to_value(&existing_node).map_err(|err| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("Failed to serialize existing blueprint node: {}", err),
+                code: Some("SERIALIZE_FAILED".into()),
+            }),
+        )
+    })?;
+
+    apply_json_merge_patch(&mut merged, patch);
+
+    let node: planner_schemas::artifacts::blueprint::BlueprintNode =
+        serde_json::from_value(merged).map_err(|err| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: format!("Invalid blueprint patch payload: {}", err),
+                    code: Some("INVALID_NODE_PATCH".into()),
+                }),
+            )
+        })?;
+
+    if node.id().0 != node_id {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: format!(
+                    "Blueprint node ID mismatch: payload '{}' does not match path '{}'",
+                    node.id(),
+                    node_id,
+                ),
+                code: Some("NODE_ID_MISMATCH".into()),
+            }),
         ));
     }
+
     state.blueprints.upsert_node(node.clone());
     tracing::info!("Blueprint node updated: {}", node_id);
     Ok(Json(serde_json::to_value(&node).unwrap_or_default()))
@@ -1382,28 +1507,38 @@ struct ReconvergeResponse {
     timestamp: String,
 }
 
-/// POST /blueprint/reconverge — Execute reconvergence based on an impact report.
-///
-/// Policy: auto_apply=true -> shallow/medium auto-accepted, deep requires review.
-async fn reconverge_blueprint(
-    State(state): State<Arc<AppState>>,
-    _claims: Claims,
-    Json(req): Json<ReconvergeRequest>,
-) -> Result<Json<ReconvergeResponse>, (StatusCode, Json<ErrorResponse>)> {
-    // Verify source node exists.
-    if state.blueprints.get_node(&req.source_node_id).is_none() {
-        return Err((
+#[derive(Debug, Serialize)]
+#[serde(tag = "type")]
+enum ReconvergeWsMessage {
+    #[serde(rename = "step")]
+    Step(ReconvergeStepResponse),
+    #[serde(rename = "summary")]
+    Summary(ReconvergeSummary),
+    #[serde(rename = "error")]
+    Error { message: String },
+}
+
+fn ensure_reconverge_source_exists(
+    state: &AppState,
+    source_node_id: &str,
+) -> Result<(), (StatusCode, Json<ErrorResponse>)> {
+    if state.blueprints.get_node(source_node_id).is_none() {
+        Err((
             StatusCode::NOT_FOUND,
             Json(ErrorResponse {
-                error: format!("Blueprint node not found: {}", req.source_node_id),
+                error: format!("Blueprint node not found: {}", source_node_id),
                 code: Some("NODE_NOT_FOUND".into()),
             }),
-        ));
+        ))
+    } else {
+        Ok(())
     }
+}
 
+fn build_reconverge_response(req: &ReconvergeRequest) -> ReconvergeResponse {
     let mut steps = Vec::new();
     let mut applied = 0usize;
-    let mut skipped = 0usize;
+    let skipped = 0usize;
     let mut needs_review = 0usize;
 
     for (i, entry) in req.impact_report.entries.iter().enumerate() {
@@ -1422,16 +1557,10 @@ async fn reconverge_blueprint(
 
         let is_deep = matches!(entry.severity, planner_schemas::artifacts::blueprint::ImpactSeverity::Deep);
 
-        let status = if !req.auto_apply {
-            // Manual mode — everything is pending review.
-            needs_review += 1;
-            "pending"
-        } else if is_deep {
-            // Auto mode but deep severity — requires human review.
+        let status = if !req.auto_apply || is_deep {
             needs_review += 1;
             "pending"
         } else {
-            // Auto mode, shallow/medium — auto-accept.
             applied += 1;
             "done"
         };
@@ -1452,7 +1581,7 @@ async fn reconverge_blueprint(
     let total = steps.len();
     let timestamp = chrono::Utc::now().to_rfc3339();
 
-    Ok(Json(ReconvergeResponse {
+    ReconvergeResponse {
         steps,
         summary: ReconvergeSummary {
             total,
@@ -1462,7 +1591,263 @@ async fn reconverge_blueprint(
             needs_review,
         },
         timestamp,
-    }))
+    }
+}
+
+/// POST /blueprint/reconverge — Execute reconvergence based on an impact report.
+///
+/// Policy: auto_apply=true -> shallow/medium auto-accepted, deep requires review.
+async fn reconverge_blueprint(
+    State(state): State<Arc<AppState>>,
+    _claims: Claims,
+    Json(req): Json<ReconvergeRequest>,
+) -> Result<Json<ReconvergeResponse>, (StatusCode, Json<ErrorResponse>)> {
+    ensure_reconverge_source_exists(&state, &req.source_node_id)?;
+    Ok(Json(build_reconverge_response(&req)))
+}
+
+async fn reconverge_ws_handler(
+    State(state): State<Arc<AppState>>,
+    _claims: Claims,
+    ws: WebSocketUpgrade,
+) -> impl IntoResponse {
+    ws.on_upgrade(move |socket| handle_reconverge_ws(socket, state))
+}
+
+async fn send_reconverge_ws_message(socket: &mut WebSocket, message: ReconvergeWsMessage) -> Result<(), ()> {
+    let payload = serde_json::to_string(&message).map_err(|_| ())?;
+    socket.send(Message::Text(payload.into())).await.map_err(|_| ())
+}
+
+async fn handle_reconverge_ws(mut socket: WebSocket, state: Arc<AppState>) {
+    let Some(Ok(Message::Text(text))) = socket.recv().await else {
+        let _ = send_reconverge_ws_message(
+            &mut socket,
+            ReconvergeWsMessage::Error {
+                message: "Expected an initial JSON text message".into(),
+            },
+        )
+        .await;
+        return;
+    };
+
+    let req: ReconvergeRequest = match serde_json::from_str(&text) {
+        Ok(req) => req,
+        Err(err) => {
+            let _ = send_reconverge_ws_message(
+                &mut socket,
+                ReconvergeWsMessage::Error {
+                    message: format!("Invalid reconvergence request: {}", err),
+                },
+            )
+            .await;
+            return;
+        }
+    };
+
+    if let Err((_, Json(error))) = ensure_reconverge_source_exists(&state, &req.source_node_id) {
+        let _ = send_reconverge_ws_message(
+            &mut socket,
+            ReconvergeWsMessage::Error { message: error.error },
+        )
+        .await;
+        return;
+    }
+
+    let response = build_reconverge_response(&req);
+    for step in response.steps {
+        if send_reconverge_ws_message(&mut socket, ReconvergeWsMessage::Step(step))
+            .await
+            .is_err()
+        {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+
+    let _ = send_reconverge_ws_message(
+        &mut socket,
+        ReconvergeWsMessage::Summary(response.summary),
+    )
+    .await;
+}
+
+fn parse_proposal_status(status: Option<&str>) -> Result<Option<planner_core::discovery::ProposalStatus>, String> {
+    match status {
+        None => Ok(None),
+        Some("pending") => Ok(Some(planner_core::discovery::ProposalStatus::Pending)),
+        Some("accepted") => Ok(Some(planner_core::discovery::ProposalStatus::Accepted)),
+        Some("rejected") => Ok(Some(planner_core::discovery::ProposalStatus::Rejected)),
+        Some("merged") => Ok(Some(planner_core::discovery::ProposalStatus::Merged)),
+        Some(other) => Err(format!("Unknown proposal status '{}'", other)),
+    }
+}
+
+async fn run_discovery_scan(
+    State(state): State<Arc<AppState>>,
+    _claims: Claims,
+    Json(req): Json<DiscoveryScanRequest>,
+) -> Result<Json<DiscoveryRunResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let requested = if req.scanners.iter().any(|scanner| scanner == "all") {
+        vec!["cargo_toml".to_string(), "directory_structure".to_string()]
+    } else {
+        req.scanners.clone()
+    };
+
+    if requested.is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "At least one discovery scanner must be requested".into(),
+                code: Some("NO_SCANNERS_REQUESTED".into()),
+            }),
+        ));
+    }
+
+    let project_root = req
+        .root_path
+        .as_deref()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+
+    if !project_root.exists() || !project_root.is_dir() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: format!("Discovery scan root does not exist or is not a directory: {}", project_root.display()),
+                code: Some("INVALID_SCAN_ROOT".into()),
+            }),
+        ));
+    }
+
+    let mut results = Vec::new();
+
+    for scanner in requested {
+        let started = std::time::Instant::now();
+        let scan_output = match scanner.as_str() {
+            "cargo_toml" => planner_core::discovery::scan_cargo_toml(&project_root, &state.blueprints),
+            "directory_structure" => planner_core::discovery::scan_directory_structure(&project_root, &state.blueprints),
+            other => {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrorResponse {
+                        error: format!("Unknown discovery scanner '{}'", other),
+                        code: Some("UNKNOWN_SCANNER".into()),
+                    }),
+                ));
+            }
+        };
+
+        let (inserted, deduped) = state.proposals.insert_many(scan_output.proposals).map_err(|err| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("Failed to persist discovery proposals: {}", err),
+                    code: Some("PROPOSAL_PERSIST_FAILED".into()),
+                }),
+            )
+        })?;
+
+        results.push(DiscoveryScanResult {
+            scanner,
+            proposed_count: inserted,
+            skipped_count: scan_output.skipped_count + deduped,
+            errors: scan_output.errors,
+            duration_ms: started.elapsed().as_millis() as u64,
+        });
+    }
+
+    let total_proposed = results.iter().map(|result| result.proposed_count).sum();
+    Ok(Json(DiscoveryRunResponse { results, total_proposed }))
+}
+
+async fn list_proposals(
+    State(state): State<Arc<AppState>>,
+    _claims: Claims,
+    Query(query): Query<ProposedNodesQuery>,
+) -> Result<Json<ProposedNodesResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let status = parse_proposal_status(query.status.as_deref()).map_err(|err| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: err,
+                code: Some("INVALID_PROPOSAL_STATUS".into()),
+            }),
+        )
+    })?;
+
+    let proposals = state.proposals.list(status);
+    let total = proposals.len();
+    Ok(Json(ProposedNodesResponse { proposals, total }))
+}
+
+async fn accept_proposal(
+    State(state): State<Arc<AppState>>,
+    _claims: Claims,
+    Path(proposal_id): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
+    let Some(proposal) = state.proposals.mark_accepted(&proposal_id).map_err(|err| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("Failed to update proposal state: {}", err),
+                code: Some("PROPOSAL_UPDATE_FAILED".into()),
+            }),
+        )
+    })? else {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: format!("Discovery proposal not found: {}", proposal_id),
+                code: Some("PROPOSAL_NOT_FOUND".into()),
+            }),
+        ));
+    };
+
+    if proposal.status == planner_core::discovery::ProposalStatus::Merged {
+        return Ok(Json(serde_json::json!({
+            "node_id": proposal.node.id().0,
+            "message": "Proposal was already merged"
+        })));
+    }
+
+    state.blueprints.upsert_node(proposal.node.clone());
+    let _ = state.proposals.mark_merged(&proposal_id);
+
+    Ok(Json(serde_json::json!({
+        "node_id": proposal.node.id().0,
+        "message": "Proposal accepted and merged into blueprint"
+    })))
+}
+
+async fn reject_proposal(
+    State(state): State<Arc<AppState>>,
+    _claims: Claims,
+    Path(proposal_id): Path<String>,
+    Json(req): Json<RejectProposalRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
+    let Some(proposal) = state.proposals.mark_rejected(&proposal_id, req.reason).map_err(|err| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("Failed to update proposal state: {}", err),
+                code: Some("PROPOSAL_UPDATE_FAILED".into()),
+            }),
+        )
+    })? else {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: format!("Discovery proposal not found: {}", proposal_id),
+                code: Some("PROPOSAL_NOT_FOUND".into()),
+            }),
+        ));
+    };
+
+    Ok(Json(serde_json::json!({
+        "proposal_id": proposal.id,
+        "message": "Proposal rejected"
+    })))
 }
 
 // ---------------------------------------------------------------------------
@@ -1483,6 +1868,7 @@ mod tests {
         Arc::new(AppState {
             sessions: SessionStore::new(),
             blueprints: planner_core::blueprint::BlueprintStore::new(),
+            proposals: planner_core::discovery::ProposalStore::new(),
             auth_config: None, // dev mode for tests
             event_store: None,
             cxdb: None, // no durable storage in unit tests
@@ -1515,6 +1901,7 @@ mod tests {
         let state = Arc::new(AppState {
             sessions: SessionStore::new(),
             blueprints: planner_core::blueprint::BlueprintStore::new(),
+            proposals: planner_core::discovery::ProposalStore::new(),
             auth_config: Some(AuthConfig {
                 domain: "test.auth0.com".into(),
                 audience: "test".into(),
@@ -1741,6 +2128,7 @@ mod tests {
         let state = Arc::new(AppState {
             sessions: SessionStore::new(),
             blueprints: planner_core::blueprint::BlueprintStore::new(),
+            proposals: planner_core::discovery::ProposalStore::new(),
             auth_config: Some(AuthConfig {
                 domain: "test.auth0.com".into(),
                 audience: "test".into(),
@@ -2026,6 +2414,12 @@ mod tests {
         })
     }
 
+    fn temp_scan_root(prefix: &str) -> PathBuf {
+        let path = std::env::temp_dir().join(format!("planner-api-{}-{}", prefix, uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&path).unwrap();
+        path
+    }
+
     #[tokio::test]
     async fn test_get_blueprint_empty() {
         let state = test_state();
@@ -2204,6 +2598,95 @@ mod tests {
 
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_partial_patch_merges_tags() {
+        let state = test_state();
+        let node: planner_schemas::artifacts::blueprint::BlueprintNode =
+            serde_json::from_value(sample_decision_json()).unwrap();
+        state.blueprints.upsert_node(node);
+
+        let app = routes(state.clone());
+        let req = Request::builder()
+            .method("PATCH")
+            .uri("/blueprint/nodes/dec-use-msgpack-a1b2c3d4")
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"tags":["new-tag"]}"#))
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let updated = state.blueprints.get_node("dec-use-msgpack-a1b2c3d4").unwrap();
+        assert_eq!(updated.tags(), &["new-tag"]);
+        assert_eq!(updated.name(), "Use MessagePack for disk serialization");
+    }
+
+    #[tokio::test]
+    async fn test_partial_patch_invalid_field_returns_400() {
+        let state = test_state();
+        let node: planner_schemas::artifacts::blueprint::BlueprintNode =
+            serde_json::from_value(sample_decision_json()).unwrap();
+        state.blueprints.upsert_node(node);
+
+        let app = routes(state);
+        let req = Request::builder()
+            .method("PATCH")
+            .uri("/blueprint/nodes/dec-use-msgpack-a1b2c3d4")
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"status":"bogus"}"#))
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_create_node_with_documentation() {
+        let state = test_state();
+        let app = routes(state.clone());
+
+        let mut node = sample_decision_json();
+        node["documentation"] = serde_json::json!("# Decision Notes\n\nDocumented");
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/blueprint/nodes")
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_string(&node).unwrap()))
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::CREATED);
+
+        let stored = state.blueprints.get_node("dec-use-msgpack-a1b2c3d4").unwrap();
+        assert_eq!(stored.documentation(), Some("# Decision Notes\n\nDocumented"));
+
+        let summaries = state.blueprints.list_summaries();
+        assert!(summaries.iter().any(|summary| summary.id.as_str() == "dec-use-msgpack-a1b2c3d4" && summary.has_documentation));
+    }
+
+    #[tokio::test]
+    async fn test_patch_documentation_only() {
+        let state = test_state();
+        let node: planner_schemas::artifacts::blueprint::BlueprintNode =
+            serde_json::from_value(sample_decision_json()).unwrap();
+        state.blueprints.upsert_node(node);
+
+        let app = routes(state.clone());
+        let req = Request::builder()
+            .method("PATCH")
+            .uri("/blueprint/nodes/dec-use-msgpack-a1b2c3d4")
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::json!({ "documentation": "## Updated docs" }).to_string()))
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let stored = state.blueprints.get_node("dec-use-msgpack-a1b2c3d4").unwrap();
+        assert_eq!(stored.documentation(), Some("## Updated docs"));
     }
 
     #[tokio::test]
@@ -2618,5 +3101,147 @@ mod tests {
         let events: BlueprintEventsResponse = serde_json::from_slice(&body).unwrap();
         assert_eq!(events.total, 1);
         assert_eq!(events.events[0].event_type, "node_created");
+    }
+
+    #[tokio::test]
+    async fn test_discovery_scan_endpoint() {
+        let state = test_state();
+        let scan_root = temp_scan_root("scan");
+        std::fs::write(
+            scan_root.join("Cargo.toml"),
+            "[package]\nname = \"demo\"\n\n[dependencies]\nserde = \"1\"\n",
+        )
+        .unwrap();
+
+        let app = routes(state.clone());
+        let payload = serde_json::json!({
+            "scanners": ["cargo_toml"],
+            "root_path": scan_root.to_string_lossy(),
+        });
+        let req = Request::builder()
+            .method("POST")
+            .uri("/blueprint/discovery/scan")
+            .header("content-type", "application/json")
+            .body(Body::from(payload.to_string()))
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let response: DiscoveryRunResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(response.total_proposed, 1);
+        assert_eq!(state.proposals.list(None).len(), 1);
+
+        let _ = std::fs::remove_dir_all(scan_root);
+    }
+
+    #[tokio::test]
+    async fn test_accept_proposal_creates_node() {
+        let state = test_state();
+        let proposal = planner_core::discovery::ProposedNode {
+            id: "proposal-1".into(),
+            node: serde_json::from_value(sample_technology_json()).unwrap(),
+            source: planner_core::discovery::DiscoverySource::CargoToml,
+            reason: "Dependency found".into(),
+            status: planner_core::discovery::ProposalStatus::Pending,
+            proposed_at: "2026-03-06T00:00:00Z".into(),
+            reviewed_at: None,
+            confidence: 0.9,
+            source_artifact: Some("Cargo.toml".into()),
+            review_note: None,
+        };
+        state.proposals.insert_many(vec![proposal]).unwrap();
+
+        let app = routes(state.clone());
+        let req = Request::builder()
+            .method("POST")
+            .uri("/blueprint/discovery/proposals/proposal-1/accept")
+            .body(Body::empty())
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert!(state.blueprints.get_node("tech-rust-b2c3d4e5").is_some());
+        assert_eq!(
+            state.proposals.get("proposal-1").unwrap().status,
+            planner_core::discovery::ProposalStatus::Merged
+        );
+    }
+
+    #[tokio::test]
+    async fn test_reject_proposal() {
+        let state = test_state();
+        let proposal = planner_core::discovery::ProposedNode {
+            id: "proposal-2".into(),
+            node: serde_json::from_value(sample_technology_json()).unwrap(),
+            source: planner_core::discovery::DiscoverySource::CargoToml,
+            reason: "Dependency found".into(),
+            status: planner_core::discovery::ProposalStatus::Pending,
+            proposed_at: "2026-03-06T00:00:00Z".into(),
+            reviewed_at: None,
+            confidence: 0.9,
+            source_artifact: Some("Cargo.toml".into()),
+            review_note: None,
+        };
+        state.proposals.insert_many(vec![proposal]).unwrap();
+
+        let app = routes(state.clone());
+        let req = Request::builder()
+            .method("POST")
+            .uri("/blueprint/discovery/proposals/proposal-2/reject")
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"reason":"duplicate"}"#))
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(
+            state.proposals.get("proposal-2").unwrap().status,
+            planner_core::discovery::ProposalStatus::Rejected
+        );
+    }
+
+    #[tokio::test]
+    async fn test_list_proposals_filter_by_status() {
+        let state = test_state();
+        let pending = planner_core::discovery::ProposedNode {
+            id: "proposal-pending".into(),
+            node: serde_json::from_value(sample_technology_json()).unwrap(),
+            source: planner_core::discovery::DiscoverySource::CargoToml,
+            reason: "Pending".into(),
+            status: planner_core::discovery::ProposalStatus::Pending,
+            proposed_at: "2026-03-06T00:00:00Z".into(),
+            reviewed_at: None,
+            confidence: 0.9,
+            source_artifact: Some("Cargo.toml".into()),
+            review_note: None,
+        };
+        let rejected = planner_core::discovery::ProposedNode {
+            id: "proposal-rejected".into(),
+            node: serde_json::from_value(sample_technology_json()).unwrap(),
+            source: planner_core::discovery::DiscoverySource::CargoToml,
+            reason: "Rejected".into(),
+            status: planner_core::discovery::ProposalStatus::Rejected,
+            proposed_at: "2026-03-06T00:00:00Z".into(),
+            reviewed_at: Some("2026-03-06T01:00:00Z".into()),
+            confidence: 0.9,
+            source_artifact: Some("workspace/Cargo.toml".into()),
+            review_note: Some("duplicate".into()),
+        };
+        state.proposals.insert_many(vec![pending, rejected]).unwrap();
+
+        let app = routes(state);
+        let req = Request::builder()
+            .uri("/blueprint/discovery/proposals?status=rejected")
+            .body(Body::empty())
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let response: ProposedNodesResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(response.total, 1);
+        assert_eq!(response.proposals[0].id, "proposal-rejected");
     }
 }

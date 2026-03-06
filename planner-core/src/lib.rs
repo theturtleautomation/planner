@@ -9,6 +9,7 @@
 pub mod blueprint;
 pub mod cxdb;
 pub mod dtu;
+pub mod discovery;
 pub mod llm;
 pub mod observability;
 pub mod pipeline;

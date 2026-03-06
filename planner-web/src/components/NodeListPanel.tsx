@@ -77,6 +77,11 @@ function defaultColumns(edges: EdgePayload[]): ColumnDef[] {
         return (
           <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span style={{ fontWeight: 500 }}>{n.name}</span>
+            {n.has_documentation && (
+              <span className="health-badge" title="Documentation attached">
+                docs
+              </span>
+            )}
             {isStale && (
               <span className="health-badge health-stale" title={`Not updated in ${STALE_THRESHOLD_DAYS}+ days`}>
                 stale

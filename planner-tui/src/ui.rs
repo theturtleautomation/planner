@@ -28,20 +28,25 @@
 
 use ratatui::prelude::*;
 use ratatui::widgets::{
-    Block, Borders, Gauge, List, ListItem, Paragraph, Scrollbar, ScrollbarOrientation,
-    ScrollbarState, Wrap,
+    Block, Borders, Cell, Gauge, List, ListItem, Paragraph, Row, Scrollbar,
+    ScrollbarOrientation, ScrollbarState, Table, Wrap,
 };
 
 use planner_schemas::ComplexityTier;
 
-use crate::app::{App, FocusMode, IntakePhase, MessageRole, RightPaneMode, StageStatus};
+use crate::app::{App, AppView, FocusMode, IntakePhase, MessageRole, RightPaneMode, StageStatus};
 
 // ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
 
 /// Draw the complete TUI interface. Layout switches on `intake_phase`.
-pub fn draw(frame: &mut Frame, app: &App) {
+pub fn draw(frame: &mut Frame, app: &mut App) {
+    if app.view == AppView::Blueprint {
+        draw_blueprint_table(frame, app);
+        return;
+    }
+
     match app.intake_phase {
         IntakePhase::WaitingForInput => draw_waiting_for_input(frame, app),
         IntakePhase::Interviewing => draw_interviewing(frame, app),
@@ -241,6 +246,236 @@ fn draw_pipeline(frame: &mut Frame, app: &App) {
     draw_chat(frame, chunks[1], app);
     draw_pipeline_status(frame, chunks[2], app);
     draw_input(frame, chunks[3], app);
+}
+
+fn draw_blueprint_table(frame: &mut Frame, app: &mut App) {
+    let area = frame.area();
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Min(8),
+            Constraint::Length(2),
+        ])
+        .split(area);
+
+    draw_header(frame, rows[0], app);
+
+    let columns = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(if app.blueprint.detail_expanded { 55 } else { 100 }),
+            Constraint::Percentage(if app.blueprint.detail_expanded { 45 } else { 0 }),
+        ])
+        .split(rows[1]);
+
+    let filtered = app.blueprint.filtered_nodes();
+    let filtered_len = filtered.len();
+    let header = Row::new(["ID", "Type", "Name", "Status"])
+        .style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD));
+
+    let rows_vec: Vec<Row<'static>> = filtered.iter().map(|node| {
+        Row::new([
+            Cell::from(truncate_text(node.id.as_str(), 18)),
+            Cell::from(node.node_type.clone()).style(node_type_style(&node.node_type)),
+            Cell::from(truncate_text(&node.name, 30)),
+            Cell::from(node.status.clone()),
+        ])
+    }).collect();
+
+    let table = Table::new(
+        rows_vec,
+        [
+            Constraint::Length(20),
+            Constraint::Length(18),
+            Constraint::Min(20),
+            Constraint::Length(16),
+        ],
+    )
+    .header(header)
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title(" Blueprint Nodes "),
+    )
+    .row_highlight_style(Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD))
+    .highlight_symbol("► ");
+
+    frame.render_stateful_widget(table, columns[0], &mut app.blueprint.table_state);
+
+    if app.blueprint.detail_expanded {
+        draw_blueprint_detail(frame, app, columns[1]);
+    }
+
+    let type_filter = app
+        .blueprint
+        .type_filter
+        .as_deref()
+        .unwrap_or("all");
+    let status_text = if app.blueprint.search_mode {
+        format!(
+            " Search: {}",
+            if app.blueprint.filter.is_empty() {
+                "(type to filter by name / id)"
+            } else {
+                app.blueprint.filter.as_str()
+            }
+        )
+    } else {
+        format!(
+            " {} node(s) · {} edge(s) · filter={} · type={} · [Ctrl+B] back [/] search [Enter] detail [t] type [q] exit ",
+            filtered_len,
+            app.blueprint.edges.len(),
+            if app.blueprint.filter.is_empty() { "none" } else { app.blueprint.filter.as_str() },
+            type_filter
+        )
+    };
+
+    let footer = Paragraph::new(status_text)
+        .style(Style::default().fg(Color::DarkGray))
+        .block(Block::default().borders(Borders::TOP));
+    frame.render_widget(footer, rows[2]);
+}
+
+fn draw_blueprint_detail(frame: &mut Frame, app: &App, area: Rect) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Node Detail ");
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let Some(node) = app.blueprint.detail_node.as_ref() else {
+        frame.render_widget(
+            Paragraph::new("No node selected").style(Style::default().fg(Color::DarkGray)),
+            inner,
+        );
+        return;
+    };
+
+    let edge_count_in = app
+        .blueprint
+        .edges
+        .iter()
+        .filter(|edge| edge.target == *node.id())
+        .count();
+    let edge_count_out = app
+        .blueprint
+        .edges
+        .iter()
+        .filter(|edge| edge.source == *node.id())
+        .count();
+
+    let mut lines = vec![
+        Line::from(vec![
+            Span::styled("ID: ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::raw(node.id().as_str().to_string()),
+        ]),
+        Line::from(vec![
+            Span::styled("Type: ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled(node.type_name().to_string(), node_type_style(node.type_name())),
+        ]),
+        Line::from(vec![
+            Span::styled("Name: ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::raw(node.name().to_string()),
+        ]),
+        Line::from(vec![
+            Span::styled("Status: ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::raw(node.status()),
+        ]),
+        Line::from(vec![
+            Span::styled("Edges: ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::raw(format!("{} upstream · {} downstream", edge_count_in, edge_count_out)),
+        ]),
+        Line::from(""),
+    ];
+
+    match node {
+        planner_schemas::artifacts::blueprint::BlueprintNode::Decision(decision) => {
+            lines.push(detail_line("Context", &decision.context));
+            if let Some(doc) = &decision.documentation {
+                lines.push(detail_line("Docs", doc));
+            }
+        }
+        planner_schemas::artifacts::blueprint::BlueprintNode::Technology(technology) => {
+            lines.push(detail_line("Version", technology.version.as_deref().unwrap_or("-")));
+            lines.push(detail_line("Rationale", &technology.rationale));
+            if let Some(doc) = &technology.documentation {
+                lines.push(detail_line("Docs", doc));
+            }
+        }
+        planner_schemas::artifacts::blueprint::BlueprintNode::Component(component) => {
+            lines.push(detail_line("Description", &component.description));
+            lines.push(detail_line("Provides", &component.provides.join(", ")));
+            lines.push(detail_line("Consumes", &component.consumes.join(", ")));
+            if let Some(doc) = &component.documentation {
+                lines.push(detail_line("Docs", doc));
+            }
+        }
+        planner_schemas::artifacts::blueprint::BlueprintNode::Constraint(constraint) => {
+            lines.push(detail_line("Description", &constraint.description));
+            lines.push(detail_line("Source", &constraint.source));
+            if let Some(doc) = &constraint.documentation {
+                lines.push(detail_line("Docs", doc));
+            }
+        }
+        planner_schemas::artifacts::blueprint::BlueprintNode::Pattern(pattern) => {
+            lines.push(detail_line("Description", &pattern.description));
+            lines.push(detail_line("Rationale", &pattern.rationale));
+            if let Some(doc) = &pattern.documentation {
+                lines.push(detail_line("Docs", doc));
+            }
+        }
+        planner_schemas::artifacts::blueprint::BlueprintNode::QualityRequirement(requirement) => {
+            lines.push(detail_line("Scenario", &requirement.scenario));
+            lines.push(detail_line("Attribute", &format!("{:?}", requirement.attribute)));
+            if let Some(doc) = &requirement.documentation {
+                lines.push(detail_line("Docs", doc));
+            }
+        }
+    }
+
+    if !node.tags().is_empty() {
+        lines.push(Line::from(""));
+        lines.push(detail_line("Tags", &node.tags().join(", ")));
+    }
+
+    lines.push(detail_line("Updated", node.updated_at()));
+
+    frame.render_widget(
+        Paragraph::new(lines).wrap(Wrap { trim: false }),
+        inner,
+    );
+}
+
+fn node_type_style(node_type: &str) -> Style {
+    match node_type {
+        "decision" => Style::default().fg(Color::Yellow),
+        "technology" => Style::default().fg(Color::Cyan),
+        "component" => Style::default().fg(Color::Green),
+        "constraint" => Style::default().fg(Color::Red),
+        "pattern" => Style::default().fg(Color::Magenta),
+        "quality_requirement" => Style::default().fg(Color::Blue),
+        _ => Style::default().fg(Color::White),
+    }
+}
+
+fn detail_line(label: &str, value: &str) -> Line<'static> {
+    Line::from(vec![
+        Span::styled(
+            format!("{}: ", label),
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(value.to_string()),
+    ])
+}
+
+fn truncate_text(value: &str, max_len: usize) -> String {
+    if value.chars().count() <= max_len {
+        value.to_string()
+    } else {
+        let truncated: String = value.chars().take(max_len.saturating_sub(1)).collect();
+        format!("{}…", truncated)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -823,8 +1058,8 @@ mod tests {
     fn draw_waiting_does_not_panic() {
         let backend = TestBackend::new(80, 24);
         let mut terminal = Terminal::new(backend).unwrap();
-        let app = make_app();
-        terminal.draw(|f| draw(f, &app)).unwrap();
+        let mut app = make_app();
+        terminal.draw(|f| draw(f, &mut app)).unwrap();
     }
 
     #[test]
@@ -840,7 +1075,7 @@ mod tests {
             ProviderStatus { name: "google".into(),    binary: "gemini".into(), available: true },
             ProviderStatus { name: "openai".into(),    binary: "codex".into(),  available: true },
         ];
-        terminal.draw(|f| draw(f, &app)).unwrap();
+        terminal.draw(|f| draw(f, &mut app)).unwrap();
     }
 
     #[test]
@@ -856,7 +1091,7 @@ mod tests {
             ProviderStatus { name: "google".into(),    binary: "gemini".into(), available: false },
             ProviderStatus { name: "openai".into(),    binary: "codex".into(),  available: false },
         ];
-        terminal.draw(|f| draw(f, &app)).unwrap();
+        terminal.draw(|f| draw(f, &mut app)).unwrap();
     }
 
     #[test]
@@ -867,7 +1102,7 @@ mod tests {
         app.intake_phase = IntakePhase::Interviewing;
         app.add_user_message("Build me a task tracker widget");
         app.add_planner_message("Let me ask some clarifying questions…");
-        terminal.draw(|f| draw(f, &app)).unwrap();
+        terminal.draw(|f| draw(f, &mut app)).unwrap();
     }
 
     #[test]
@@ -902,7 +1137,7 @@ mod tests {
         );
         app.belief_state = Some(bs);
 
-        terminal.draw(|f| draw(f, &app)).unwrap();
+        terminal.draw(|f| draw(f, &mut app)).unwrap();
     }
 
     #[test]
@@ -925,7 +1160,7 @@ mod tests {
             allow_skip: true,
         });
 
-        terminal.draw(|f| draw(f, &app)).unwrap();
+        terminal.draw(|f| draw(f, &mut app)).unwrap();
     }
 
     #[test]
@@ -938,7 +1173,7 @@ mod tests {
         app.set_stage_status(0, StageStatus::Complete);
         app.set_stage_status(1, StageStatus::Complete);
         app.set_stage_status(2, StageStatus::Running);
-        terminal.draw(|f| draw(f, &app)).unwrap();
+        terminal.draw(|f| draw(f, &mut app)).unwrap();
     }
 
     #[test]
@@ -950,7 +1185,7 @@ mod tests {
         for stage in &mut app.stages {
             stage.status = StageStatus::Complete;
         }
-        terminal.draw(|f| draw(f, &app)).unwrap();
+        terminal.draw(|f| draw(f, &mut app)).unwrap();
     }
 
     #[test]
@@ -960,7 +1195,7 @@ mod tests {
         let mut app = make_app();
         app.intake_phase = IntakePhase::Interviewing;
         app.right_pane_mode = RightPaneMode::Logs;
-        terminal.draw(|f| draw(f, &app)).unwrap();
+        terminal.draw(|f| draw(f, &mut app)).unwrap();
     }
 
     #[test]
@@ -989,7 +1224,7 @@ mod tests {
             "LLM timed out",
         ));
 
-        terminal.draw(|f| draw(f, &app)).unwrap();
+        terminal.draw(|f| draw(f, &mut app)).unwrap();
     }
 
     #[test]
@@ -1014,15 +1249,15 @@ mod tests {
             "Timeout",
         ));
 
-        terminal.draw(|f| draw(f, &app)).unwrap();
+        terminal.draw(|f| draw(f, &mut app)).unwrap();
     }
 
     #[test]
     fn draw_small_terminal_does_not_panic() {
         let backend = TestBackend::new(40, 12);
         let mut terminal = Terminal::new(backend).unwrap();
-        let app = make_app();
-        terminal.draw(|f| draw(f, &app)).unwrap();
+        let mut app = make_app();
+        terminal.draw(|f| draw(f, &mut app)).unwrap();
     }
 
     #[test]
@@ -1034,14 +1269,14 @@ mod tests {
         app.add_planner_message("Let me ask some clarifying questions…");
         app.add_user_message("It should support due dates and priorities");
         app.add_planner_message("Great. What about categories or tags?");
-        terminal.draw(|f| draw(f, &app)).unwrap();
+        terminal.draw(|f| draw(f, &mut app)).unwrap();
     }
 
     #[test]
     fn draw_belief_pane_with_out_of_scope_and_contradiction() {
         use planner_schemas::{
             DomainClassification, ProjectType, ComplexityTier, Dimension,
-            RequirementsBeliefState, SlotValue, Contradiction,
+            RequirementsBeliefState, Contradiction,
         };
 
         let backend = TestBackend::new(160, 50);
@@ -1069,7 +1304,7 @@ mod tests {
         });
         app.belief_state = Some(bs);
 
-        terminal.draw(|f| draw(f, &app)).unwrap();
+        terminal.draw(|f| draw(f, &mut app)).unwrap();
     }
 
     #[test]
@@ -1080,6 +1315,6 @@ mod tests {
         app.set_stage_status(0, StageStatus::Complete);
         app.set_stage_status(1, StageStatus::Complete);
         app.set_stage_status(2, StageStatus::Running);
-        terminal.draw(|f| draw(f, &app)).unwrap();
+        terminal.draw(|f| draw(f, &mut app)).unwrap();
     }
 }

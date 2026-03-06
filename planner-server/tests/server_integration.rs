@@ -37,6 +37,7 @@ fn test_state() -> Arc<AppState> {
         cxdb: None,
         started_at: std::time::Instant::now(),
         blueprints: planner_core::blueprint::BlueprintStore::new(),
+        proposals: planner_core::discovery::ProposalStore::new(),
     })
 }
 

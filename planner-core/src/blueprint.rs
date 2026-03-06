@@ -900,6 +900,7 @@ mod tests {
             assumptions: vec![],
             supersedes: None,
             tags: vec![],
+            documentation: None,
             created_at: "2026-03-01T00:00:00Z".into(),
             updated_at: "2026-03-01T00:00:00Z".into(),
         }));
@@ -913,6 +914,7 @@ mod tests {
             rationale: "MessagePack serde support".into(),
             license: Some("MIT".into()),
             tags: vec![],
+            documentation: None,
             created_at: "2026-03-01T00:00:00Z".into(),
             updated_at: "2026-03-01T00:00:00Z".into(),
         }));
@@ -926,6 +928,7 @@ mod tests {
             consumes: vec![],
             status: ComponentStatus::Shipped,
             tags: vec![],
+            documentation: None,
             created_at: "2026-03-01T00:00:00Z".into(),
             updated_at: "2026-03-01T00:00:00Z".into(),
         }));
@@ -939,6 +942,7 @@ mod tests {
             consumes: vec![],
             status: ComponentStatus::Shipped,
             tags: vec![],
+            documentation: None,
             created_at: "2026-03-01T00:00:00Z".into(),
             updated_at: "2026-03-01T00:00:00Z".into(),
         }));
@@ -950,6 +954,7 @@ mod tests {
             description: "Use filesystem, not SQLite".into(),
             source: "user directive".into(),
             tags: vec![],
+            documentation: None,
             created_at: "2026-03-01T00:00:00Z".into(),
             updated_at: "2026-03-01T00:00:00Z".into(),
         }));
@@ -960,6 +965,7 @@ mod tests {
             scenario: "Crash-safe persistence".into(),
             priority: QualityPriority::Critical,
             tags: vec![],
+            documentation: None,
             created_at: "2026-03-01T00:00:00Z".into(),
             updated_at: "2026-03-01T00:00:00Z".into(),
         }));
@@ -1033,6 +1039,7 @@ mod tests {
             assumptions: vec![],
             supersedes: None,
             tags: vec![],
+            documentation: None,
             created_at: "2026-03-01T00:00:00Z".into(),
             updated_at: "2026-03-01T00:00:00Z".into(),
         }));
@@ -1121,6 +1128,7 @@ mod tests {
             component_type: ComponentType::Module, description: "".into(),
             provides: vec![], consumes: vec![],
             status: ComponentStatus::Shipped, tags: vec![],
+            documentation: None,
             created_at: "".into(), updated_at: "".into(),
         }));
         bp.upsert_node(BlueprintNode::Component(Component {
@@ -1128,6 +1136,7 @@ mod tests {
             component_type: ComponentType::Module, description: "".into(),
             provides: vec![], consumes: vec![],
             status: ComponentStatus::Shipped, tags: vec![],
+            documentation: None,
             created_at: "".into(), updated_at: "".into(),
         }));
 
@@ -1210,6 +1219,7 @@ mod tests {
             context: "".into(),
             options: vec![], consequences: vec![], assumptions: vec![],
             supersedes: None, tags: vec![],
+            documentation: None,
             created_at: "".into(), updated_at: "".into(),
         }));
 
@@ -1236,6 +1246,7 @@ mod tests {
                 context: "Testing persistence".into(),
                 options: vec![], consequences: vec![], assumptions: vec![],
                 supersedes: None, tags: vec!["test".into()],
+                documentation: None,
                 created_at: "2026-03-01T00:00:00Z".into(),
                 updated_at: "2026-03-01T00:00:00Z".into(),
             }));
@@ -1248,6 +1259,7 @@ mod tests {
                 ring: AdoptionRing::Adopt,
                 rationale: "Testing".into(),
                 license: None, tags: vec![],
+                documentation: None,
                 created_at: "2026-03-01T00:00:00Z".into(),
                 updated_at: "2026-03-01T00:00:00Z".into(),
             }));
@@ -1300,6 +1312,7 @@ mod tests {
             component_type: ComponentType::Module, description: "".into(),
             provides: vec![], consumes: vec![],
             status: ComponentStatus::Shipped, tags: vec![],
+            documentation: None,
             created_at: "".into(), updated_at: "".into(),
         }));
         store.upsert_node(BlueprintNode::Component(Component {
@@ -1307,6 +1320,7 @@ mod tests {
             component_type: ComponentType::Module, description: "".into(),
             provides: vec![], consumes: vec![],
             status: ComponentStatus::Shipped, tags: vec![],
+            documentation: None,
             created_at: "".into(), updated_at: "".into(),
         }));
 
@@ -1334,6 +1348,7 @@ mod tests {
             context: "".into(),
             options: vec![], consequences: vec![], assumptions: vec![],
             supersedes: None, tags: vec![],
+            documentation: None,
             created_at: "".into(), updated_at: "".into(),
         }));
 
@@ -1363,6 +1378,7 @@ mod tests {
                 context: "".into(),
                 options: vec![], consequences: vec![], assumptions: vec![],
                 supersedes: None, tags: vec![],
+                documentation: None,
                 created_at: "".into(), updated_at: "".into(),
             }));
 
@@ -1373,6 +1389,7 @@ mod tests {
                 context: "".into(),
                 options: vec![], consequences: vec![], assumptions: vec![],
                 supersedes: None, tags: vec![],
+                documentation: None,
                 created_at: "".into(), updated_at: "".into(),
             }));
 

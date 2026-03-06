@@ -57,6 +57,7 @@ pub fn emit_from_intake(store: &BlueprintStore, intake: &IntakeV1) {
         assumptions: vec![],
         supersedes: None,
         tags: vec!["intake".into(), "scope".into()],
+        documentation: None,
         created_at: ts.clone(),
         updated_at: ts.clone(),
     };
@@ -94,6 +95,7 @@ pub fn emit_from_spec(store: &BlueprintStore, spec: &NLSpecV1) {
             description: constraint_text.clone(),
             source: "NLSpec compilation".into(),
             tags: vec!["spec".into(), chunk_tag.clone()],
+            documentation: None,
             created_at: ts.clone(),
             updated_at: ts.clone(),
         };
@@ -122,6 +124,7 @@ pub fn emit_from_spec(store: &BlueprintStore, spec: &NLSpecV1) {
             rationale: dep.usage_description.clone(),
             license: None,
             tags: vec!["dependency".into(), chunk_tag.clone()],
+            documentation: None,
             created_at: ts.clone(),
             updated_at: ts.clone(),
         };
@@ -142,6 +145,7 @@ pub fn emit_from_spec(store: &BlueprintStore, spec: &NLSpecV1) {
             assumptions: vec![],
             supersedes: None,
             tags: vec!["dependency".into(), chunk_tag.clone()],
+            documentation: None,
             created_at: ts.clone(),
             updated_at: ts.clone(),
         };
@@ -189,6 +193,7 @@ pub fn emit_from_spec(store: &BlueprintStore, spec: &NLSpecV1) {
             consumes: vec![],
             status: ComponentStatus::Planned,
             tags: vec!["spec".into(), chunk_tag.clone()],
+            documentation: None,
             created_at: ts.clone(),
             updated_at: ts.clone(),
         };
@@ -209,6 +214,7 @@ pub fn emit_from_spec(store: &BlueprintStore, spec: &NLSpecV1) {
             scenario: criterion.description.clone(),
             priority,
             tags: vec!["satisfaction".into(), chunk_tag.clone()],
+            documentation: None,
             created_at: ts.clone(),
             updated_at: ts.clone(),
         };
@@ -224,6 +230,7 @@ pub fn emit_from_spec(store: &BlueprintStore, spec: &NLSpecV1) {
                 scenario: dod.criterion.clone(),
                 priority: QualityPriority::Medium,
                 tags: vec!["definition-of-done".into(), chunk_tag.clone()],
+                documentation: None,
                 created_at: ts.clone(),
                 updated_at: ts.clone(),
             };
@@ -268,6 +275,7 @@ pub fn emit_from_ar(store: &BlueprintStore, reports: &[ArReportV1]) {
                     ),
                     source: format!("Adversarial Review ({})", report.chunk_name),
                     tags: vec!["ar-review".into(), "blocking".into()],
+                    documentation: None,
                     created_at: ts.clone(),
                     updated_at: ts.clone(),
                 };
@@ -303,6 +311,7 @@ pub fn emit_from_factory(store: &BlueprintStore, output: &FactoryOutputV1) {
         ),
         rationale: "Automated code generation with sandbox isolation and validation loop".into(),
         tags: vec!["factory".into(), "codegen".into()],
+        documentation: None,
         created_at: ts.clone(),
         updated_at: ts.clone(),
     };
@@ -325,6 +334,7 @@ pub fn emit_from_factory(store: &BlueprintStore, output: &FactoryOutputV1) {
             _ => ComponentStatus::Planned,
         },
         tags: vec!["factory".into()],
+        documentation: None,
         created_at: ts.clone(),
         updated_at: ts.clone(),
     };

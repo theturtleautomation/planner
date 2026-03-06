@@ -292,6 +292,9 @@ pub struct Decision {
     pub supersedes: Option<NodeId>,
     #[serde(default)]
     pub tags: Vec<String>,
+    /// Freeform markdown documentation attached to this node.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub documentation: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -310,6 +313,9 @@ pub struct Technology {
     pub license: Option<String>,
     #[serde(default)]
     pub tags: Vec<String>,
+    /// Freeform markdown documentation attached to this node.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub documentation: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -330,6 +336,9 @@ pub struct Component {
     pub status: ComponentStatus,
     #[serde(default)]
     pub tags: Vec<String>,
+    /// Freeform markdown documentation attached to this node.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub documentation: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -345,6 +354,9 @@ pub struct Constraint {
     pub source: String,
     #[serde(default)]
     pub tags: Vec<String>,
+    /// Freeform markdown documentation attached to this node.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub documentation: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -358,6 +370,9 @@ pub struct Pattern {
     pub rationale: String,
     #[serde(default)]
     pub tags: Vec<String>,
+    /// Freeform markdown documentation attached to this node.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub documentation: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -372,6 +387,9 @@ pub struct QualityRequirement {
     pub priority: QualityPriority,
     #[serde(default)]
     pub tags: Vec<String>,
+    /// Freeform markdown documentation attached to this node.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub documentation: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -450,6 +468,18 @@ impl BlueprintNode {
             BlueprintNode::Constraint(n) => &n.tags,
             BlueprintNode::Pattern(n) => &n.tags,
             BlueprintNode::QualityRequirement(n) => &n.tags,
+        }
+    }
+
+    /// Return the optional markdown documentation attached to this node.
+    pub fn documentation(&self) -> Option<&str> {
+        match self {
+            BlueprintNode::Decision(n) => n.documentation.as_deref(),
+            BlueprintNode::Technology(n) => n.documentation.as_deref(),
+            BlueprintNode::Component(n) => n.documentation.as_deref(),
+            BlueprintNode::Constraint(n) => n.documentation.as_deref(),
+            BlueprintNode::Pattern(n) => n.documentation.as_deref(),
+            BlueprintNode::QualityRequirement(n) => n.documentation.as_deref(),
         }
     }
 
@@ -562,6 +592,8 @@ pub struct NodeSummary {
     /// Normalized status string derived from each node type's lifecycle field.
     pub status: String,
     pub tags: Vec<String>,
+    #[serde(default)]
+    pub has_documentation: bool,
     pub updated_at: String,
 }
 
@@ -573,6 +605,7 @@ impl From<&BlueprintNode> for NodeSummary {
             node_type: node.type_name().to_string(),
             status: node.status(),
             tags: node.tags().to_vec(),
+            has_documentation: node.documentation().is_some(),
             updated_at: node.updated_at().to_string(),
         }
     }
@@ -735,6 +768,7 @@ mod tests {
             ],
             supersedes: None,
             tags: vec!["storage".into(), "core".into()],
+            documentation: Some("# Decision Notes".into()),
             created_at: "2026-03-01T00:00:00Z".into(),
             updated_at: "2026-03-01T00:00:00Z".into(),
         };
@@ -764,6 +798,7 @@ mod tests {
             rationale: "Memory safety without GC".into(),
             license: Some("MIT/Apache-2.0".into()),
             tags: vec!["core".into()],
+            documentation: None,
             created_at: "2026-03-01T00:00:00Z".into(),
             updated_at: "2026-03-01T00:00:00Z".into(),
         };
@@ -786,6 +821,7 @@ mod tests {
             consumes: vec!["MessagePack serialization".into()],
             status: ComponentStatus::Shipped,
             tags: vec!["storage".into()],
+            documentation: None,
             created_at: "2026-03-01T00:00:00Z".into(),
             updated_at: "2026-03-01T00:00:00Z".into(),
         };
@@ -806,6 +842,7 @@ mod tests {
             description: "LLM clients must use native CLIs".into(),
             source: "user directive".into(),
             tags: vec!["llm".into()],
+            documentation: None,
             created_at: "2026-03-01T00:00:00Z".into(),
             updated_at: "2026-03-01T00:00:00Z".into(),
         };
@@ -825,6 +862,7 @@ mod tests {
             scenario: "Session recovery on restart completes within 2s for 1000 sessions".into(),
             priority: QualityPriority::Critical,
             tags: vec!["persistence".into()],
+            documentation: None,
             created_at: "2026-03-01T00:00:00Z".into(),
             updated_at: "2026-03-01T00:00:00Z".into(),
         };
@@ -843,6 +881,7 @@ mod tests {
             description: "Store events, reconstruct state on demand".into(),
             rationale: "Full audit trail, time-travel debugging".into(),
             tags: vec!["persistence".into()],
+            documentation: None,
             created_at: "2026-03-01T00:00:00Z".into(),
             updated_at: "2026-03-01T00:00:00Z".into(),
         };
@@ -919,6 +958,7 @@ mod tests {
             rationale: "Async runtime for Rust".into(),
             license: Some("MIT".into()),
             tags: vec!["async".into(), "core".into()],
+            documentation: Some("Runtime selection notes".into()),
             created_at: "2026-03-01T00:00:00Z".into(),
             updated_at: "2026-03-02T00:00:00Z".into(),
         });
@@ -928,5 +968,42 @@ mod tests {
         assert_eq!(summary.node_type, "technology");
         assert_eq!(summary.status, "Adopt");
         assert_eq!(summary.tags, vec!["async", "core"]);
+        assert!(summary.has_documentation);
+    }
+
+    #[test]
+    fn node_with_documentation_roundtrip() {
+        let node = BlueprintNode::Pattern(Pattern {
+            id: NodeId::from_raw("pat-docs-a1b2c3d4"),
+            name: "Documented Pattern".into(),
+            description: "A pattern with docs".into(),
+            rationale: "Tests markdown persistence".into(),
+            tags: vec!["docs".into()],
+            documentation: Some("## Notes\n\n- one".into()),
+            created_at: "2026-03-01T00:00:00Z".into(),
+            updated_at: "2026-03-01T00:00:00Z".into(),
+        });
+
+        let bytes = rmp_serde::to_vec_named(&node).unwrap();
+        let decoded: BlueprintNode = rmp_serde::from_slice(&bytes).unwrap();
+        assert_eq!(decoded.documentation(), Some("## Notes\n\n- one"));
+    }
+
+    #[test]
+    fn node_without_documentation_defaults_to_none() {
+        let raw = serde_json::json!({
+            "node_type": "technology",
+            "id": "tech-no-docs",
+            "name": "No Docs",
+            "category": "tool",
+            "ring": "adopt",
+            "rationale": "Back compat",
+            "tags": [],
+            "created_at": "2026-03-01T00:00:00Z",
+            "updated_at": "2026-03-01T00:00:00Z"
+        });
+
+        let decoded: BlueprintNode = serde_json::from_value(raw).unwrap();
+        assert_eq!(decoded.documentation(), None);
     }
 }

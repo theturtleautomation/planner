@@ -20,6 +20,8 @@ pub struct AppState {
     pub sessions: SessionStore,
     /// Living System Blueprint graph store.
     pub blueprints: planner_core::blueprint::BlueprintStore,
+    /// Discovery proposal store.
+    pub proposals: planner_core::discovery::ProposalStore,
     /// Auth0 JWT config. None = dev mode (auth bypassed).
     pub auth_config: Option<AuthConfig>,
     /// Filesystem-backed event store. None if persistence is unavailable.

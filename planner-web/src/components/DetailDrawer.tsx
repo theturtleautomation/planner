@@ -1,4 +1,6 @@
 import { useEffect, useMemo } from 'react';
+import ReactMarkdown from 'react-markdown';
+import rehypeSanitize from 'rehype-sanitize';
 import type { BlueprintNode, EdgePayload, DecisionNode, TechnologyNode, ComponentNode, ConstraintNode, PatternNode, QualityRequirementNode, BlueprintEventPayload } from '../types/blueprint.ts';
 import type { ApiClient } from '../api/client.ts';
 import { useState, useCallback } from 'react';
@@ -46,7 +48,7 @@ export default function DetailDrawer({
   const [loading, setLoading] = useState(false);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState<'details' | 'history'>('details');
+  const [activeTab, setActiveTab] = useState<'details' | 'history' | 'docs'>('details');
   const [events, setEvents] = useState<BlueprintEventPayload[]>([]);
   const [eventsLoading, setEventsLoading] = useState(false);
 
@@ -165,6 +167,7 @@ export default function DetailDrawer({
   const nodeType = node?.node_type ?? '';
   const typeBadge = `badge-${nodeType}`;
   const typeLabel = TYPE_LABELS[nodeType] ?? nodeType;
+  const documentation = node?.documentation?.trim() ?? '';
 
   // ─── Type-specific detail sections ──────────────────────────────────────
 
@@ -412,6 +415,12 @@ export default function DetailDrawer({
             >
               History
             </button>
+            <button
+              className={`drawer-tab${activeTab === 'docs' ? ' active' : ''}`}
+              onClick={() => setActiveTab('docs')}
+            >
+              Docs
+            </button>
           </div>
         )}
 
@@ -605,6 +614,29 @@ export default function DetailDrawer({
                 </div>
                 );
               })}
+            </div>
+          )}
+
+          {!loading && node && !editing && activeTab === 'docs' && (
+            <div className="drawer-section">
+              {documentation ? (
+                <div className="drawer-description" data-testid="node-documentation">
+                  <ReactMarkdown rehypePlugins={[rehypeSanitize]}>
+                    {documentation}
+                  </ReactMarkdown>
+                </div>
+              ) : (
+                <div
+                  style={{
+                    textAlign: 'center',
+                    padding: 'var(--space-8)',
+                    color: 'var(--color-text-faint)',
+                    fontSize: 'var(--text-sm)',
+                  }}
+                >
+                  No documentation yet.
+                </div>
+              )}
             </div>
           )}
         </div>

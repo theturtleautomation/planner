@@ -42,6 +42,7 @@ export interface NodeSummary {
   node_type: string;
   status: string;
   tags: string[];
+  has_documentation: boolean;
   updated_at: string;
 }
 
@@ -107,6 +108,7 @@ export interface DecisionNode {
   assumptions: Assumption[];
   supersedes?: string;
   tags: string[];
+  documentation?: string;
   created_at: string;
   updated_at: string;
 }
@@ -122,6 +124,7 @@ export interface TechnologyNode {
   rationale: string;
   license?: string;
   tags: string[];
+  documentation?: string;
   created_at: string;
   updated_at: string;
 }
@@ -137,6 +140,7 @@ export interface ComponentNode {
   consumes: string[];
   status: ComponentStatus;
   tags: string[];
+  documentation?: string;
   created_at: string;
   updated_at: string;
 }
@@ -150,6 +154,7 @@ export interface ConstraintNode {
   description: string;
   source: string;  // free text — who/what imposed this constraint
   tags: string[];
+  documentation?: string;
   created_at: string;
   updated_at: string;
 }
@@ -162,6 +167,7 @@ export interface PatternNode {
   description: string;
   rationale: string;
   tags: string[];
+  documentation?: string;
   created_at: string;
   updated_at: string;
 }
@@ -174,6 +180,7 @@ export interface QualityRequirementNode {
   scenario: string;
   priority: QualityPriority;
   tags: string[];
+  documentation?: string;
   created_at: string;
   updated_at: string;
 }

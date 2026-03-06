@@ -325,7 +325,10 @@ pub fn spawn_socratic_interview(
 /// `App::pipeline_rx`. Events arrive on the next `tick()` poll.
 ///
 /// `StepComplete(name)` events are sent after each major phase resolves.
-pub fn spawn_pipeline(description: String) -> PipelineReceiver {
+pub fn spawn_pipeline(
+    description: String,
+    blueprints: Option<Arc<planner_core::blueprint::BlueprintStore>>,
+) -> PipelineReceiver {
     let (tx, rx) = mpsc::unbounded_channel::<PipelineEvent>();
 
     tokio::spawn(async move {
@@ -362,7 +365,7 @@ pub fn spawn_pipeline(description: String) -> PipelineReceiver {
                     router: &router,
                     store: Some(engine),
                     dtu_registry: None,
-                    blueprints: None,
+                    blueprints: blueprints.as_deref(),
                 };
                 planner_core::pipeline::run_full_pipeline(
                     &config, &worker, project_id, &description,
@@ -370,9 +373,12 @@ pub fn spawn_pipeline(description: String) -> PipelineReceiver {
             }
             None => {
                 let config =
-                    planner_core::pipeline::PipelineConfig::<planner_core::cxdb::CxdbEngine>::minimal(
-                        &router,
-                    );
+                    planner_core::pipeline::PipelineConfig::<planner_core::cxdb::CxdbEngine> {
+                        router: &router,
+                        store: None,
+                        dtu_registry: None,
+                        blueprints: blueprints.as_deref(),
+                    };
                 planner_core::pipeline::run_full_pipeline(
                     &config, &worker, project_id, &description,
                 ).await

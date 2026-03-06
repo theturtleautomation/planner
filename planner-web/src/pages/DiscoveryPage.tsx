@@ -115,7 +115,7 @@ export default function DiscoveryPage() {
   };
 
   const getNodeDisplayName = (p: ProposedNode): string => {
-    const n = p.node as Record<string, unknown>;
+    const n = p.node as unknown as Record<string, unknown>;
     return (n.name ?? n.title ?? n.scenario ?? p.id) as string;
   };
 

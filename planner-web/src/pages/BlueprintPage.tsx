@@ -11,7 +11,7 @@ import AddEdgeModal from '../components/AddEdgeModal.tsx';
 import ReconvergencePanel from '../components/ReconvergencePanel.tsx';
 import { createApiClient } from '../api/client.ts';
 import { useGetAccessToken } from '../auth/useAuthenticatedFetch.ts';
-import type { BlueprintResponse, BlueprintNode, NodeType, NodeSummary, ImpactReport, EdgeType, ReconvergenceResult } from '../types/blueprint.ts';
+import type { BlueprintResponse, BlueprintNode, NodeType, NodeSummary, ImpactReport, EdgeType, ReconvergenceResult, ReconvergenceStep } from '../types/blueprint.ts';
 
 // ─── View types ─────────────────────────────────────────────────────────────
 
@@ -126,23 +126,89 @@ export default function BlueprintPage() {
       handleImpactClose();
       return;
     }
+
+    const request = {
+      source_node_id: impactNodeId,
+      impact_report: impactReport,
+      auto_apply: true,
+    };
+
+    const seedResult = (): ReconvergenceResult => ({
+      steps: [],
+      summary: {
+        total: 0,
+        applied: 0,
+        skipped: 0,
+        errors: 0,
+        needs_review: 0,
+      },
+      timestamp: new Date().toISOString(),
+    });
+
+    const summarize = (steps: ReconvergenceStep[]) => ({
+      total: steps.length,
+      applied: steps.filter(step => step.status === 'done').length,
+      skipped: steps.filter(step => step.status === 'skipped').length,
+      errors: steps.filter(step => step.status === 'error').length,
+      needs_review: steps.filter(step => step.status === 'pending').length,
+    });
+
+    const runRestFallback = async () => {
+      try {
+        const result = await api.reconvergeBlueprint(request);
+        setReconResult(result);
+      } catch {
+        setReconResult(null);
+      } finally {
+        setReconLoading(false);
+      }
+    };
+
     // Close the impact modal and open the reconvergence panel
     handleImpactClose();
     setReconVisible(true);
     setReconLoading(true);
-    setReconResult(null);
+    setReconResult(seedResult());
+
     try {
-      const result = await api.reconvergeBlueprint({
-        source_node_id: impactNodeId,
-        impact_report: impactReport,
-        auto_apply: true, // per decision #3: auto-accept shallow/medium, review deep
+      let resolved = false;
+      let fallbackStarted = false;
+      const steps: ReconvergenceStep[] = [];
+
+      const startFallback = () => {
+        if (resolved || fallbackStarted) return;
+        fallbackStarted = true;
+        void runRestFallback();
+      };
+
+      const ws = await api.reconvergeBlueprintWs(request, {
+        onStep: step => {
+          steps.push(step);
+          setReconResult(prev => ({
+            ...(prev ?? seedResult()),
+            steps: [...steps],
+            summary: summarize(steps),
+          }));
+        },
+        onComplete: summary => {
+          resolved = true;
+          setReconResult(prev => ({
+            ...(prev ?? seedResult()),
+            steps: prev?.steps ?? [...steps],
+            summary,
+          }));
+          setReconLoading(false);
+        },
+        onError: () => {
+          startFallback();
+        },
       });
-      setReconResult(result);
+
+      ws.addEventListener('close', () => {
+        startFallback();
+      });
     } catch {
-      // Show panel anyway with null result
-      setReconResult(null);
-    } finally {
-      setReconLoading(false);
+      await runRestFallback();
     }
   }, [impactNodeId, impactReport, api, handleImpactClose]);
 
