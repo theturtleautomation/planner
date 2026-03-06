@@ -7,6 +7,7 @@ import AdminPage from './pages/AdminPage.tsx';
 
 // Blueprint page is heavy (D3) — lazy-load it
 const BlueprintPage = lazy(() => import('./pages/BlueprintPage.tsx'));
+const KnowledgeLibraryPage = lazy(() => import('./pages/KnowledgeLibraryPage.tsx'));
 import ProtectedRoute from './auth/ProtectedRoute.tsx';
 
 // ─── Auth0-dependent pages ───────────────────────────────────────────────────
@@ -83,6 +84,16 @@ export default function App() {
           <ProtectedRoute>
             <Suspense fallback={<AuthLoadingFallback />}>
               <BlueprintPage />
+            </Suspense>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/knowledge"
+        element={
+          <ProtectedRoute>
+            <Suspense fallback={<AuthLoadingFallback />}>
+              <KnowledgeLibraryPage />
             </Suspense>
           </ProtectedRoute>
         }

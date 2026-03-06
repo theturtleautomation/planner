@@ -44,6 +44,7 @@ function UserInfo() {
 const REGISTRY_ITEMS = [
   { label: 'Sessions', path: '/', icon: 'clock' },
   { label: 'Blueprint', path: '/blueprint', icon: 'globe' },
+  { label: 'Knowledge', path: '/knowledge', icon: 'book' },
   { label: 'Admin', path: '/admin', icon: 'terminal' },
 ];
 
@@ -56,6 +57,8 @@ function SidebarIcon({ name }: { name: string }) {
       return <svg {...props}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>;
     case 'globe':
       return <svg {...props}><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 000 20M2 12h20"/></svg>;
+    case 'book':
+      return <svg {...props}><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M4 4.5A2.5 2.5 0 016.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15z"/></svg>;
     case 'terminal':
       return <svg {...props}><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>;
     default:

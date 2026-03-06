@@ -104,7 +104,22 @@
 - [x] C.4 — CSS: `.edit-node-form`, `.edit-node-form-body`, `.edit-node-form-actions`
 - [x] C.5 — Verification: `tsc --noEmit` clean, 166/166 vitest passing, Vite build succeeds
   - Cargo check/test deferred to CI (no Rust toolchain in sandbox)
-### Phase C.5: Knowledge & Library Pages — PENDING
+### Phase C.5: Knowledge & Library Pages [COMPLETE]
+- [x] C.5.1 — `NodeListPanel.tsx` reusable component (293 lines)
+  - Filterable, searchable, sortable node list with completeness scoring
+  - Configurable columns, search bar, summary stats
+  - Shared between KnowledgeLibraryPage (and future pages)
+- [x] C.5.2 — `KnowledgeLibraryPage.tsx` (196 lines)
+  - Tabbed page: All / Decisions / Technologies / Components / Constraints / Patterns / Quality
+  - Count badges per tab, summary statistics bar
+  - Integrates DetailDrawer for node inspection
+- [x] C.5.3 — Routing + Navigation
+  - Added lazy-loaded `/knowledge` route in App.tsx with ProtectedRoute wrapper
+  - Added 'Knowledge' item with book icon to sidebar in Layout.tsx
+- [x] C.5.4 — CSS: `.knowledge-page`, `.knowledge-header`, `.knowledge-tabs`, `.knowledge-tab`,
+  `.node-list-panel`, `.node-list-toolbar`, `.node-list-search`
+  - Also added preemptive reconvergence CSS (`.recon-panel`, `.recon-step`, `.recon-summary`)
+- [x] C.5.5 — Verification: `tsc --noEmit` clean, 166/166 vitest passing, Vite build succeeds
 ### Phase D: Reconvergence Engine — PENDING
 ### Phase E: Graph UX Polish — PENDING
 ### Phase F: Lifecycle & History — PENDING
@@ -159,6 +174,13 @@
 - `planner-web/src/pages/BlueprintPage.tsx` — Added `handleCreateEdge`, `addEdgeModalOpen` state,
   "Add Edge" topbar button, `onNodeUpdated={loadBlueprint}` callback, AddEdgeModal render
 - `planner-web/src/index.css` — Added `.edit-node-form`, `.edit-node-form-body`, `.edit-node-form-actions`
+
+### Phase C.5 — TypeScript (frontend)
+- `planner-web/src/components/NodeListPanel.tsx` — NEW (293 lines) reusable filterable/sortable list
+- `planner-web/src/pages/KnowledgeLibraryPage.tsx` — NEW (196 lines) tabbed knowledge page
+- `planner-web/src/App.tsx` — Added lazy-loaded `/knowledge` route
+- `planner-web/src/components/Layout.tsx` — Added 'Knowledge' sidebar item + book icon
+- `planner-web/src/index.css` — Added knowledge + reconvergence CSS classes
 
 ## Test Results
 - Frontend: 166/166 tests passing (11 test files)
