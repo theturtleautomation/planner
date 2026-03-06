@@ -1391,7 +1391,7 @@ async fn reconverge_blueprint(
     Json(req): Json<ReconvergeRequest>,
 ) -> Result<Json<ReconvergeResponse>, (StatusCode, Json<ErrorResponse>)> {
     // Verify source node exists.
-    if state.blueprints.node(&req.source_node_id).is_none() {
+    if state.blueprints.get_node(&req.source_node_id).is_none() {
         return Err((
             StatusCode::NOT_FOUND,
             Json(ErrorResponse {
@@ -1438,7 +1438,7 @@ async fn reconverge_blueprint(
 
         steps.push(ReconvergeStepResponse {
             step_id: format!("recon-step-{}", i),
-            node_id: entry.node_id.clone(),
+            node_id: entry.node_id.to_string(),
             node_name: entry.node_name.clone(),
             node_type: entry.node_type.clone(),
             action: action_str.to_string(),
