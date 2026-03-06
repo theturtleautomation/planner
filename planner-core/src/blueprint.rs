@@ -1244,6 +1244,7 @@ mod tests {
             supersedes: None,
             tags: vec![],
             documentation: None,
+            scope: NodeScope::default(),
             created_at: "2026-03-01T00:00:00Z".into(),
             updated_at: "2026-03-01T00:00:00Z".into(),
         }));
@@ -1258,6 +1259,7 @@ mod tests {
             license: Some("MIT".into()),
             tags: vec![],
             documentation: None,
+            scope: NodeScope::default(),
             created_at: "2026-03-01T00:00:00Z".into(),
             updated_at: "2026-03-01T00:00:00Z".into(),
         }));
@@ -1272,6 +1274,7 @@ mod tests {
             status: ComponentStatus::Shipped,
             tags: vec![],
             documentation: None,
+            scope: NodeScope::default(),
             created_at: "2026-03-01T00:00:00Z".into(),
             updated_at: "2026-03-01T00:00:00Z".into(),
         }));
@@ -1286,6 +1289,7 @@ mod tests {
             status: ComponentStatus::Shipped,
             tags: vec![],
             documentation: None,
+            scope: NodeScope::default(),
             created_at: "2026-03-01T00:00:00Z".into(),
             updated_at: "2026-03-01T00:00:00Z".into(),
         }));
@@ -1298,6 +1302,7 @@ mod tests {
             source: "user directive".into(),
             tags: vec![],
             documentation: None,
+            scope: NodeScope::default(),
             created_at: "2026-03-01T00:00:00Z".into(),
             updated_at: "2026-03-01T00:00:00Z".into(),
         }));
@@ -1309,6 +1314,7 @@ mod tests {
             priority: QualityPriority::Critical,
             tags: vec![],
             documentation: None,
+            scope: NodeScope::default(),
             created_at: "2026-03-01T00:00:00Z".into(),
             updated_at: "2026-03-01T00:00:00Z".into(),
         }));
@@ -1397,6 +1403,7 @@ mod tests {
             supersedes: None,
             tags: vec![],
             documentation: None,
+            scope: NodeScope::default(),
             created_at: "2026-03-01T00:00:00Z".into(),
             updated_at: "2026-03-01T00:00:00Z".into(),
         }));
@@ -1526,6 +1533,7 @@ mod tests {
             status: ComponentStatus::Shipped,
             tags: vec![],
             documentation: None,
+            scope: NodeScope::default(),
             created_at: "".into(),
             updated_at: "".into(),
         }));
@@ -1539,6 +1547,7 @@ mod tests {
             status: ComponentStatus::Shipped,
             tags: vec![],
             documentation: None,
+            scope: NodeScope::default(),
             created_at: "".into(),
             updated_at: "".into(),
         }));
@@ -1633,6 +1642,7 @@ mod tests {
             supersedes: None,
             tags: vec![],
             documentation: None,
+            scope: NodeScope::default(),
             created_at: "".into(),
             updated_at: "".into(),
         }));
@@ -1664,6 +1674,7 @@ mod tests {
                 supersedes: None,
                 tags: vec!["test".into()],
                 documentation: None,
+                scope: NodeScope::default(),
                 created_at: "2026-03-01T00:00:00Z".into(),
                 updated_at: "2026-03-01T00:00:00Z".into(),
             }));
@@ -1678,6 +1689,7 @@ mod tests {
                 license: None,
                 tags: vec![],
                 documentation: None,
+                scope: NodeScope::default(),
                 created_at: "2026-03-01T00:00:00Z".into(),
                 updated_at: "2026-03-01T00:00:00Z".into(),
             }));
@@ -1735,6 +1747,7 @@ mod tests {
             status: ComponentStatus::Shipped,
             tags: vec![],
             documentation: None,
+            scope: NodeScope::default(),
             created_at: "".into(),
             updated_at: "".into(),
         }));
@@ -1748,6 +1761,7 @@ mod tests {
             status: ComponentStatus::Shipped,
             tags: vec![],
             documentation: None,
+            scope: NodeScope::default(),
             created_at: "".into(),
             updated_at: "".into(),
         }));
@@ -1782,6 +1796,7 @@ mod tests {
             supersedes: None,
             tags: vec![],
             documentation: None,
+            scope: NodeScope::default(),
             created_at: "".into(),
             updated_at: "".into(),
         }));
@@ -1816,6 +1831,7 @@ mod tests {
                 supersedes: None,
                 tags: vec![],
                 documentation: None,
+                scope: NodeScope::default(),
                 created_at: "".into(),
                 updated_at: "".into(),
             }));
@@ -1831,6 +1847,7 @@ mod tests {
                 supersedes: None,
                 tags: vec![],
                 documentation: None,
+                scope: NodeScope::default(),
                 created_at: "".into(),
                 updated_at: "".into(),
             }));

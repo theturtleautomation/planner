@@ -43,10 +43,7 @@ pub struct SessionRuntime {
 }
 
 impl SessionRuntime {
-    pub fn new() -> (
-        Arc<Self>,
-        Arc<AsyncMutex<mpsc::UnboundedReceiver<String>>>,
-    ) {
+    pub fn new() -> (Arc<Self>, Arc<AsyncMutex<mpsc::UnboundedReceiver<String>>>) {
         let (input_tx, input_rx) = mpsc::unbounded_channel();
         let (outbound_tx, _) = broadcast::channel(DEFAULT_BROADCAST_BUFFER);
         let (shutdown_tx, _) = watch::channel(false);
@@ -172,7 +169,11 @@ impl SessionRuntimeRegistry {
 
         expired_ids
             .into_iter()
-            .filter_map(|session_id| runtimes.remove(&session_id).map(|runtime| (session_id, runtime)))
+            .filter_map(|session_id| {
+                runtimes
+                    .remove(&session_id)
+                    .map(|runtime| (session_id, runtime))
+            })
             .collect()
     }
 }

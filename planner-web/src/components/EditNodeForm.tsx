@@ -18,7 +18,15 @@ import type {
   DecisionOption,
   Consequence,
   Assumption,
+  NodeScope,
+  ScopeClass,
 } from '../types/blueprint.ts';
+
+const DEFAULT_SCOPE: NodeScope = {
+  scope_class: 'unscoped',
+  secondary: {},
+  is_shared: false,
+};
 
 // ─── Props ──────────────────────────────────────────────────────────────────
 
@@ -52,6 +60,195 @@ function DocumentationField({
         onChange={e => onChange(e.target.value.trim() ? e.target.value : undefined)}
       />
     </>
+  );
+}
+
+function ScopeEditor({
+  scope,
+  onChange,
+}: {
+  scope?: NodeScope;
+  onChange: (scope: NodeScope) => void;
+}) {
+  const value = scope ?? DEFAULT_SCOPE;
+  const linkedProjectIds = (value.shared?.linked_project_ids ?? []).join(', ');
+
+  const setScopeClass = (scopeClass: ScopeClass) => {
+    onChange({
+      ...value,
+      scope_class: scopeClass,
+      project:
+        scopeClass === 'project' || scopeClass === 'project_contextual'
+          ? value.project
+          : undefined,
+      secondary: scopeClass === 'project_contextual' ? value.secondary : {},
+    });
+  };
+
+  return (
+    <div
+      style={{
+        border: '1px solid var(--color-border)',
+        borderRadius: 'var(--radius-md)',
+        padding: 'var(--space-3)',
+        marginBottom: 'var(--space-4)',
+        background: 'var(--color-surface-offset)',
+      }}
+    >
+      <div style={{ fontSize: '0.625rem', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--color-text-faint)', marginBottom: 'var(--space-3)' }}>
+        Scope
+      </div>
+
+      <label className="field-label">Scope Class</label>
+      <select
+        className="field-input"
+        value={value.scope_class}
+        onChange={e => setScopeClass(e.target.value as ScopeClass)}
+      >
+        <option value="unscoped">Unscoped</option>
+        <option value="global">Global</option>
+        <option value="project">Project</option>
+        <option value="project_contextual">Project Contextual</option>
+      </select>
+
+      {(value.scope_class === 'project' || value.scope_class === 'project_contextual') && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)', marginTop: 'var(--space-3)' }}>
+          <div>
+            <label className="field-label">Project ID</label>
+            <input
+              className="field-input"
+              value={value.project?.project_id ?? ''}
+              onChange={e => onChange({
+                ...value,
+                project: {
+                  project_id: e.target.value,
+                  project_name: value.project?.project_name,
+                },
+              })}
+            />
+          </div>
+          <div>
+            <label className="field-label">Project Name</label>
+            <input
+              className="field-input"
+              value={value.project?.project_name ?? ''}
+              onChange={e => onChange({
+                ...value,
+                project: {
+                  project_id: value.project?.project_id ?? '',
+                  project_name: e.target.value || undefined,
+                },
+              })}
+            />
+          </div>
+        </div>
+      )}
+
+      {value.scope_class === 'project_contextual' && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)', marginTop: 'var(--space-3)' }}>
+          <div>
+            <label className="field-label">Feature</label>
+            <input
+              className="field-input"
+              value={value.secondary.feature ?? ''}
+              onChange={e => onChange({
+                ...value,
+                secondary: { ...value.secondary, feature: e.target.value || undefined },
+              })}
+            />
+          </div>
+          <div>
+            <label className="field-label">Widget</label>
+            <input
+              className="field-input"
+              value={value.secondary.widget ?? ''}
+              onChange={e => onChange({
+                ...value,
+                secondary: { ...value.secondary, widget: e.target.value || undefined },
+              })}
+            />
+          </div>
+          <div>
+            <label className="field-label">Artifact</label>
+            <input
+              className="field-input"
+              value={value.secondary.artifact ?? ''}
+              onChange={e => onChange({
+                ...value,
+                secondary: { ...value.secondary, artifact: e.target.value || undefined },
+              })}
+            />
+          </div>
+          <div>
+            <label className="field-label">Component</label>
+            <input
+              className="field-input"
+              value={value.secondary.component ?? ''}
+              onChange={e => onChange({
+                ...value,
+                secondary: { ...value.secondary, component: e.target.value || undefined },
+              })}
+            />
+          </div>
+        </div>
+      )}
+
+      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: 'var(--space-3)', fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>
+        <input
+          type="checkbox"
+          checked={value.is_shared}
+          onChange={e =>
+            onChange({
+              ...value,
+              is_shared: e.target.checked,
+              shared: e.target.checked
+                ? value.shared ?? { linked_project_ids: [], inherit_to_linked_projects: true }
+                : undefined,
+            })
+          }
+        />
+        Shared knowledge
+      </label>
+
+      {value.is_shared && (
+        <>
+          <label className="field-label" style={{ marginTop: 'var(--space-3)' }}>Linked Project IDs</label>
+          <input
+            className="field-input"
+            value={linkedProjectIds}
+            onChange={e =>
+              onChange({
+                ...value,
+                shared: {
+                  linked_project_ids: e.target.value
+                    .split(',')
+                    .map(v => v.trim())
+                    .filter(Boolean),
+                  inherit_to_linked_projects:
+                    value.shared?.inherit_to_linked_projects ?? true,
+                },
+              })
+            }
+          />
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: 'var(--space-2)', fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>
+            <input
+              type="checkbox"
+              checked={value.shared?.inherit_to_linked_projects ?? true}
+              onChange={e =>
+                onChange({
+                  ...value,
+                  shared: {
+                    linked_project_ids: value.shared?.linked_project_ids ?? [],
+                    inherit_to_linked_projects: e.target.checked,
+                  },
+                })
+              }
+            />
+            Inherit to linked project views
+          </label>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -365,6 +562,14 @@ export default function EditNodeForm({ node, onSave, onCancel, saving }: EditNod
   const [draft, setDraft] = useState<BlueprintNode>(() => structuredClone(node));
   const [error, setError] = useState<string | null>(null);
 
+  const updateScope = useCallback((scope: NodeScope) => {
+    setDraft(prev => ({
+      ...prev,
+      scope,
+      updated_at: nowIso(),
+    }));
+  }, []);
+
   const handleSave = useCallback(async () => {
     setError(null);
     try {
@@ -396,6 +601,7 @@ export default function EditNodeForm({ node, onSave, onCancel, saving }: EditNod
   return (
     <div className="edit-node-form">
       <div className="edit-node-form-body">
+        <ScopeEditor scope={draft.scope} onChange={updateScope} />
         {renderForm()}
       </div>
 

@@ -26,6 +26,56 @@ fn now() -> String {
     Utc::now().to_rfc3339()
 }
 
+fn slugify(input: &str) -> String {
+    input
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>()
+        .split('-')
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("-")
+}
+
+fn project_scope_from_name(project_name: &str) -> NodeScope {
+    NodeScope {
+        scope_class: ScopeClass::Project,
+        project: Some(ProjectScope {
+            project_id: format!("proj-{}", slugify(project_name)),
+            project_name: Some(project_name.to_string()),
+        }),
+        secondary: SecondaryScopeRefs::default(),
+        is_shared: false,
+        shared: None,
+    }
+}
+
+fn scope_for_spec(spec: &NLSpecV1) -> NodeScope {
+    let mut scope = NodeScope {
+        scope_class: ScopeClass::Project,
+        project: Some(ProjectScope {
+            project_id: spec.project_id.to_string(),
+            project_name: None,
+        }),
+        secondary: SecondaryScopeRefs::default(),
+        is_shared: false,
+        shared: None,
+    };
+
+    if let planner_schemas::ChunkType::Domain { name } = &spec.chunk {
+        scope.scope_class = ScopeClass::ProjectContextual;
+        scope.secondary.feature = Some(name.clone());
+    }
+
+    scope
+}
+
 // ---------------------------------------------------------------------------
 // Stage 1: Intake → Constraints + initial Decisions
 // ---------------------------------------------------------------------------
@@ -37,6 +87,7 @@ fn now() -> String {
 /// - Constraint nodes from the intake's key constraints (if present)
 pub fn emit_from_intake(store: &BlueprintStore, intake: &IntakeV1) {
     let ts = now();
+    let scope = project_scope_from_name(&intake.project_name);
 
     // Decision: project scope
     let scope_decision = Decision {
@@ -55,6 +106,7 @@ pub fn emit_from_intake(store: &BlueprintStore, intake: &IntakeV1) {
         supersedes: None,
         tags: vec!["intake".into(), "scope".into()],
         documentation: None,
+        scope,
         created_at: ts.clone(),
         updated_at: ts.clone(),
     };
@@ -84,6 +136,7 @@ pub fn emit_from_spec(store: &BlueprintStore, spec: &NLSpecV1) {
         planner_schemas::ChunkType::Root => "root".to_string(),
         planner_schemas::ChunkType::Domain { name } => name.clone(),
     };
+    let node_scope = scope_for_spec(spec);
 
     // --- Architectural Constraints → Constraint nodes ---
     for (i, constraint_text) in spec.architectural_constraints.iter().enumerate() {
@@ -96,6 +149,7 @@ pub fn emit_from_spec(store: &BlueprintStore, spec: &NLSpecV1) {
             source: "NLSpec compilation".into(),
             tags: vec!["spec".into(), chunk_tag.clone()],
             documentation: None,
+            scope: node_scope.clone(),
             created_at: ts.clone(),
             updated_at: ts.clone(),
         };
@@ -125,6 +179,7 @@ pub fn emit_from_spec(store: &BlueprintStore, spec: &NLSpecV1) {
             license: None,
             tags: vec!["dependency".into(), chunk_tag.clone()],
             documentation: None,
+            scope: node_scope.clone(),
             created_at: ts.clone(),
             updated_at: ts.clone(),
         };
@@ -146,6 +201,7 @@ pub fn emit_from_spec(store: &BlueprintStore, spec: &NLSpecV1) {
             supersedes: None,
             tags: vec!["dependency".into(), chunk_tag.clone()],
             documentation: None,
+            scope: node_scope.clone(),
             created_at: ts.clone(),
             updated_at: ts.clone(),
         };
@@ -194,6 +250,7 @@ pub fn emit_from_spec(store: &BlueprintStore, spec: &NLSpecV1) {
             status: ComponentStatus::Planned,
             tags: vec!["spec".into(), chunk_tag.clone()],
             documentation: None,
+            scope: node_scope.clone(),
             created_at: ts.clone(),
             updated_at: ts.clone(),
         };
@@ -215,6 +272,7 @@ pub fn emit_from_spec(store: &BlueprintStore, spec: &NLSpecV1) {
             priority,
             tags: vec!["satisfaction".into(), chunk_tag.clone()],
             documentation: None,
+            scope: node_scope.clone(),
             created_at: ts.clone(),
             updated_at: ts.clone(),
         };
@@ -231,6 +289,7 @@ pub fn emit_from_spec(store: &BlueprintStore, spec: &NLSpecV1) {
                 priority: QualityPriority::Medium,
                 tags: vec!["definition-of-done".into(), chunk_tag.clone()],
                 documentation: None,
+                scope: node_scope.clone(),
                 created_at: ts.clone(),
                 updated_at: ts.clone(),
             };
@@ -278,6 +337,7 @@ pub fn emit_from_ar(store: &BlueprintStore, reports: &[ArReportV1]) {
                     source: format!("Adversarial Review ({})", report.chunk_name),
                     tags: vec!["ar-review".into(), "blocking".into()],
                     documentation: None,
+                    scope: NodeScope::default(),
                     created_at: ts.clone(),
                     updated_at: ts.clone(),
                 };
@@ -317,6 +377,7 @@ pub fn emit_from_factory(store: &BlueprintStore, output: &FactoryOutputV1) {
         rationale: "Automated code generation with sandbox isolation and validation loop".into(),
         tags: vec!["factory".into(), "codegen".into()],
         documentation: None,
+        scope: NodeScope::default(),
         created_at: ts.clone(),
         updated_at: ts.clone(),
     };
@@ -340,6 +401,7 @@ pub fn emit_from_factory(store: &BlueprintStore, output: &FactoryOutputV1) {
         },
         tags: vec!["factory".into()],
         documentation: None,
+        scope: NodeScope::default(),
         created_at: ts.clone(),
         updated_at: ts.clone(),
     };

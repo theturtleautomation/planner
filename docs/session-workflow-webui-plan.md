@@ -38,6 +38,12 @@ loading the entire system into working memory.
 - Phase 6.1: complete (dashboard now renders backend-truthful workflow summaries with resumability, current step, last activity, and primary action)
 - Phase 6.2: complete (dashboard now prioritizes attention/actionable sessions and renders warning/error indicators with test coverage)
 
+- Phase 7 status: complete
+- Phase 7.1: complete (sessions now persist a title/name, support rename over REST, and surface titles prominently in dashboard/session views)
+- Phase 7.2: complete (sessions can be duplicated into a new branchable copy with saved description/checkpoint context)
+- Phase 7.3: complete (sessions can be archived/unarchived, and the dashboard hides archived work by default with an explicit toggle)
+- Phase 7.4: complete (session transcript + event log export is available from the session page with backend payload coverage and UI download flow)
+
 ---
 
 ## Phase 0: Make The Current UI Truthful
@@ -547,12 +553,17 @@ Goal:
 - make the dashboard operable at scale
 
 Implement:
-- add title/name field and rename endpoint
+- persist a title/name field on the session model
+- derive an initial title from the saved description when the session is still
+  unnamed
+- expose rename via `PATCH /sessions/:id`
+- surface the title prominently in both dashboard and session views
 
 Likely files:
 - `planner-server/src/session.rs`
 - `planner-server/src/api.rs`
 - `planner-web/src/pages/Dashboard.tsx`
+- `planner-web/src/pages/SessionPage.tsx`
 
 Done when:
 - sessions are distinguishable without relying on ID or description snippet
@@ -563,16 +574,22 @@ Goal:
 - support branching from known-good context
 
 Implement:
-- add backend duplication from saved session state
-- start with duplicate-from-description if full duplicate is too expensive
+- add backend duplication from saved session state via
+  `POST /sessions/:id/duplicate`
+- copy the saved description and checkpoint context into a fresh branchable
+  session when checkpoint state exists
+- generate a fresh run identifier for the duplicate and never reuse the live
+  runtime attachment from the source session
 
 Likely files:
 - `planner-server/src/api.rs`
 - `planner-server/src/session.rs`
 - `planner-web/src/pages/Dashboard.tsx`
+- `planner-web/src/pages/SessionPage.tsx`
 
 Done when:
-- the UI supports “try again from this point” without destroying the original
+- the UI supports branching from the current saved state without destroying the
+  original
 
 ### Step 7.3: Archive or hide sessions
 
@@ -580,15 +597,21 @@ Goal:
 - keep the dashboard manageable
 
 Implement:
-- add archived flag and simple hide/archive action
+- add an archived flag and archive/unarchive updates via `PATCH /sessions/:id`
+- hide archived sessions from the default `/sessions` list
+- expose `include_archived=true` for explicit dashboard recovery flows
+- prevent archiving active interview or pipeline sessions
+- expose archive/unarchive actions in both dashboard and session views
 
 Likely files:
 - `planner-server/src/session.rs`
 - `planner-server/src/api.rs`
 - `planner-web/src/pages/Dashboard.tsx`
+- `planner-web/src/pages/SessionPage.tsx`
 
 Done when:
-- inactive sessions can be removed from the main working surface
+- inactive sessions can be removed from the main working surface and restored
+  intentionally
 
 ### Step 7.4: Export transcript and event log
 
@@ -596,7 +619,9 @@ Goal:
 - make session history portable and auditable
 
 Implement:
-- add export endpoint and UI entry point
+- add `GET /sessions/:id/export`
+- return the full session payload needed for transcript and event log download
+- expose export from the session-page action bar
 
 Likely files:
 - `planner-server/src/api.rs`

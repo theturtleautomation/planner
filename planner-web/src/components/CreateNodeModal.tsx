@@ -10,6 +10,8 @@ import type {
   ConstraintType,
   QualityAttribute,
   QualityPriority,
+  ScopeClass,
+  NodeScope,
 } from '../types/blueprint.ts';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -46,6 +48,47 @@ function nowISO(): string {
   return new Date().toISOString();
 }
 
+function buildScope(params: {
+  scopeClass: ScopeClass;
+  projectId: string;
+  projectName: string;
+  feature: string;
+  widget: string;
+  artifact: string;
+  component: string;
+  isShared: boolean;
+  linkedProjectIds: string;
+  inheritToLinkedProjects: boolean;
+}): NodeScope {
+  const parsedLinkedProjectIds = params.linkedProjectIds
+    .split(',')
+    .map(v => v.trim())
+    .filter(Boolean);
+
+  return {
+    scope_class: params.scopeClass,
+    project: params.projectId.trim()
+      ? {
+          project_id: params.projectId.trim(),
+          project_name: params.projectName.trim() || undefined,
+        }
+      : undefined,
+    secondary: {
+      feature: params.feature.trim() || undefined,
+      widget: params.widget.trim() || undefined,
+      artifact: params.artifact.trim() || undefined,
+      component: params.component.trim() || undefined,
+    },
+    is_shared: params.isShared,
+    shared: params.isShared
+      ? {
+          linked_project_ids: parsedLinkedProjectIds,
+          inherit_to_linked_projects: params.inheritToLinkedProjects,
+        }
+      : undefined,
+  };
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function CreateNodeModal({ isOpen, onClose, onCreate }: CreateNodeModalProps) {
@@ -56,6 +99,16 @@ export default function CreateNodeModal({ isOpen, onClose, onCreate }: CreateNod
   // Common fields
   const [name, setName] = useState('');
   const [tags, setTags] = useState('');
+  const [scopeClass, setScopeClass] = useState<ScopeClass>('unscoped');
+  const [projectId, setProjectId] = useState('');
+  const [projectName, setProjectName] = useState('');
+  const [scopeFeature, setScopeFeature] = useState('');
+  const [scopeWidget, setScopeWidget] = useState('');
+  const [scopeArtifact, setScopeArtifact] = useState('');
+  const [scopeComponent, setScopeComponent] = useState('');
+  const [isShared, setIsShared] = useState(false);
+  const [linkedProjectIds, setLinkedProjectIds] = useState('');
+  const [inheritToLinkedProjects, setInheritToLinkedProjects] = useState(true);
 
   // Decision fields
   const [context, setContext] = useState('');
@@ -88,6 +141,16 @@ export default function CreateNodeModal({ isOpen, onClose, onCreate }: CreateNod
   const resetForm = useCallback(() => {
     setName('');
     setTags('');
+    setScopeClass('unscoped');
+    setProjectId('');
+    setProjectName('');
+    setScopeFeature('');
+    setScopeWidget('');
+    setScopeArtifact('');
+    setScopeComponent('');
+    setIsShared(false);
+    setLinkedProjectIds('');
+    setInheritToLinkedProjects(true);
     setContext('');
     setDecisionStatus('proposed');
     setVersion('');
@@ -127,6 +190,35 @@ export default function CreateNodeModal({ isOpen, onClose, onCreate }: CreateNod
       .split(',')
       .map(t => t.trim())
       .filter(Boolean);
+    const parsedLinkedProjects = linkedProjectIds
+      .split(',')
+      .map(v => v.trim())
+      .filter(Boolean);
+
+    if ((scopeClass === 'project' || scopeClass === 'project_contextual') && !projectId.trim()) {
+      setError('Project ID is required for project-scoped records');
+      setSaving(false);
+      return;
+    }
+
+    if (isShared && parsedLinkedProjects.length === 0) {
+      setError('Shared records require at least one linked project ID');
+      setSaving(false);
+      return;
+    }
+
+    const scope = buildScope({
+      scopeClass,
+      projectId,
+      projectName,
+      feature: scopeFeature,
+      widget: scopeWidget,
+      artifact: scopeArtifact,
+      component: scopeComponent,
+      isShared,
+      linkedProjectIds,
+      inheritToLinkedProjects,
+    });
 
     let node: BlueprintNode;
 
@@ -143,6 +235,7 @@ export default function CreateNodeModal({ isOpen, onClose, onCreate }: CreateNod
             consequences: [],
             assumptions: [],
             tags: parsedTags,
+            scope,
             created_at: now,
             updated_at: now,
           };
@@ -159,6 +252,7 @@ export default function CreateNodeModal({ isOpen, onClose, onCreate }: CreateNod
             rationale: rationale.trim() || 'No rationale provided',
             license: license.trim() || undefined,
             tags: parsedTags,
+            scope,
             created_at: now,
             updated_at: now,
           };
@@ -175,6 +269,7 @@ export default function CreateNodeModal({ isOpen, onClose, onCreate }: CreateNod
             consumes: [],
             status: componentStatus,
             tags: parsedTags,
+            scope,
             created_at: now,
             updated_at: now,
           };
@@ -189,6 +284,7 @@ export default function CreateNodeModal({ isOpen, onClose, onCreate }: CreateNod
             description: description.trim() || 'No description provided',
             source: constraintSource.trim() || 'Unknown',
             tags: parsedTags,
+            scope,
             created_at: now,
             updated_at: now,
           };
@@ -202,6 +298,7 @@ export default function CreateNodeModal({ isOpen, onClose, onCreate }: CreateNod
             description: description.trim() || 'No description provided',
             rationale: patternRationale.trim() || 'No rationale provided',
             tags: parsedTags,
+            scope,
             created_at: now,
             updated_at: now,
           };
@@ -215,6 +312,7 @@ export default function CreateNodeModal({ isOpen, onClose, onCreate }: CreateNod
             scenario: scenario.trim() || name.trim(),
             priority,
             tags: parsedTags,
+            scope,
             created_at: now,
             updated_at: now,
           };
@@ -229,7 +327,10 @@ export default function CreateNodeModal({ isOpen, onClose, onCreate }: CreateNod
       setSaving(false);
     }
   }, [
-    nodeType, name, tags, context, decisionStatus,
+    nodeType, name, tags, scopeClass, projectId, projectName,
+    scopeFeature, scopeWidget, scopeArtifact, scopeComponent,
+    isShared, linkedProjectIds, inheritToLinkedProjects,
+    context, decisionStatus,
     version, techCategory, ring, rationale, license,
     componentType, description, componentStatus,
     constraintType, constraintSource,
@@ -278,6 +379,104 @@ export default function CreateNodeModal({ isOpen, onClose, onCreate }: CreateNod
               autoFocus
             />
           </label>
+
+          <div style={{
+            padding: 'var(--space-3)',
+            borderRadius: 'var(--radius-md)',
+            border: '1px solid var(--color-border)',
+            background: 'var(--color-surface-offset)',
+            display: 'grid',
+            gap: 'var(--space-3)',
+          }}>
+            <label className="field-label">
+              Scope Class
+              <select
+                value={scopeClass}
+                onChange={e => setScopeClass(e.target.value as ScopeClass)}
+                className="field-input"
+              >
+                <option value="unscoped">Unscoped</option>
+                <option value="global">Global</option>
+                <option value="project">Project</option>
+                <option value="project_contextual">Project Contextual</option>
+              </select>
+            </label>
+
+            {(scopeClass === 'project' || scopeClass === 'project_contextual') && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
+                <label className="field-label">
+                  Project ID
+                  <input
+                    className="field-input"
+                    value={projectId}
+                    onChange={e => setProjectId(e.target.value)}
+                    placeholder="proj-task-tracker"
+                  />
+                </label>
+                <label className="field-label">
+                  Project Name
+                  <input
+                    className="field-input"
+                    value={projectName}
+                    onChange={e => setProjectName(e.target.value)}
+                    placeholder="Task Tracker"
+                  />
+                </label>
+              </div>
+            )}
+
+            {scopeClass === 'project_contextual' && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
+                <label className="field-label">
+                  Feature
+                  <input className="field-input" value={scopeFeature} onChange={e => setScopeFeature(e.target.value)} />
+                </label>
+                <label className="field-label">
+                  Widget
+                  <input className="field-input" value={scopeWidget} onChange={e => setScopeWidget(e.target.value)} />
+                </label>
+                <label className="field-label">
+                  Artifact
+                  <input className="field-input" value={scopeArtifact} onChange={e => setScopeArtifact(e.target.value)} />
+                </label>
+                <label className="field-label">
+                  Component
+                  <input className="field-input" value={scopeComponent} onChange={e => setScopeComponent(e.target.value)} />
+                </label>
+              </div>
+            )}
+
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>
+              <input
+                type="checkbox"
+                checked={isShared}
+                onChange={e => setIsShared(e.target.checked)}
+              />
+              Shared knowledge (inherited into linked project views)
+            </label>
+
+            {isShared && (
+              <>
+                <label className="field-label">
+                  Linked Project IDs
+                  <input
+                    className="field-input"
+                    value={linkedProjectIds}
+                    onChange={e => setLinkedProjectIds(e.target.value)}
+                    placeholder="proj-task-tracker, proj-shared-ui"
+                  />
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>
+                  <input
+                    type="checkbox"
+                    checked={inheritToLinkedProjects}
+                    onChange={e => setInheritToLinkedProjects(e.target.checked)}
+                  />
+                  Inherit to linked project views
+                </label>
+              </>
+            )}
+          </div>
 
           {/* ── Decision-specific ── */}
           {nodeType === 'decision' && (

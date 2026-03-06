@@ -6,6 +6,7 @@ import type {
   GetSessionResponse,
   ListSessionsResponse,
   SendMessageResponse,
+  SessionExportResponse,
   StartSocraticResponse,
   BeliefStateResponse,
   ListModelsResponse,
@@ -23,6 +24,8 @@ import type {
   DiscoveryScanRequest,
   DiscoveryRunResponse,
   ProposedNodesResponse,
+  ScopeClass,
+  ScopeVisibility,
 } from '../types/blueprint.ts';
 
 export { ApiError };
@@ -70,6 +73,34 @@ function buildWebSocketUrl(path: string, token: string): string {
 }
 
 export function createApiClient(getToken: GetTokenFn) {
+  const buildNodeQuery = (params?: {
+    nodeType?: string;
+    scopeClass?: ScopeClass;
+    scopeVisibility?: ScopeVisibility;
+    projectId?: string;
+    feature?: string;
+    widget?: string;
+    artifact?: string;
+    component?: string;
+    includeShared?: boolean;
+    includeGlobal?: boolean;
+  }): string => {
+    if (!params) return '';
+    const qs = new URLSearchParams();
+    if (params.nodeType) qs.set('type', params.nodeType);
+    if (params.scopeClass) qs.set('scope_class', params.scopeClass);
+    if (params.scopeVisibility) qs.set('scope_visibility', params.scopeVisibility);
+    if (params.projectId) qs.set('project_id', params.projectId);
+    if (params.feature) qs.set('feature', params.feature);
+    if (params.widget) qs.set('widget', params.widget);
+    if (params.artifact) qs.set('artifact', params.artifact);
+    if (params.component) qs.set('component', params.component);
+    if (params.includeShared !== undefined) qs.set('include_shared', String(params.includeShared));
+    if (params.includeGlobal !== undefined) qs.set('include_global', String(params.includeGlobal));
+    const raw = qs.toString();
+    return raw ? `?${raw}` : '';
+  };
+
   return {
     health(): Promise<HealthResponse> {
       return apiFetch<HealthResponse>(getToken, '/health');
@@ -86,8 +117,29 @@ export function createApiClient(getToken: GetTokenFn) {
       return apiFetch<GetSessionResponse>(getToken, `/sessions/${id}`);
     },
 
-    listSessions(): Promise<ListSessionsResponse> {
-      return apiFetch<ListSessionsResponse>(getToken, '/sessions');
+    listSessions(params?: { includeArchived?: boolean }): Promise<ListSessionsResponse> {
+      const qs = new URLSearchParams();
+      if (params?.includeArchived) qs.set('include_archived', 'true');
+      const query = qs.toString() ? `?${qs.toString()}` : '';
+      return apiFetch<ListSessionsResponse>(getToken, `/sessions${query}`);
+    },
+
+    updateSession(id: string, patch: { title?: string; archived?: boolean }): Promise<GetSessionResponse> {
+      return apiFetch<GetSessionResponse>(getToken, `/sessions/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(patch),
+      });
+    },
+
+    duplicateSession(id: string, body?: { title?: string }): Promise<GetSessionResponse> {
+      return apiFetch<GetSessionResponse>(getToken, `/sessions/${id}/duplicate`, {
+        method: 'POST',
+        body: JSON.stringify(body ?? {}),
+      });
+    },
+
+    exportSession(id: string): Promise<SessionExportResponse> {
+      return apiFetch<SessionExportResponse>(getToken, `/sessions/${id}/export`);
     },
 
     sendMessage(id: string, content: string): Promise<SendMessageResponse> {
@@ -153,14 +205,35 @@ export function createApiClient(getToken: GetTokenFn) {
     // ─── Blueprint ──────────────────────────────────────────────────────
 
     /** GET /blueprint — Full graph snapshot (summaries + edges + counts). */
-    getBlueprint(): Promise<BlueprintResponse> {
-      return apiFetch<BlueprintResponse>(getToken, '/blueprint');
+    getBlueprint(params?: {
+      nodeType?: string;
+      scopeClass?: ScopeClass;
+      scopeVisibility?: ScopeVisibility;
+      projectId?: string;
+      feature?: string;
+      widget?: string;
+      artifact?: string;
+      component?: string;
+      includeShared?: boolean;
+      includeGlobal?: boolean;
+    }): Promise<BlueprintResponse> {
+      return apiFetch<BlueprintResponse>(getToken, `/blueprint${buildNodeQuery(params)}`);
     },
 
     /** GET /blueprint/nodes?type=<type> — List nodes, optionally by type. */
-    listBlueprintNodes(nodeType?: string): Promise<NodeListResponse> {
-      const qs = nodeType ? `?type=${encodeURIComponent(nodeType)}` : '';
-      return apiFetch<NodeListResponse>(getToken, `/blueprint/nodes${qs}`);
+    listBlueprintNodes(params?: {
+      nodeType?: string;
+      scopeClass?: ScopeClass;
+      scopeVisibility?: ScopeVisibility;
+      projectId?: string;
+      feature?: string;
+      widget?: string;
+      artifact?: string;
+      component?: string;
+      includeShared?: boolean;
+      includeGlobal?: boolean;
+    }): Promise<NodeListResponse> {
+      return apiFetch<NodeListResponse>(getToken, `/blueprint/nodes${buildNodeQuery(params)}`);
     },
 
     /** POST /blueprint/nodes — Create a new node. */

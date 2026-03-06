@@ -31,6 +31,19 @@ const TYPE_LABELS: Record<string, string> = {
   quality_requirement: 'Quality Req.',
 };
 
+const SCOPE_CLASS_LABELS: Record<string, string> = {
+  global: 'Global',
+  project: 'Project',
+  project_contextual: 'Project Contextual',
+  unscoped: 'Unscoped',
+};
+
+const SCOPE_VISIBILITY_LABELS: Record<string, string> = {
+  shared: 'Shared',
+  project_local: 'Project Local',
+  unscoped: 'Unscoped',
+};
+
 const STATUS_COLORS: Record<string, string> = {
   // Decision statuses
   proposed: 'var(--color-warning)',
@@ -123,6 +136,59 @@ function defaultColumns(edges: EdgePayload[]): ColumnDef[] {
       width: '100px',
     },
     {
+      key: 'scope',
+      label: 'Scope',
+      render: (n) => {
+        const scopeClass = n.scope_class ?? 'unscoped';
+        const scopeVisibility = n.scope_visibility ?? (n.is_shared ? 'shared' : 'unscoped');
+        return (
+          <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <span
+              style={{
+                fontSize: '0.5625rem',
+                padding: '1px 6px',
+                borderRadius: 'var(--radius-full)',
+                border: '1px solid var(--color-border)',
+                color: 'var(--color-text-muted)',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {SCOPE_CLASS_LABELS[scopeClass] ?? scopeClass}
+            </span>
+            <span
+              style={{
+                fontSize: '0.5625rem',
+                padding: '1px 6px',
+                borderRadius: 'var(--radius-full)',
+                background:
+                  scopeVisibility === 'shared'
+                    ? 'rgba(59,130,246,0.14)'
+                    : scopeVisibility === 'project_local'
+                      ? 'rgba(34,197,94,0.14)'
+                      : 'rgba(234,179,8,0.14)',
+                color:
+                  scopeVisibility === 'shared'
+                    ? 'var(--color-blue)'
+                    : scopeVisibility === 'project_local'
+                      ? 'var(--color-success)'
+                      : 'var(--color-warning)',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {SCOPE_VISIBILITY_LABELS[scopeVisibility] ?? scopeVisibility}
+            </span>
+            {n.project_name && (
+              <span style={{ fontSize: '0.5625rem', color: 'var(--color-text-faint)' }}>
+                {n.project_name}
+              </span>
+            )}
+          </div>
+        );
+      },
+      sortValue: (n) => `${n.scope_class ?? 'unscoped'}:${n.scope_visibility ?? 'unscoped'}:${n.project_name ?? ''}`,
+      width: '190px',
+    },
+    {
       key: 'connections',
       label: 'Edges',
       render: (n) => {
@@ -209,7 +275,15 @@ export default function NodeListPanel({ nodes, edges, nodeType, onSelectNode, co
         n.name.toLowerCase().includes(q) ||
         n.id.toLowerCase().includes(q) ||
         n.tags.some(t => t.toLowerCase().includes(q)) ||
-        n.status.toLowerCase().includes(q)
+        n.status.toLowerCase().includes(q) ||
+        (n.project_id ?? '').toLowerCase().includes(q) ||
+        (n.project_name ?? '').toLowerCase().includes(q) ||
+        (n.scope_class ?? 'unscoped').toLowerCase().includes(q) ||
+        (n.scope_visibility ?? 'unscoped').toLowerCase().includes(q) ||
+        (n.secondary_scope?.feature ?? '').toLowerCase().includes(q) ||
+        (n.secondary_scope?.widget ?? '').toLowerCase().includes(q) ||
+        (n.secondary_scope?.artifact ?? '').toLowerCase().includes(q) ||
+        (n.secondary_scope?.component ?? '').toLowerCase().includes(q)
       );
     }
     const col = cols.find(c => c.key === sortKey);

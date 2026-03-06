@@ -253,6 +253,110 @@ pub enum QualityPriority {
     Low,
 }
 
+/// Primary scope class for a knowledge record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ScopeClass {
+    Global,
+    Project,
+    ProjectContextual,
+    Unscoped,
+}
+
+impl Default for ScopeClass {
+    fn default() -> Self {
+        Self::Unscoped
+    }
+}
+
+/// Visibility label used in project views.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ScopeVisibility {
+    Shared,
+    ProjectLocal,
+    Unscoped,
+}
+
+/// Primary software project scope.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectScope {
+    pub project_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_name: Option<String>,
+}
+
+/// Optional narrower working context inside a project.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SecondaryScopeRefs {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub feature: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub widget: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub artifact: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub component: Option<String>,
+}
+
+/// Rules for how shared knowledge appears in project views.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SharedScope {
+    /// Projects that explicitly link this shared record.
+    #[serde(default)]
+    pub linked_project_ids: Vec<String>,
+    /// Shared records are inherited into linked project views by default.
+    #[serde(default = "default_true")]
+    pub inherit_to_linked_projects: bool,
+}
+
+/// Scope payload attached to every node.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NodeScope {
+    #[serde(default)]
+    pub scope_class: ScopeClass,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project: Option<ProjectScope>,
+    #[serde(default)]
+    pub secondary: SecondaryScopeRefs,
+    #[serde(default)]
+    pub is_shared: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shared: Option<SharedScope>,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl Default for NodeScope {
+    fn default() -> Self {
+        Self::unscoped()
+    }
+}
+
+impl NodeScope {
+    pub fn unscoped() -> Self {
+        Self {
+            scope_class: ScopeClass::Unscoped,
+            project: None,
+            secondary: SecondaryScopeRefs::default(),
+            is_shared: false,
+            shared: None,
+        }
+    }
+
+    pub fn visibility(&self) -> ScopeVisibility {
+        if matches!(self.scope_class, ScopeClass::Unscoped) {
+            ScopeVisibility::Unscoped
+        } else if self.is_shared {
+            ScopeVisibility::Shared
+        } else {
+            ScopeVisibility::ProjectLocal
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Node Types — one struct per Blueprint node kind
 // ---------------------------------------------------------------------------
@@ -300,6 +404,8 @@ pub struct Decision {
     /// Freeform markdown documentation attached to this node.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub documentation: Option<String>,
+    #[serde(default)]
+    pub scope: NodeScope,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -321,6 +427,8 @@ pub struct Technology {
     /// Freeform markdown documentation attached to this node.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub documentation: Option<String>,
+    #[serde(default)]
+    pub scope: NodeScope,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -344,6 +452,8 @@ pub struct Component {
     /// Freeform markdown documentation attached to this node.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub documentation: Option<String>,
+    #[serde(default)]
+    pub scope: NodeScope,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -362,6 +472,8 @@ pub struct Constraint {
     /// Freeform markdown documentation attached to this node.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub documentation: Option<String>,
+    #[serde(default)]
+    pub scope: NodeScope,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -378,6 +490,8 @@ pub struct Pattern {
     /// Freeform markdown documentation attached to this node.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub documentation: Option<String>,
+    #[serde(default)]
+    pub scope: NodeScope,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -395,6 +509,8 @@ pub struct QualityRequirement {
     /// Freeform markdown documentation attached to this node.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub documentation: Option<String>,
+    #[serde(default)]
+    pub scope: NodeScope,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -485,6 +601,18 @@ impl BlueprintNode {
             BlueprintNode::Constraint(n) => n.documentation.as_deref(),
             BlueprintNode::Pattern(n) => n.documentation.as_deref(),
             BlueprintNode::QualityRequirement(n) => n.documentation.as_deref(),
+        }
+    }
+
+    /// Return the scope metadata attached to this node.
+    pub fn scope(&self) -> &NodeScope {
+        match self {
+            BlueprintNode::Decision(n) => &n.scope,
+            BlueprintNode::Technology(n) => &n.scope,
+            BlueprintNode::Component(n) => &n.scope,
+            BlueprintNode::Constraint(n) => &n.scope,
+            BlueprintNode::Pattern(n) => &n.scope,
+            BlueprintNode::QualityRequirement(n) => &n.scope,
         }
     }
 
@@ -596,6 +724,18 @@ pub struct NodeSummary {
     pub node_type: String,
     /// Normalized status string derived from each node type's lifecycle field.
     pub status: String,
+    pub scope_class: ScopeClass,
+    pub scope_visibility: ScopeVisibility,
+    #[serde(default)]
+    pub is_shared: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_name: Option<String>,
+    #[serde(default)]
+    pub secondary_scope: SecondaryScopeRefs,
+    #[serde(default)]
+    pub linked_project_ids: Vec<String>,
     pub tags: Vec<String>,
     #[serde(default)]
     pub has_documentation: bool,
@@ -604,11 +744,35 @@ pub struct NodeSummary {
 
 impl From<&BlueprintNode> for NodeSummary {
     fn from(node: &BlueprintNode) -> Self {
+        let scope = node.scope();
+        let (project_id, project_name) = scope
+            .project
+            .as_ref()
+            .map(|project| {
+                (
+                    Some(project.project_id.clone()),
+                    project.project_name.clone(),
+                )
+            })
+            .unwrap_or((None, None));
+        let linked_project_ids = scope
+            .shared
+            .as_ref()
+            .map(|shared| shared.linked_project_ids.clone())
+            .unwrap_or_default();
+
         NodeSummary {
             id: node.id().clone(),
             name: node.name().to_string(),
             node_type: node.type_name().to_string(),
             status: node.status(),
+            scope_class: scope.scope_class.clone(),
+            scope_visibility: scope.visibility(),
+            is_shared: scope.is_shared,
+            project_id,
+            project_name,
+            secondary_scope: scope.secondary.clone(),
+            linked_project_ids,
             tags: node.tags().to_vec(),
             has_documentation: node.documentation().is_some(),
             updated_at: node.updated_at().to_string(),
@@ -786,6 +950,7 @@ mod tests {
             supersedes: None,
             tags: vec!["storage".into(), "core".into()],
             documentation: Some("# Decision Notes".into()),
+            scope: NodeScope::default(),
             created_at: "2026-03-01T00:00:00Z".into(),
             updated_at: "2026-03-01T00:00:00Z".into(),
         };
@@ -816,6 +981,7 @@ mod tests {
             license: Some("MIT/Apache-2.0".into()),
             tags: vec!["core".into()],
             documentation: None,
+            scope: NodeScope::default(),
             created_at: "2026-03-01T00:00:00Z".into(),
             updated_at: "2026-03-01T00:00:00Z".into(),
         };
@@ -839,6 +1005,7 @@ mod tests {
             status: ComponentStatus::Shipped,
             tags: vec!["storage".into()],
             documentation: None,
+            scope: NodeScope::default(),
             created_at: "2026-03-01T00:00:00Z".into(),
             updated_at: "2026-03-01T00:00:00Z".into(),
         };
@@ -860,6 +1027,7 @@ mod tests {
             source: "user directive".into(),
             tags: vec!["llm".into()],
             documentation: None,
+            scope: NodeScope::default(),
             created_at: "2026-03-01T00:00:00Z".into(),
             updated_at: "2026-03-01T00:00:00Z".into(),
         };
@@ -880,6 +1048,7 @@ mod tests {
             priority: QualityPriority::Critical,
             tags: vec!["persistence".into()],
             documentation: None,
+            scope: NodeScope::default(),
             created_at: "2026-03-01T00:00:00Z".into(),
             updated_at: "2026-03-01T00:00:00Z".into(),
         };
@@ -899,6 +1068,7 @@ mod tests {
             rationale: "Full audit trail, time-travel debugging".into(),
             tags: vec!["persistence".into()],
             documentation: None,
+            scope: NodeScope::default(),
             created_at: "2026-03-01T00:00:00Z".into(),
             updated_at: "2026-03-01T00:00:00Z".into(),
         };
@@ -976,6 +1146,24 @@ mod tests {
             license: Some("MIT".into()),
             tags: vec!["async".into(), "core".into()],
             documentation: Some("Runtime selection notes".into()),
+            scope: NodeScope {
+                scope_class: ScopeClass::ProjectContextual,
+                project: Some(ProjectScope {
+                    project_id: "proj-planner".into(),
+                    project_name: Some("Planner".into()),
+                }),
+                secondary: SecondaryScopeRefs {
+                    feature: Some("pipeline".into()),
+                    widget: None,
+                    artifact: None,
+                    component: Some("runtime".into()),
+                },
+                is_shared: true,
+                shared: Some(SharedScope {
+                    linked_project_ids: vec!["proj-planner".into(), "proj-shared".into()],
+                    inherit_to_linked_projects: true,
+                }),
+            },
             created_at: "2026-03-01T00:00:00Z".into(),
             updated_at: "2026-03-02T00:00:00Z".into(),
         });
@@ -986,6 +1174,14 @@ mod tests {
         assert_eq!(summary.status, "Adopt");
         assert_eq!(summary.tags, vec!["async", "core"]);
         assert!(summary.has_documentation);
+        assert_eq!(summary.scope_class, ScopeClass::ProjectContextual);
+        assert_eq!(summary.scope_visibility, ScopeVisibility::Shared);
+        assert_eq!(summary.project_id.as_deref(), Some("proj-planner"));
+        assert_eq!(summary.secondary_scope.feature.as_deref(), Some("pipeline"));
+        assert_eq!(
+            summary.linked_project_ids,
+            vec!["proj-planner", "proj-shared"]
+        );
     }
 
     #[test]
@@ -997,6 +1193,7 @@ mod tests {
             rationale: "Tests markdown persistence".into(),
             tags: vec!["docs".into()],
             documentation: Some("## Notes\n\n- one".into()),
+            scope: NodeScope::default(),
             created_at: "2026-03-01T00:00:00Z".into(),
             updated_at: "2026-03-01T00:00:00Z".into(),
         });
@@ -1022,5 +1219,39 @@ mod tests {
 
         let decoded: BlueprintNode = serde_json::from_value(raw).unwrap();
         assert_eq!(decoded.documentation(), None);
+        assert!(matches!(decoded.scope().scope_class, ScopeClass::Unscoped));
+        assert_eq!(decoded.scope().visibility(), ScopeVisibility::Unscoped);
+    }
+
+    #[test]
+    fn node_scope_class_roundtrip() {
+        let node = BlueprintNode::Decision(Decision {
+            id: NodeId::from_raw("dec-scope-roundtrip"),
+            title: "Scoped Decision".into(),
+            status: DecisionStatus::Accepted,
+            context: "Validate scope serialization".into(),
+            options: vec![],
+            consequences: vec![],
+            assumptions: vec![],
+            supersedes: None,
+            tags: vec![],
+            documentation: None,
+            scope: NodeScope {
+                scope_class: ScopeClass::Project,
+                project: Some(ProjectScope {
+                    project_id: "proj-demo".into(),
+                    project_name: Some("Demo".into()),
+                }),
+                secondary: SecondaryScopeRefs::default(),
+                is_shared: false,
+                shared: None,
+            },
+            created_at: "2026-03-01T00:00:00Z".into(),
+            updated_at: "2026-03-01T00:00:00Z".into(),
+        });
+
+        let json = serde_json::to_value(&node).unwrap();
+        assert_eq!(json["scope"]["scope_class"], "project");
+        assert_eq!(json["scope"]["project"]["project_id"], "proj-demo");
     }
 }

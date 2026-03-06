@@ -11,6 +11,9 @@ const mockGetSession = vi.fn();
 const mockStartSocratic = vi.fn();
 const mockRestartFromDescription = vi.fn();
 const mockRetryPipeline = vi.fn();
+const mockUpdateSession = vi.fn();
+const mockDuplicateSession = vi.fn();
+const mockExportSession = vi.fn();
 const mockAttach = vi.fn();
 const mockSendDescription = vi.fn();
 
@@ -21,6 +24,9 @@ vi.mock('../../api/client.ts', () => ({
     startSocratic: mockStartSocratic,
     restartFromDescription: mockRestartFromDescription,
     retryPipeline: mockRetryPipeline,
+    updateSession: mockUpdateSession,
+    duplicateSession: mockDuplicateSession,
+    exportSession: mockExportSession,
   })),
 }));
 
@@ -35,6 +41,9 @@ vi.mock('../../hooks/useSocraticWebSocket.ts', () => ({
 function makeSession(overrides: Partial<Session>): Session {
   return {
     id: 'abc',
+    title: null,
+    archived: false,
+    archived_at: null,
     messages: [
       {
         id: 'm1',
@@ -86,6 +95,10 @@ function renderSessionPage(path = '/session/abc') {
 describe('SessionPage resume behavior', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.spyOn(window, 'prompt').mockReturnValue(null);
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    vi.spyOn(window.URL, 'createObjectURL').mockReturnValue('blob:session-export');
+    vi.spyOn(window.URL, 'revokeObjectURL').mockImplementation(() => undefined);
     vi.mocked(useSocraticWebSocket).mockReturnValue({
       isConnected: false,
       reconnectFailed: false,
@@ -344,5 +357,124 @@ describe('SessionPage resume behavior', () => {
     await waitFor(() => {
       expect(mockAttach).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it('renames the session from the action bar', async () => {
+    const user = userEvent.setup();
+    vi.mocked(window.prompt).mockReturnValue('Renamed session');
+    const session = makeSession({
+      title: 'Original session',
+      intake_phase: 'waiting',
+    });
+    mockGetSession.mockResolvedValue({ session });
+    mockUpdateSession.mockResolvedValue({
+      session: makeSession({
+        ...session,
+        title: 'Renamed session',
+      }),
+    });
+
+    renderSessionPage('/session/abc');
+
+    await waitFor(() => {
+      expect(mockGetSession).toHaveBeenCalledWith('abc');
+    });
+
+    await user.click(screen.getByRole('button', { name: /rename/i }));
+
+    await waitFor(() => {
+      expect(mockUpdateSession).toHaveBeenCalledWith('abc', { title: 'Renamed session' });
+    });
+  });
+
+  it('duplicates the session and navigates to the new copy', async () => {
+    const user = userEvent.setup();
+    vi.mocked(window.prompt).mockReturnValue('Copied session');
+    const session = makeSession({
+      title: 'Original session',
+      intake_phase: 'waiting',
+    });
+    mockGetSession.mockResolvedValue({ session });
+    mockDuplicateSession.mockResolvedValue({
+      session: makeSession({
+        id: 'copy-123',
+        title: 'Copied session',
+        intake_phase: 'waiting',
+      }),
+    });
+
+    renderSessionPage('/session/abc');
+
+    await waitFor(() => {
+      expect(mockGetSession).toHaveBeenCalledWith('abc');
+    });
+
+    await user.click(screen.getByRole('button', { name: /duplicate/i }));
+
+    await waitFor(() => {
+      expect(mockDuplicateSession).toHaveBeenCalledWith('abc', { title: 'Copied session' });
+    });
+  });
+
+  it('archives the session from the action bar', async () => {
+    const user = userEvent.setup();
+    const session = makeSession({
+      title: 'Archive me',
+      intake_phase: 'complete',
+    });
+    mockGetSession.mockResolvedValue({ session });
+    mockUpdateSession.mockResolvedValue({
+      session: makeSession({
+        ...session,
+        archived: true,
+        archived_at: '2026-03-06T12:00:00Z',
+      }),
+    });
+
+    renderSessionPage('/session/abc');
+
+    await waitFor(() => {
+      expect(mockGetSession).toHaveBeenCalledWith('abc');
+    });
+
+    await user.click(screen.getByRole('button', { name: /archive/i }));
+
+    await waitFor(() => {
+      expect(mockUpdateSession).toHaveBeenCalledWith('abc', { archived: true });
+    });
+    expect(screen.getByText(/archived/i)).toBeInTheDocument();
+  });
+
+  it('exports the session transcript and event log', async () => {
+    const user = userEvent.setup();
+    const appendSpy = vi.spyOn(document.body, 'appendChild');
+    const removeSpy = vi.spyOn(HTMLAnchorElement.prototype, 'remove').mockImplementation(() => undefined);
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    const session = makeSession({
+      title: 'Exportable session',
+      intake_phase: 'complete',
+      events: [{ id: 'e1', timestamp: new Date().toISOString(), level: 'info', source: 'system', message: 'done', metadata: {} }],
+    });
+    mockGetSession.mockResolvedValue({ session });
+    mockExportSession.mockResolvedValue({
+      exported_at: '2026-03-06T12:30:00Z',
+      session,
+    });
+
+    renderSessionPage('/session/abc');
+
+    await waitFor(() => {
+      expect(mockGetSession).toHaveBeenCalledWith('abc');
+    });
+
+    await user.click(screen.getByRole('button', { name: /export/i }));
+
+    await waitFor(() => {
+      expect(mockExportSession).toHaveBeenCalledWith('abc');
+    });
+    expect(window.URL.createObjectURL).toHaveBeenCalledTimes(1);
+    expect(appendSpy).toHaveBeenCalled();
+    expect(clickSpy).toHaveBeenCalled();
+    expect(removeSpy).toHaveBeenCalled();
   });
 });

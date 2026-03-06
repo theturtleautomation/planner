@@ -171,6 +171,9 @@ export interface PlannerEvent {
 
 export interface Session {
   id: string;
+  title?: string | null;
+  archived: boolean;
+  archived_at?: string | null;
   messages: ChatMessage[];
   stages: PipelineStage[];
   pipeline_running: boolean;
@@ -195,6 +198,9 @@ export interface Session {
 export interface SessionSummary {
   id: string;
   user_id: string;
+  title?: string | null;
+  archived: boolean;
+  archived_at?: string | null;
   created_at: string;
   last_accessed: string;
   last_activity_at: string;
@@ -232,6 +238,11 @@ export interface CreateSessionResponse {
 }
 
 export interface GetSessionResponse {
+  session: Session;
+}
+
+export interface SessionExportResponse {
+  exported_at: string;
   session: Session;
 }
 

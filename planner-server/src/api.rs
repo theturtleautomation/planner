@@ -74,9 +74,35 @@ pub struct ListSessionsResponse {
     pub sessions: Vec<crate::session::SessionSummary>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct ListSessionsQuery {
+    #[serde(default)]
+    pub include_archived: bool,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GetSessionResponse {
     pub session: Session,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SessionExportResponse {
+    pub exported_at: String,
+    pub session: Session,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct UpdateSessionRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub archived: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct DuplicateSessionRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -212,6 +238,21 @@ pub struct EdgePayload {
 pub struct NodesQuery {
     #[serde(rename = "type")]
     pub node_type: Option<String>,
+    pub scope_class: Option<planner_schemas::artifacts::blueprint::ScopeClass>,
+    pub scope_visibility: Option<planner_schemas::artifacts::blueprint::ScopeVisibility>,
+    pub project_id: Option<String>,
+    pub feature: Option<String>,
+    pub widget: Option<String>,
+    pub artifact: Option<String>,
+    pub component: Option<String>,
+    #[serde(default = "default_true")]
+    pub include_shared: bool,
+    #[serde(default)]
+    pub include_global: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug, Deserialize)]
@@ -360,8 +401,10 @@ pub fn routes(state: Arc<AppState>) -> Router {
     let protected = Router::new()
         .route("/models", get(models))
         .route("/sessions", get(list_sessions).post(create_session))
-        .route("/sessions/{id}", get(get_session))
+        .route("/sessions/{id}", get(get_session).patch(update_session))
         .route("/sessions/{id}/message", post(send_message))
+        .route("/sessions/{id}/duplicate", post(duplicate_session))
+        .route("/sessions/{id}/export", get(export_session))
         .route(
             "/sessions/{id}/restart-from-description",
             post(restart_from_description),
@@ -625,8 +668,11 @@ async fn models() -> Json<ModelsResponse> {
 async fn list_sessions(
     State(state): State<Arc<AppState>>,
     claims: Claims,
+    Query(query): Query<ListSessionsQuery>,
 ) -> Json<ListSessionsResponse> {
-    let sessions = state.sessions.list_summaries_for_user(&claims.sub);
+    let sessions = state
+        .sessions
+        .list_summaries_for_user(&claims.sub, query.include_archived);
     Json(ListSessionsResponse { sessions })
 }
 
@@ -647,6 +693,171 @@ async fn get_session(
 ) -> Result<Json<GetSessionResponse>, (StatusCode, Json<ErrorResponse>)> {
     match state.sessions.get_if_owned(id, &claims.sub) {
         Ok(session) => Ok(Json(GetSessionResponse { session })),
+        Err(Some(())) => Err((
+            StatusCode::FORBIDDEN,
+            Json(ErrorResponse {
+                error: "Access denied".into(),
+                code: None,
+            }),
+        )),
+        Err(None) => Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: format!("Session not found: {}", id),
+                code: None,
+            }),
+        )),
+    }
+}
+
+async fn update_session(
+    State(state): State<Arc<AppState>>,
+    claims: Claims,
+    Path(id): Path<Uuid>,
+    Json(req): Json<UpdateSessionRequest>,
+) -> Result<Json<GetSessionResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let session = match state.sessions.get_if_owned(id, &claims.sub) {
+        Ok(session) => session,
+        Err(Some(())) => {
+            return Err((
+                StatusCode::FORBIDDEN,
+                Json(ErrorResponse {
+                    error: "Access denied".into(),
+                    code: None,
+                }),
+            ));
+        }
+        Err(None) => {
+            return Err((
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: format!("Session not found: {}", id),
+                    code: None,
+                }),
+            ));
+        }
+    };
+
+    if req.title.is_none() && req.archived.is_none() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "No session changes were requested".into(),
+                code: Some("empty_update".into()),
+            }),
+        ));
+    }
+
+    if req
+        .title
+        .as_deref()
+        .map(|value| value.trim().is_empty())
+        .unwrap_or(false)
+    {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "Session title cannot be empty".into(),
+                code: Some("invalid_title".into()),
+            }),
+        ));
+    }
+
+    if req.archived == Some(true)
+        && (session.intake_phase == "interviewing" || session.pipeline_running)
+    {
+        return Err((
+            StatusCode::CONFLICT,
+            Json(ErrorResponse {
+                error: "Active sessions cannot be archived".into(),
+                code: Some("archive_conflict".into()),
+            }),
+        ));
+    }
+
+    let updated = state.sessions.update(id, |session| {
+        if let Some(title) = req.title.as_ref() {
+            session.set_title(Some(title.clone()));
+        }
+        if let Some(archived) = req.archived {
+            session.set_archived(archived);
+        }
+    });
+
+    match updated {
+        Some(session) => Ok(Json(GetSessionResponse { session })),
+        None => Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: format!("Session not found: {}", id),
+                code: None,
+            }),
+        )),
+    }
+}
+
+async fn duplicate_session(
+    State(state): State<Arc<AppState>>,
+    claims: Claims,
+    Path(id): Path<Uuid>,
+    Json(req): Json<DuplicateSessionRequest>,
+) -> Result<(StatusCode, Json<GetSessionResponse>), (StatusCode, Json<ErrorResponse>)> {
+    let session = match state.sessions.get_if_owned(id, &claims.sub) {
+        Ok(session) => session,
+        Err(Some(())) => {
+            return Err((
+                StatusCode::FORBIDDEN,
+                Json(ErrorResponse {
+                    error: "Access denied".into(),
+                    code: None,
+                }),
+            ));
+        }
+        Err(None) => {
+            return Err((
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: format!("Session not found: {}", id),
+                    code: None,
+                }),
+            ));
+        }
+    };
+
+    if req
+        .title
+        .as_deref()
+        .map(|value| value.trim().is_empty())
+        .unwrap_or(false)
+    {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "Duplicate session title cannot be empty".into(),
+                code: Some("invalid_title".into()),
+            }),
+        ));
+    }
+
+    let duplicate = state
+        .sessions
+        .insert(session.duplicate_for_branch(req.title));
+    Ok((
+        StatusCode::CREATED,
+        Json(GetSessionResponse { session: duplicate }),
+    ))
+}
+
+async fn export_session(
+    State(state): State<Arc<AppState>>,
+    claims: Claims,
+    Path(id): Path<Uuid>,
+) -> Result<Json<SessionExportResponse>, (StatusCode, Json<ErrorResponse>)> {
+    match state.sessions.get_if_owned(id, &claims.sub) {
+        Ok(session) => Ok(Json(SessionExportResponse {
+            exported_at: chrono::Utc::now().to_rfc3339(),
+            session,
+        })),
         Err(Some(())) => Err((
             StatusCode::FORBIDDEN,
             Json(ErrorResponse {
@@ -865,10 +1076,12 @@ async fn send_message(
 
     let result = state.sessions.update(id, |session| {
         session.add_message("user", &content);
+        session.set_archived(false);
 
         if !session.pipeline_running {
             session.pipeline_running = true;
             session.project_description = Some(content.clone());
+            session.ensure_title_from_description();
             session.stages[0].status = "running".into();
             should_spawn_pipeline = true;
 
@@ -1362,6 +1575,8 @@ async fn start_socratic(
     }
     state.sessions.update(id, |s| {
         s.project_description = Some(req.description.clone());
+        s.ensure_title_from_description();
+        s.set_archived(false);
         s.intake_phase = "interviewing".into();
         s.interview_live_attached = false;
         s.interview_runtime_active = false;
@@ -1435,6 +1650,196 @@ async fn get_belief_state(
     }
 }
 
+fn has_any_secondary_scope(
+    scope: &planner_schemas::artifacts::blueprint::SecondaryScopeRefs,
+) -> bool {
+    [
+        scope.feature.as_deref(),
+        scope.widget.as_deref(),
+        scope.artifact.as_deref(),
+        scope.component.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+    .any(|value| !value.trim().is_empty())
+}
+
+fn scope_visibility_for_node(
+    node: &planner_schemas::artifacts::blueprint::NodeSummary,
+) -> planner_schemas::artifacts::blueprint::ScopeVisibility {
+    if matches!(
+        node.scope_class,
+        planner_schemas::artifacts::blueprint::ScopeClass::Unscoped
+    ) {
+        planner_schemas::artifacts::blueprint::ScopeVisibility::Unscoped
+    } else if node.is_shared {
+        planner_schemas::artifacts::blueprint::ScopeVisibility::Shared
+    } else {
+        planner_schemas::artifacts::blueprint::ScopeVisibility::ProjectLocal
+    }
+}
+
+fn matches_project_scope(
+    node: &planner_schemas::artifacts::blueprint::NodeSummary,
+    query: &NodesQuery,
+) -> bool {
+    let Some(project_id) = query.project_id.as_deref() else {
+        return true;
+    };
+
+    let is_project_local = node.project_id.as_deref() == Some(project_id)
+        && matches!(
+            node.scope_class,
+            planner_schemas::artifacts::blueprint::ScopeClass::Project
+                | planner_schemas::artifacts::blueprint::ScopeClass::ProjectContextual
+        );
+
+    let is_inherited_shared = query.include_shared
+        && node.is_shared
+        && node
+            .linked_project_ids
+            .iter()
+            .any(|linked| linked == project_id);
+
+    let is_global = query.include_global
+        && matches!(
+            node.scope_class,
+            planner_schemas::artifacts::blueprint::ScopeClass::Global
+        );
+
+    is_project_local || is_inherited_shared || is_global
+}
+
+fn matches_secondary_scope(
+    node: &planner_schemas::artifacts::blueprint::NodeSummary,
+    query: &NodesQuery,
+) -> bool {
+    if query.feature.as_deref() != node.secondary_scope.feature.as_deref()
+        && query.feature.is_some()
+    {
+        return false;
+    }
+    if query.widget.as_deref() != node.secondary_scope.widget.as_deref() && query.widget.is_some() {
+        return false;
+    }
+    if query.artifact.as_deref() != node.secondary_scope.artifact.as_deref()
+        && query.artifact.is_some()
+    {
+        return false;
+    }
+    if query.component.as_deref() != node.secondary_scope.component.as_deref()
+        && query.component.is_some()
+    {
+        return false;
+    }
+    true
+}
+
+fn filter_node_summaries(
+    mut summaries: Vec<planner_schemas::artifacts::blueprint::NodeSummary>,
+    query: &NodesQuery,
+) -> Vec<planner_schemas::artifacts::blueprint::NodeSummary> {
+    summaries.retain(|node| {
+        if query
+            .node_type
+            .as_deref()
+            .is_some_and(|t| node.node_type != t)
+        {
+            return false;
+        }
+        if query
+            .scope_class
+            .as_ref()
+            .is_some_and(|scope_class| node.scope_class != *scope_class)
+        {
+            return false;
+        }
+        if query
+            .scope_visibility
+            .as_ref()
+            .is_some_and(|visibility| scope_visibility_for_node(node) != *visibility)
+        {
+            return false;
+        }
+        if !matches_project_scope(node, query) {
+            return false;
+        }
+        matches_secondary_scope(node, query)
+    });
+    summaries
+}
+
+fn validate_blueprint_node_scope(
+    node: &planner_schemas::artifacts::blueprint::BlueprintNode,
+) -> Result<(), String> {
+    let scope = node.scope();
+    let project_id = scope
+        .project
+        .as_ref()
+        .map(|project| project.project_id.trim());
+    let has_project = project_id.is_some_and(|id| !id.is_empty());
+    let has_secondary = has_any_secondary_scope(&scope.secondary);
+
+    use planner_schemas::artifacts::blueprint::ScopeClass;
+    match scope.scope_class {
+        ScopeClass::Global => {
+            if scope.project.is_some() {
+                return Err("global scope cannot include project reference".into());
+            }
+            if has_secondary {
+                return Err("global scope cannot include contextual scope".into());
+            }
+        }
+        ScopeClass::Project => {
+            if !has_project {
+                return Err("project scope requires project.project_id".into());
+            }
+            if has_secondary {
+                return Err(
+                    "project scope cannot include contextual refs; use project_contextual".into(),
+                );
+            }
+        }
+        ScopeClass::ProjectContextual => {
+            if !has_project {
+                return Err("project_contextual scope requires project.project_id".into());
+            }
+            if !has_secondary {
+                return Err("project_contextual scope requires at least one contextual ref".into());
+            }
+        }
+        ScopeClass::Unscoped => {
+            if scope.project.is_some() || has_secondary {
+                return Err("unscoped records cannot include project or contextual scope".into());
+            }
+            if scope.is_shared {
+                return Err("unscoped records cannot be marked shared".into());
+            }
+        }
+    }
+
+    if scope.is_shared {
+        let shared = scope
+            .shared
+            .as_ref()
+            .ok_or_else(|| "shared records require shared metadata".to_string())?;
+        if shared.linked_project_ids.is_empty() {
+            return Err("shared records require at least one linked project id".into());
+        }
+        if shared
+            .linked_project_ids
+            .iter()
+            .any(|project| project.trim().is_empty())
+        {
+            return Err("shared linked_project_ids cannot contain blank values".into());
+        }
+    } else if scope.shared.is_some() {
+        return Err("shared metadata is only allowed when is_shared=true".into());
+    }
+
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // Blueprint API handlers
 // ---------------------------------------------------------------------------
@@ -1443,11 +1848,19 @@ async fn get_belief_state(
 async fn get_blueprint(
     State(state): State<Arc<AppState>>,
     _claims: Claims,
+    Query(query): Query<NodesQuery>,
 ) -> Json<BlueprintResponse> {
     let bp = state.blueprints.snapshot();
+    let nodes = filter_node_summaries(bp.list_summaries(), &query);
+    let included_node_ids: std::collections::HashSet<&str> =
+        nodes.iter().map(|n| n.id.as_str()).collect();
     let edges: Vec<EdgePayload> = bp
         .edges
         .iter()
+        .filter(|edge| {
+            included_node_ids.contains(edge.source.as_str())
+                && included_node_ids.contains(edge.target.as_str())
+        })
         .map(|e| EdgePayload {
             source: e.source.0.clone(),
             target: e.target.0.clone(),
@@ -1456,16 +1869,15 @@ async fn get_blueprint(
         })
         .collect();
 
-    let counts: std::collections::HashMap<String, usize> = bp
-        .counts_by_type()
-        .into_iter()
-        .map(|(k, v)| (k.to_string(), v))
-        .collect();
+    let mut counts = std::collections::HashMap::new();
+    for node in &nodes {
+        *counts.entry(node.node_type.clone()).or_insert(0usize) += 1;
+    }
 
     Json(BlueprintResponse {
-        nodes: bp.list_summaries(),
-        total_nodes: bp.nodes.len(),
-        total_edges: bp.edges.len(),
+        total_nodes: nodes.len(),
+        total_edges: edges.len(),
+        nodes,
         edges,
         counts,
     })
@@ -1477,10 +1889,7 @@ async fn list_blueprint_nodes(
     _claims: Claims,
     Query(query): Query<NodesQuery>,
 ) -> Json<NodeListResponse> {
-    let summaries = match query.node_type.as_deref() {
-        Some(t) => state.blueprints.list_by_type(t),
-        None => state.blueprints.list_summaries(),
-    };
+    let summaries = filter_node_summaries(state.blueprints.list_summaries(), &query);
     let count = summaries.len();
     Json(NodeListResponse {
         nodes: summaries,
@@ -1493,14 +1902,24 @@ async fn create_blueprint_node(
     State(state): State<Arc<AppState>>,
     _claims: Claims,
     Json(node): Json<planner_schemas::artifacts::blueprint::BlueprintNode>,
-) -> (StatusCode, Json<serde_json::Value>) {
+) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, Json<ErrorResponse>)> {
+    validate_blueprint_node_scope(&node).map_err(|message| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: message,
+                code: Some("INVALID_SCOPE".into()),
+            }),
+        )
+    })?;
+
     let id = node.id().0.clone();
     state.blueprints.upsert_node(node.clone());
     tracing::info!("Blueprint node created: {}", id);
-    (
+    Ok((
         StatusCode::CREATED,
         Json(serde_json::to_value(&node).unwrap_or_default()),
-    )
+    ))
 }
 
 /// GET /blueprint/nodes/{nodeId} — Get a single blueprint node.
@@ -1590,6 +2009,16 @@ async fn update_blueprint_node(
             }),
         ));
     }
+
+    validate_blueprint_node_scope(&node).map_err(|message| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: message,
+                code: Some("INVALID_SCOPE".into()),
+            }),
+        )
+    })?;
 
     state.blueprints.upsert_node(node.clone());
     tracing::info!("Blueprint node updated: {}", node_id);
@@ -2347,6 +2776,62 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_list_sessions_hides_archived_by_default() {
+        let state = test_state();
+        let active = state.sessions.create("dev|local");
+        let archived = state.sessions.create("dev|local");
+        state.sessions.update(archived.id, |session| {
+            session.set_archived(true);
+        });
+
+        let app = routes(state);
+
+        let req = Request::builder()
+            .method("GET")
+            .uri("/sessions")
+            .body(Body::empty())
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let listed: ListSessionsResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(listed.sessions.len(), 1);
+        assert_eq!(listed.sessions[0].id, active.id);
+    }
+
+    #[tokio::test]
+    async fn test_list_sessions_can_include_archived() {
+        let state = test_state();
+        state.sessions.create("dev|local");
+        let archived = state.sessions.create("dev|local");
+        state.sessions.update(archived.id, |session| {
+            session.set_archived(true);
+        });
+
+        let app = routes(state);
+
+        let req = Request::builder()
+            .method("GET")
+            .uri("/sessions?include_archived=true")
+            .body(Body::empty())
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let listed: ListSessionsResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(listed.sessions.len(), 2);
+        assert!(listed.sessions.iter().any(|session| session.archived));
+    }
+
+    #[tokio::test]
     async fn test_get_session() {
         let state = test_state();
         let session = state.sessions.create("dev|local");
@@ -2400,6 +2885,105 @@ mod tests {
 
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_update_session_title_and_archive() {
+        let state = test_state();
+        let session = state.sessions.create("dev|local");
+        let id = session.id;
+        let app = routes(state);
+
+        let body = serde_json::to_string(&UpdateSessionRequest {
+            title: Some("Renamed session".into()),
+            archived: Some(true),
+        })
+        .unwrap();
+
+        let req = Request::builder()
+            .method("PATCH")
+            .uri(format!("/sessions/{}", id))
+            .header("content-type", "application/json")
+            .body(Body::from(body))
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let wrapped: GetSessionResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(wrapped.session.title.as_deref(), Some("Renamed session"));
+        assert!(wrapped.session.archived);
+    }
+
+    #[tokio::test]
+    async fn test_duplicate_session_creates_branch_copy() {
+        let state = test_state();
+        let session = state.sessions.create("dev|local");
+        let id = session.id;
+        state.sessions.update(id, |session| {
+            session.project_description = Some("Build an operations dashboard".into());
+            session.ensure_title_from_description();
+        });
+        let app = routes(state.clone());
+
+        let body = serde_json::to_string(&DuplicateSessionRequest {
+            title: Some("Branch copy".into()),
+        })
+        .unwrap();
+
+        let req = Request::builder()
+            .method("POST")
+            .uri(format!("/sessions/{}/duplicate", id))
+            .header("content-type", "application/json")
+            .body(Body::from(body))
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::CREATED);
+
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let wrapped: GetSessionResponse = serde_json::from_slice(&body).unwrap();
+        assert_ne!(wrapped.session.id, id);
+        assert_eq!(wrapped.session.title.as_deref(), Some("Branch copy"));
+        assert_eq!(
+            wrapped.session.project_description.as_deref(),
+            Some("Build an operations dashboard")
+        );
+        assert_eq!(state.sessions.count(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_export_session_returns_full_payload() {
+        let state = test_state();
+        let session = state.sessions.create("dev|local");
+        let id = session.id;
+        state.sessions.update(id, |session| {
+            session.set_title(Some("Exportable session".into()));
+            session.add_message("planner", "Export me");
+        });
+        let app = routes(state);
+
+        let req = Request::builder()
+            .method("GET")
+            .uri(format!("/sessions/{}/export", id))
+            .body(Body::empty())
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let export: SessionExportResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(export.session.id, id);
+        assert_eq!(export.session.title.as_deref(), Some("Exportable session"));
+        assert_eq!(export.session.messages.len(), 2);
     }
 
     #[tokio::test]
@@ -2949,6 +3533,123 @@ mod tests {
         let list: NodeListResponse = serde_json::from_slice(&body).unwrap();
         assert_eq!(list.count, 1);
         assert_eq!(list.nodes[0].node_type, "decision");
+    }
+
+    #[tokio::test]
+    async fn test_list_blueprint_nodes_project_scope_includes_shared() {
+        let state = test_state();
+
+        let mut project_local = sample_decision_json();
+        project_local["id"] = serde_json::json!("dec-proj-local-a1b2c3d4");
+        project_local["scope"] = serde_json::json!({
+            "scope_class": "project",
+            "project": {
+                "project_id": "proj-alpha",
+                "project_name": "Alpha"
+            },
+            "secondary": {},
+            "is_shared": false
+        });
+
+        let mut shared = sample_decision_json();
+        shared["id"] = serde_json::json!("dec-shared-a1b2c3d5");
+        shared["title"] = serde_json::json!("Shared guidance");
+        shared["scope"] = serde_json::json!({
+            "scope_class": "global",
+            "secondary": {},
+            "is_shared": true,
+            "shared": {
+                "linked_project_ids": ["proj-alpha"],
+                "inherit_to_linked_projects": true
+            }
+        });
+
+        let mut other_project = sample_decision_json();
+        other_project["id"] = serde_json::json!("dec-proj-local-b1b2c3d4");
+        other_project["scope"] = serde_json::json!({
+            "scope_class": "project",
+            "project": {
+                "project_id": "proj-beta",
+                "project_name": "Beta"
+            },
+            "secondary": {},
+            "is_shared": false
+        });
+
+        let local_node: planner_schemas::artifacts::blueprint::BlueprintNode =
+            serde_json::from_value(project_local).unwrap();
+        let shared_node: planner_schemas::artifacts::blueprint::BlueprintNode =
+            serde_json::from_value(shared).unwrap();
+        let other_node: planner_schemas::artifacts::blueprint::BlueprintNode =
+            serde_json::from_value(other_project).unwrap();
+
+        state.blueprints.upsert_node(local_node);
+        state.blueprints.upsert_node(shared_node);
+        state.blueprints.upsert_node(other_node);
+
+        let app = routes(state.clone());
+        let req = Request::builder()
+            .uri("/blueprint/nodes?project_id=proj-alpha")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let list: NodeListResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(list.count, 2);
+        assert!(list
+            .nodes
+            .iter()
+            .any(|node| node.id.as_str() == "dec-proj-local-a1b2c3d4"));
+        assert!(list
+            .nodes
+            .iter()
+            .any(|node| node.id.as_str() == "dec-shared-a1b2c3d5"));
+
+        let app = routes(state);
+        let req = Request::builder()
+            .uri("/blueprint/nodes?project_id=proj-alpha&include_shared=false")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let list: NodeListResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(list.count, 1);
+        assert_eq!(list.nodes[0].id.as_str(), "dec-proj-local-a1b2c3d4");
+    }
+
+    #[tokio::test]
+    async fn test_create_blueprint_node_invalid_scope_rejected() {
+        let state = test_state();
+        let app = routes(state);
+
+        let mut invalid = sample_decision_json();
+        invalid["id"] = serde_json::json!("dec-invalid-scope-a1b2c3d4");
+        invalid["scope"] = serde_json::json!({
+            "scope_class": "project",
+            "secondary": {},
+            "is_shared": false
+        });
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/blueprint/nodes")
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_string(&invalid).unwrap()))
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let err: ErrorResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(err.code.as_deref(), Some("INVALID_SCOPE"));
     }
 
     #[tokio::test]

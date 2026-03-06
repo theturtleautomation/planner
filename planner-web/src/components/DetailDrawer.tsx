@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import rehypeSanitize from 'rehype-sanitize';
-import type { BlueprintNode, EdgePayload, DecisionNode, TechnologyNode, ComponentNode, ConstraintNode, PatternNode, QualityRequirementNode, BlueprintEventPayload } from '../types/blueprint.ts';
+import type { BlueprintNode, EdgePayload, DecisionNode, TechnologyNode, ComponentNode, ConstraintNode, PatternNode, QualityRequirementNode, BlueprintEventPayload, NodeScope } from '../types/blueprint.ts';
 import type { ApiClient } from '../api/client.ts';
 import { useState, useCallback } from 'react';
 import EditNodeForm from './EditNodeForm.tsx';
@@ -15,6 +15,25 @@ const TYPE_LABELS: Record<string, string> = {
   constraint: 'Constraint',
   pattern: 'Pattern',
   quality_requirement: 'Quality',
+};
+
+const SCOPE_CLASS_LABELS: Record<string, string> = {
+  global: 'Global',
+  project: 'Project',
+  project_contextual: 'Project Contextual',
+  unscoped: 'Unscoped',
+};
+
+const SCOPE_VISIBILITY_LABELS: Record<string, string> = {
+  shared: 'Shared',
+  project_local: 'Project Local',
+  unscoped: 'Unscoped',
+};
+
+const DEFAULT_SCOPE: NodeScope = {
+  scope_class: 'unscoped',
+  secondary: {},
+  is_shared: false,
 };
 
 // ─── Props ──────────────────────────────────────────────────────────────────
@@ -168,6 +187,65 @@ export default function DetailDrawer({
   const typeBadge = `badge-${nodeType}`;
   const typeLabel = TYPE_LABELS[nodeType] ?? nodeType;
   const documentation = node?.documentation?.trim() ?? '';
+  const effectiveNodeScope = (node as { scope?: NodeScope } | null)?.scope ?? DEFAULT_SCOPE;
+
+  const renderScopeDetails = (n: BlueprintNode) => {
+    const scope = (n as { scope?: NodeScope }).scope ?? DEFAULT_SCOPE;
+    const scopeVisibility =
+      scope.scope_class === 'unscoped'
+        ? 'unscoped'
+        : scope.is_shared
+          ? 'shared'
+          : 'project_local';
+    return (
+      <div className="drawer-section">
+        <div className="drawer-section-title">Scope</div>
+        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: 'var(--space-2)' }}>
+          <span className="health-badge" style={{ color: 'var(--color-text-muted)', background: 'var(--color-surface-offset)' }}>
+            {SCOPE_CLASS_LABELS[scope.scope_class] ?? scope.scope_class}
+          </span>
+          <span
+            className="health-badge"
+            style={{
+              color:
+                scopeVisibility === 'shared'
+                  ? 'var(--color-blue)'
+                  : scopeVisibility === 'project_local'
+                    ? 'var(--color-success)'
+                    : 'var(--color-warning)',
+              background:
+                scopeVisibility === 'shared'
+                  ? 'rgba(59,130,246,0.14)'
+                  : scopeVisibility === 'project_local'
+                    ? 'rgba(34,197,94,0.14)'
+                    : 'rgba(234,179,8,0.14)',
+            }}
+          >
+            {SCOPE_VISIBILITY_LABELS[scopeVisibility] ?? scopeVisibility}
+          </span>
+        </div>
+        {scope.project && (
+          <div className="drawer-description">
+            <strong>Project:</strong> {scope.project.project_name ?? scope.project.project_id} ({scope.project.project_id})
+          </div>
+        )}
+        {(scope.secondary.feature || scope.secondary.widget || scope.secondary.artifact || scope.secondary.component) && (
+          <div className="drawer-description" style={{ marginTop: '4px' }}>
+            <strong>Context:</strong>{' '}
+            {[scope.secondary.feature, scope.secondary.widget, scope.secondary.artifact, scope.secondary.component]
+              .filter(Boolean)
+              .join(' · ')}
+          </div>
+        )}
+        {scope.is_shared && (
+          <div className="drawer-description" style={{ marginTop: '4px' }}>
+            <strong>Linked Projects:</strong>{' '}
+            {(scope.shared?.linked_project_ids ?? []).join(', ') || 'none'}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   // ─── Type-specific detail sections ──────────────────────────────────────
 
@@ -359,12 +437,12 @@ export default function DetailDrawer({
   const renderNodeDetails = () => {
     if (!node) return null;
     switch (node.node_type) {
-      case 'decision': return renderDecisionDetails(node as DecisionNode);
-      case 'technology': return renderTechnologyDetails(node as TechnologyNode);
-      case 'component': return renderComponentDetails(node as ComponentNode);
-      case 'constraint': return renderConstraintDetails(node as ConstraintNode);
-      case 'pattern': return renderPatternDetails(node as PatternNode);
-      case 'quality_requirement': return renderQualityDetails(node as QualityRequirementNode);
+      case 'decision': return <>{renderScopeDetails(node)}{renderDecisionDetails(node as DecisionNode)}</>;
+      case 'technology': return <>{renderScopeDetails(node)}{renderTechnologyDetails(node as TechnologyNode)}</>;
+      case 'component': return <>{renderScopeDetails(node)}{renderComponentDetails(node as ComponentNode)}</>;
+      case 'constraint': return <>{renderScopeDetails(node)}{renderConstraintDetails(node as ConstraintNode)}</>;
+      case 'pattern': return <>{renderScopeDetails(node)}{renderPatternDetails(node as PatternNode)}</>;
+      case 'quality_requirement': return <>{renderScopeDetails(node)}{renderQualityDetails(node as QualityRequirementNode)}</>;
       default: return null;
     }
   };
@@ -390,6 +468,18 @@ export default function DetailDrawer({
                     {nodeStatus}
                   </span>
                 )}
+                <span className="status-badge">
+                  {SCOPE_CLASS_LABELS[effectiveNodeScope.scope_class] ?? effectiveNodeScope.scope_class}
+                </span>
+                <span className="status-badge">
+                  {SCOPE_VISIBILITY_LABELS[
+                    (effectiveNodeScope.scope_class === 'unscoped')
+                      ? 'unscoped'
+                      : effectiveNodeScope.is_shared
+                        ? 'shared'
+                        : 'project_local'
+                  ]}
+                </span>
               </div>
             )}
           </div>

@@ -27,6 +27,26 @@ use planner_schemas::artifacts::socratic::{
     Contradiction, DomainClassification, QuestionOutput, RequirementsBeliefState, SpeculativeDraft,
 };
 
+fn normalize_title(value: &str) -> Option<String> {
+    let collapsed = value.split_whitespace().collect::<Vec<_>>().join(" ");
+    let trimmed = collapsed.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.chars().take(120).collect())
+    }
+}
+
+fn suggested_title_from_description(description: &str) -> Option<String> {
+    let first_line = description
+        .lines()
+        .find_map(normalize_title)
+        .or_else(|| normalize_title(description))?;
+
+    let title: String = first_line.chars().take(72).collect();
+    Some(title)
+}
+
 // ---------------------------------------------------------------------------
 // Session Types
 // ---------------------------------------------------------------------------
@@ -116,6 +136,12 @@ pub struct Session {
     pub id: Uuid,
     /// Auth0 sub claim of the owning user (or "dev|local" in dev mode).
     pub user_id: String,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub archived: bool,
+    #[serde(default)]
+    pub archived_at: Option<String>,
     pub created_at: String,
     /// RFC3339 timestamp of the last get() or update() access.
     pub last_accessed: String,
@@ -202,6 +228,9 @@ impl Session {
         let mut session = Session {
             id: Uuid::new_v4(),
             user_id: user_id.to_string(),
+            title: None,
+            archived: false,
+            archived_at: None,
             created_at: now.to_rfc3339(),
             last_accessed: now.to_rfc3339(),
             messages: vec![SessionMessage {
@@ -293,6 +322,35 @@ impl Session {
             .unwrap_or(false)
     }
 
+    pub fn display_title(&self) -> String {
+        self.title
+            .clone()
+            .or_else(|| {
+                self.project_description
+                    .as_deref()
+                    .and_then(suggested_title_from_description)
+            })
+            .unwrap_or_else(|| format!("Session {}", self.id))
+    }
+
+    pub fn set_title(&mut self, title: Option<String>) {
+        self.title = title.as_deref().and_then(normalize_title);
+    }
+
+    pub fn ensure_title_from_description(&mut self) {
+        if self.title.is_none() {
+            self.title = self
+                .project_description
+                .as_deref()
+                .and_then(suggested_title_from_description);
+        }
+    }
+
+    pub fn set_archived(&mut self, archived: bool) {
+        self.archived = archived;
+        self.archived_at = archived.then(|| Utc::now().to_rfc3339());
+    }
+
     pub fn pipeline_has_failed(&self) -> bool {
         self.stages.iter().any(|stage| stage.status == "failed")
     }
@@ -317,6 +375,7 @@ impl Session {
         self.current_step = None;
         self.error_message = None;
         self.cxdb_project_id = None;
+        self.set_archived(false);
         self.reset_stage_statuses();
 
         if self.messages.len() > 1 {
@@ -333,6 +392,7 @@ impl Session {
         self.current_step = None;
         self.error_message = None;
         self.cxdb_project_id = None;
+        self.set_archived(false);
         self.reset_stage_statuses();
 
         if let Some(stage) = self.stages.first_mut() {
@@ -360,6 +420,73 @@ impl Session {
         checkpoint.socratic_run_id = run_id;
         self.has_checkpoint = true;
         checkpoint
+    }
+
+    pub fn duplicate_for_branch(&self, title_override: Option<String>) -> Session {
+        let now = Utc::now().to_rfc3339();
+        let mut duplicate = Session::new(&self.user_id);
+        let checkpoint = self.checkpoint.clone().map(|mut checkpoint| {
+            checkpoint.socratic_run_id = Uuid::new_v4();
+            checkpoint.touch();
+            checkpoint
+        });
+
+        duplicate.created_at = now.clone();
+        duplicate.last_accessed = now;
+        duplicate.title = title_override
+            .as_deref()
+            .and_then(normalize_title)
+            .or_else(|| normalize_title(&format!("{} (Copy)", self.display_title())));
+        duplicate.archived = false;
+        duplicate.archived_at = None;
+        duplicate.project_description = self.project_description.clone();
+        duplicate.classification = checkpoint
+            .as_ref()
+            .and_then(|saved| saved.classification.clone())
+            .or_else(|| self.classification.clone());
+        duplicate.belief_state = checkpoint
+            .as_ref()
+            .and_then(|saved| saved.belief_state.clone())
+            .or_else(|| self.belief_state.clone());
+        duplicate.socratic_run_id = checkpoint.as_ref().map(|saved| saved.socratic_run_id);
+        duplicate.checkpoint = checkpoint;
+        duplicate.intake_phase = if duplicate.checkpoint.is_some() {
+            "interviewing".into()
+        } else {
+            "waiting".into()
+        };
+        duplicate.pipeline_running = false;
+        duplicate.interview_live_attached = false;
+        duplicate.interview_runtime_active = false;
+        duplicate.events.clear();
+        duplicate.current_step = None;
+        duplicate.error_message = None;
+        duplicate.cxdb_project_id = None;
+        duplicate.reset_stage_statuses();
+
+        let source_title = self.display_title();
+        if duplicate.checkpoint.is_some() {
+            duplicate.add_message(
+                "planner",
+                &format!(
+                    "Duplicated from \"{}\". Resume from the copied checkpoint or restart from the saved description.",
+                    source_title
+                ),
+            );
+        } else if duplicate.has_saved_description() {
+            duplicate.add_message(
+                "planner",
+                &format!(
+                    "Duplicated from \"{}\". The saved description was copied into this new session.",
+                    source_title
+                ),
+            );
+        } else {
+            duplicate.add_message("planner", &format!("Duplicated from \"{}\".", source_title));
+        }
+
+        duplicate.recompute_capabilities();
+        duplicate
     }
 
     /// Recompute capability flags from the current session state.
@@ -489,6 +616,10 @@ impl Session {
             candidates.push(checkpoint.last_checkpoint_at.clone());
         }
 
+        if let Some(archived_at) = &self.archived_at {
+            candidates.push(archived_at.clone());
+        }
+
         candidates
             .into_iter()
             .filter_map(|timestamp| {
@@ -537,6 +668,9 @@ impl Session {
 pub struct SessionSummary {
     pub id: Uuid,
     pub user_id: String,
+    pub title: Option<String>,
+    pub archived: bool,
+    pub archived_at: Option<String>,
     pub created_at: String,
     pub last_accessed: String,
     pub last_activity_at: String,
@@ -670,6 +804,15 @@ impl SessionStore {
     /// Create a new session owned by `user_id` and return it.
     pub fn create(&self, user_id: &str) -> Session {
         let session = Session::new(user_id);
+        let id = session.id;
+        self.sessions.write().insert(id, session.clone());
+        self.mark_dirty(id);
+        session
+    }
+
+    /// Insert a fully constructed session into the store.
+    pub fn insert(&self, mut session: Session) -> Session {
+        session.recompute_capabilities();
         let id = session.id;
         self.sessions.write().insert(id, session.clone());
         self.mark_dirty(id);
@@ -933,14 +1076,22 @@ impl SessionStore {
     /// Return lightweight session summaries for a user, without cloning event logs.
     ///
     /// Use this for list endpoints where the full Session payload is wasteful.
-    pub fn list_summaries_for_user(&self, user_id: &str) -> Vec<SessionSummary> {
+    pub fn list_summaries_for_user(
+        &self,
+        user_id: &str,
+        include_archived: bool,
+    ) -> Vec<SessionSummary> {
         self.sessions
             .read()
             .values()
             .filter(|s| s.user_id == user_id)
+            .filter(|s| include_archived || !s.archived)
             .map(|s| SessionSummary {
                 id: s.id,
                 user_id: s.user_id.clone(),
+                title: s.title.clone(),
+                archived: s.archived,
+                archived_at: s.archived_at.clone(),
                 created_at: s.created_at.clone(),
                 last_accessed: s.last_accessed.clone(),
                 last_activity_at: s.last_activity_at(),
@@ -987,6 +1138,8 @@ mod tests {
         assert_eq!(session.stages.len(), 12);
         assert!(!session.pipeline_running);
         assert_eq!(session.user_id, "dev|local");
+        assert!(session.title.is_none());
+        assert!(!session.archived);
         assert_eq!(session.events.len(), 0);
         assert!(session.current_step.is_none());
         assert!(session.error_message.is_none());
@@ -1107,6 +1260,78 @@ mod tests {
     }
 
     #[test]
+    fn session_title_falls_back_to_description() {
+        let mut session = Session::new("dev|local");
+        session.project_description =
+            Some("A multi-tenant SaaS dashboard for field operations and approvals".into());
+        session.ensure_title_from_description();
+
+        assert_eq!(
+            session.title.as_deref(),
+            Some("A multi-tenant SaaS dashboard for field operations and approvals")
+        );
+    }
+
+    #[test]
+    fn duplicate_for_branch_copies_saved_context_without_live_runtime() {
+        let mut session = Session::new("dev|local");
+        session.set_title(Some("Operations Console".into()));
+        session.project_description = Some("Build an ops console".into());
+        session.intake_phase = "interviewing".into();
+        session.ensure_checkpoint().current_question = Some(QuestionOutput {
+            question: "Who approves changes?".into(),
+            target_dimension: planner_schemas::artifacts::socratic::Dimension::Stakeholders,
+            quick_options: Vec::new(),
+            allow_skip: true,
+        });
+        session.interview_live_attached = true;
+        session.interview_runtime_active = true;
+        session.record_event(planner_core::observability::PlannerEvent::info(
+            planner_core::observability::EventSource::System,
+            "session.test",
+            "source event",
+        ));
+
+        let duplicate = session.duplicate_for_branch(None);
+
+        assert_ne!(duplicate.id, session.id);
+        assert_eq!(
+            duplicate.title.as_deref(),
+            Some("Operations Console (Copy)")
+        );
+        assert_eq!(duplicate.project_description, session.project_description);
+        assert_eq!(duplicate.intake_phase, "interviewing");
+        assert!(!duplicate.interview_live_attached);
+        assert!(!duplicate.interview_runtime_active);
+        assert!(duplicate.can_resume_checkpoint);
+        assert!(duplicate.events.is_empty());
+        assert!(duplicate.messages.iter().any(|message| message
+            .content
+            .contains("Duplicated from \"Operations Console\"")));
+        assert_ne!(duplicate.socratic_run_id, session.socratic_run_id);
+    }
+
+    #[test]
+    fn list_summaries_can_hide_archived_sessions() {
+        let store = SessionStore::new();
+        let active = store.create("dev|local");
+        let archived = store.create("dev|local");
+        store.update(archived.id, |session| {
+            session.set_archived(true);
+        });
+
+        let visible = store.list_summaries_for_user("dev|local", false);
+        assert_eq!(visible.len(), 1);
+        assert_eq!(visible[0].id, active.id);
+
+        let all = store.list_summaries_for_user("dev|local", true);
+        assert_eq!(all.len(), 2);
+        assert!(all
+            .iter()
+            .any(|session| session.id == archived.id && session.archived));
+    }
+
+    #[test]
     fn session_summaries_include_activity_and_attention_metadata() {
         let store = SessionStore::new();
         let session = store.create("dev|local");
@@ -1177,7 +1402,7 @@ mod tests {
             stored.last_accessed = "2026-03-06T12:02:00Z".into();
         }
 
-        let summaries = store.list_summaries_for_user("dev|local");
+        let summaries = store.list_summaries_for_user("dev|local", true);
         let summary = summaries
             .into_iter()
             .find(|candidate| candidate.id == id)

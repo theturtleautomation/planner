@@ -6,8 +6,8 @@
 pub mod api;
 pub mod auth;
 pub mod rate_limit;
-pub mod runtime;
 pub mod rbac;
+pub mod runtime;
 pub mod session;
 pub mod ws;
 pub mod ws_socratic;

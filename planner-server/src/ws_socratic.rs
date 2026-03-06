@@ -515,7 +515,9 @@ async fn run_interview_runtime(
     let router = state.llm_router.clone();
     let requires_immediate_llm = match &start_mode {
         InterviewStartMode::Fresh { .. } => true,
-        InterviewStartMode::CheckpointResume { resume_state } => resume_state.pending_prompt.is_none(),
+        InterviewStartMode::CheckpointResume { resume_state } => {
+            resume_state.pending_prompt.is_none()
+        }
     };
 
     let available = router.available_providers();
@@ -825,10 +827,7 @@ fn start_interview_runtime(
     Ok(runtime)
 }
 
-async fn wait_for_initial_description(
-    socket: &mut WebSocket,
-    session_id: Uuid,
-) -> Option<String> {
+async fn wait_for_initial_description(socket: &mut WebSocket, session_id: Uuid) -> Option<String> {
     loop {
         match socket.recv().await {
             Some(Ok(Message::Text(text))) => match serde_json::from_str::<ClientMessage>(&text) {
@@ -1005,7 +1004,8 @@ pub async fn handle_socratic_ws(mut socket: WebSocket, state: Arc<AppState>, ses
             }
             Err(AttachError::AlreadyAttached) => {
                 let err = ServerMessage::Error {
-                    message: "A live interview connection is already attached to this session".into(),
+                    message: "A live interview connection is already attached to this session"
+                        .into(),
                 };
                 let _ = send_ws_message(&mut socket, &err).await;
                 return;
@@ -1049,7 +1049,8 @@ pub async fn handle_socratic_ws(mut socket: WebSocket, state: Arc<AppState>, ses
         });
         InterviewStartMode::CheckpointResume { resume_state }
     } else {
-        let Some(initial_description) = wait_for_initial_description(&mut socket, session_id).await else {
+        let Some(initial_description) = wait_for_initial_description(&mut socket, session_id).await
+        else {
             return;
         };
 
@@ -1063,7 +1064,9 @@ pub async fn handle_socratic_ws(mut socket: WebSocket, state: Arc<AppState>, ses
             s.add_message("user", &initial_description);
         });
 
-        InterviewStartMode::Fresh { initial_description }
+        InterviewStartMode::Fresh {
+            initial_description,
+        }
     };
 
     let runtime = match start_interview_runtime(&state, session_id, start_mode) {
@@ -1084,7 +1087,8 @@ pub async fn handle_socratic_ws(mut socket: WebSocket, state: Arc<AppState>, ses
             let _ = state.socratic_runtimes.remove(session_id);
             clear_interview_runtime_state(&state, session_id);
             let err = ServerMessage::Error {
-                message: "The live interview runtime closed before this websocket could attach".into(),
+                message: "The live interview runtime closed before this websocket could attach"
+                    .into(),
             };
             let _ = send_ws_message(&mut socket, &err).await;
             return;

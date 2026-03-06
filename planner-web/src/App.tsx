@@ -101,6 +101,26 @@ export default function App() {
         }
       />
       <Route
+        path="/knowledge/all"
+        element={
+          <ProtectedRoute>
+            <Suspense fallback={<AuthLoadingFallback />}>
+              <KnowledgeLibraryPage />
+            </Suspense>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/knowledge/projects/:projectId"
+        element={
+          <ProtectedRoute>
+            <Suspense fallback={<AuthLoadingFallback />}>
+              <KnowledgeLibraryPage />
+            </Suspense>
+          </ProtectedRoute>
+        }
+      />
+      <Route
         path="/events"
         element={
           <ProtectedRoute>

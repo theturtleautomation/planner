@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout.tsx';
 import { createApiClient } from '../api/client.ts';
@@ -80,6 +80,21 @@ function formatRelativeTime(iso: string): string {
   return `${days}d ago`;
 }
 
+function getSessionTitle(
+  session: Pick<SessionSummary, 'title' | 'project_description' | 'id'>,
+): string {
+  const explicit = session.title?.trim();
+  if (explicit) return explicit;
+
+  const description = session.project_description?.trim();
+  if (description) {
+    const singleLine = description.replace(/\s+/g, ' ').trim();
+    return singleLine.length > 72 ? `${singleLine.slice(0, 72)}…` : singleLine;
+  }
+
+  return `Session ${session.id.slice(0, 8)}`;
+}
+
 function getDescriptionSnippet(description?: string | null): string {
   if (!description?.trim()) return 'No project description saved yet.';
   return description.length > 120 ? `${description.slice(0, 120)}…` : description;
@@ -140,6 +155,10 @@ function getPriorityBucket(session: SessionSummary): number {
 }
 
 function compareSessions(left: SessionSummary, right: SessionSummary): number {
+  if (left.archived !== right.archived) {
+    return left.archived ? 1 : -1;
+  }
+
   const priorityDiff = getPriorityBucket(left) - getPriorityBucket(right);
   if (priorityDiff !== 0) return priorityDiff;
 
@@ -150,6 +169,10 @@ function compareSessions(left: SessionSummary, right: SessionSummary): number {
 }
 
 function getStateBadge(session: SessionSummary): BadgeDescriptor {
+  if (session.archived) {
+    return { label: 'archived', tone: 'default' };
+  }
+
   switch (session.resume_status) {
     case 'interview_attached':
       return { label: 'live attached', tone: 'success' };
@@ -197,6 +220,10 @@ function getAttentionBadges(session: SessionSummary): BadgeDescriptor[] {
 }
 
 function getWorkflowSummary(session: SessionSummary): string {
+  if (session.archived) {
+    return 'Archived session. Unarchive it to return it to the main working surface.';
+  }
+
   const step = formatWorkflowStep(session.current_step);
   if (step) return `Step: ${step}`;
 
@@ -300,17 +327,72 @@ function MetadataPill({ children }: { children: string }) {
   );
 }
 
+type SessionCardActionKind = 'rename' | 'duplicate' | 'archive';
+
+function CardActionButton(
+  {
+    label,
+    ariaLabel,
+    onClick,
+    disabled = false,
+  }: {
+    label: string;
+    ariaLabel: string;
+    onClick: () => void;
+    disabled?: boolean;
+  },
+) {
+  return (
+    <button
+      type="button"
+      aria-label={ariaLabel}
+      disabled={disabled}
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick();
+      }}
+      style={{
+        background: 'transparent',
+        border: '1px solid rgba(136,136,160,0.25)',
+        color: disabled ? 'var(--color-text-muted)' : 'var(--color-text-muted)',
+        padding: '5px 10px',
+        borderRadius: '999px',
+        fontSize: '10px',
+        fontWeight: 700,
+        letterSpacing: '0.05em',
+        textTransform: 'uppercase',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.55 : 0.9,
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
 interface SessionCardProps {
   session: SessionSummary;
   onClick: () => void;
+  onRename: () => void;
+  onDuplicate: () => void;
+  onArchiveToggle: () => void;
+  actionBusy: SessionCardActionKind | null;
 }
 
-function SessionCard({ session, onClick }: SessionCardProps) {
+function SessionCard({
+  session,
+  onClick,
+  onRename,
+  onDuplicate,
+  onArchiveToggle,
+  actionBusy,
+}: SessionCardProps) {
   const phaseConfig = PHASE_CONFIG[session.intake_phase];
   const primaryAction = getPrimaryActionLabel(session);
   const primaryActionTone = getPrimaryActionTone(session);
   const stateBadge = getStateBadge(session);
   const attentionBadges = getAttentionBadges(session);
+  const title = getSessionTitle(session);
   const needsAlertTone = attentionBadges.some((badge) => badge.tone === 'error')
     ? 'error'
     : attentionBadges.length > 0
@@ -373,10 +455,13 @@ function SessionCard({ session, onClick }: SessionCardProps) {
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: 0 }}>
+          <span style={{ color: 'var(--color-text)', fontSize: '15px', fontWeight: 700 }}>
+            {title}
+          </span>
           <span
             style={{
               color: 'var(--color-primary)',
-              fontSize: '12px',
+              fontSize: '11px',
               fontWeight: 700,
               letterSpacing: '0.05em',
               fontFamily: 'monospace',
@@ -437,6 +522,33 @@ function SessionCard({ session, onClick }: SessionCardProps) {
         </div>
       )}
 
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+        <CardActionButton
+          label={actionBusy === 'rename' ? 'Renaming…' : 'Rename'}
+          ariaLabel={`Rename session ${session.id}`}
+          onClick={onRename}
+          disabled={actionBusy !== null}
+        />
+        <CardActionButton
+          label={actionBusy === 'duplicate' ? 'Duplicating…' : 'Duplicate'}
+          ariaLabel={`Duplicate session ${session.id}`}
+          onClick={onDuplicate}
+          disabled={actionBusy !== null}
+        />
+        <CardActionButton
+          label={session.archived
+            ? actionBusy === 'archive'
+              ? 'Restoring…'
+              : 'Unarchive'
+            : actionBusy === 'archive'
+              ? 'Archiving…'
+              : 'Archive'}
+          ariaLabel={`${session.archived ? 'Unarchive' : 'Archive'} session ${session.id}`}
+          onClick={onArchiveToggle}
+          disabled={actionBusy !== null || (!session.archived && (session.intake_phase === 'interviewing' || session.pipeline_running))}
+        />
+      </div>
+
       {alertMessage && (
         <div
           style={{
@@ -470,31 +582,89 @@ export default function Dashboard() {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [activeAction, setActiveAction] = useState<{
+    sessionId: string;
+    kind: SessionCardActionKind;
+  } | null>(null);
+
+  const loadSessions = useCallback(async (): Promise<void> => {
+    setLoading(true);
+    setFetchError(null);
+    try {
+      const response = await api.listSessions({ includeArchived: showArchived });
+      setSessions(response.sessions);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setFetchError(message);
+    } finally {
+      setLoading(false);
+    }
+  }, [api, showArchived]);
 
   useEffect(() => {
-    let cancelled = false;
+    void loadSessions();
+  }, [loadSessions]);
 
-    const load = async (): Promise<void> => {
-      setLoading(true);
-      setFetchError(null);
-      try {
-        const response = await api.listSessions();
-        if (!cancelled) setSessions(response.sessions);
-      } catch (error) {
-        if (!cancelled) {
-          const message = error instanceof Error ? error.message : String(error);
-          setFetchError(message);
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    };
+  const handleRename = useCallback(async (session: SessionSummary): Promise<void> => {
+    const currentTitle = getSessionTitle(session);
+    const nextTitle = window.prompt('Rename session', currentTitle);
+    if (nextTitle === null) return;
+    const trimmed = nextTitle.trim();
+    if (!trimmed || trimmed === currentTitle) return;
 
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, [api]);
+    setActionError(null);
+    setActiveAction({ sessionId: session.id, kind: 'rename' });
+    try {
+      await api.updateSession(session.id, { title: trimmed });
+      await loadSessions();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setActiveAction(null);
+    }
+  }, [api, loadSessions]);
+
+  const handleDuplicate = useCallback(async (session: SessionSummary): Promise<void> => {
+    const suggestedTitle = `${getSessionTitle(session)} (Copy)`;
+    const requestedTitle = window.prompt('Name the duplicate session', suggestedTitle);
+    if (requestedTitle === null) return;
+    const trimmed = requestedTitle.trim();
+
+    setActionError(null);
+    setActiveAction({ sessionId: session.id, kind: 'duplicate' });
+    try {
+      const response = await api.duplicateSession(
+        session.id,
+        trimmed ? { title: trimmed } : undefined,
+      );
+      await loadSessions();
+      void navigate(`/session/${response.session.id}`);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setActiveAction(null);
+    }
+  }, [api, loadSessions, navigate]);
+
+  const handleArchiveToggle = useCallback(async (session: SessionSummary): Promise<void> => {
+    if (!session.archived) {
+      const confirmed = window.confirm(`Archive "${getSessionTitle(session)}"?`);
+      if (!confirmed) return;
+    }
+
+    setActionError(null);
+    setActiveAction({ sessionId: session.id, kind: 'archive' });
+    try {
+      await api.updateSession(session.id, { archived: !session.archived });
+      await loadSessions();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setActiveAction(null);
+    }
+  }, [api, loadSessions]);
 
   const sortedSessions = useMemo(() => [...sessions].sort(compareSessions), [sessions]);
   const actionableCount = sortedSessions.filter(isActionable).length;
@@ -563,6 +733,23 @@ export default function Dashboard() {
             >
               admin →
             </a>
+            <button
+              type="button"
+              onClick={() => setShowArchived((value) => !value)}
+              style={{
+                background: 'transparent',
+                border: '1px solid rgba(136,136,160,0.25)',
+                color: showArchived ? 'var(--color-primary)' : 'var(--color-text-muted)',
+                fontSize: '11px',
+                cursor: 'pointer',
+                letterSpacing: '0.04em',
+                borderRadius: '999px',
+                fontFamily: 'inherit',
+                padding: '4px 10px',
+              }}
+            >
+              {showArchived ? 'hide archived' : 'show archived'}
+            </button>
           </div>
 
           <button
@@ -675,6 +862,21 @@ export default function Dashboard() {
           </div>
         )}
 
+        {!loading && !fetchError && actionError && (
+          <div
+            style={{
+              padding: '12px 14px',
+              border: '1px solid rgba(255,68,68,0.28)',
+              borderRadius: '8px',
+              background: 'rgba(255,68,68,0.06)',
+              color: 'var(--color-error)',
+              fontSize: '12px',
+            }}
+          >
+            {actionError}
+          </div>
+        )}
+
         {!loading && !fetchError && sessions.length === 0 && (
           <div
             style={{
@@ -689,10 +891,12 @@ export default function Dashboard() {
             }}
           >
             <span style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>
-              no sessions yet
+              {showArchived ? 'no sessions match this view' : 'no sessions yet'}
             </span>
             <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>
-              create a new session to start planning
+              {showArchived
+                ? 'toggle archived sessions off or create a new session to continue'
+                : 'create a new session to start planning'}
             </span>
             <button
               onClick={() => void navigate('/session/new')}
@@ -727,6 +931,14 @@ export default function Dashboard() {
                 key={session.id}
                 session={session}
                 onClick={() => void navigate(`/session/${session.id}`)}
+                onRename={() => { void handleRename(session); }}
+                onDuplicate={() => { void handleDuplicate(session); }}
+                onArchiveToggle={() => { void handleArchiveToggle(session); }}
+                actionBusy={
+                  activeAction?.sessionId === session.id
+                    ? activeAction.kind
+                    : null
+                }
               />
             ))}
           </div>

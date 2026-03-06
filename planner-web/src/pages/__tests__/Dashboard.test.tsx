@@ -1,14 +1,19 @@
 import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import Dashboard from '../Dashboard';
 import type { SessionSummary } from '../../types';
 
 const mockListSessions = vi.fn();
+const mockUpdateSession = vi.fn();
+const mockDuplicateSession = vi.fn();
 
 vi.mock('../../api/client.ts', () => ({
   createApiClient: vi.fn(() => ({
     listSessions: mockListSessions,
+    updateSession: mockUpdateSession,
+    duplicateSession: mockDuplicateSession,
   })),
 }));
 
@@ -20,6 +25,9 @@ function makeSessionSummary(overrides: Partial<SessionSummary>): SessionSummary 
   return {
     id: 'sess-default',
     user_id: 'dev|local',
+    title: null,
+    archived: false,
+    archived_at: null,
     created_at: '2026-03-06T12:00:00Z',
     last_accessed: '2026-03-06T12:00:00Z',
     last_activity_at: '2026-03-06T12:00:00Z',
@@ -58,6 +66,8 @@ describe('Dashboard workflow visibility', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.spyOn(Date, 'now').mockReturnValue(new Date('2026-03-06T15:00:00Z').getTime());
+    vi.spyOn(window, 'prompt').mockReturnValue(null);
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
   });
 
   afterEach(() => {
@@ -69,6 +79,7 @@ describe('Dashboard workflow visibility', () => {
       sessions: [
         makeSessionSummary({
           id: 'sess-checkpoint',
+          title: 'Customer Portal',
           intake_phase: 'interviewing',
           can_resume_checkpoint: true,
           has_checkpoint: true,
@@ -94,6 +105,7 @@ describe('Dashboard workflow visibility', () => {
     });
 
     expect(screen.getByText(/last activity 30m ago/i)).toBeInTheDocument();
+    expect(screen.getByText('Customer Portal')).toBeInTheDocument();
     expect(screen.getByText(/step: draft \/ generate/i)).toBeInTheDocument();
     expect(screen.getByText('Resume Interview')).toBeInTheDocument();
     expect(screen.getByText(/checkpoint 35m ago/i)).toBeInTheDocument();
@@ -168,5 +180,35 @@ describe('Dashboard workflow visibility', () => {
     expect(
       screen.getByText(/the live interview is detached; restart from the saved description to continue\./i),
     ).toBeInTheDocument();
+  });
+
+  it('hides archived sessions by default and loads them when toggled', async () => {
+    mockListSessions.mockImplementation(async (params?: { includeArchived?: boolean }) => ({
+      sessions: params?.includeArchived
+        ? [
+            makeSessionSummary({ id: 'sess-visible', title: 'Visible session' }),
+            makeSessionSummary({
+              id: 'sess-archived',
+              title: 'Archived session',
+              archived: true,
+              archived_at: '2026-03-06T14:00:00Z',
+            }),
+          ]
+        : [makeSessionSummary({ id: 'sess-visible', title: 'Visible session' })],
+    }));
+
+    renderDashboard();
+
+    await waitFor(() => {
+      expect(mockListSessions).toHaveBeenCalledWith({ includeArchived: false });
+    });
+    expect(screen.queryByText('Archived session')).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: /show archived/i }));
+
+    await waitFor(() => {
+      expect(mockListSessions).toHaveBeenLastCalledWith({ includeArchived: true });
+    });
+    expect(await screen.findByText('Archived session')).toBeInTheDocument();
   });
 });

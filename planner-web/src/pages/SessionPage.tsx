@@ -13,7 +13,7 @@ import type { SessionHeaderAction } from '../components/SessionStatusHeader.tsx'
 import { createApiClient } from '../api/client.ts';
 import { useGetAccessToken } from '../auth/useAuthenticatedFetch.ts';
 import { useSocraticWebSocket } from '../hooks/useSocraticWebSocket.ts';
-import type { InterviewCheckpoint, ResumeStatus, Session } from '../types.ts';
+import type { InterviewCheckpoint, ResumeStatus, Session, SessionExportResponse } from '../types.ts';
 
 function getInterviewResumeNotice(status: ResumeStatus):
   | { tone: 'warning' | 'info'; text: string }
@@ -88,6 +88,43 @@ function getCheckpointSummary(checkpoint: InterviewCheckpoint): string[] {
   return lines;
 }
 
+function getSessionTitle(
+  session: Pick<Session, 'title' | 'project_description' | 'id'>,
+): string {
+  const explicit = session.title?.trim();
+  if (explicit) return explicit;
+
+  const description = session.project_description?.trim();
+  if (description) {
+    const singleLine = description.replace(/\s+/g, ' ').trim();
+    return singleLine.length > 72 ? `${singleLine.slice(0, 72)}…` : singleLine;
+  }
+
+  return `Session ${session.id.slice(0, 8)}`;
+}
+
+function makeExportFilename(session: Session): string {
+  const slug = getSessionTitle(session)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '')
+    .slice(0, 48) || session.id.slice(0, 8);
+  return `${slug}-session-export.json`;
+}
+
+function downloadExport(payload: SessionExportResponse): void {
+  const contents = `${JSON.stringify(payload, null, 2)}\n`;
+  const blob = new Blob([contents], { type: 'application/json' });
+  const href = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = href;
+  link.download = makeExportFilename(payload.session);
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(href);
+}
+
 export default function SessionPage() {
   const { id: routeId } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -108,7 +145,9 @@ export default function SessionPage() {
   const [isStarting, setIsStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
   const [workflowError, setWorkflowError] = useState<string | null>(null);
-  const [workflowAction, setWorkflowAction] = useState<'restart' | 'retry' | null>(null);
+  const [workflowAction, setWorkflowAction] = useState<
+    'restart' | 'retry' | 'rename' | 'duplicate' | 'archive' | 'export' | null
+  >(null);
 
   // Right panel tab: 'belief' | 'draft'
   type RightPanelTab = 'belief' | 'draft';
@@ -214,6 +253,94 @@ export default function SessionPage() {
     socratic.attach();
   }, [socratic]);
 
+  const handleRenameSession = useCallback(async (): Promise<void> => {
+    if (!sessionId || !session) return;
+    const currentTitle = getSessionTitle(session);
+    const nextTitle = window.prompt('Rename session', currentTitle);
+    if (nextTitle === null) return;
+
+    const trimmed = nextTitle.trim();
+    if (!trimmed || trimmed === currentTitle) return;
+
+    setWorkflowAction('rename');
+    setWorkflowError(null);
+    try {
+      const resp = await api.updateSession(sessionId, { title: trimmed });
+      applySessionSnapshot(resp.session);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[SessionPage] renameSession error:', msg);
+      setWorkflowError('Failed to rename the session. Please try again.');
+    } finally {
+      setWorkflowAction(null);
+    }
+  }, [api, applySessionSnapshot, session, sessionId]);
+
+  const handleDuplicateSession = useCallback(async (): Promise<void> => {
+    if (!sessionId || !session) return;
+    const suggestedTitle = `${getSessionTitle(session)} (Copy)`;
+    const requestedTitle = window.prompt('Name the duplicate session', suggestedTitle);
+    if (requestedTitle === null) return;
+
+    setWorkflowAction('duplicate');
+    setWorkflowError(null);
+    try {
+      const trimmed = requestedTitle.trim();
+      const resp = await api.duplicateSession(
+        sessionId,
+        trimmed ? { title: trimmed } : undefined,
+      );
+      void navigate(`/session/${resp.session.id}`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[SessionPage] duplicateSession error:', msg);
+      setWorkflowError('Failed to duplicate the session. Please try again.');
+    } finally {
+      setWorkflowAction(null);
+    }
+  }, [api, navigate, session, sessionId]);
+
+  const handleArchiveToggle = useCallback(async (): Promise<void> => {
+    if (!sessionId || !session) return;
+    if (!session.archived) {
+      const confirmed = window.confirm(`Archive "${getSessionTitle(session)}"?`);
+      if (!confirmed) return;
+    }
+
+    setWorkflowAction('archive');
+    setWorkflowError(null);
+    try {
+      const resp = await api.updateSession(sessionId, { archived: !session.archived });
+      applySessionSnapshot(resp.session);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[SessionPage] archiveSession error:', msg);
+      setWorkflowError(
+        session.archived
+          ? 'Failed to restore the session. Please try again.'
+          : 'Failed to archive the session. Please try again.',
+      );
+    } finally {
+      setWorkflowAction(null);
+    }
+  }, [api, applySessionSnapshot, session, sessionId]);
+
+  const handleExportSession = useCallback(async (): Promise<void> => {
+    if (!sessionId) return;
+    setWorkflowAction('export');
+    setWorkflowError(null);
+    try {
+      const payload = await api.exportSession(sessionId);
+      downloadExport(payload);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[SessionPage] exportSession error:', msg);
+      setWorkflowError('Failed to export the session history. Please try again.');
+    } finally {
+      setWorkflowAction(null);
+    }
+  }, [api, sessionId]);
+
   const handleRestartFromDescription = useCallback(async (): Promise<void> => {
     if (!sessionId) return;
     setWorkflowAction('restart');
@@ -282,6 +409,45 @@ export default function SessionPage() {
       });
     }
 
+    if (session) {
+      actions.push({
+        key: 'rename-session',
+        label: workflowAction === 'rename' ? 'Renaming…' : 'Rename',
+        onClick: () => { void handleRenameSession(); },
+        disabled: workflowAction !== null || isStarting,
+      });
+
+      actions.push({
+        key: 'duplicate-session',
+        label: workflowAction === 'duplicate' ? 'Duplicating…' : 'Duplicate',
+        onClick: () => { void handleDuplicateSession(); },
+        disabled: workflowAction !== null || isStarting,
+      });
+
+      actions.push({
+        key: session.archived ? 'unarchive-session' : 'archive-session',
+        label: session.archived
+          ? workflowAction === 'archive'
+            ? 'Restoring…'
+            : 'Unarchive'
+          : workflowAction === 'archive'
+            ? 'Archiving…'
+            : 'Archive',
+        onClick: () => { void handleArchiveToggle(); },
+        disabled: workflowAction !== null
+          || isStarting
+          || (!session.archived && (session.intake_phase === 'interviewing' || session.pipeline_running)),
+        tone: session.archived ? 'default' : 'danger',
+      });
+
+      actions.push({
+        key: 'export-session',
+        label: workflowAction === 'export' ? 'Exporting…' : 'Export',
+        onClick: () => { void handleExportSession(); },
+        disabled: workflowAction !== null || isStarting,
+      });
+    }
+
     if (session?.can_restart_from_description) {
       actions.push({
         key: 'restart',
@@ -310,6 +476,10 @@ export default function SessionPage() {
 
     return actions;
   }, [
+    handleArchiveToggle,
+    handleDuplicateSession,
+    handleExportSession,
+    handleRenameSession,
     handleResume,
     handleRestartFromDescription,
     handleRetryPipeline,
@@ -637,6 +807,7 @@ export default function SessionPage() {
   const checkpointSummaryLines = detachedCheckpoint
     ? getCheckpointSummary(detachedCheckpoint)
     : [];
+  const sessionTitle = session ? getSessionTitle(session) : null;
 
   return (
     <Layout sessionId={sessionId} isConnected={socratic.isConnected}>
@@ -648,6 +819,59 @@ export default function SessionPage() {
       }}>
         {reconnectBanner}
         {workflowErrorBanner}
+
+        {session && sessionTitle && (
+          <div
+            style={{
+              padding: '12px 16px',
+              background: 'var(--color-surface)',
+              borderBottom: '1px solid var(--color-border)',
+              display: 'flex',
+              alignItems: 'flex-end',
+              justifyContent: 'space-between',
+              gap: '12px',
+              flexWrap: 'wrap',
+            }}
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <span
+                style={{
+                  color: 'var(--color-primary)',
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  letterSpacing: '0.08em',
+                  textTransform: 'uppercase',
+                }}
+              >
+                Session
+              </span>
+              <span style={{ color: 'var(--color-text)', fontSize: '17px', fontWeight: 700 }}>
+                {sessionTitle}
+              </span>
+              <span style={{ color: 'var(--color-text-muted)', fontSize: '11px', fontFamily: 'monospace' }}>
+                {session.id}
+              </span>
+            </div>
+            {session.archived && (
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  padding: '5px 10px',
+                  borderRadius: '999px',
+                  border: '1px solid rgba(136,136,160,0.25)',
+                  color: 'var(--color-text-muted)',
+                  fontSize: '10px',
+                  fontWeight: 700,
+                  letterSpacing: '0.05em',
+                  textTransform: 'uppercase',
+                }}
+              >
+                Archived
+              </span>
+            )}
+          </div>
+        )}
 
         {/* Error banner */}
         {isError && (

@@ -33,6 +33,33 @@ export type QualityAttribute = 'performance' | 'reliability' | 'security' | 'usa
 export type QualityPriority = 'critical' | 'high' | 'medium' | 'low';
 export type ImpactAction = 'reconverge' | 'update' | 'invalidate' | 'add' | 'remove';
 export type ImpactSeverity = 'shallow' | 'medium' | 'deep';
+export type ScopeClass = 'global' | 'project' | 'project_contextual' | 'unscoped';
+export type ScopeVisibility = 'shared' | 'project_local' | 'unscoped';
+
+export interface ProjectScope {
+  project_id: string;
+  project_name?: string;
+}
+
+export interface SecondaryScopeRefs {
+  feature?: string;
+  widget?: string;
+  artifact?: string;
+  component?: string;
+}
+
+export interface SharedScope {
+  linked_project_ids: string[];
+  inherit_to_linked_projects: boolean;
+}
+
+export interface NodeScope {
+  scope_class: ScopeClass;
+  project?: ProjectScope;
+  secondary: SecondaryScopeRefs;
+  is_shared: boolean;
+  shared?: SharedScope;
+}
 
 // ─── Node summary (used in list endpoints) ─────────────────────────────────
 
@@ -41,6 +68,13 @@ export interface NodeSummary {
   name: string;
   node_type: string;
   status: string;
+  scope_class: ScopeClass;
+  scope_visibility: ScopeVisibility;
+  is_shared: boolean;
+  project_id?: string;
+  project_name?: string;
+  secondary_scope: SecondaryScopeRefs;
+  linked_project_ids: string[];
   tags: string[];
   has_documentation: boolean;
   updated_at: string;
@@ -109,6 +143,7 @@ export interface DecisionNode {
   supersedes?: string;
   tags: string[];
   documentation?: string;
+  scope: NodeScope;
   created_at: string;
   updated_at: string;
 }
@@ -125,6 +160,7 @@ export interface TechnologyNode {
   license?: string;
   tags: string[];
   documentation?: string;
+  scope: NodeScope;
   created_at: string;
   updated_at: string;
 }
@@ -141,6 +177,7 @@ export interface ComponentNode {
   status: ComponentStatus;
   tags: string[];
   documentation?: string;
+  scope: NodeScope;
   created_at: string;
   updated_at: string;
 }
@@ -155,6 +192,7 @@ export interface ConstraintNode {
   source: string;  // free text — who/what imposed this constraint
   tags: string[];
   documentation?: string;
+  scope: NodeScope;
   created_at: string;
   updated_at: string;
 }
@@ -168,6 +206,7 @@ export interface PatternNode {
   rationale: string;
   tags: string[];
   documentation?: string;
+  scope: NodeScope;
   created_at: string;
   updated_at: string;
 }
@@ -181,6 +220,7 @@ export interface QualityRequirementNode {
   priority: QualityPriority;
   tags: string[];
   documentation?: string;
+  scope: NodeScope;
   created_at: string;
   updated_at: string;
 }

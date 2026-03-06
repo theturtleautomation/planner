@@ -234,6 +234,7 @@ pub fn scan_cargo_toml(project_root: &Path, blueprints: &BlueprintStore) -> Scan
                 license: None,
                 tags: vec!["discovery".into(), "cargo".into()],
                 documentation: None,
+                scope: NodeScope::default(),
                 created_at: now_iso(),
                 updated_at: now_iso(),
             });
@@ -287,6 +288,7 @@ pub fn scan_directory_structure(project_root: &Path, blueprints: &BlueprintStore
             status: ComponentStatus::Planned,
             tags: vec!["discovery".into(), "directory".into()],
             documentation: None,
+            scope: NodeScope::default(),
             created_at: now_iso(),
             updated_at: now_iso(),
         });
@@ -653,6 +655,7 @@ mod tests {
                 license: None,
                 tags: vec!["discovery".into()],
                 documentation: None,
+                scope: NodeScope::default(),
                 created_at: now_iso(),
                 updated_at: now_iso(),
             }),
