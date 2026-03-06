@@ -16,7 +16,7 @@
 //! - **Atomic writes**: Each flush writes to a `.tmp` file then renames,
 //!   ensuring a crash mid-write never corrupts the on-disk copy.
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -465,6 +465,42 @@ impl Session {
             .count()
     }
 
+    /// Count warnings from the event log.
+    pub fn warning_count(&self) -> usize {
+        self.events
+            .iter()
+            .filter(|e| e.level == planner_core::observability::EventLevel::Warn)
+            .count()
+    }
+
+    /// Return the most recent user-visible workflow activity timestamp.
+    pub fn last_activity_at(&self) -> String {
+        let mut candidates = vec![self.created_at.clone(), self.last_accessed.clone()];
+
+        if let Some(message) = self.messages.last() {
+            candidates.push(message.timestamp.clone());
+        }
+
+        if let Some(event) = self.events.last() {
+            candidates.push(event.timestamp.to_rfc3339());
+        }
+
+        if let Some(checkpoint) = &self.checkpoint {
+            candidates.push(checkpoint.last_checkpoint_at.clone());
+        }
+
+        candidates
+            .into_iter()
+            .filter_map(|timestamp| {
+                DateTime::parse_from_rfc3339(&timestamp)
+                    .ok()
+                    .map(|parsed| (parsed.with_timezone(&Utc), timestamp))
+            })
+            .max_by(|left, right| left.0.cmp(&right.0))
+            .map(|(_, timestamp)| timestamp)
+            .unwrap_or_else(|| self.created_at.clone())
+    }
+
     /// Push an event into this session's log and update current_step/error_message.
     pub fn record_event(&mut self, event: planner_core::observability::PlannerEvent) {
         if event.level == planner_core::observability::EventLevel::Error {
@@ -503,12 +539,15 @@ pub struct SessionSummary {
     pub user_id: String,
     pub created_at: String,
     pub last_accessed: String,
+    pub last_activity_at: String,
     pub pipeline_running: bool,
     pub intake_phase: String,
     pub interview_live_attached: bool,
     pub project_description: Option<String>,
     pub message_count: usize,
     pub event_count: usize,
+    pub warning_count: usize,
+    pub error_count: usize,
     pub current_step: Option<String>,
     pub error_message: Option<String>,
     pub can_resume_live: bool,
@@ -517,6 +556,9 @@ pub struct SessionSummary {
     pub can_retry_pipeline: bool,
     pub has_checkpoint: bool,
     pub resume_status: ResumeStatus,
+    pub classification: Option<DomainClassification>,
+    pub convergence_pct: Option<f32>,
+    pub checkpoint_last_saved_at: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -901,12 +943,15 @@ impl SessionStore {
                 user_id: s.user_id.clone(),
                 created_at: s.created_at.clone(),
                 last_accessed: s.last_accessed.clone(),
+                last_activity_at: s.last_activity_at(),
                 pipeline_running: s.pipeline_running,
                 intake_phase: s.intake_phase.clone(),
                 interview_live_attached: s.interview_live_attached,
                 project_description: s.project_description.clone(),
                 message_count: s.messages.len(),
                 event_count: s.events.len(),
+                warning_count: s.warning_count(),
+                error_count: s.error_count(),
                 current_step: s.current_step.clone(),
                 error_message: s.error_message.clone(),
                 can_resume_live: s.can_resume_live,
@@ -915,6 +960,12 @@ impl SessionStore {
                 can_retry_pipeline: s.can_retry_pipeline,
                 has_checkpoint: s.has_checkpoint,
                 resume_status: s.resume_status,
+                classification: s.classification.clone(),
+                convergence_pct: s.belief_state.as_ref().map(|state| state.convergence_pct()),
+                checkpoint_last_saved_at: s
+                    .checkpoint
+                    .as_ref()
+                    .map(|checkpoint| checkpoint.last_checkpoint_at.clone()),
             })
             .collect()
     }
@@ -1053,6 +1104,97 @@ mod tests {
             })
             .unwrap();
         assert!(retryable_failure.can_retry_pipeline);
+    }
+
+    #[test]
+    fn session_summaries_include_activity_and_attention_metadata() {
+        let store = SessionStore::new();
+        let session = store.create("dev|local");
+        let id = session.id;
+
+        store
+            .update(id, |s| {
+                let classification = planner_schemas::artifacts::socratic::DomainClassification {
+                    project_type: planner_schemas::artifacts::socratic::ProjectType::WebApp,
+                    complexity: planner_schemas::artifacts::socratic::ComplexityTier::Standard,
+                    detected_signals: vec!["browser".into()],
+                    required_dimensions: Vec::new(),
+                };
+
+                s.project_description = Some("Build timer".into());
+                s.intake_phase = "interviewing".into();
+                s.classification = Some(classification.clone());
+                s.belief_state = Some(
+                    planner_schemas::artifacts::socratic::RequirementsBeliefState::from_classification(
+                        &classification,
+                    ),
+                );
+                s.current_step = Some("draft.generate".into());
+                s.error_message = Some("spec generation failed".into());
+                s.messages[0].timestamp = "2026-03-06T12:00:00Z".into();
+                s.messages.push(SessionMessage {
+                    id: Uuid::new_v4(),
+                    role: "user".into(),
+                    content: "Build timer".into(),
+                    timestamp: "2026-03-06T12:01:00Z".into(),
+                });
+                s.events = vec![
+                    planner_core::observability::PlannerEvent {
+                        id: Uuid::new_v4(),
+                        timestamp: chrono::DateTime::parse_from_rfc3339("2026-03-06T12:03:00Z")
+                            .unwrap()
+                            .with_timezone(&chrono::Utc),
+                        level: planner_core::observability::EventLevel::Warn,
+                        source: planner_core::observability::EventSource::Pipeline,
+                        session_id: Some(id),
+                        step: Some("pipeline.warn".into()),
+                        message: "retry suggested".into(),
+                        duration_ms: None,
+                        metadata: serde_json::Value::Null,
+                    },
+                    planner_core::observability::PlannerEvent {
+                        id: Uuid::new_v4(),
+                        timestamp: chrono::DateTime::parse_from_rfc3339("2026-03-06T12:04:00Z")
+                            .unwrap()
+                            .with_timezone(&chrono::Utc),
+                        level: planner_core::observability::EventLevel::Error,
+                        source: planner_core::observability::EventSource::Pipeline,
+                        session_id: Some(id),
+                        step: Some("pipeline.error".into()),
+                        message: "spec generation failed".into(),
+                        duration_ms: None,
+                        metadata: serde_json::Value::Null,
+                    },
+                ];
+                s.ensure_checkpoint().last_checkpoint_at = "2026-03-06T12:05:00Z".into();
+            })
+            .unwrap();
+
+        {
+            let mut sessions = store.sessions.write();
+            let stored = sessions.get_mut(&id).expect("session should exist");
+            stored.created_at = "2026-03-06T11:59:00Z".into();
+            stored.last_accessed = "2026-03-06T12:02:00Z".into();
+        }
+
+        let summaries = store.list_summaries_for_user("dev|local");
+        let summary = summaries
+            .into_iter()
+            .find(|candidate| candidate.id == id)
+            .expect("session summary should exist");
+
+        assert_eq!(summary.message_count, 2);
+        assert_eq!(summary.event_count, 2);
+        assert_eq!(summary.warning_count, 1);
+        assert_eq!(summary.error_count, 1);
+        assert_eq!(summary.current_step.as_deref(), Some("draft.generate"));
+        assert_eq!(
+            summary.checkpoint_last_saved_at.as_deref(),
+            Some("2026-03-06T12:05:00Z")
+        );
+        assert_eq!(summary.last_activity_at, "2026-03-06T12:05:00Z");
+        assert!(summary.classification.is_some());
+        assert_eq!(summary.convergence_pct, Some(1.0));
     }
 
     #[test]

@@ -192,6 +192,33 @@ export interface Session {
   error_message?: string | null;
 }
 
+export interface SessionSummary {
+  id: string;
+  user_id: string;
+  created_at: string;
+  last_accessed: string;
+  last_activity_at: string;
+  pipeline_running: boolean;
+  intake_phase: IntakePhase;
+  interview_live_attached: boolean;
+  project_description?: string | null;
+  message_count: number;
+  event_count: number;
+  warning_count: number;
+  error_count: number;
+  current_step?: string | null;
+  error_message?: string | null;
+  can_resume_live: boolean;
+  can_resume_checkpoint: boolean;
+  can_restart_from_description: boolean;
+  can_retry_pipeline: boolean;
+  has_checkpoint: boolean;
+  resume_status: ResumeStatus;
+  classification?: Classification | null;
+  convergence_pct?: number | null;
+  checkpoint_last_saved_at?: string | null;
+}
+
 // ─── API Responses ───────────────────────────────────────────────────────────
 
 export interface HealthResponse {
@@ -206,6 +233,10 @@ export interface CreateSessionResponse {
 
 export interface GetSessionResponse {
   session: Session;
+}
+
+export interface ListSessionsResponse {
+  sessions: SessionSummary[];
 }
 
 export interface SendMessageResponse {

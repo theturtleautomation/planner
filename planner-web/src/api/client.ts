@@ -4,11 +4,11 @@ import type {
   HealthResponse,
   CreateSessionResponse,
   GetSessionResponse,
+  ListSessionsResponse,
   SendMessageResponse,
   StartSocraticResponse,
   BeliefStateResponse,
   ListModelsResponse,
-  Session,
   AdminStatusResponse,
   AdminEventsResponse,
 } from '../types.ts';
@@ -67,12 +67,6 @@ function buildWebSocketUrl(path: string, token: string): string {
     url.searchParams.set('token', token);
   }
   return url.toString();
-}
-
-// ─── Factory ─────────────────────────────────────────────────────────────────
-
-export interface ListSessionsResponse {
-  sessions: Session[];
 }
 
 export function createApiClient(getToken: GetTokenFn) {

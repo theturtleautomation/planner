@@ -1,262 +1,22 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout.tsx';
 import { createApiClient } from '../api/client.ts';
 import { useGetAccessToken } from '../auth/useAuthenticatedFetch.ts';
-import type { Session } from '../types.ts';
+import type { IntakePhase, SessionSummary } from '../types.ts';
 
-function formatDate(iso: string): string {
-  try {
-    return new Date(iso).toLocaleString([], {
-      month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
-    });
-  } catch {
-    return iso;
-  }
+type BadgeTone = 'default' | 'primary' | 'success' | 'warning' | 'error';
+
+interface BadgeDescriptor {
+  label: string;
+  tone: BadgeTone;
 }
 
-export default function Dashboard() {
-  const navigate = useNavigate();
-  const getToken = useGetAccessToken();
-  const api = useMemo(() => createApiClient(getToken), [getToken]);
+const ACTIVE_PHASES = new Set<IntakePhase>(['interviewing', 'pipeline_running']);
 
-  const [sessions, setSessions] = useState<Session[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [fetchError, setFetchError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    const load = async (): Promise<void> => {
-      setLoading(true);
-      setFetchError(null);
-      try {
-        const resp = await api.listSessions();
-        if (!cancelled) setSessions(resp.sessions);
-      } catch (err) {
-        if (!cancelled) {
-          const msg = err instanceof Error ? err.message : String(err);
-          setFetchError(msg);
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    };
-    void load();
-    return () => { cancelled = true; };
-  }, [api]);
-
-  const handleNewSession = (): void => {
-    void navigate('/session/new');
-  };
-
-  return (
-    <Layout>
-      <div style={{
-        flex: 1,
-        overflow: 'auto',
-        padding: '32px 24px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '24px',
-        maxWidth: '800px',
-        margin: '0 auto',
-        width: '100%',
-      }}>
-        {/* Section header */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          borderBottom: '1px solid var(--color-border)',
-          paddingBottom: '12px',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <span style={{ color: 'var(--color-text)', fontSize: '14px', fontWeight: 600 }}>
-              sessions
-            </span>
-            <a
-              href="/blueprint"
-              style={{
-                color: 'var(--color-primary)',
-                fontSize: '11px',
-                textDecoration: 'none',
-                opacity: 0.75,
-                transition: 'opacity 0.18s',
-                fontFamily: 'monospace',
-                padding: '2px 8px',
-                border: '1px solid rgba(0,212,255,0.25)',
-                borderRadius: '10px',
-              }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLAnchorElement).style.opacity = '1'; }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLAnchorElement).style.opacity = '0.75'; }}
-            >
-              blueprint →
-            </a>
-            <a
-              href="/admin"
-              style={{
-                color: 'var(--color-text-muted)',
-                fontSize: '11px',
-                textDecoration: 'none',
-                opacity: 0.6,
-                transition: 'opacity 0.18s',
-                fontFamily: 'monospace',
-              }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLAnchorElement).style.opacity = '1'; }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLAnchorElement).style.opacity = '0.6'; }}
-            >
-              admin →
-            </a>
-          </div>
-          <button
-            onClick={handleNewSession}
-            style={{
-              background: 'var(--color-primary)',
-              border: 'none',
-              color: 'var(--color-bg)',
-              padding: '7px 18px',
-              fontSize: '12px',
-              fontWeight: 700,
-              cursor: 'pointer',
-              letterSpacing: '0.05em',
-              textTransform: 'uppercase',
-              borderRadius: '2px',
-              fontFamily: 'inherit',
-              transition: 'opacity 0.18s',
-            }}
-            onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.opacity = '0.85'; }}
-            onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.opacity = '1'; }}
-          >
-            + new session
-          </button>
-        </div>
-
-        {/* Loading state */}
-        {loading && (
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '40px 24px',
-            color: 'var(--color-text-muted)',
-            fontSize: '13px',
-          }}>
-            loading sessions…
-          </div>
-        )}
-
-        {/* Error state */}
-        {!loading && fetchError && (
-          <div style={{
-            padding: '16px',
-            border: '1px solid var(--color-error)',
-            borderRadius: '3px',
-            background: 'rgba(255,68,68,0.06)',
-            color: 'var(--color-error)',
-            fontSize: '13px',
-          }}>
-            <span style={{ fontWeight: 600 }}>Error loading sessions: </span>
-            {fetchError}
-          </div>
-        )}
-
-        {/* Empty state */}
-        {!loading && !fetchError && sessions.length === 0 && (
-          <div style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '60px 24px',
-            border: '1px dashed var(--color-border)',
-            borderRadius: '3px',
-            gap: '12px',
-          }}>
-            <span style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>
-              no sessions yet
-            </span>
-            <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>
-              create a new session to start planning
-            </span>
-            <button
-              onClick={handleNewSession}
-              style={{
-                marginTop: '8px',
-                background: 'transparent',
-                border: '1px solid var(--color-primary)',
-                color: 'var(--color-primary)',
-                padding: '8px 20px',
-                fontSize: '12px',
-                cursor: 'pointer',
-                borderRadius: '2px',
-                fontFamily: 'inherit',
-                transition: 'background 0.18s',
-              }}
-              onMouseEnter={(e) => {
-                (e.currentTarget as HTMLButtonElement).style.background = 'rgba(0,212,255,0.08)';
-              }}
-              onMouseLeave={(e) => {
-                (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
-              }}
-            >
-              start new session →
-            </button>
-          </div>
-        )}
-
-        {/* Session list */}
-        {!loading && !fetchError && sessions.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {[...sessions]
-              .sort((a, b) => {
-                // Active phases rank higher (lower sort index = earlier)
-                const ACTIVE_PHASES = new Set(['interviewing', 'pipeline_running']);
-                const aActive = ACTIVE_PHASES.has(a.intake_phase ?? '') ? 0 : 1;
-                const bActive = ACTIVE_PHASES.has(b.intake_phase ?? '') ? 0 : 1;
-                if (aActive !== bActive) return aActive - bActive;
-                // Within same tier: most recent first (latest message timestamp)
-                const aTs = a.messages?.[0]?.timestamp ?? '';
-                const bTs = b.messages?.[0]?.timestamp ?? '';
-                return bTs.localeCompare(aTs);
-              })
-              .map((session) => (
-                <SessionCard
-                  key={session.id}
-                  session={session}
-                  onClick={() => void navigate(`/session/${session.id}`)}
-                />
-              ))}
-          </div>
-        )}
-
-        {/* Info box */}
-        <div style={{
-          padding: '14px 16px',
-          background: 'var(--color-surface)',
-          border: '1px solid var(--color-border)',
-          borderRadius: '3px',
-          fontSize: '12px',
-          color: 'var(--color-text-muted)',
-          lineHeight: 1.7,
-        }}>
-          <span style={{ color: 'var(--color-primary)', fontWeight: 600 }}>TIP</span>
-          {' '}— Each session maintains its own conversation history and pipeline state.
-          Session actions now reflect backend capability flags (live attach, checkpoint resume, restart-only, or unknown).
-        </div>
-      </div>
-    </Layout>
-  );
-}
-
-interface SessionCardProps {
-  session: Session;
-  onClick: () => void;
-}
-
-// Intake phase badge config
 const PHASE_CONFIG: Record<
-  'waiting' | 'interviewing' | 'pipeline_running' | 'complete' | 'error',
-  { label: string; color: string; bg: string; borderColor: string; className?: string }
+  IntakePhase,
+  { label: string; color: string; bg: string; borderColor: string }
 > = {
   waiting: {
     label: 'waiting',
@@ -269,7 +29,6 @@ const PHASE_CONFIG: Record<
     color: 'var(--color-primary)',
     bg: 'rgba(0,212,255,0.08)',
     borderColor: 'var(--color-primary)',
-    className: 'phase-interviewing',
   },
   pipeline_running: {
     label: 'building',
@@ -291,323 +50,703 @@ const PHASE_CONFIG: Record<
   },
 };
 
-/** Maps an intake phase to its status-dot color. */
-function getStatusDotColor(phase: string): string {
-  switch (phase) {
-    case 'complete':         return 'var(--color-success)';
-    case 'interviewing':     return 'var(--color-primary)';
-    case 'pipeline_running': return 'var(--color-gold)';
-    case 'error':            return 'var(--color-error)';
-    default:                 return 'var(--color-text-muted)'; // waiting / unknown
-  }
+function formatDate(iso: string): string {
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return iso;
+
+  return parsed.toLocaleString([], {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
 }
 
-/** Formats a duration in milliseconds as "Xm" or "Xh Ym". */
-function formatDuration(ms: number): string {
-  const totalMinutes = Math.floor(ms / 60000);
-  if (totalMinutes < 60) return `${totalMinutes}m`;
-  const hours   = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+function formatRelativeTime(iso: string): string {
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return 'time unavailable';
+
+  const diffMs = Date.now() - parsed.getTime();
+  if (diffMs < 60_000) return 'just now';
+
+  const minutes = Math.floor(diffMs / 60_000);
+  if (minutes < 60) return `${minutes}m ago`;
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
 }
 
-function getPrimaryActionLabel(session: Session): string {
+function getDescriptionSnippet(description?: string | null): string {
+  if (!description?.trim()) return 'No project description saved yet.';
+  return description.length > 120 ? `${description.slice(0, 120)}…` : description;
+}
+
+function formatWorkflowStep(step?: string | null): string | null {
+  if (!step?.trim()) return null;
+  return step
+    .split('.')
+    .map((part) => part.replace(/_/g, ' '))
+    .join(' / ');
+}
+
+function getPrimaryActionLabel(session: SessionSummary): string {
   if (session.can_resume_checkpoint) return 'Resume Interview';
-  if (session.can_resume_live) return 'Reconnect';
+  if (session.can_resume_live) return session.intake_phase === 'pipeline_running' ? 'Reconnect Build' : 'Reconnect';
   if (session.can_retry_pipeline) return 'Retry Pipeline';
-  if (session.can_restart_from_description) return 'Restart from Description';
+  if (session.can_restart_from_description) return 'Restart Interview';
   if (session.resume_status === 'ready_to_start') return 'Start Interview';
   return 'Open Session';
 }
 
-function getInterviewResumeLabel(session: Session): string | null {
-  if (session.intake_phase !== 'interviewing') return null;
+function getPrimaryActionTone(session: SessionSummary): BadgeTone {
+  if (session.can_retry_pipeline) return 'error';
+  if (session.can_restart_from_description && session.intake_phase === 'interviewing') return 'warning';
+  if (session.can_resume_checkpoint || session.can_resume_live || session.resume_status === 'ready_to_start') {
+    return 'primary';
+  }
+  return 'default';
+}
+
+function isActionable(session: SessionSummary): boolean {
+  return session.can_resume_checkpoint
+    || session.can_resume_live
+    || session.can_retry_pipeline
+    || session.can_restart_from_description
+    || session.resume_status === 'ready_to_start';
+}
+
+function needsAttention(session: SessionSummary): boolean {
+  return session.intake_phase === 'error'
+    || Boolean(session.error_message)
+    || session.error_count > 0
+    || session.warning_count > 0
+    || session.can_retry_pipeline
+    || session.resume_status === 'interview_restart_only'
+    || session.resume_status === 'interview_resume_unknown';
+}
+
+function getPriorityBucket(session: SessionSummary): number {
+  if (needsAttention(session)) return 0;
+  if (ACTIVE_PHASES.has(session.intake_phase) && isActionable(session)) return 1;
+  if (isActionable(session)) return 2;
+  if (ACTIVE_PHASES.has(session.intake_phase)) return 3;
+  if (session.intake_phase === 'waiting') return 4;
+  if (session.intake_phase === 'complete') return 5;
+  return 6;
+}
+
+function compareSessions(left: SessionSummary, right: SessionSummary): number {
+  const priorityDiff = getPriorityBucket(left) - getPriorityBucket(right);
+  if (priorityDiff !== 0) return priorityDiff;
+
+  const activityDiff = new Date(right.last_activity_at).getTime() - new Date(left.last_activity_at).getTime();
+  if (activityDiff !== 0) return activityDiff;
+
+  return right.created_at.localeCompare(left.created_at);
+}
+
+function getStateBadge(session: SessionSummary): BadgeDescriptor {
   switch (session.resume_status) {
-    case 'live_attach_available':
-      return 'live-reattach';
     case 'interview_attached':
-      return 'attached';
+      return { label: 'live attached', tone: 'success' };
+    case 'live_attach_available':
+      if (session.intake_phase === 'pipeline_running') return { label: 'live build', tone: 'primary' };
+      if (session.intake_phase === 'complete') return { label: 'results ready', tone: 'success' };
+      if (session.intake_phase === 'error') return { label: 'failed run', tone: 'error' };
+      return { label: 'live resume', tone: 'primary' };
     case 'interview_checkpoint_resumable':
-      return 'resumable';
+      return { label: 'checkpoint resume', tone: 'primary' };
     case 'interview_restart_only':
-      return 'restart-only';
+      return { label: 'restart only', tone: 'warning' };
     case 'interview_resume_unknown':
-      return 'resume-unknown';
+      return { label: 'resume unknown', tone: 'warning' };
+    case 'ready_to_start':
     default:
-      return null;
+      return { label: 'ready to start', tone: 'default' };
   }
 }
 
-function SessionCard({ session, onClick }: SessionCardProps) {
-  const messageCount = session.messages?.length ?? 0;
+function getAttentionBadges(session: SessionSummary): BadgeDescriptor[] {
+  const badges: BadgeDescriptor[] = [];
 
-  // Use first message timestamp as created-at approximation, or fall back to id prefix
-  const createdAt = session.messages?.[0]?.timestamp
-    ? formatDate(session.messages[0].timestamp)
-    : `id: ${session.id.slice(0, 8)}`;
-
-  // Intake phase
-  const phase = session.intake_phase ?? 'waiting';
-  const phaseConfig = PHASE_CONFIG[phase] ?? PHASE_CONFIG.waiting;
-
-  // Status dot color
-  const statusDotColor = getStatusDotColor(phase);
-
-  // Error indicator: phase is 'error' or session has an error_message
-  const hasError = phase === 'error' || Boolean(session.error_message);
-
-  // Current step label (e.g. "classify_domain")
-  const currentStep = session.current_step ?? null;
-
-  // Error count from events
-  const errorEventCount = session.events?.filter((e) => e.level === 'error').length ?? 0;
-
-  // Duration: first-message → last-message timestamp (or now if active)
-  const isActive = phase === 'interviewing' || phase === 'pipeline_running';
-  let durationText: string | null = null;
-  if (session.messages && session.messages.length > 0) {
-    const first = session.messages[0].timestamp;
-    const last  = isActive
-      ? new Date().toISOString()
-      : (session.messages[session.messages.length - 1].timestamp ?? first);
-    const firstMs = new Date(first).getTime();
-    const lastMs  = new Date(last).getTime();
-    if (!isNaN(firstMs) && !isNaN(lastMs) && lastMs >= firstMs) {
-      durationText = formatDuration(lastMs - firstMs);
-    }
+  if (session.can_retry_pipeline) {
+    badges.push({ label: 'needs retry', tone: 'error' });
+  }
+  if (session.resume_status === 'interview_restart_only') {
+    badges.push({ label: 'needs restart', tone: 'warning' });
+  }
+  if (session.resume_status === 'interview_resume_unknown') {
+    badges.push({ label: 'resume unknown', tone: 'warning' });
+  }
+  if (session.warning_count > 0) {
+    badges.push({
+      label: `${session.warning_count} warning${session.warning_count === 1 ? '' : 's'}`,
+      tone: 'warning',
+    });
+  }
+  if (session.error_count > 0 || session.intake_phase === 'error') {
+    const count = Math.max(session.error_count, session.intake_phase === 'error' ? 1 : 0);
+    badges.push({ label: `${count} error${count === 1 ? '' : 's'}`, tone: 'error' });
   }
 
-  // Convergence
-  const convergencePct = session.belief_state?.convergence_pct;
-  const hasConvergence = convergencePct !== undefined && convergencePct !== null;
-  const actionLabel = getPrimaryActionLabel(session);
-  const interviewResumeLabel = getInterviewResumeLabel(session);
+  return badges;
+}
 
-  // Classification
-  const classification = session.classification;
-  const classificationText = classification
-    ? `${classification.project_type} · ${classification.complexity}`
-    : null;
+function getWorkflowSummary(session: SessionSummary): string {
+  const step = formatWorkflowStep(session.current_step);
+  if (step) return `Step: ${step}`;
 
-  // Description snippet
-  const descriptionRaw = session.project_description ?? null;
-  const descriptionSnippet = descriptionRaw
-    ? descriptionRaw.length > 80
-      ? descriptionRaw.slice(0, 80) + '…'
-      : descriptionRaw
+  switch (session.intake_phase) {
+    case 'waiting':
+      return 'Awaiting the initial project description.';
+    case 'interviewing':
+      if (session.can_resume_checkpoint) return 'Checkpoint is saved and ready to resume.';
+      if (session.can_resume_live) return 'Live interview runtime is available for reattach.';
+      if (session.interview_live_attached) return 'Interview is currently attached.';
+      if (session.can_restart_from_description) return 'Interview needs a fresh restart from the saved description.';
+      return 'Interview is detached and waiting for intervention.';
+    case 'pipeline_running':
+      return 'Pipeline is actively processing this session.';
+    case 'complete':
+      return 'Pipeline finished; outputs are ready for review.';
+    case 'error':
+      return session.can_retry_pipeline
+        ? 'Pipeline failed and can be retried from the saved description.'
+        : 'Pipeline failed; inspect the session for details.';
+    default:
+      return 'Workflow status is available in the session detail view.';
+  }
+}
+
+function getBadgeStyle(tone: BadgeTone) {
+  switch (tone) {
+    case 'primary':
+      return {
+        background: 'rgba(0,212,255,0.10)',
+        border: '1px solid rgba(0,212,255,0.45)',
+        color: 'var(--color-primary)',
+      };
+    case 'success':
+      return {
+        background: 'rgba(0,255,136,0.10)',
+        border: '1px solid rgba(0,255,136,0.35)',
+        color: 'var(--color-success)',
+      };
+    case 'warning':
+      return {
+        background: 'rgba(255,215,0,0.10)',
+        border: '1px solid rgba(255,215,0,0.38)',
+        color: 'var(--color-gold)',
+      };
+    case 'error':
+      return {
+        background: 'rgba(255,68,68,0.10)',
+        border: '1px solid rgba(255,68,68,0.42)',
+        color: 'var(--color-error)',
+      };
+    case 'default':
+    default:
+      return {
+        background: 'rgba(136,136,160,0.12)',
+        border: '1px solid rgba(136,136,160,0.25)',
+        color: 'var(--color-text-muted)',
+      };
+  }
+}
+
+function Badge({ label, tone }: BadgeDescriptor) {
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '5px',
+        padding: '4px 8px',
+        borderRadius: '999px',
+        fontSize: '10px',
+        fontWeight: 700,
+        letterSpacing: '0.04em',
+        textTransform: 'uppercase',
+        whiteSpace: 'nowrap',
+        ...getBadgeStyle(tone),
+      }}
+    >
+      {label}
+    </span>
+  );
+}
+
+function MetadataPill({ children }: { children: string }) {
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        padding: '4px 8px',
+        borderRadius: '999px',
+        background: 'rgba(136,136,160,0.08)',
+        border: '1px solid rgba(136,136,160,0.18)',
+        color: 'var(--color-text-muted)',
+        fontSize: '11px',
+        lineHeight: 1.4,
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
+interface SessionCardProps {
+  session: SessionSummary;
+  onClick: () => void;
+}
+
+function SessionCard({ session, onClick }: SessionCardProps) {
+  const phaseConfig = PHASE_CONFIG[session.intake_phase];
+  const primaryAction = getPrimaryActionLabel(session);
+  const primaryActionTone = getPrimaryActionTone(session);
+  const stateBadge = getStateBadge(session);
+  const attentionBadges = getAttentionBadges(session);
+  const needsAlertTone = attentionBadges.some((badge) => badge.tone === 'error')
+    ? 'error'
+    : attentionBadges.length > 0
+      ? 'warning'
+      : session.can_resume_checkpoint || session.can_resume_live
+        ? 'primary'
+        : 'default';
+  const lastActivity = `${formatRelativeTime(session.last_activity_at)} · ${formatDate(session.last_activity_at)}`;
+  const description = getDescriptionSnippet(session.project_description);
+  const workflowSummary = getWorkflowSummary(session);
+  const convergencePct = session.convergence_pct != null
+    ? `${Math.round(session.convergence_pct * 100)}% converged`
     : null;
+  const classification = session.classification
+    ? `${session.classification.project_type} · ${session.classification.complexity}`
+    : null;
+  const checkpointSaved = session.checkpoint_last_saved_at
+    ? `Checkpoint ${formatRelativeTime(session.checkpoint_last_saved_at)}`
+    : null;
+  const alertMessage = session.error_message
+    ? session.error_message
+    : session.resume_status === 'interview_resume_unknown'
+      ? 'Resume path is unclear; inspect the session before continuing.'
+      : session.resume_status === 'interview_restart_only'
+        ? 'The live interview is detached; restart from the saved description to continue.'
+        : null;
 
   return (
     <div
       role="button"
       tabIndex={0}
+      aria-label={`Open session ${session.id}`}
+      data-testid={`session-card-${session.id}`}
       onClick={onClick}
-      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onClick(); }}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') onClick();
+      }}
       style={{
         display: 'flex',
         flexDirection: 'column',
-        gap: '6px',
-        padding: '12px 16px',
+        gap: '12px',
+        padding: '16px 18px',
         background: 'var(--color-surface)',
-        border: '1px solid var(--color-border)',
-        borderRadius: '3px',
+        border: `1px solid ${phaseConfig.borderColor}`,
+        borderLeft: `4px solid ${getBadgeStyle(needsAlertTone).color}`,
+        borderRadius: '8px',
         cursor: 'pointer',
-        transition: 'border-color 0.18s, background 0.18s',
+        transition: 'transform 0.18s ease, border-color 0.18s ease, background 0.18s ease',
       }}
-      onMouseEnter={(e) => {
-        (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--color-primary)';
-        (e.currentTarget as HTMLDivElement).style.background = 'var(--color-surface-2)';
+      onMouseEnter={(event) => {
+        const element = event.currentTarget as HTMLDivElement;
+        element.style.transform = 'translateY(-1px)';
+        element.style.background = 'var(--color-surface-2)';
       }}
-      onMouseLeave={(e) => {
-        (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--color-border)';
-        (e.currentTarget as HTMLDivElement).style.background = 'var(--color-surface)';
+      onMouseLeave={(event) => {
+        const element = event.currentTarget as HTMLDivElement;
+        element.style.transform = 'translateY(0)';
+        element.style.background = 'var(--color-surface)';
       }}
     >
-      {/* Row 1: session ID (left) | intake phase badge + convergence (right) */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: '8px',
-        minWidth: 0,
-      }}>
-        {/* Session ID + timestamp */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1px', minWidth: 0 }}>
-          <span style={{
-            color: 'var(--color-primary)',
-            fontSize: '12px',
-            fontWeight: 600,
-            letterSpacing: '0.04em',
-            fontFamily: 'monospace',
-          }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: 0 }}>
+          <span
+            style={{
+              color: 'var(--color-primary)',
+              fontSize: '12px',
+              fontWeight: 700,
+              letterSpacing: '0.05em',
+              fontFamily: 'monospace',
+            }}
+          >
             {session.id.slice(0, 8)}…
           </span>
           <span style={{ color: 'var(--color-text-muted)', fontSize: '11px' }}>
-            {createdAt}
+            Last activity {lastActivity}
           </span>
         </div>
 
-        {/* Phase badge + convergence */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-          {hasConvergence && (
-            <span style={{
-              color: 'var(--color-text-muted)',
-              fontSize: '10px',
-              fontFamily: 'monospace',
-            }}>
-              {Math.round(convergencePct!)}%
-            </span>
-          )}
-          {/* Error event count badge */}
-          {errorEventCount > 0 && (
-            <span style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              minWidth: '18px',
-              height: '16px',
-              padding: '0 4px',
-              borderRadius: '8px',
-              background: 'rgba(255,68,68,0.18)',
-              border: '1px solid var(--color-error)',
-              color: 'var(--color-error)',
-              fontSize: '9px',
-              fontWeight: 700,
-              fontFamily: 'monospace',
-              letterSpacing: '0.02em',
-            }}>
-              {errorEventCount}
-            </span>
-          )}
-          {/* Status dot */}
-          <span style={{
-            display: 'inline-block',
-            width: '8px',
-            height: '8px',
-            borderRadius: '50%',
-            background: statusDotColor,
-            flexShrink: 0,
-          }} />
-          {/* Phase badge (with optional ERR indicator) */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           <span
-            className={phaseConfig.className}
             style={{
               display: 'inline-flex',
               alignItems: 'center',
-              gap: '5px',
-              padding: '2px 8px',
-              borderRadius: '10px',
+              padding: '4px 9px',
+              borderRadius: '999px',
               border: `1px solid ${phaseConfig.borderColor}`,
               background: phaseConfig.bg,
               color: phaseConfig.color,
               fontSize: '10px',
-              fontWeight: 600,
+              fontWeight: 700,
               letterSpacing: '0.05em',
               textTransform: 'uppercase',
               whiteSpace: 'nowrap',
             }}
           >
             {phaseConfig.label}
-            {hasError && phase !== 'error' && (
-              <span style={{
-                display: 'inline-block',
-                width: '6px',
-                height: '6px',
-                borderRadius: '50%',
-                background: 'var(--color-error)',
-                flexShrink: 0,
-              }} />
-            )}
           </span>
-          {/* Current step label */}
-          {currentStep && (
-            <span style={{
-              color: 'var(--color-text-muted)',
-              fontSize: '10px',
-              fontFamily: 'monospace',
-              opacity: 0.7,
-              whiteSpace: 'nowrap',
-            }}>
-              · {currentStep}
-            </span>
-          )}
-          {interviewResumeLabel && (
-            <span style={{
-              color: interviewResumeLabel === 'resumable' || interviewResumeLabel === 'live-reattach'
-                ? 'var(--color-primary)'
-                : 'var(--color-gold)',
-              fontSize: '10px',
-              fontFamily: 'monospace',
-              whiteSpace: 'nowrap',
-            }}>
-              · {interviewResumeLabel}
-            </span>
-          )}
+          <Badge label={primaryAction} tone={primaryActionTone} />
         </div>
       </div>
 
-      {/* Row 2: description snippet (left) | classification + message count (right) */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: '8px',
-        minWidth: 0,
-      }}>
-        {/* Description snippet */}
-        <span style={{
-          color: 'var(--color-text-muted)',
-          fontSize: '11px',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-          flex: 1,
-          minWidth: 0,
-        }}>
-          {descriptionSnippet ?? <span style={{ fontStyle: 'italic', opacity: 0.6 }}>no description</span>}
-        </span>
-
-        {/* Classification + message count */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
-          {classificationText && (
-            <span style={{
-              color: 'var(--color-text-muted)',
-              fontSize: '10px',
-              fontFamily: 'monospace',
-              opacity: 0.75,
-              whiteSpace: 'nowrap',
-            }}>
-              {classificationText}
-            </span>
-          )}
-          <span style={{ color: 'var(--color-text-muted)', fontSize: '11px' }}>
-            {messageCount} {messageCount === 1 ? 'msg' : 'msgs'}
-            {durationText && (
-              <span style={{
-                marginLeft: '5px',
-                color: 'var(--color-text-muted)',
-                opacity: 0.65,
-                fontSize: '10px',
-                fontFamily: 'monospace',
-              }}>
-                · {durationText}
-              </span>
-            )}
-          </span>
-          <span style={{
-            color: 'var(--color-text-muted)',
-            fontSize: '10px',
-            fontWeight: 600,
-            letterSpacing: '0.04em',
-            textTransform: 'uppercase',
-            opacity: 0.85,
-            whiteSpace: 'nowrap',
-          }}>
-            {actionLabel}
-          </span>
-          <span style={{ color: 'var(--color-text-muted)', fontSize: '11px' }}>→</span>
-        </div>
+      <div style={{ color: 'var(--color-text)', fontSize: '13px', lineHeight: 1.55 }}>
+        {description}
       </div>
+
+      <div style={{ color: 'var(--color-text-muted)', fontSize: '12px', lineHeight: 1.6 }}>
+        {workflowSummary}
+      </div>
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+        <Badge label={stateBadge.label} tone={stateBadge.tone} />
+        <MetadataPill>{`${session.message_count} ${session.message_count === 1 ? 'message' : 'messages'}`}</MetadataPill>
+        <MetadataPill>{`${session.event_count} ${session.event_count === 1 ? 'event' : 'events'}`}</MetadataPill>
+        {classification && <MetadataPill>{classification}</MetadataPill>}
+        {convergencePct && <MetadataPill>{convergencePct}</MetadataPill>}
+        {checkpointSaved && <MetadataPill>{checkpointSaved}</MetadataPill>}
+      </div>
+
+      {attentionBadges.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+          {attentionBadges.map((badge) => (
+            <Badge key={`${session.id}-${badge.label}`} label={badge.label} tone={badge.tone} />
+          ))}
+        </div>
+      )}
+
+      {alertMessage && (
+        <div
+          style={{
+            padding: '10px 12px',
+            borderRadius: '6px',
+            background: attentionBadges.some((badge) => badge.tone === 'error')
+              ? 'rgba(255,68,68,0.08)'
+              : 'rgba(255,215,0,0.08)',
+            border: attentionBadges.some((badge) => badge.tone === 'error')
+              ? '1px solid rgba(255,68,68,0.28)'
+              : '1px solid rgba(255,215,0,0.28)',
+            color: attentionBadges.some((badge) => badge.tone === 'error')
+              ? 'var(--color-error)'
+              : 'var(--color-gold)',
+            fontSize: '12px',
+            lineHeight: 1.5,
+          }}
+        >
+          {alertMessage}
+        </div>
+      )}
     </div>
+  );
+}
+
+export default function Dashboard() {
+  const navigate = useNavigate();
+  const getToken = useGetAccessToken();
+  const api = useMemo(() => createApiClient(getToken), [getToken]);
+
+  const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const load = async (): Promise<void> => {
+      setLoading(true);
+      setFetchError(null);
+      try {
+        const response = await api.listSessions();
+        if (!cancelled) setSessions(response.sessions);
+      } catch (error) {
+        if (!cancelled) {
+          const message = error instanceof Error ? error.message : String(error);
+          setFetchError(message);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [api]);
+
+  const sortedSessions = useMemo(() => [...sessions].sort(compareSessions), [sessions]);
+  const actionableCount = sortedSessions.filter(isActionable).length;
+  const attentionCount = sortedSessions.filter(needsAttention).length;
+
+  return (
+    <Layout>
+      <div
+        style={{
+          flex: 1,
+          overflow: 'auto',
+          padding: '32px 24px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '24px',
+          maxWidth: '980px',
+          margin: '0 auto',
+          width: '100%',
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            borderBottom: '1px solid var(--color-border)',
+            paddingBottom: '12px',
+            gap: '12px',
+            flexWrap: 'wrap',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            <span style={{ color: 'var(--color-text)', fontSize: '14px', fontWeight: 600 }}>
+              sessions
+            </span>
+            <a
+              href="/blueprint"
+              style={{
+                color: 'var(--color-primary)',
+                fontSize: '11px',
+                textDecoration: 'none',
+                opacity: 0.75,
+                transition: 'opacity 0.18s',
+                fontFamily: 'monospace',
+                padding: '2px 8px',
+                border: '1px solid rgba(0,212,255,0.25)',
+                borderRadius: '10px',
+              }}
+              onMouseEnter={(event) => { (event.currentTarget as HTMLAnchorElement).style.opacity = '1'; }}
+              onMouseLeave={(event) => { (event.currentTarget as HTMLAnchorElement).style.opacity = '0.75'; }}
+            >
+              blueprint →
+            </a>
+            <a
+              href="/admin"
+              style={{
+                color: 'var(--color-text-muted)',
+                fontSize: '11px',
+                textDecoration: 'none',
+                opacity: 0.6,
+                transition: 'opacity 0.18s',
+                fontFamily: 'monospace',
+              }}
+              onMouseEnter={(event) => { (event.currentTarget as HTMLAnchorElement).style.opacity = '1'; }}
+              onMouseLeave={(event) => { (event.currentTarget as HTMLAnchorElement).style.opacity = '0.6'; }}
+            >
+              admin →
+            </a>
+          </div>
+
+          <button
+            onClick={() => void navigate('/session/new')}
+            style={{
+              background: 'var(--color-primary)',
+              border: 'none',
+              color: 'var(--color-bg)',
+              padding: '8px 18px',
+              fontSize: '12px',
+              fontWeight: 700,
+              cursor: 'pointer',
+              letterSpacing: '0.05em',
+              textTransform: 'uppercase',
+              borderRadius: '4px',
+              fontFamily: 'inherit',
+              transition: 'opacity 0.18s',
+            }}
+            onMouseEnter={(event) => { (event.currentTarget as HTMLButtonElement).style.opacity = '0.85'; }}
+            onMouseLeave={(event) => { (event.currentTarget as HTMLButtonElement).style.opacity = '1'; }}
+          >
+            + new session
+          </button>
+        </div>
+
+        {!loading && !fetchError && sessions.length > 0 && (
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+              gap: '12px',
+            }}
+          >
+            <div
+              style={{
+                padding: '12px 14px',
+                borderRadius: '8px',
+                border: '1px solid rgba(0,212,255,0.22)',
+                background: 'rgba(0,212,255,0.05)',
+              }}
+            >
+              <div style={{ color: 'var(--color-primary)', fontSize: '10px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                actionable
+              </div>
+              <div style={{ color: 'var(--color-text)', fontSize: '22px', fontWeight: 700, marginTop: '4px' }}>
+                {actionableCount}
+              </div>
+            </div>
+            <div
+              style={{
+                padding: '12px 14px',
+                borderRadius: '8px',
+                border: '1px solid rgba(255,215,0,0.22)',
+                background: 'rgba(255,215,0,0.05)',
+              }}
+            >
+              <div style={{ color: 'var(--color-gold)', fontSize: '10px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                attention needed
+              </div>
+              <div style={{ color: 'var(--color-text)', fontSize: '22px', fontWeight: 700, marginTop: '4px' }}>
+                {attentionCount}
+              </div>
+            </div>
+            <div
+              style={{
+                padding: '12px 14px',
+                borderRadius: '8px',
+                border: '1px solid rgba(136,136,160,0.22)',
+                background: 'rgba(136,136,160,0.05)',
+              }}
+            >
+              <div style={{ color: 'var(--color-text-muted)', fontSize: '10px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                sort order
+              </div>
+              <div style={{ color: 'var(--color-text)', fontSize: '13px', lineHeight: 1.5, marginTop: '6px' }}>
+                Attention and resumability first, then recent activity.
+              </div>
+            </div>
+          </div>
+        )}
+
+        {loading && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '40px 24px',
+              color: 'var(--color-text-muted)',
+              fontSize: '13px',
+            }}
+          >
+            loading sessions…
+          </div>
+        )}
+
+        {!loading && fetchError && (
+          <div
+            style={{
+              padding: '16px',
+              border: '1px solid var(--color-error)',
+              borderRadius: '8px',
+              background: 'rgba(255,68,68,0.06)',
+              color: 'var(--color-error)',
+              fontSize: '13px',
+            }}
+          >
+            <span style={{ fontWeight: 600 }}>Error loading sessions: </span>
+            {fetchError}
+          </div>
+        )}
+
+        {!loading && !fetchError && sessions.length === 0 && (
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '60px 24px',
+              border: '1px dashed var(--color-border)',
+              borderRadius: '8px',
+              gap: '12px',
+            }}
+          >
+            <span style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>
+              no sessions yet
+            </span>
+            <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>
+              create a new session to start planning
+            </span>
+            <button
+              onClick={() => void navigate('/session/new')}
+              style={{
+                marginTop: '8px',
+                background: 'transparent',
+                border: '1px solid var(--color-primary)',
+                color: 'var(--color-primary)',
+                padding: '8px 20px',
+                fontSize: '12px',
+                cursor: 'pointer',
+                borderRadius: '4px',
+                fontFamily: 'inherit',
+                transition: 'background 0.18s',
+              }}
+              onMouseEnter={(event) => {
+                (event.currentTarget as HTMLButtonElement).style.background = 'rgba(0,212,255,0.08)';
+              }}
+              onMouseLeave={(event) => {
+                (event.currentTarget as HTMLButtonElement).style.background = 'transparent';
+              }}
+            >
+              start new session →
+            </button>
+          </div>
+        )}
+
+        {!loading && !fetchError && sessions.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {sortedSessions.map((session) => (
+              <SessionCard
+                key={session.id}
+                session={session}
+                onClick={() => void navigate(`/session/${session.id}`)}
+              />
+            ))}
+          </div>
+        )}
+
+        <div
+          style={{
+            padding: '14px 16px',
+            background: 'var(--color-surface)',
+            border: '1px solid var(--color-border)',
+            borderRadius: '8px',
+            fontSize: '12px',
+            color: 'var(--color-text-muted)',
+            lineHeight: 1.7,
+          }}
+        >
+          <span style={{ color: 'var(--color-primary)', fontWeight: 600 }}>TIP</span>
+          {' '}The dashboard now uses backend session summaries directly for capability state, activity timing, and intervention signals.
+        </div>
+      </div>
+    </Layout>
   );
 }

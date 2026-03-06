@@ -34,6 +34,10 @@ loading the entire system into working memory.
 - Phase 5.3: complete (explicit `retry-pipeline` backend endpoint restarts failed pipeline runs from saved description)
 - Phase 5.4: complete (web and server tests cover workflow-control visibility and restart/retry behavior)
 
+- Phase 6 status: complete
+- Phase 6.1: complete (dashboard now renders backend-truthful workflow summaries with resumability, current step, last activity, and primary action)
+- Phase 6.2: complete (dashboard now prioritizes attention/actionable sessions and renders warning/error indicators with test coverage)
+
 ---
 
 ## Phase 0: Make The Current UI Truthful
