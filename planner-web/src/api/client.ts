@@ -191,6 +191,14 @@ export function createApiClient(getToken: GetTokenFn) {
       return apiFetch<{ snapshots: { timestamp: string; filename: string }[] }>(getToken, '/blueprint/history');
     },
 
+    /** POST /blueprint/history — Create a named snapshot. */
+    createBlueprintSnapshot(label?: string): Promise<{ timestamp: string; filename: string }> {
+      return apiFetch<{ timestamp: string; filename: string }>(getToken, '/blueprint/history', {
+        method: 'POST',
+        body: JSON.stringify({ label: label || undefined }),
+      });
+    },
+
     /** GET /blueprint/events — List event log, optionally filtered by node. */
     listBlueprintEvents(params?: { nodeId?: string; limit?: number }): Promise<BlueprintEventsResponse> {
       const qs = new URLSearchParams();

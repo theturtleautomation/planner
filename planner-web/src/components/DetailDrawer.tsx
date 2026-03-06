@@ -88,10 +88,10 @@ export default function DetailDrawer({
   const connections = useMemo(() => {
     if (!nodeId) return { upstream: [], downstream: [] };
     const upstream = edges.filter(e => e.target === nodeId).map(e => ({
-      id: e.source, type: e.edge_type, direction: 'upstream' as const,
+      id: e.source, type: e.edge_type, direction: 'upstream' as const, metadata: e.metadata,
     }));
     const downstream = edges.filter(e => e.source === nodeId).map(e => ({
-      id: e.target, type: e.edge_type, direction: 'downstream' as const,
+      id: e.target, type: e.edge_type, direction: 'downstream' as const, metadata: e.metadata,
     }));
     return { upstream, downstream };
   }, [edges, nodeId]);
@@ -456,6 +456,9 @@ export default function DetailDrawer({
                       </span>
                       <span style={{ color: 'var(--color-text)', fontWeight: 500 }}>{getNodeName(c.id)}</span>
                       <span style={{ color: 'var(--color-text-faint)', fontSize: '0.625rem' }}>{c.type}</span>
+                      {c.metadata && (
+                        <div className="edge-annotation">— {c.metadata}</div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -477,6 +480,9 @@ export default function DetailDrawer({
                       </span>
                       <span style={{ color: 'var(--color-text)', fontWeight: 500 }}>{getNodeName(c.id)}</span>
                       <span style={{ color: 'var(--color-text-faint)', fontSize: '0.625rem' }}>{c.type}</span>
+                      {c.metadata && (
+                        <div className="edge-annotation">— {c.metadata}</div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -526,7 +532,21 @@ export default function DetailDrawer({
                   No events recorded for this node.
                 </div>
               )}
-              {!eventsLoading && events.map((evt, i) => (
+              {!eventsLoading && events.map((evt, i) => {
+                const before = evt.event_type === 'node_updated' && evt.data?.before
+                  ? evt.data.before as Record<string, unknown> : null;
+                const after = evt.event_type === 'node_updated' && evt.data?.after
+                  ? evt.data.after as Record<string, unknown> : null;
+                const hasDiff = before !== null && after !== null;
+
+                // collect changed keys
+                const diffKeys = hasDiff
+                  ? [...new Set([...Object.keys(before!), ...Object.keys(after!)])].filter(
+                      k => JSON.stringify(before![k]) !== JSON.stringify(after![k])
+                    )
+                  : [];
+
+                return (
                 <div key={i} className="event-timeline-item">
                   <div className="event-timeline-dot-container">
                     <div className={`event-timeline-dot event-dot-${evt.event_type}`} />
@@ -542,7 +562,40 @@ export default function DetailDrawer({
                       </span>
                     </div>
                     <div className="event-timeline-summary">{evt.summary}</div>
-                    {evt.data && Object.keys(evt.data).length > 0 && (
+
+                    {/* Diff view for node_updated events */}
+                    {hasDiff && diffKeys.length > 0 && (
+                      <details className="event-timeline-data" open>
+                        <summary>{diffKeys.length} field{diffKeys.length !== 1 ? 's' : ''} changed</summary>
+                        <div className="diff-view">
+                          <div className="diff-panel diff-panel-before">
+                            <div className="diff-panel-header">Before</div>
+                            {diffKeys.map(k => (
+                              <div key={k} className="diff-row diff-removed">
+                                <span className="diff-key">{k}</span>
+                                <span className="diff-value" title={String(before![k] ?? '')}>
+                                  {typeof before![k] === 'object' ? JSON.stringify(before![k]) : String(before![k] ?? '—')}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="diff-panel diff-panel-after">
+                            <div className="diff-panel-header">After</div>
+                            {diffKeys.map(k => (
+                              <div key={k} className="diff-row diff-added">
+                                <span className="diff-key">{k}</span>
+                                <span className="diff-value" title={String(after![k] ?? '')}>
+                                  {typeof after![k] === 'object' ? JSON.stringify(after![k]) : String(after![k] ?? '—')}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </details>
+                    )}
+
+                    {/* Fallback raw JSON for non-update events */}
+                    {!hasDiff && evt.data && Object.keys(evt.data).length > 0 && (
                       <details className="event-timeline-data">
                         <summary>Details</summary>
                         <pre>{JSON.stringify(evt.data, null, 2)}</pre>
@@ -550,7 +603,8 @@ export default function DetailDrawer({
                     )}
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

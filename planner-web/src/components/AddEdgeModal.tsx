@@ -133,8 +133,8 @@ export default function AddEdgeModal({ isOpen, nodes, defaultSourceId, onClose, 
           ))}
         </select>
 
-        <label className="field-label" style={{ marginTop: 'var(--space-3)' }}>Metadata (optional)</label>
-        <input className="field-input" placeholder="e.g. primary language, selection reason" value={metadata} onChange={e => setMetadata(e.target.value)} />
+        <label className="field-label" style={{ marginTop: 'var(--space-3)' }}>Why this relationship? (optional)</label>
+        <input className="field-input" placeholder="e.g. 'primary data store', 'mandated by compliance'" value={metadata} onChange={e => setMetadata(e.target.value)} />
 
         {/* Visual preview */}
         {sourceId && targetId && (

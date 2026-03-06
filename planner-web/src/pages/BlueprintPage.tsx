@@ -54,9 +54,11 @@ export default function BlueprintPage() {
 
   // UI state
   const [viewMode, setViewMode] = useState<ViewMode>('graph');
+  const [layoutMode, setLayoutMode] = useState<'force' | 'hierarchical'>('force');
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [filterType, setFilterType] = useState<NodeType | null>(null);
+  const [globalSearch, setGlobalSearch] = useState('');
 
   // Impact preview state
   const [impactNodeId, setImpactNodeId] = useState<string | null>(null);
@@ -208,6 +210,28 @@ export default function BlueprintPage() {
     return blueprint.counts;
   }, [blueprint]);
 
+  // ─── Global search filtering ───────────────────────────────────────────
+
+  const filteredBlueprint = useMemo(() => {
+    if (!blueprint) return null;
+    const q = globalSearch.trim().toLowerCase();
+    if (!q && !filterType) return blueprint;
+    let nodes = blueprint.nodes;
+    if (filterType) nodes = nodes.filter(n => n.node_type === filterType);
+    if (q) {
+      nodes = nodes.filter(n =>
+        n.name.toLowerCase().includes(q) ||
+        n.id.toLowerCase().includes(q) ||
+        n.tags.some(t => t.toLowerCase().includes(q)) ||
+        n.status.toLowerCase().includes(q) ||
+        n.node_type.toLowerCase().includes(q)
+      );
+    }
+    const nodeIds = new Set(nodes.map(n => n.id));
+    const edges = blueprint.edges.filter(e => nodeIds.has(e.source) && nodeIds.has(e.target));
+    return { ...blueprint, nodes, edges };
+  }, [blueprint, filterType, globalSearch]);
+
   // ─── Render ─────────────────────────────────────────────────────────────
 
   return (
@@ -225,6 +249,29 @@ export default function BlueprintPage() {
           </div>
 
           <div className="topbar-right">
+            {/* Global search */}
+            <div className="global-search">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-faint)" strokeWidth="2" strokeLinecap="round">
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
+              <input
+                type="text"
+                placeholder="Search nodes…"
+                value={globalSearch}
+                onChange={e => setGlobalSearch(e.target.value)}
+                className="global-search-input"
+              />
+              {globalSearch && (
+                <button
+                  className="global-search-clear"
+                  onClick={() => setGlobalSearch('')}
+                  aria-label="Clear search"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+
             {/* View tabs */}
             <div className="view-tabs">
               {(['graph', 'table', 'radar'] as ViewMode[]).map(v => (
@@ -265,6 +312,24 @@ export default function BlueprintPage() {
                 <path d="M21 2v6h-6M3 12a9 9 0 0 1 15-6.7L21 8M3 22v-6h6M21 12a9 9 0 0 1-15 6.7L3 16"/>
               </svg>
             </button>
+
+            {/* Layout toggle (graph view only) */}
+            {viewMode === 'graph' && (
+              <button
+                className={`btn btn-ghost${layoutMode === 'hierarchical' ? ' active' : ''}`}
+                onClick={() => setLayoutMode(m => m === 'force' ? 'hierarchical' : 'force')}
+                title={layoutMode === 'force' ? 'Switch to hierarchical layout' : 'Switch to force-directed layout'}
+                style={{ fontSize: 'var(--text-xs)', gap: '4px' }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <rect x="8" y="2" width="8" height="4" rx="1"/>
+                  <rect x="2" y="18" width="8" height="4" rx="1"/>
+                  <rect x="14" y="18" width="8" height="4" rx="1"/>
+                  <path d="M12 6v6M6 18v-6h12v6"/>
+                </svg>
+                {layoutMode === 'force' ? 'Tree' : 'Force'}
+              </button>
+            )}
 
             {/* Create node button */}
             <button
@@ -425,19 +490,20 @@ export default function BlueprintPage() {
             )}
 
             {/* Graph view */}
-            {!loading && !fetchError && blueprint && (
+            {!loading && !fetchError && filteredBlueprint && (
               <div style={{
                 width: '100%', height: '100%',
                 display: viewMode === 'graph' ? 'block' : 'none',
                 position: 'absolute', inset: 0,
               }}>
                 <BlueprintGraph
-                  nodes={blueprint.nodes}
-                  edges={blueprint.edges}
+                  nodes={filteredBlueprint.nodes}
+                  edges={filteredBlueprint.edges}
                   selectedNodeId={selectedNodeId}
                   onSelectNode={handleSelectNode}
                   onHoverNode={setHoveredNodeId}
                   filterType={filterType}
+                  layoutMode={layoutMode}
                 />
 
                 {/* Hover tooltip */}
@@ -461,20 +527,20 @@ export default function BlueprintPage() {
             )}
 
             {/* Table view */}
-            {!loading && !fetchError && blueprint && viewMode === 'table' && (
+            {!loading && !fetchError && filteredBlueprint && viewMode === 'table' && (
               <TableView
-                nodes={blueprint.nodes}
-                edges={blueprint.edges}
+                nodes={filteredBlueprint.nodes}
+                edges={filteredBlueprint.edges}
                 filterType={filterType}
                 onSelectNode={(id) => handleSelectNode(id)}
               />
             )}
 
             {/* Radar view */}
-            {!loading && !fetchError && blueprint && viewMode === 'radar' && (
+            {!loading && !fetchError && filteredBlueprint && viewMode === 'radar' && (
               <div style={{ width: '100%', height: '100%' }}>
                 <RadarView
-                  nodes={blueprint.nodes}
+                  nodes={filteredBlueprint.nodes}
                   onSelectNode={(id) => handleSelectNode(id)}
                 />
               </div>

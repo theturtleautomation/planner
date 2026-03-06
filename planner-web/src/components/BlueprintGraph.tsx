@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback, useMemo, useState } from 'react';
 import * as d3 from 'd3';
+import dagre from '@dagrejs/dagre';
 import type { GraphNode, GraphLink, NodeSummary, EdgePayload, NodeType, EdgeType } from '../types/blueprint.ts';
 
 // ─── Node type → visual config ──────────────────────────────────────────────
@@ -99,6 +100,7 @@ interface BlueprintGraphProps {
   onSelectNode: (nodeId: string | null) => void;
   onHoverNode: (nodeId: string | null) => void;
   filterType: NodeType | null;
+  layoutMode?: 'force' | 'hierarchical';
 }
 
 export default function BlueprintGraph({
@@ -108,6 +110,7 @@ export default function BlueprintGraph({
   onSelectNode,
   onHoverNode,
   filterType,
+  layoutMode = 'force',
 }: BlueprintGraphProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const simRef = useRef<d3.Simulation<GraphNode, GraphLink> | null>(null);
@@ -479,6 +482,32 @@ export default function BlueprintGraph({
     const preBakeTicks = Math.min(300, 100 + nodeCount * 8);
     sim.tick(preBakeTicks);
 
+    // ─── Hierarchical layout override (dagre) ───────────────────────────
+    if (layoutMode === 'hierarchical' && simNodes.length > 0) {
+      const g = new dagre.Graph();
+      g.setGraph({ rankdir: 'TB', nodesep: 60, ranksep: 100, marginx: 40, marginy: 40 });
+      g.setDefaultEdgeLabel(() => ({}));
+      simNodes.forEach(n => {
+        const s = NODE_SIZES[n.node_type] || NODE_SIZES.decision;
+        g.setNode(n.id, { width: s.w + 20, height: s.h + 20 });
+      });
+      simLinks.forEach(l => {
+        const src = typeof l.source === 'string' ? l.source : (l.source as GraphNode).id;
+        const tgt = typeof l.target === 'string' ? l.target : (l.target as GraphNode).id;
+        g.setEdge(src, tgt);
+      });
+      dagre.layout(g);
+      simNodes.forEach(n => {
+        const pos = g.node(n.id);
+        if (pos) {
+          n.x = pos.x;
+          n.y = pos.y;
+          n.fx = pos.x;
+          n.fy = pos.y;
+        }
+      });
+    }
+
     // Position nodes + edges at pre-baked positions immediately
     linkSel
       .attr('x1', d => (d.source as GraphNode).x ?? 0)
@@ -564,7 +593,7 @@ export default function BlueprintGraph({
       sim.stop();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [graphData, renderNodeShape, displayName]);
+  }, [graphData, renderNodeShape, displayName, layoutMode]);
 
   // Apply filter opacity
   useEffect(() => {

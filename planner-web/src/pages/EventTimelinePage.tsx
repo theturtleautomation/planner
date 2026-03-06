@@ -26,6 +26,9 @@ export default function EventTimelinePage() {
   const [error, setError] = useState<string | null>(null);
   const [filterType, setFilterType] = useState<BlueprintEventType | 'all'>('all');
   const [limit, setLimit] = useState(100);
+  const [activeSection, setActiveSection] = useState<'events' | 'snapshots'>('events');
+  const [snapshots, setSnapshots] = useState<{ timestamp: string; filename: string }[]>([]);
+  const [snapshotsLoading, setSnapshotsLoading] = useState(false);
 
   // ─── Data loading ──────────────────────────────────────────────────────────
 
@@ -43,6 +46,21 @@ export default function EventTimelinePage() {
   }, [api, limit]);
 
   useEffect(() => { loadEvents(); }, [loadEvents]);
+
+  // ─── Snapshots loading ────────────────────────────────────────────────
+
+  const loadSnapshots = useCallback(async () => {
+    setSnapshotsLoading(true);
+    try {
+      const res = await api.listBlueprintHistory();
+      setSnapshots(res.snapshots);
+    } catch { setSnapshots([]); }
+    finally { setSnapshotsLoading(false); }
+  }, [api]);
+
+  useEffect(() => {
+    if (activeSection === 'snapshots') loadSnapshots();
+  }, [activeSection, loadSnapshots]);
 
   // ─── Filtering ─────────────────────────────────────────────────────────────
 
@@ -73,11 +91,14 @@ export default function EventTimelinePage() {
         <div>
           <h1 className="page-title">Event Timeline</h1>
           <p className="page-subtitle">
-            All changes across the blueprint — {filtered.length} event{filtered.length !== 1 ? 's' : ''}
+            {activeSection === 'events'
+              ? `All changes across the blueprint — ${filtered.length} event${filtered.length !== 1 ? 's' : ''}`
+              : `${snapshots.length} snapshot${snapshots.length !== 1 ? 's' : ''} saved`
+            }
           </p>
         </div>
         <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
-          <button className="btn btn-outline" onClick={loadEvents} disabled={loading}>
+          <button className="btn btn-outline" onClick={activeSection === 'events' ? loadEvents : loadSnapshots} disabled={loading || snapshotsLoading}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
               <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/>
             </svg>
@@ -85,6 +106,26 @@ export default function EventTimelinePage() {
           </button>
         </div>
       </div>
+
+      {/* Section tabs */}
+      <div className="drawer-tabs" style={{ marginBottom: 'var(--space-4)' }}>
+        <button
+          className={`drawer-tab${activeSection === 'events' ? ' active' : ''}`}
+          onClick={() => setActiveSection('events')}
+        >
+          Events
+        </button>
+        <button
+          className={`drawer-tab${activeSection === 'snapshots' ? ' active' : ''}`}
+          onClick={() => setActiveSection('snapshots')}
+        >
+          Snapshots
+        </button>
+      </div>
+
+      {/* Events section */}
+      {activeSection === 'events' && (
+        <>
 
       {/* Filters */}
       <div className="event-filters">
@@ -138,7 +179,19 @@ export default function EventTimelinePage() {
       {/* Event list */}
       {!loading && !error && filtered.length > 0 && (
         <div className="global-event-timeline">
-          {filtered.map((evt, i) => (
+          {filtered.map((evt, i) => {
+            const before = evt.event_type === 'node_updated' && evt.data?.before
+              ? evt.data.before as Record<string, unknown> : null;
+            const after = evt.event_type === 'node_updated' && evt.data?.after
+              ? evt.data.after as Record<string, unknown> : null;
+            const hasDiff = before !== null && after !== null;
+            const diffKeys = hasDiff
+              ? [...new Set([...Object.keys(before!), ...Object.keys(after!)])].filter(
+                  k => JSON.stringify(before![k]) !== JSON.stringify(after![k])
+                )
+              : [];
+
+            return (
             <div key={i} className="global-event-item">
               <div className="global-event-left">
                 <div className={`event-timeline-dot event-dot-${evt.event_type}`} />
@@ -154,7 +207,40 @@ export default function EventTimelinePage() {
                   </span>
                 </div>
                 <div className="global-event-summary">{evt.summary}</div>
-                {evt.data && Object.keys(evt.data).length > 0 && (
+
+                {/* Diff view for node_updated events */}
+                {hasDiff && diffKeys.length > 0 && (
+                  <details className="event-timeline-data">
+                    <summary>{diffKeys.length} field{diffKeys.length !== 1 ? 's' : ''} changed</summary>
+                    <div className="diff-view">
+                      <div className="diff-panel diff-panel-before">
+                        <div className="diff-panel-header">Before</div>
+                        {diffKeys.map(k => (
+                          <div key={k} className="diff-row diff-removed">
+                            <span className="diff-key">{k}</span>
+                            <span className="diff-value" title={String(before![k] ?? '')}>
+                              {typeof before![k] === 'object' ? JSON.stringify(before![k]) : String(before![k] ?? '—')}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="diff-panel diff-panel-after">
+                        <div className="diff-panel-header">After</div>
+                        {diffKeys.map(k => (
+                          <div key={k} className="diff-row diff-added">
+                            <span className="diff-key">{k}</span>
+                            <span className="diff-value" title={String(after![k] ?? '')}>
+                              {typeof after![k] === 'object' ? JSON.stringify(after![k]) : String(after![k] ?? '—')}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </details>
+                )}
+
+                {/* Fallback raw JSON for non-update events */}
+                {!hasDiff && evt.data && Object.keys(evt.data).length > 0 && (
                   <details className="event-timeline-data">
                     <summary>Details</summary>
                     <pre>{JSON.stringify(evt.data, null, 2)}</pre>
@@ -162,8 +248,54 @@ export default function EventTimelinePage() {
                 )}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
+      )}
+
+        </>
+      )}
+
+      {/* Snapshots section */}
+      {activeSection === 'snapshots' && (
+        <>
+          {snapshotsLoading && (
+            <div style={{ display: 'flex', justifyContent: 'center', padding: 'var(--space-8)' }}>
+              <div className="skeleton-pulse" />
+            </div>
+          )}
+          {!snapshotsLoading && snapshots.length === 0 && (
+            <div className="empty-state">
+              <p style={{ color: 'var(--color-text-faint)' }}>No snapshots saved yet.</p>
+              <p style={{ color: 'var(--color-text-faint)', fontSize: 'var(--text-xs)' }}>
+                Snapshots are automatically created when the blueprint is saved.
+              </p>
+            </div>
+          )}
+          {!snapshotsLoading && snapshots.length > 0 && (
+            <div className="snapshot-list">
+              {snapshots.map((snap, i) => (
+                <div key={i} className="snapshot-item">
+                  <div className="snapshot-icon">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" strokeWidth="2" strokeLinecap="round">
+                      <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/>
+                      <polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
+                    </svg>
+                  </div>
+                  <div className="snapshot-info">
+                    <div className="snapshot-timestamp">
+                      {new Date(snap.timestamp).toLocaleString()}
+                    </div>
+                    <div className="snapshot-filename">{snap.filename}</div>
+                  </div>
+                  <div className="snapshot-age">
+                    {relativeTime(snap.timestamp)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
       )}
     </Layout>
   );
