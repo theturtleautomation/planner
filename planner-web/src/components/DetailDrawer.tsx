@@ -1,7 +1,8 @@
 import { useEffect, useMemo } from 'react';
 import type { BlueprintNode, EdgePayload, DecisionNode, TechnologyNode, ComponentNode, ConstraintNode, PatternNode, QualityRequirementNode } from '../types/blueprint.ts';
 import type { ApiClient } from '../api/client.ts';
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
+import EditNodeForm from './EditNodeForm.tsx';
 
 // ─── Type → badge class mapping ────────────────────────────────────────────
 
@@ -25,6 +26,7 @@ interface DetailDrawerProps {
   onNavigateNode: (nodeId: string) => void;
   onImpactPreview: (nodeId: string) => void;
   onRequestDelete?: (nodeId: string) => void;
+  onNodeUpdated?: () => void;
 }
 
 // ─── Component ──────────────────────────────────────────────────────────────
@@ -38,11 +40,20 @@ export default function DetailDrawer({
   onNavigateNode,
   onImpactPreview,
   onRequestDelete,
+  onNodeUpdated,
 }: DetailDrawerProps) {
   const [node, setNode] = useState<BlueprintNode | null>(null);
   const [loading, setLoading] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const isOpen = nodeId !== null;
+
+  // Reset edit mode when node changes
+  useEffect(() => {
+    setEditing(false);
+    setSaving(false);
+  }, [nodeId]);
 
   // Fetch full node detail
   useEffect(() => {
@@ -115,6 +126,24 @@ export default function DetailDrawer({
       default: return '';
     }
   })();
+
+  // Handle save from edit form
+  const handleSave = useCallback(async (updated: BlueprintNode) => {
+    if (!nodeId) return;
+    setSaving(true);
+    try {
+      await api.updateBlueprintNode(nodeId, updated);
+      setNode(updated);
+      setEditing(false);
+      onNodeUpdated?.();
+    } finally {
+      setSaving(false);
+    }
+  }, [nodeId, api, onNodeUpdated]);
+
+  const handleCancelEdit = useCallback(() => {
+    setEditing(false);
+  }, []);
 
   const nodeType = node?.node_type ?? '';
   const typeBadge = `badge-${nodeType}`;
@@ -358,7 +387,16 @@ export default function DetailDrawer({
             </div>
           )}
 
-          {!loading && node && (
+          {!loading && node && editing && (
+            <EditNodeForm
+              node={node}
+              onSave={handleSave}
+              onCancel={handleCancelEdit}
+              saving={saving}
+            />
+          )}
+
+          {!loading && node && !editing && (
             <>
               {/* ID */}
               <div className="drawer-id">{nodeId}</div>
@@ -437,11 +475,9 @@ export default function DetailDrawer({
           )}
         </div>
 
+        {!editing && (
         <div className="drawer-footer">
-          <button className="btn btn-outline" onClick={() => {
-            // TODO: Wire to inline editing mode in Phase C
-            alert('Editing coming soon — Phase C');
-          }}>
+          <button className="btn btn-outline" onClick={() => setEditing(true)} disabled={!node}>
             Edit
           </button>
           {onRequestDelete && (
@@ -463,6 +499,7 @@ export default function DetailDrawer({
             Impact Preview
           </button>
         </div>
+        )}
       </div>
     </>
   );

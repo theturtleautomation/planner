@@ -1,7 +1,7 @@
 # Blueprint Implementation — Status Tracker
 
 **Started:** March 5, 2026
-**Last Updated:** March 5, 2026 (Phase B complete)
+**Last Updated:** March 5, 2026 (Phase C complete)
 
 ## Research Documents (committed to repo)
 - `docs/blueprint-research/BLUEPRINT_DEEP_DIVE.md` — Decision audit, spec vs. code gap analysis
@@ -75,7 +75,35 @@
   - URLSearchParams-based query string construction
 - [x] B.5 — Verification: `tsc --noEmit` clean, 166/166 vitest passing, code reviewed
   - Cargo check/test deferred to CI (no Rust toolchain in sandbox)
-### Phase C: Detail Drawer Editing — PENDING
+### Phase C: Detail Drawer Editing + Edge Creation [COMPLETE]
+- [x] C.1 — `EditNodeForm.tsx` component (387 lines)
+  - Type-specific inline edit forms for all 6 node types
+  - Decision: title, status, context, options (add/remove with pros/cons/chosen), consequences, assumptions, tags
+  - Technology: name, category, ring, version, rationale, license, tags
+  - Component: name, type, status, description, provides/consumes, tags
+  - Constraint: title, type, description, source, tags
+  - Pattern: name, description, rationale, tags
+  - QualityRequirement: attribute, scenario, priority, tags
+  - Auto-updates `updated_at` timestamp on every field change
+  - Error handling with display, save/cancel actions
+- [x] C.2 — Edit mode toggle in DetailDrawer
+  - View ↔ Edit toggle: "Edit" button switches to EditNodeForm
+  - Footer buttons (Edit/Delete/Impact) hidden during edit mode
+  - Save calls `PATCH /blueprint/nodes/:id` (full replacement)
+  - Cancel returns to view mode without changes
+  - Edit mode resets when navigating to a different node
+  - `onNodeUpdated` callback triggers BlueprintPage re-fetch
+- [x] C.3 — `AddEdgeModal.tsx` component (175 lines)
+  - Source/target node dropdowns sorted alphabetically with type prefix badges
+  - Edge type selector with all 8 types + descriptions
+  - Optional metadata field
+  - Visual edge preview: "Source —[type]→ Target"
+  - Validation: source ≠ target, both required
+  - "Add Edge" button in BlueprintPage topbar
+  - Pre-fills source from selected node
+- [x] C.4 — CSS: `.edit-node-form`, `.edit-node-form-body`, `.edit-node-form-actions`
+- [x] C.5 — Verification: `tsc --noEmit` clean, 166/166 vitest passing, Vite build succeeds
+  - Cargo check/test deferred to CI (no Rust toolchain in sandbox)
 ### Phase C.5: Knowledge & Library Pages — PENDING
 ### Phase D: Reconvergence Engine — PENDING
 ### Phase E: Graph UX Polish — PENDING
@@ -88,7 +116,7 @@
 2. ✅ Event sourced: full event log with append-only persistence — Phase B complete
 3. ⚠️ Reconvergence autonomy: types defined, no execution, needs Phase D
 4. ⚠️ One per project: global singleton, OK for now
-5. ✅ WebUI primary, TUI table-only
+5. ✅ WebUI primary, TUI table-only — full CRUD (create/edit/delete nodes + edges) in Phase C
 
 ## Files Modified
 
@@ -122,6 +150,15 @@
 - `planner-web/src/types/blueprint.ts` — Added `BlueprintEventType`, `BlueprintEventPayload`,
   `BlueprintEventsResponse` (247 lines total)
 - `planner-web/src/api/client.ts` — Added `listBlueprintEvents()` method
+
+### Phase C — TypeScript (frontend)
+- `planner-web/src/components/EditNodeForm.tsx` — NEW (387 lines) type-specific inline edit forms
+- `planner-web/src/components/AddEdgeModal.tsx` — NEW (175 lines) edge creation modal
+- `planner-web/src/components/DetailDrawer.tsx` — Added edit mode toggle, EditNodeForm integration,
+  `onNodeUpdated` prop, edit/view state management
+- `planner-web/src/pages/BlueprintPage.tsx` — Added `handleCreateEdge`, `addEdgeModalOpen` state,
+  "Add Edge" topbar button, `onNodeUpdated={loadBlueprint}` callback, AddEdgeModal render
+- `planner-web/src/index.css` — Added `.edit-node-form`, `.edit-node-form-body`, `.edit-node-form-actions`
 
 ## Test Results
 - Frontend: 166/166 tests passing (11 test files)

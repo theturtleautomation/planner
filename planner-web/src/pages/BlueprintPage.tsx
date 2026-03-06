@@ -7,9 +7,10 @@ import DetailDrawer from '../components/DetailDrawer.tsx';
 import ImpactPreviewModal from '../components/ImpactPreviewModal.tsx';
 import CreateNodeModal from '../components/CreateNodeModal.tsx';
 import DeleteNodeDialog from '../components/DeleteNodeDialog.tsx';
+import AddEdgeModal from '../components/AddEdgeModal.tsx';
 import { createApiClient } from '../api/client.ts';
 import { useGetAccessToken } from '../auth/useAuthenticatedFetch.ts';
-import type { BlueprintResponse, BlueprintNode, NodeType, NodeSummary, ImpactReport } from '../types/blueprint.ts';
+import type { BlueprintResponse, BlueprintNode, NodeType, NodeSummary, ImpactReport, EdgeType } from '../types/blueprint.ts';
 
 // ─── View types ─────────────────────────────────────────────────────────────
 
@@ -63,6 +64,7 @@ export default function BlueprintPage() {
 
   // Create node modal state
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [addEdgeModalOpen, setAddEdgeModalOpen] = useState(false);
 
   // Delete node dialog state
   const [deleteNodeId, setDeleteNodeId] = useState<string | null>(null);
@@ -119,6 +121,13 @@ export default function BlueprintPage() {
 
   const handleCreateNode = useCallback(async (node: BlueprintNode) => {
     await api.createBlueprintNode(node);
+    await loadBlueprint();
+  }, [api, loadBlueprint]);
+
+  // ─── Create edge ────────────────────────────────────────────────────────
+
+  const handleCreateEdge = useCallback(async (edge: { source: string; target: string; edge_type: EdgeType; metadata?: string }) => {
+    await api.createBlueprintEdge(edge);
     await loadBlueprint();
   }, [api, loadBlueprint]);
 
@@ -234,6 +243,19 @@ export default function BlueprintPage() {
                 <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
               </svg>
               New Node
+            </button>
+
+            {/* Add edge button */}
+            <button
+              className="btn btn-outline"
+              onClick={() => setAddEdgeModalOpen(true)}
+              title="Add an edge between two nodes"
+              style={{ fontSize: 'var(--text-xs)', gap: '4px' }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M5 12h14M12 5l7 7-7 7"/>
+              </svg>
+              Add Edge
             </button>
 
             {/* Delete node button */}
@@ -436,6 +458,7 @@ export default function BlueprintPage() {
           onNavigateNode={handleNavigateNode}
           onImpactPreview={handleImpactPreview}
           onRequestDelete={handleRequestDelete}
+          onNodeUpdated={loadBlueprint}
         />
 
         {/* Impact preview modal */}
@@ -461,6 +484,15 @@ export default function BlueprintPage() {
           nodeName={deleteNodeName}
           onClose={handleDeleteClose}
           onConfirm={handleConfirmDelete}
+        />
+
+        {/* Add edge modal */}
+        <AddEdgeModal
+          isOpen={addEdgeModalOpen}
+          nodes={blueprint?.nodes ?? []}
+          defaultSourceId={selectedNodeId}
+          onClose={() => setAddEdgeModalOpen(false)}
+          onCreate={handleCreateEdge}
         />
       </div>
     </Layout>
