@@ -351,7 +351,7 @@ async fn tier1_compile_spec_with_mock() {
     let intake_result = intake::execute_intake(&router, project_id, "Build a timer").await.unwrap();
 
     // Now compile the spec
-    let spec_result = compile::compile_spec(&router, &intake_result).await;
+    let spec_result = compile::compile_spec(&router, &intake_result, None).await;
     assert!(
         spec_result.is_ok(),
         "compile_spec should succeed: {:?}",
@@ -381,9 +381,9 @@ async fn tier1_adversarial_review_with_mock() {
     let project_id = Uuid::new_v4();
 
     let intake_result = intake::execute_intake(&router, project_id, "Build a timer").await.unwrap();
-    let spec = compile::compile_spec(&router, &intake_result).await.unwrap();
+    let spec = compile::compile_spec(&router, &intake_result, None).await.unwrap();
 
-    let ar_result = ar::execute_adversarial_review(&router, &spec, project_id).await;
+    let ar_result = ar::execute_adversarial_review(&router, &spec, project_id, None).await;
     assert!(
         ar_result.is_ok(),
         "AR review should succeed: {:?}",

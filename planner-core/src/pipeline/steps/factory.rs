@@ -11,11 +11,11 @@
 //! Phase 7: Kilroy CLI is replaced by the pluggable FactoryWorker trait,
 //! which enables codex exec, mock workers for testing, and future backends.
 
-use uuid::Uuid;
-use planner_schemas::*;
-use super::StepResult;
+use super::factory_worker::{FactoryWorker, WorkerConfig, WorkerResult, WorktreeManager};
 use super::StepError;
-use super::factory_worker::{FactoryWorker, WorkerConfig, WorktreeManager, WorkerResult};
+use super::StepResult;
+use planner_schemas::*;
+use uuid::Uuid;
 
 // ---------------------------------------------------------------------------
 // NLSpec Markdown Renderer — shared by worker path
@@ -60,7 +60,10 @@ pub fn render_nlspec_markdown(spec: &NLSpecV1) -> String {
         for r in &spec.requirements {
             md.push_str(&format!(
                 "- **{}** [{:?}]: {} (traces to: {})\n",
-                r.id, r.priority, r.statement, r.traces_to.join(", ")
+                r.id,
+                r.priority,
+                r.statement,
+                r.traces_to.join(", ")
             ));
         }
         md.push_str("\n");
@@ -82,7 +85,9 @@ pub fn render_nlspec_markdown(spec: &NLSpecV1) -> String {
             for c in contracts {
                 md.push_str(&format!(
                     "### {}\n```\n{}\n```\nConsumed by: {}\n\n",
-                    c.name, c.type_definition, c.consumed_by.join(", ")
+                    c.name,
+                    c.type_definition,
+                    c.consumed_by.join(", ")
                 ));
             }
         }
@@ -104,7 +109,11 @@ pub fn render_nlspec_markdown(spec: &NLSpecV1) -> String {
     if !spec.definition_of_done.is_empty() {
         md.push_str("## Definition of Done\n\n");
         for d in &spec.definition_of_done {
-            let check = if d.mechanically_checkable { "✓ auto" } else { "○ manual" };
+            let check = if d.mechanically_checkable {
+                "✓ auto"
+            } else {
+                "○ manual"
+            };
             md.push_str(&format!("- [{}] {}\n", check, d.criterion));
         }
         md.push_str("\n");
@@ -171,6 +180,7 @@ pub async fn execute_factory_with_worker(
     graph: &GraphDotV1,
     agents: &AgentsManifestV1,
     spec: &NLSpecV1,
+    blueprint_context: Option<&str>,
     budget: &mut RunBudgetV1,
     error_feedback: Option<&[GeneralizedError]>,
     previous_output_path: Option<&str>,
@@ -201,7 +211,9 @@ pub async fn execute_factory_with_worker(
     // previous attempt produced compilable code with minor issues.
     // Copy it into the new worktree so the factory worker can iterate
     // on it rather than rebuilding from scratch.
-    let is_incremental = if let (Some(errors), Some(prev_path)) = (error_feedback, previous_output_path) {
+    let is_incremental = if let (Some(errors), Some(prev_path)) =
+        (error_feedback, previous_output_path)
+    {
         if !errors.is_empty() && std::path::Path::new(prev_path).exists() {
             match copy_previous_worktree(prev_path, &worktree_info.path) {
                 Ok(file_count) => {
@@ -295,12 +307,10 @@ pub async fn execute_factory_with_worker(
 
         prompt
     };
+    let task_prompt = inject_blueprint_context(task_prompt, blueprint_context);
 
     let full_prompt = if worker.needs_worktree() {
-        super::factory_worker::CodexFactoryWorker::build_codex_prompt(
-            &task_prompt,
-            &worktree_info,
-        )
+        super::factory_worker::CodexFactoryWorker::build_codex_prompt(&task_prompt, &worktree_info)
     } else {
         task_prompt.clone()
     };
@@ -367,6 +377,19 @@ pub async fn execute_factory_with_worker(
     );
 
     Ok(output)
+}
+
+fn inject_blueprint_context(task_prompt: String, blueprint_context: Option<&str>) -> String {
+    let Some(context) = blueprint_context.filter(|context| !context.trim().is_empty()) else {
+        return task_prompt;
+    };
+
+    format!(
+        "{task_prompt}\n\n## Existing Blueprint Context\n\n\
+         Keep the implementation aligned with this established architectural \
+         context unless the NLSpec explicitly requires a change.\n\n\
+         {context}"
+    )
 }
 
 /// Build FactoryOutputV1 from a successful WorkerResult.
@@ -484,7 +507,11 @@ fn copy_previous_worktree(
 
     if copied > 0 {
         run(&["add", "-A"]);
-        run(&["commit", "-m", "planner: incremental retry base (copied from previous attempt)"]);
+        run(&[
+            "commit",
+            "-m",
+            "planner: incremental retry base (copied from previous attempt)",
+        ]);
     }
 
     Ok(copied)
@@ -503,7 +530,9 @@ mod tests {
         GraphDotV1 {
             project_id: Uuid::new_v4(),
             nlspec_version: "1.0".into(),
-            dot_content: "digraph test { start [shape=Mdiamond]; exit [shape=Msquare]; start -> exit; }".into(),
+            dot_content:
+                "digraph test { start [shape=Mdiamond]; exit [shape=Msquare]; start -> exit; }"
+                    .into(),
             node_count: 2,
             estimated_cost_usd: 0.50,
             run_budget_usd: 2.00,
@@ -578,6 +607,18 @@ mod tests {
         assert!(md.contains("## Out of Scope"));
     }
 
+    #[test]
+    fn inject_blueprint_context_appends_context_block() {
+        let prompt = inject_blueprint_context(
+            "Implement the requirements.".into(),
+            Some("# Existing Blueprint Context\n\n## CXDB [component] `comp-cxdb`"),
+        );
+
+        assert!(prompt.contains("Implement the requirements."));
+        assert!(prompt.contains("## Existing Blueprint Context"));
+        assert!(prompt.contains("comp-cxdb"));
+    }
+
     #[tokio::test]
     async fn execute_factory_with_mock_worker_succeeds() {
         use crate::pipeline::steps::factory_worker::MockFactoryWorker;
@@ -601,7 +642,14 @@ mod tests {
         );
 
         let result = execute_factory_with_worker(
-            &worker, &graph, &agents, &spec, &mut budget, None, None,
+            &worker,
+            &graph,
+            &agents,
+            &spec,
+            None,
+            &mut budget,
+            None,
+            None,
         )
         .await;
 
@@ -633,7 +681,14 @@ mod tests {
         let worker = MockFactoryWorker::failure("compile error");
 
         let result = execute_factory_with_worker(
-            &worker, &graph, &agents, &spec, &mut budget, None, None,
+            &worker,
+            &graph,
+            &agents,
+            &spec,
+            None,
+            &mut budget,
+            None,
+            None,
         )
         .await;
 
@@ -714,7 +769,11 @@ mod tests {
 
         // Set up previous worktree with git
         fs::create_dir_all(prev_dir.join("src")).unwrap();
-        fs::write(prev_dir.join("src/App.tsx"), "export default function App() {}").unwrap();
+        fs::write(
+            prev_dir.join("src/App.tsx"),
+            "export default function App() {}",
+        )
+        .unwrap();
         fs::write(prev_dir.join("package.json"), r#"{"name": "test"}"#).unwrap();
         fs::write(prev_dir.join(".gitignore"), "node_modules/\n").unwrap();
 
@@ -745,14 +804,15 @@ mod tests {
         run_git(&["commit", "--allow-empty", "-m", "init"], &new_dir);
 
         // Run the copy
-        let result = copy_previous_worktree(
-            &prev_dir.to_string_lossy(),
-            &new_dir,
-        );
+        let result = copy_previous_worktree(&prev_dir.to_string_lossy(), &new_dir);
 
         assert!(result.is_ok(), "copy failed: {:?}", result.err());
         let count = result.unwrap();
-        assert!(count >= 2, "Expected at least 2 files copied, got {}", count);
+        assert!(
+            count >= 2,
+            "Expected at least 2 files copied, got {}",
+            count
+        );
 
         // Verify files exist in new worktree
         assert!(new_dir.join("src/App.tsx").exists());
@@ -764,7 +824,10 @@ mod tests {
 
     #[test]
     fn copy_previous_worktree_nonexistent_path() {
-        let result = copy_previous_worktree("/tmp/planner-nonexistent-23948723", &std::path::PathBuf::from("/tmp"));
+        let result = copy_previous_worktree(
+            "/tmp/planner-nonexistent-23948723",
+            &std::path::PathBuf::from("/tmp"),
+        );
         assert!(result.is_err());
     }
 
@@ -785,10 +848,7 @@ mod tests {
                 .to_string(),
         );
 
-        let worker = MockFactoryWorker::success(
-            "Fixed the issue",
-            vec!["src/main.rs".into()],
-        );
+        let worker = MockFactoryWorker::success("Fixed the issue", vec!["src/main.rs".into()]);
 
         let errors = vec![GeneralizedError {
             category: "race-condition".into(),
@@ -797,7 +857,12 @@ mod tests {
 
         // Pass a non-existent previous path — should gracefully fall back to fresh build
         let result = execute_factory_with_worker(
-            &worker, &graph, &agents, &spec, &mut budget,
+            &worker,
+            &graph,
+            &agents,
+            &spec,
+            None,
+            &mut budget,
             Some(&errors),
             Some("/tmp/planner-nonexistent-prev"),
         )

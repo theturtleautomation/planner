@@ -10,11 +10,11 @@
 
 use uuid::Uuid;
 
-use crate::llm::{CompletionRequest, CompletionResponse, DefaultModels, Message, Role};
-use crate::llm::providers::LlmRouter;
-use planner_schemas::*;
-use super::{StepResult, StepError};
 use super::chunk_planner::{ChunkPlan, PlannedChunk};
+use super::{StepError, StepResult};
+use crate::llm::providers::LlmRouter;
+use crate::llm::{CompletionRequest, CompletionResponse, DefaultModels, Message, Role};
+use planner_schemas::*;
 
 // ===========================================================================
 // IntakeV1 → NLSpecV1
@@ -76,18 +76,16 @@ Respond with ONLY a JSON object (no markdown fences, no explanation):
 pub async fn compile_spec(
     router: &LlmRouter,
     intake: &IntakeV1,
+    blueprint_context: Option<&str>,
 ) -> StepResult<NLSpecV1> {
-    let intake_json = serde_json::to_string_pretty(intake)
-        .map_err(|e| StepError::JsonError(e.to_string()))?;
+    let intake_json =
+        serde_json::to_string_pretty(intake).map_err(|e| StepError::JsonError(e.to_string()))?;
 
     let request = CompletionRequest {
         system: Some(SPEC_SYSTEM_PROMPT.to_string()),
         messages: vec![Message {
             role: Role::User,
-            content: format!(
-                "Compile this IntakeV1 into an NLSpecV1:\n\n{}",
-                intake_json
-            ),
+            content: build_spec_compile_user_prompt(&intake_json, blueprint_context),
         }],
         max_tokens: 8192,
         temperature: 0.2,
@@ -115,7 +113,10 @@ struct SpecJson {
 }
 
 #[derive(Debug, serde::Deserialize)]
-struct SpecAnchorJson { id: String, statement: String }
+struct SpecAnchorJson {
+    id: String,
+    statement: String,
+}
 
 #[derive(Debug, serde::Deserialize)]
 struct RequirementJson {
@@ -141,13 +142,22 @@ struct ExtDepJson {
     usage_description: String,
 }
 
-fn default_dtu() -> String { "None".into() }
+fn default_dtu() -> String {
+    "None".into()
+}
 
 #[derive(Debug, serde::Deserialize)]
-struct DoDJson { criterion: String, mechanically_checkable: bool }
+struct DoDJson {
+    criterion: String,
+    mechanically_checkable: bool,
+}
 
 #[derive(Debug, serde::Deserialize)]
-struct SatCritJson { id: String, description: String, tier_hint: String }
+struct SatCritJson {
+    id: String,
+    description: String,
+    tier_hint: String,
+}
 
 #[derive(Debug, serde::Deserialize)]
 struct OpenQuestionJson {
@@ -157,29 +167,37 @@ struct OpenQuestionJson {
     resolution: Option<String>,
 }
 
-fn default_raised_by() -> String { "compiler".into() }
+fn default_raised_by() -> String {
+    "compiler".into()
+}
 
-fn parse_spec_response(
-    project_id: Uuid,
-    response: &CompletionResponse,
-) -> StepResult<NLSpecV1> {
+fn parse_spec_response(project_id: Uuid, response: &CompletionResponse) -> StepResult<NLSpecV1> {
     let content = crate::llm::json_repair::try_repair_json(&response.content)
         .unwrap_or_else(|| super::intake::strip_code_fences(&response.content));
 
-    let json: SpecJson = serde_json::from_str(&content)
-        .map_err(|e| StepError::JsonError(format!(
+    let json: SpecJson = serde_json::from_str(&content).map_err(|e| {
+        StepError::JsonError(format!(
             "Failed to parse Spec Compiler response: {}. Raw: {}",
-            e, &response.content[..response.content.len().min(500)]
-        )))?;
+            e,
+            &response.content[..response.content.len().min(500)]
+        ))
+    })?;
 
     // Estimate line count from content length
     let line_count = (content.len() / 60).min(500) as u32;
 
-    let sacred_anchors: Vec<NLSpecAnchor> = json.sacred_anchors.into_iter()
-        .map(|a| NLSpecAnchor { id: a.id, statement: a.statement })
+    let sacred_anchors: Vec<NLSpecAnchor> = json
+        .sacred_anchors
+        .into_iter()
+        .map(|a| NLSpecAnchor {
+            id: a.id,
+            statement: a.statement,
+        })
         .collect();
 
-    let requirements: Vec<Requirement> = json.requirements.into_iter()
+    let requirements: Vec<Requirement> = json
+        .requirements
+        .into_iter()
         .map(|r| Requirement {
             id: r.id,
             statement: r.statement,
@@ -193,7 +211,9 @@ fn parse_spec_response(
         })
         .collect();
 
-    let phase1_contracts: Vec<Phase1Contract> = json.phase1_contracts.into_iter()
+    let phase1_contracts: Vec<Phase1Contract> = json
+        .phase1_contracts
+        .into_iter()
         .map(|c| Phase1Contract {
             name: c.name,
             type_definition: c.type_definition,
@@ -201,7 +221,9 @@ fn parse_spec_response(
         })
         .collect();
 
-    let external_dependencies: Vec<ExternalDependency> = json.external_dependencies.into_iter()
+    let external_dependencies: Vec<ExternalDependency> = json
+        .external_dependencies
+        .into_iter()
         .map(|d| ExternalDependency {
             name: d.name,
             dtu_priority: match d.dtu_priority.to_lowercase().as_str() {
@@ -214,14 +236,18 @@ fn parse_spec_response(
         })
         .collect();
 
-    let definition_of_done: Vec<DoDItem> = json.definition_of_done.into_iter()
+    let definition_of_done: Vec<DoDItem> = json
+        .definition_of_done
+        .into_iter()
         .map(|d| DoDItem {
             criterion: d.criterion,
             mechanically_checkable: d.mechanically_checkable,
         })
         .collect();
 
-    let satisfaction_criteria: Vec<SatisfactionCriterion> = json.satisfaction_criteria.into_iter()
+    let satisfaction_criteria: Vec<SatisfactionCriterion> = json
+        .satisfaction_criteria
+        .into_iter()
         .map(|s| SatisfactionCriterion {
             id: s.id,
             description: s.description,
@@ -233,7 +259,9 @@ fn parse_spec_response(
         })
         .collect();
 
-    let open_questions: Vec<OpenQuestion> = json.open_questions.into_iter()
+    let open_questions: Vec<OpenQuestion> = json
+        .open_questions
+        .into_iter()
         .map(|q| OpenQuestion {
             question: q.question,
             raised_by: q.raised_by,
@@ -324,13 +352,18 @@ pub async fn compile_spec_multichunk(
     router: &LlmRouter,
     intake: &IntakeV1,
     plan: &ChunkPlan,
+    blueprint_context: Option<&str>,
 ) -> StepResult<Vec<NLSpecV1>> {
     // Step 1: Compile the root chunk (same as single-chunk compilation)
-    let root_spec = compile_spec(router, intake).await?;
+    let root_spec = compile_spec(router, intake, blueprint_context).await?;
     tracing::info!(
         "Multi-chunk root compiled: {} FRs, {} contracts",
         root_spec.requirements.len(),
-        root_spec.phase1_contracts.as_ref().map(|c| c.len()).unwrap_or(0),
+        root_spec
+            .phase1_contracts
+            .as_ref()
+            .map(|c| c.len())
+            .unwrap_or(0),
     );
 
     let mut specs = vec![root_spec];
@@ -341,9 +374,8 @@ pub async fn compile_spec_multichunk(
             continue; // Already compiled
         }
 
-        let domain_spec = compile_domain_chunk(
-            router, intake, &specs[0], planned,
-        ).await?;
+        let domain_spec =
+            compile_domain_chunk(router, intake, &specs[0], planned, blueprint_context).await?;
 
         tracing::info!(
             "Domain chunk '{}' compiled: {} FRs",
@@ -368,6 +400,7 @@ async fn compile_domain_chunk(
     intake: &IntakeV1,
     root_spec: &NLSpecV1,
     planned: &PlannedChunk,
+    blueprint_context: Option<&str>,
 ) -> StepResult<NLSpecV1> {
     let domain_name = &planned.chunk_id;
     let domain_prefix = domain_name.to_uppercase().replace('-', "_");
@@ -398,10 +431,10 @@ async fn compile_domain_chunk(
         system: Some(system_prompt),
         messages: vec![Message {
             role: Role::User,
-            content: format!(
-                "Compile the '{}' domain chunk for this project:\n\n{}",
+            content: build_domain_chunk_user_prompt(
                 domain_name,
-                serde_json::to_string_pretty(&context).unwrap_or_default(),
+                &serde_json::to_string_pretty(&context).unwrap_or_default(),
+                blueprint_context,
             ),
         }],
         max_tokens: 4096,
@@ -416,6 +449,40 @@ async fn compile_domain_chunk(
         domain_name,
         &response,
     )
+}
+
+fn build_spec_compile_user_prompt(intake_json: &str, blueprint_context: Option<&str>) -> String {
+    let mut prompt = format!("Compile this IntakeV1 into an NLSpecV1:\n\n{}", intake_json);
+    if let Some(context) = blueprint_context.filter(|context| !context.trim().is_empty()) {
+        prompt.push_str(
+            "\n\n## Existing Blueprint Context\n\n\
+             Use this existing architectural context when it helps preserve \
+             consistency with established decisions, technologies, constraints, \
+             components, and quality requirements.\n\n",
+        );
+        prompt.push_str(context);
+    }
+    prompt
+}
+
+fn build_domain_chunk_user_prompt(
+    domain_name: &str,
+    context_json: &str,
+    blueprint_context: Option<&str>,
+) -> String {
+    let mut prompt = format!(
+        "Compile the '{}' domain chunk for this project:\n\n{}",
+        domain_name, context_json,
+    );
+    if let Some(context) = blueprint_context.filter(|context| !context.trim().is_empty()) {
+        prompt.push_str(
+            "\n\n## Existing Blueprint Context\n\n\
+             Align this domain chunk with established Blueprint knowledge where it \
+             is still relevant.\n\n",
+        );
+        prompt.push_str(context);
+    }
+    prompt
 }
 
 // ---------------------------------------------------------------------------
@@ -444,15 +511,20 @@ fn parse_domain_chunk_response(
     let content = crate::llm::json_repair::try_repair_json(&response.content)
         .unwrap_or_else(|| super::intake::strip_code_fences(&response.content));
 
-    let json: DomainSpecJson = serde_json::from_str(&content)
-        .map_err(|e| StepError::JsonError(format!(
+    let json: DomainSpecJson = serde_json::from_str(&content).map_err(|e| {
+        StepError::JsonError(format!(
             "Failed to parse domain '{}' Spec Compiler response: {}. Raw: {}",
-            domain_name, e, &response.content[..response.content.len().min(500)]
-        )))?;
+            domain_name,
+            e,
+            &response.content[..response.content.len().min(500)]
+        ))
+    })?;
 
     let line_count = (content.len() / 60).min(500) as u32;
 
-    let requirements: Vec<Requirement> = json.requirements.into_iter()
+    let requirements: Vec<Requirement> = json
+        .requirements
+        .into_iter()
         .map(|r| Requirement {
             id: r.id,
             statement: r.statement,
@@ -466,7 +538,9 @@ fn parse_domain_chunk_response(
         })
         .collect();
 
-    let external_dependencies: Vec<ExternalDependency> = json.external_dependencies.into_iter()
+    let external_dependencies: Vec<ExternalDependency> = json
+        .external_dependencies
+        .into_iter()
         .map(|d| ExternalDependency {
             name: d.name,
             dtu_priority: match d.dtu_priority.to_lowercase().as_str() {
@@ -479,14 +553,18 @@ fn parse_domain_chunk_response(
         })
         .collect();
 
-    let definition_of_done: Vec<DoDItem> = json.definition_of_done.into_iter()
+    let definition_of_done: Vec<DoDItem> = json
+        .definition_of_done
+        .into_iter()
         .map(|d| DoDItem {
             criterion: d.criterion,
             mechanically_checkable: d.mechanically_checkable,
         })
         .collect();
 
-    let satisfaction_criteria: Vec<SatisfactionCriterion> = json.satisfaction_criteria.into_iter()
+    let satisfaction_criteria: Vec<SatisfactionCriterion> = json
+        .satisfaction_criteria
+        .into_iter()
         .map(|s| SatisfactionCriterion {
             id: s.id,
             description: s.description,
@@ -501,10 +579,17 @@ fn parse_domain_chunk_response(
     Ok(NLSpecV1 {
         project_id,
         version: root_version.to_string(),
-        chunk: ChunkType::Domain { name: domain_name.to_string() },
+        chunk: ChunkType::Domain {
+            name: domain_name.to_string(),
+        },
         status: NLSpecStatus::Draft,
         line_count,
-        created_from: format!("{}:{}:domain:{}", IntakeV1::TYPE_ID, project_id, domain_name),
+        created_from: format!(
+            "{}:{}:domain:{}",
+            IntakeV1::TYPE_ID,
+            project_id,
+            domain_name
+        ),
         // Domain chunks don't have these root-only fields
         intent_summary: None,
         sacred_anchors: None,
@@ -622,17 +707,15 @@ Respond with ONLY a JSON object (no markdown fences):
 ///
 /// For single-chunk specs, produces a linear pipeline.
 /// For multi-chunk specs (passed as a full set), produces parallel domain branches.
-pub async fn compile_graph_dot(
-    router: &LlmRouter,
-    spec: &NLSpecV1,
-) -> StepResult<GraphDotV1> {
+pub async fn compile_graph_dot(router: &LlmRouter, spec: &NLSpecV1) -> StepResult<GraphDotV1> {
     use super::context_pack::{build_spec_context_pack, render_context_pack, ContextTarget};
 
     let pack = build_spec_context_pack(spec, ContextTarget::GraphDotCompiler, 8000);
     let context_text = render_context_pack(&pack);
     tracing::debug!(
         "graph.dot context pack: {} tokens (truncated: {})",
-        pack.estimated_tokens, pack.was_truncated,
+        pack.estimated_tokens,
+        pack.was_truncated,
     );
 
     let request = CompletionRequest {
@@ -663,18 +746,21 @@ pub async fn compile_graph_dot_multichunk(
     specs: &[NLSpecV1],
 ) -> StepResult<GraphDotV1> {
     if specs.is_empty() {
-        return Err(StepError::Other("No NLSpec chunks provided for multi-chunk graph.dot".into()));
+        return Err(StepError::Other(
+            "No NLSpec chunks provided for multi-chunk graph.dot".into(),
+        ));
     }
 
     let root = &specs[0];
     let domains: Vec<&NLSpecV1> = specs.iter().skip(1).collect();
 
-    let domain_names: Vec<String> = domains.iter().map(|d| {
-        match &d.chunk {
+    let domain_names: Vec<String> = domains
+        .iter()
+        .map(|d| match &d.chunk {
             ChunkType::Domain { name } => name.clone(),
             ChunkType::Root => "root".into(),
-        }
-    }).collect();
+        })
+        .collect();
 
     let context = serde_json::json!({
         "root_spec": {
@@ -736,13 +822,17 @@ fn parse_graph_dot_response(
     let content = crate::llm::json_repair::try_repair_json(&response.content)
         .unwrap_or_else(|| super::intake::strip_code_fences(&response.content));
 
-    let json: GraphDotJson = serde_json::from_str(&content)
-        .map_err(|e| StepError::JsonError(format!(
+    let json: GraphDotJson = serde_json::from_str(&content).map_err(|e| {
+        StepError::JsonError(format!(
             "Failed to parse graph.dot Compiler response: {}. Raw: {}",
-            e, &response.content[..response.content.len().min(500)]
-        )))?;
+            e,
+            &response.content[..response.content.len().min(500)]
+        ))
+    })?;
 
-    let model_routing: Vec<NodeModelAssignment> = json.model_routing.into_iter()
+    let model_routing: Vec<NodeModelAssignment> = json
+        .model_routing
+        .into_iter()
         .map(|n| NodeModelAssignment {
             node_name: n.node_name,
             node_class: n.node_class,
@@ -802,17 +892,15 @@ Respond with ONLY a JSON object (no markdown fences):
 9. Respect the tier_hint on each Satisfaction Criterion — use it as the starting tier"#;
 
 /// NLSpecV1 → ScenarioSetV1 (BDD scenarios, all tiers).
-pub async fn generate_scenarios(
-    router: &LlmRouter,
-    spec: &NLSpecV1,
-) -> StepResult<ScenarioSetV1> {
+pub async fn generate_scenarios(router: &LlmRouter, spec: &NLSpecV1) -> StepResult<ScenarioSetV1> {
     use super::context_pack::{build_spec_context_pack, render_context_pack, ContextTarget};
 
     let pack = build_spec_context_pack(spec, ContextTarget::ScenarioGenerator, 6000);
     let context_text = render_context_pack(&pack);
     tracing::debug!(
         "Scenario gen context pack: {} tokens (truncated: {})",
-        pack.estimated_tokens, pack.was_truncated,
+        pack.estimated_tokens,
+        pack.was_truncated,
     );
 
     let request = CompletionRequest {
@@ -859,13 +947,17 @@ fn parse_scenario_response(
     let content = crate::llm::json_repair::try_repair_json(&response.content)
         .unwrap_or_else(|| super::intake::strip_code_fences(&response.content));
 
-    let json: ScenarioSetJson = serde_json::from_str(&content)
-        .map_err(|e| StepError::JsonError(format!(
+    let json: ScenarioSetJson = serde_json::from_str(&content).map_err(|e| {
+        StepError::JsonError(format!(
             "Failed to parse Scenario Generator response: {}. Raw: {}",
-            e, &response.content[..response.content.len().min(500)]
-        )))?;
+            e,
+            &response.content[..response.content.len().min(500)]
+        ))
+    })?;
 
-    let scenarios: Vec<Scenario> = json.scenarios.into_iter()
+    let scenarios: Vec<Scenario> = json
+        .scenarios
+        .into_iter()
         .map(|s| Scenario {
             id: s.id,
             tier: match s.tier.to_lowercase().as_str() {
@@ -931,7 +1023,8 @@ pub async fn compile_agents_manifest(
     let context_text = render_context_pack(&pack);
     tracing::debug!(
         "AGENTS.md context pack: {} tokens (truncated: {})",
-        pack.estimated_tokens, pack.was_truncated,
+        pack.estimated_tokens,
+        pack.was_truncated,
     );
 
     let request = CompletionRequest {
@@ -965,18 +1058,20 @@ fn parse_agents_response(
     let content = crate::llm::json_repair::try_repair_json(&response.content)
         .unwrap_or_else(|| super::intake::strip_code_fences(&response.content));
 
-    let json: AgentsJson = serde_json::from_str(&content)
-        .map_err(|e| StepError::JsonError(format!(
+    let json: AgentsJson = serde_json::from_str(&content).map_err(|e| {
+        StepError::JsonError(format!(
             "Failed to parse AGENTS.md Compiler response: {}. Raw: {}",
-            e, &response.content[..response.content.len().min(500)]
-        )))?;
+            e,
+            &response.content[..response.content.len().min(500)]
+        ))
+    })?;
 
     Ok(AgentsManifestV1 {
         project_id,
         nlspec_version: nlspec_version.to_string(),
         root_agents_md: json.root_agents_md,
-        domain_docs: vec![],  // Phase 0: no domain docs
-        skill_refs: vec![],   // Phase 0: no skill refs
+        domain_docs: vec![], // Phase 0: no domain docs
+        skill_refs: vec![],  // Phase 0: no skill refs
     })
 }
 
@@ -1000,7 +1095,8 @@ mod tests {
 
     #[test]
     fn parse_valid_spec_json() {
-        let response = sample_response(r#"{
+        let response = sample_response(
+            r#"{
             "intent_summary": "A task tracker widget",
             "sacred_anchors": [
                 { "id": "SA-1", "statement": "User data must persist" }
@@ -1022,7 +1118,8 @@ mod tests {
             ],
             "out_of_scope": ["Cloud sync"],
             "open_questions": []
-        }"#);
+        }"#,
+        );
 
         let result = parse_spec_response(Uuid::new_v4(), &response);
         assert!(result.is_ok());
@@ -1034,8 +1131,33 @@ mod tests {
     }
 
     #[test]
+    fn build_spec_compile_user_prompt_includes_blueprint_context() {
+        let prompt = build_spec_compile_user_prompt(
+            "{\"project_name\":\"Task Tracker\"}",
+            Some("# Existing Blueprint Context\n\n## CXDB [component] `comp-cxdb`"),
+        );
+
+        assert!(prompt.contains("Compile this IntakeV1 into an NLSpecV1"));
+        assert!(prompt.contains("## Existing Blueprint Context"));
+        assert!(prompt.contains("comp-cxdb"));
+    }
+
+    #[test]
+    fn build_domain_chunk_user_prompt_includes_blueprint_context() {
+        let prompt = build_domain_chunk_user_prompt(
+            "auth",
+            "{\"project_name\":\"Task Tracker\"}",
+            Some("# Existing Blueprint Context\n\n## Auth [component] `comp-auth`"),
+        );
+
+        assert!(prompt.contains("Compile the 'auth' domain chunk"));
+        assert!(prompt.contains("comp-auth"));
+    }
+
+    #[test]
     fn parse_valid_graph_dot_json() {
-        let response = sample_response(r#"{
+        let response = sample_response(
+            r#"{
             "dot_content": "digraph pipeline { start [shape=Mdiamond]; exit [shape=Msquare]; start -> exit; }",
             "node_count": 2,
             "estimated_cost_usd": 0.50,
@@ -1043,7 +1165,8 @@ mod tests {
             "model_routing": [
                 { "node_name": "implement", "node_class": "hard", "model": "claude-sonnet-4-6", "fidelity": "truncate", "goal_gate": false, "max_retries": 2 }
             ]
-        }"#);
+        }"#,
+        );
 
         let result = parse_graph_dot_response(Uuid::new_v4(), "1.0", &response);
         assert!(result.is_ok());
@@ -1055,7 +1178,8 @@ mod tests {
 
     #[test]
     fn parse_valid_scenario_json() {
-        let response = sample_response(r#"{
+        let response = sample_response(
+            r#"{
             "scenarios": [
                 {
                     "id": "SC-CRIT-1",
@@ -1067,7 +1191,8 @@ mod tests {
                     "source_criterion": "SC-1"
                 }
             ]
-        }"#);
+        }"#,
+        );
 
         let result = parse_scenario_response(Uuid::new_v4(), "1.0", &response);
         assert!(result.is_ok());
@@ -1091,7 +1216,8 @@ mod tests {
 
     #[test]
     fn parse_valid_domain_chunk_json() {
-        let response = sample_response(r#"{
+        let response = sample_response(
+            r#"{
             "requirements": [
                 {
                     "id": "FR-AUTH-1",
@@ -1115,14 +1241,18 @@ mod tests {
                 { "id": "SC-AUTH-1", "description": "User creates account and logs in", "tier_hint": "Critical" }
             ],
             "out_of_scope": ["OAuth social login"]
-        }"#);
-
-        let result = parse_domain_chunk_response(
-            Uuid::new_v4(), "1.0", "auth", &response,
+        }"#,
         );
+
+        let result = parse_domain_chunk_response(Uuid::new_v4(), "1.0", "auth", &response);
         assert!(result.is_ok());
         let spec = result.unwrap();
-        assert_eq!(spec.chunk, ChunkType::Domain { name: "auth".into() });
+        assert_eq!(
+            spec.chunk,
+            ChunkType::Domain {
+                name: "auth".into()
+            }
+        );
         assert_eq!(spec.requirements.len(), 2);
         assert_eq!(spec.requirements[0].id, "FR-AUTH-1");
         assert!(spec.intent_summary.is_none()); // Domain chunks don't have intent_summary
@@ -1138,9 +1268,7 @@ mod tests {
             "```json\n{\"requirements\": [{\"id\": \"FR-API-1\", \"statement\": \"The system must validate all inputs\", \"priority\": \"Must\", \"traces_to\": [\"SA-2\"]}], \"definition_of_done\": [{\"criterion\": \"API returns 400 for invalid input\", \"mechanically_checkable\": true}], \"satisfaction_criteria\": [{\"id\": \"SC-API-1\", \"description\": \"Invalid input is rejected\", \"tier_hint\": \"Critical\"}], \"out_of_scope\": [\"Rate limiting\"]}\n```"
         );
 
-        let result = parse_domain_chunk_response(
-            Uuid::new_v4(), "1.0", "api", &response,
-        );
+        let result = parse_domain_chunk_response(Uuid::new_v4(), "1.0", "api", &response);
         assert!(result.is_ok());
         let spec = result.unwrap();
         assert_eq!(spec.chunk, ChunkType::Domain { name: "api".into() });

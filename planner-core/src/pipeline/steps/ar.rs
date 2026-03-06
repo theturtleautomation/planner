@@ -20,10 +20,10 @@
 
 use uuid::Uuid;
 
-use crate::llm::{CompletionRequest, DefaultModels, Message, Role};
+use super::{StepError, StepResult};
 use crate::llm::providers::LlmRouter;
+use crate::llm::{CompletionRequest, DefaultModels, Message, Role};
 use planner_schemas::*;
-use super::{StepResult, StepError};
 
 // ---------------------------------------------------------------------------
 // Reviewer system prompts
@@ -152,8 +152,12 @@ pub async fn execute_adversarial_review(
     router: &LlmRouter,
     spec: &NLSpecV1,
     project_id: Uuid,
+    blueprint_context: Option<&str>,
 ) -> StepResult<ArReportV1> {
-    tracing::info!("Adversarial Review: reviewing NLSpec (chunk={:?})", spec.chunk);
+    tracing::info!(
+        "Adversarial Review: reviewing NLSpec (chunk={:?})",
+        spec.chunk
+    );
 
     let spec_text = render_spec_for_review(spec);
 
@@ -162,6 +166,7 @@ pub async fn execute_adversarial_review(
         run_single_reviewer(
             router,
             &spec_text,
+            blueprint_context,
             ArReviewer::Opus,
             OPUS_REVIEW_PROMPT,
             DefaultModels::AR_REVIEWER_OPUS,
@@ -169,6 +174,7 @@ pub async fn execute_adversarial_review(
         run_single_reviewer(
             router,
             &spec_text,
+            blueprint_context,
             ArReviewer::Gpt,
             GPT_REVIEW_PROMPT,
             DefaultModels::AR_REVIEWER_GPT,
@@ -176,6 +182,7 @@ pub async fn execute_adversarial_review(
         run_single_reviewer(
             router,
             &spec_text,
+            blueprint_context,
             ArReviewer::Gemini,
             GEMINI_REVIEW_PROMPT,
             DefaultModels::AR_REVIEWER_GEMINI,
@@ -195,8 +202,11 @@ pub async fn execute_adversarial_review(
         (ArReviewer::Gpt, gpt_result),
         (ArReviewer::Gemini, gemini_result),
     ] {
-        let blocking_count = result.findings.iter()
-            .filter(|f| f.severity == ArSeverity::Blocking).count() as u32;
+        let blocking_count = result
+            .findings
+            .iter()
+            .filter(|f| f.severity == ArSeverity::Blocking)
+            .count() as u32;
 
         reviewer_summaries.push(ReviewerSummary {
             reviewer: reviewer.clone(),
@@ -247,7 +257,9 @@ pub async fn execute_adversarial_review(
 
     tracing::info!(
         "Adversarial Review complete: {} blocking, {} advisory, {} informational",
-        report.blocking_count, report.advisory_count, report.informational_count,
+        report.blocking_count,
+        report.advisory_count,
+        report.informational_count,
     );
 
     Ok(report)
@@ -265,18 +277,22 @@ pub async fn execute_adversarial_review_set(
     router: &LlmRouter,
     specs: &[NLSpecV1],
     project_id: Uuid,
+    blueprint_context: Option<&str>,
 ) -> StepResult<Vec<ArReportV1>> {
     let mut reports = Vec::with_capacity(specs.len());
 
     for spec in specs {
-        let report = execute_adversarial_review(router, spec, project_id).await?;
+        let report =
+            execute_adversarial_review(router, spec, project_id, blueprint_context).await?;
         let chunk_label = match &spec.chunk {
             ChunkType::Root => "root",
             ChunkType::Domain { name } => name.as_str(),
         };
         tracing::info!(
             "AR for chunk '{}': {} blocking, {} advisory",
-            chunk_label, report.blocking_count, report.advisory_count,
+            chunk_label,
+            report.blocking_count,
+            report.advisory_count,
         );
         reports.push(report);
     }
@@ -327,6 +343,7 @@ pub async fn execute_cross_chunk_coherence_review(
     router: &LlmRouter,
     specs: &[NLSpecV1],
     project_id: Uuid,
+    blueprint_context: Option<&str>,
 ) -> StepResult<ArReportV1> {
     tracing::info!("Cross-Chunk Coherence Review: {} chunks", specs.len());
 
@@ -340,10 +357,12 @@ pub async fn execute_cross_chunk_coherence_review(
     let coherence_result = run_single_reviewer(
         router,
         &combined_text,
+        blueprint_context,
         ArReviewer::Opus, // Use Opus for coherence (best at intent reasoning)
         COHERENCE_REVIEW_PROMPT,
         DefaultModels::AR_REVIEWER_OPUS,
-    ).await?;
+    )
+    .await?;
 
     // Build report
     let mut findings = coherence_result.findings;
@@ -390,7 +409,9 @@ pub async fn execute_cross_chunk_coherence_review(
 
     tracing::info!(
         "Coherence Review complete: {} blocking, {} advisory, {} informational",
-        report.blocking_count, report.advisory_count, report.informational_count,
+        report.blocking_count,
+        report.advisory_count,
+        report.informational_count,
     );
 
     Ok(report)
@@ -410,6 +431,7 @@ struct SingleReviewResult {
 async fn run_single_reviewer(
     router: &LlmRouter,
     spec_text: &str,
+    blueprint_context: Option<&str>,
     reviewer: ArReviewer,
     system_prompt: &str,
     model: &str,
@@ -420,18 +442,19 @@ async fn run_single_reviewer(
 
     for attempt in 0..=AR_REVIEW_MAX_RETRIES {
         if attempt > 0 {
-            tracing::warn!("  Retrying {:?} reviewer (attempt {}/{})",
-                reviewer, attempt + 1, AR_REVIEW_MAX_RETRIES + 1);
+            tracing::warn!(
+                "  Retrying {:?} reviewer (attempt {}/{})",
+                reviewer,
+                attempt + 1,
+                AR_REVIEW_MAX_RETRIES + 1
+            );
         }
 
         let request = CompletionRequest {
             system: Some(system_prompt.to_string()),
             messages: vec![Message {
                 role: Role::User,
-                content: format!(
-                    "Review this NLSpec and produce your findings:\n\n{}",
-                    spec_text,
-                ),
+                content: build_review_user_prompt(spec_text, blueprint_context),
             }],
             max_tokens: 4096,
             temperature: 0.2, // Low temperature for consistent reviews
@@ -439,18 +462,16 @@ async fn run_single_reviewer(
         };
 
         match router.complete(request).await {
-            Ok(response) => {
-                match parse_review_response(&response.content, &reviewer) {
-                    Ok(result) => {
-                        tracing::info!("    {:?}: {} finding(s)", reviewer, result.findings.len());
-                        return Ok(result);
-                    }
-                    Err(e) => {
-                        tracing::warn!("    Parse error from {:?}: {}", reviewer, e);
-                        last_error = Some(e);
-                    }
+            Ok(response) => match parse_review_response(&response.content, &reviewer) {
+                Ok(result) => {
+                    tracing::info!("    {:?}: {} finding(s)", reviewer, result.findings.len());
+                    return Ok(result);
                 }
-            }
+                Err(e) => {
+                    tracing::warn!("    Parse error from {:?}: {}", reviewer, e);
+                    last_error = Some(e);
+                }
+            },
             Err(e) => {
                 tracing::warn!("    LLM error from {:?}: {}", reviewer, e);
                 last_error = Some(StepError::LlmError(e.to_string()));
@@ -458,9 +479,25 @@ async fn run_single_reviewer(
         }
     }
 
-    Err(last_error.unwrap_or_else(|| StepError::Other(
-        format!("{:?} reviewer failed after retries", reviewer),
-    )))
+    Err(last_error.unwrap_or_else(|| {
+        StepError::Other(format!("{:?} reviewer failed after retries", reviewer))
+    }))
+}
+
+fn build_review_user_prompt(spec_text: &str, blueprint_context: Option<&str>) -> String {
+    let mut prompt = format!(
+        "Review this NLSpec and produce your findings:\n\n{}",
+        spec_text
+    );
+    if let Some(context) = blueprint_context.filter(|context| !context.trim().is_empty()) {
+        prompt.push_str(
+            "\n\n## Existing Blueprint Context\n\n\
+             Use this context to flag contradictions with established architectural \
+             knowledge when they are relevant.\n\n",
+        );
+        prompt.push_str(context);
+    }
+    prompt
 }
 
 // ---------------------------------------------------------------------------
@@ -488,8 +525,13 @@ pub fn render_spec_for_review(spec: &NLSpecV1) -> String {
 
     sections.push("\n## Functional Requirements".to_string());
     for r in &spec.requirements {
-        sections.push(format!("- {} [{}]: {} (traces: {:?})",
-            r.id, format!("{:?}", r.priority), r.statement, r.traces_to));
+        sections.push(format!(
+            "- {} [{}]: {} (traces: {:?})",
+            r.id,
+            format!("{:?}", r.priority),
+            r.statement,
+            r.traces_to
+        ));
     }
 
     sections.push("\n## Architectural Constraints".to_string());
@@ -500,21 +542,32 @@ pub fn render_spec_for_review(spec: &NLSpecV1) -> String {
     if let Some(ref contracts) = spec.phase1_contracts {
         sections.push("\n## Phase 1 Contracts".to_string());
         for c in contracts {
-            sections.push(format!("- {} = {} (consumed by: {:?})",
-                c.name, c.type_definition, c.consumed_by));
+            sections.push(format!(
+                "- {} = {} (consumed by: {:?})",
+                c.name, c.type_definition, c.consumed_by
+            ));
         }
     }
 
     sections.push("\n## Definition of Done".to_string());
     for d in &spec.definition_of_done {
-        sections.push(format!("- [{}] {}",
-            if d.mechanically_checkable { "mechanical" } else { "manual" },
-            d.criterion));
+        sections.push(format!(
+            "- [{}] {}",
+            if d.mechanically_checkable {
+                "mechanical"
+            } else {
+                "manual"
+            },
+            d.criterion
+        ));
     }
 
     sections.push("\n## Satisfaction Criteria".to_string());
     for sc in &spec.satisfaction_criteria {
-        sections.push(format!("- {} [{:?}]: {}", sc.id, sc.tier_hint, sc.description));
+        sections.push(format!(
+            "- {} [{:?}]: {}",
+            sc.id, sc.tier_hint, sc.description
+        ));
     }
 
     sections.push("\n## Open Questions".to_string());
@@ -534,8 +587,10 @@ pub fn render_spec_for_review(spec: &NLSpecV1) -> String {
     if !spec.amendment_log.is_empty() {
         sections.push("\n## Amendment Log".to_string());
         for a in &spec.amendment_log {
-            sections.push(format!("- [{}] {}: {} (section: {})",
-                a.timestamp, a.reason, a.description, a.affected_section));
+            sections.push(format!(
+                "- [{}] {}: {} (section: {})",
+                a.timestamp, a.reason, a.description, a.affected_section
+            ));
         }
     }
 
@@ -576,34 +631,42 @@ fn parse_review_response(content: &str, reviewer: &ArReviewer) -> StepResult<Sin
     if cleaned != stripped && serde_json::from_str::<serde_json::Value>(&stripped).is_err() {
         tracing::warn!(
             "    {:?} response required truncated JSON repair (original {}b → repaired {}b)",
-            reviewer, content.len(), cleaned.len()
+            reviewer,
+            content.len(),
+            cleaned.len()
         );
     }
 
     let json: ReviewJson = serde_json::from_str(&cleaned).map_err(|e| {
         StepError::JsonError(format!(
             "Failed to parse {:?} AR response: {}. Raw: {}",
-            reviewer, e, &content[..content.len().min(300)]
+            reviewer,
+            e,
+            &content[..content.len().min(300)]
         ))
     })?;
 
-    let findings: Vec<ArFinding> = json.findings.into_iter().map(|f| {
-        let severity = match f.severity.to_lowercase().as_str() {
-            "blocking" => ArSeverity::Blocking,
-            "advisory" => ArSeverity::Advisory,
-            _ => ArSeverity::Informational,
-        };
+    let findings: Vec<ArFinding> = json
+        .findings
+        .into_iter()
+        .map(|f| {
+            let severity = match f.severity.to_lowercase().as_str() {
+                "blocking" => ArSeverity::Blocking,
+                "advisory" => ArSeverity::Advisory,
+                _ => ArSeverity::Informational,
+            };
 
-        ArFinding {
-            id: String::new(), // Assigned later during merge
-            reviewer: reviewer.clone(),
-            severity,
-            affected_section: f.affected_section,
-            affected_requirements: f.affected_requirements,
-            description: f.description,
-            suggested_resolution: f.suggested_resolution,
-        }
-    }).collect();
+            ArFinding {
+                id: String::new(), // Assigned later during merge
+                reviewer: reviewer.clone(),
+                severity,
+                affected_section: f.affected_section,
+                affected_requirements: f.affected_requirements,
+                description: f.description,
+                suggested_resolution: f.suggested_resolution,
+            }
+        })
+        .collect();
 
     Ok(SingleReviewResult {
         findings,
@@ -681,7 +744,10 @@ mod tests {
 
         let result = parse_review_response(content, &ArReviewer::Opus);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().findings[0].severity, ArSeverity::Informational);
+        assert_eq!(
+            result.unwrap().findings[0].severity,
+            ArSeverity::Informational
+        );
     }
 
     #[test]
@@ -694,17 +760,16 @@ mod tests {
             line_count: 50,
             created_from: "test".into(),
             intent_summary: Some("Build a timer".into()),
-            sacred_anchors: Some(vec![
-                NLSpecAnchor { id: "SA-1".into(), statement: "Never negative".into() },
-            ]),
-            requirements: vec![
-                Requirement {
-                    id: "FR-1".into(),
-                    statement: "Must count down".into(),
-                    priority: Priority::Must,
-                    traces_to: vec!["SA-1".into()],
-                },
-            ],
+            sacred_anchors: Some(vec![NLSpecAnchor {
+                id: "SA-1".into(),
+                statement: "Never negative".into(),
+            }]),
+            requirements: vec![Requirement {
+                id: "FR-1".into(),
+                statement: "Must count down".into(),
+                priority: Priority::Must,
+                traces_to: vec!["SA-1".into()],
+            }],
             architectural_constraints: vec!["React only".into()],
             phase1_contracts: Some(vec![Phase1Contract {
                 name: "TimerState".into(),
@@ -712,16 +777,15 @@ mod tests {
                 consumed_by: vec!["ui".into()],
             }]),
             external_dependencies: vec![],
-            definition_of_done: vec![
-                DoDItem { criterion: "Timer works".into(), mechanically_checkable: true },
-            ],
-            satisfaction_criteria: vec![
-                SatisfactionCriterion {
-                    id: "SC-1".into(),
-                    description: "Counts down to zero".into(),
-                    tier_hint: ScenarioTierHint::Critical,
-                },
-            ],
+            definition_of_done: vec![DoDItem {
+                criterion: "Timer works".into(),
+                mechanically_checkable: true,
+            }],
+            satisfaction_criteria: vec![SatisfactionCriterion {
+                id: "SC-1".into(),
+                description: "Counts down to zero".into(),
+                tier_hint: ScenarioTierHint::Critical,
+            }],
             open_questions: vec![],
             out_of_scope: vec!["Sound alerts".into()],
             amendment_log: vec![],
@@ -740,6 +804,18 @@ mod tests {
         assert!(text.contains("(none)"));
         assert!(text.contains("Out of Scope"));
         assert!(text.contains("Sound alerts"));
+    }
+
+    #[test]
+    fn build_review_user_prompt_includes_blueprint_context() {
+        let prompt = build_review_user_prompt(
+            "# NLSpec — Chunk: Root",
+            Some("# Existing Blueprint Context\n\n## Use MessagePack [decision] `dec-use-msgpack`"),
+        );
+
+        assert!(prompt.contains("Review this NLSpec and produce your findings"));
+        assert!(prompt.contains("## Existing Blueprint Context"));
+        assert!(prompt.contains("dec-use-msgpack"));
     }
 
     #[test]
@@ -797,17 +873,15 @@ mod tests {
             project_id: Uuid::new_v4(),
             chunk_name: "root".into(),
             nlspec_version: "1.0".into(),
-            findings: vec![
-                ArFinding {
-                    id: "AR-A-1".into(),
-                    reviewer: ArReviewer::Gpt,
-                    severity: ArSeverity::Advisory,
-                    affected_section: "DoD".into(),
-                    affected_requirements: vec![],
-                    description: "Minor".into(),
-                    suggested_resolution: None,
-                },
-            ],
+            findings: vec![ArFinding {
+                id: "AR-A-1".into(),
+                reviewer: ArReviewer::Gpt,
+                severity: ArSeverity::Advisory,
+                affected_section: "DoD".into(),
+                affected_requirements: vec![],
+                description: "Minor".into(),
+                suggested_resolution: None,
+            }],
             reviewer_summaries: vec![],
             has_blocking: false,
             blocking_count: 0,

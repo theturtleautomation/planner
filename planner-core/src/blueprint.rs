@@ -96,7 +96,8 @@ impl Blueprint {
     pub fn remove_node(&mut self, node_id: &str) -> Option<BlueprintNode> {
         let removed = self.nodes.remove(node_id);
         if removed.is_some() {
-            self.edges.retain(|e| e.source.0 != node_id && e.target.0 != node_id);
+            self.edges
+                .retain(|e| e.source.0 != node_id && e.target.0 != node_id);
             self.rebuild_indexes();
         }
         removed
@@ -162,12 +163,18 @@ impl Blueprint {
 
     /// Get forward neighbors (outgoing edges from this node).
     pub fn forward_neighbors(&self, node_id: &str) -> &[(EdgeType, String)] {
-        self.forward_adj.get(node_id).map(|v| v.as_slice()).unwrap_or(&[])
+        self.forward_adj
+            .get(node_id)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[])
     }
 
     /// Get reverse neighbors (incoming edges to this node).
     pub fn reverse_neighbors(&self, node_id: &str) -> &[(EdgeType, String)] {
-        self.reverse_adj.get(node_id).map(|v| v.as_slice()).unwrap_or(&[])
+        self.reverse_adj
+            .get(node_id)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[])
     }
 
     /// BFS traversal downstream from a node (following forward edges).
@@ -312,9 +319,14 @@ impl Blueprint {
     }
 
     /// Classify the impact action and severity for an affected node.
-    fn classify_impact(&self, source_id: &str, affected_id: &str) -> (ImpactAction, ImpactSeverity) {
+    fn classify_impact(
+        &self,
+        source_id: &str,
+        affected_id: &str,
+    ) -> (ImpactAction, ImpactSeverity) {
         // Find the direct edge types between source and affected.
-        let direct_edges: Vec<EdgeType> = self.edges
+        let direct_edges: Vec<EdgeType> = self
+            .edges
             .iter()
             .filter(|e| e.source.0 == source_id && e.target.0 == affected_id)
             .map(|e| e.edge_type)
@@ -330,7 +342,9 @@ impl Blueprint {
             let edge_type = direct_edges[0];
             match (edge_type, affected_node.type_name()) {
                 // Decision affects a component → reconverge (deep)
-                (EdgeType::Affects, "component") => (ImpactAction::Reconverge, ImpactSeverity::Deep),
+                (EdgeType::Affects, "component") => {
+                    (ImpactAction::Reconverge, ImpactSeverity::Deep)
+                }
                 // Decision affects a technology → potentially remove/replace
                 (EdgeType::Affects, "technology") => (ImpactAction::Update, ImpactSeverity::Medium),
                 // Constraint constrains → re-validate compliance
@@ -359,32 +373,34 @@ impl Blueprint {
 
     /// Generate a human-readable explanation of why a node is affected.
     fn explain_impact(&self, source_id: &str, affected_id: &str) -> String {
-        let source_name = self.nodes.get(source_id)
+        let source_name = self
+            .nodes
+            .get(source_id)
             .map(|n| n.name().to_string())
             .unwrap_or_else(|| source_id.to_string());
-        let affected_name = self.nodes.get(affected_id)
+        let affected_name = self
+            .nodes
+            .get(affected_id)
             .map(|n| n.name().to_string())
             .unwrap_or_else(|| affected_id.to_string());
 
         // Find direct edge.
-        let direct_edge = self.edges.iter()
+        let direct_edge = self
+            .edges
+            .iter()
             .find(|e| e.source.0 == source_id && e.target.0 == affected_id);
 
         match direct_edge {
             Some(edge) => {
                 format!(
                     "{} {} {} via {} relationship",
-                    source_name,
-                    edge.edge_type,
-                    affected_name,
-                    edge.edge_type,
+                    source_name, edge.edge_type, affected_name, edge.edge_type,
                 )
             }
             None => {
                 format!(
                     "{} is transitively affected by changes to {}",
-                    affected_name,
-                    source_name,
+                    affected_name, source_name,
                 )
             }
         }
@@ -485,12 +501,15 @@ impl BlueprintStore {
         if load_errors > 0 {
             tracing::warn!(
                 "Blueprint store: loaded {} nodes, {} edges, {} errors",
-                count, edge_count, load_errors,
+                count,
+                edge_count,
+                load_errors,
             );
         } else if count > 0 {
             tracing::info!(
                 "Blueprint store: loaded {} nodes, {} edges from disk",
-                count, edge_count,
+                count,
+                edge_count,
             );
         }
 
@@ -554,7 +573,9 @@ impl BlueprintStore {
 
     /// Impact analysis for a proposed node change.
     pub fn impact_analysis(&self, node_id: &str, change_description: &str) -> Option<ImpactReport> {
-        self.blueprint.read().impact_analysis(node_id, change_description)
+        self.blueprint
+            .read()
+            .impact_analysis(node_id, change_description)
     }
 
     /// Return a clone of the full event log.
@@ -564,18 +585,170 @@ impl BlueprintStore {
 
     /// Return events filtered to a specific node.
     pub fn events_for_node(&self, node_id: &str) -> Vec<BlueprintEvent> {
-        self.events.read().iter().filter(|e| match e {
-            BlueprintEvent::NodeCreated { node, .. } => node.id().0 == node_id,
-            BlueprintEvent::NodeUpdated { node_id: nid, .. } => nid == node_id,
-            BlueprintEvent::NodeDeleted { node_id: nid, .. } => nid == node_id,
-            BlueprintEvent::EdgeCreated { edge, .. } => edge.source.0 == node_id || edge.target.0 == node_id,
-            BlueprintEvent::EdgesDeleted { edges, .. } => edges.iter().any(|e| e.source.0 == node_id || e.target.0 == node_id),
-        }).cloned().collect()
+        self.events
+            .read()
+            .iter()
+            .filter(|e| match e {
+                BlueprintEvent::NodeCreated { node, .. } => node.id().0 == node_id,
+                BlueprintEvent::NodeUpdated { node_id: nid, .. } => nid == node_id,
+                BlueprintEvent::NodeDeleted { node_id: nid, .. } => nid == node_id,
+                BlueprintEvent::EdgeCreated { edge, .. } => {
+                    edge.source.0 == node_id || edge.target.0 == node_id
+                }
+                BlueprintEvent::EdgesDeleted { edges, .. } => edges
+                    .iter()
+                    .any(|e| e.source.0 == node_id || e.target.0 == node_id),
+            })
+            .cloned()
+            .collect()
     }
 
     /// Total number of events in the log.
     pub fn event_count(&self) -> usize {
         self.events.read().len()
+    }
+
+    /// Find node IDs relevant to a set of search terms.
+    ///
+    /// Matching is lexical and biased toward node name, tags, and ID, with
+    /// lower-weight matches against freeform descriptions/documentation.
+    pub fn find_relevant_node_ids(&self, terms: &[String], limit: usize) -> Vec<String> {
+        if limit == 0 {
+            return Vec::new();
+        }
+
+        let cleaned_terms: Vec<String> = terms
+            .iter()
+            .map(|term| term.trim().to_lowercase())
+            .filter(|term| term.len() >= 3)
+            .collect();
+        if cleaned_terms.is_empty() {
+            return Vec::new();
+        }
+
+        let blueprint = self.blueprint.read();
+        let mut scored: Vec<(String, usize, String)> = blueprint
+            .nodes
+            .values()
+            .filter_map(|node| {
+                let name = node.name().to_lowercase();
+                let id = node.id().as_str().to_lowercase();
+                let tags: Vec<String> = node.tags().iter().map(|tag| tag.to_lowercase()).collect();
+                let corpus = node_search_corpus(node);
+
+                let mut score = 0usize;
+                for term in &cleaned_terms {
+                    if name == *term || id == *term {
+                        score += 12;
+                        continue;
+                    }
+                    if name.contains(term) {
+                        score += 6;
+                    }
+                    if id.contains(term) {
+                        score += 5;
+                    }
+                    if tags.iter().any(|tag| tag == term) {
+                        score += 4;
+                    } else if tags.iter().any(|tag| tag.contains(term)) {
+                        score += 3;
+                    }
+                    if corpus.contains(term) {
+                        score += 2;
+                    }
+                }
+
+                (score > 0).then(|| (node.id().as_str().to_string(), score, name))
+            })
+            .collect();
+
+        scored.sort_by(|left, right| {
+            right
+                .1
+                .cmp(&left.1)
+                .then_with(|| left.2.cmp(&right.2))
+                .then_with(|| left.0.cmp(&right.0))
+        });
+
+        scored
+            .into_iter()
+            .take(limit)
+            .map(|(id, _, _)| id)
+            .collect()
+    }
+
+    /// Render a bounded Markdown context block for a neighborhood of nodes.
+    ///
+    /// `root_ids` define the directly relevant nodes and `depth` controls how
+    /// many graph hops of surrounding context to include.
+    pub fn render_context_markdown(&self, root_ids: &[String], depth: usize) -> Option<String> {
+        let blueprint = self.blueprint.read();
+
+        let mut ordered_roots = Vec::new();
+        for node_id in root_ids {
+            if blueprint.nodes.contains_key(node_id)
+                && !ordered_roots
+                    .iter()
+                    .any(|existing: &String| existing == node_id)
+            {
+                ordered_roots.push(node_id.clone());
+            }
+        }
+        if ordered_roots.is_empty() {
+            return None;
+        }
+
+        let mut ordered_ids = collect_context_node_ids(&blueprint, &ordered_roots, depth);
+        const MAX_CONTEXT_NODES: usize = 12;
+        if ordered_ids.len() > MAX_CONTEXT_NODES {
+            ordered_ids.truncate(MAX_CONTEXT_NODES);
+        }
+
+        let included: HashSet<&str> = ordered_ids.iter().map(String::as_str).collect();
+        let root_set: HashSet<&str> = ordered_roots.iter().map(String::as_str).collect();
+
+        let mut markdown = String::from(
+            "# Existing Blueprint Context\n\n\
+             The following Blueprint nodes may already constrain or inform this work.\n",
+        );
+
+        for node_id in &ordered_ids {
+            let Some(node) = blueprint.nodes.get(node_id) else {
+                continue;
+            };
+
+            markdown.push_str(&format!(
+                "\n## {} [{}] `{}`\n",
+                node.name(),
+                node.type_name(),
+                node_id,
+            ));
+            markdown.push_str(&format!("- status: {}\n", node.status()));
+            if root_set.contains(node_id.as_str()) {
+                markdown.push_str("- relevance: direct lexical match for the current work\n");
+            }
+
+            let summary = node_context_summary(node);
+            if !summary.is_empty() {
+                markdown.push_str(&format!(
+                    "- summary: {}\n",
+                    truncate_context_text(&summary, 180),
+                ));
+            }
+            if !node.tags().is_empty() {
+                markdown.push_str(&format!("- tags: {}\n", node.tags().join(", ")));
+            }
+            if let Some(doc) = node.documentation() {
+                markdown.push_str(&format!("- docs: {}\n", truncate_context_text(doc, 180),));
+            }
+
+            let relations = context_relation_lines(&blueprint, node_id, &included);
+            for relation in relations {
+                markdown.push_str(&format!("- relation: {}\n", relation));
+            }
+        }
+
+        Some(markdown)
     }
 
     // -----------------------------------------------------------------------
@@ -618,7 +791,11 @@ impl BlueprintStore {
     pub fn remove_node(&self, node_id: &str) -> Option<BlueprintNode> {
         let ts = Self::now_iso();
         // Capture incident edges before removal.
-        let removed_edges: Vec<Edge> = self.blueprint.read().edges.iter()
+        let removed_edges: Vec<Edge> = self
+            .blueprint
+            .read()
+            .edges
+            .iter()
             .filter(|e| e.source.0 == node_id || e.target.0 == node_id)
             .cloned()
             .collect();
@@ -676,7 +853,11 @@ impl BlueprintStore {
     pub fn remove_edges_where<F: Fn(&Edge) -> bool>(&self, predicate: F) -> usize {
         let ts = Self::now_iso();
         // Capture edges that will be removed.
-        let edges_to_remove: Vec<Edge> = self.blueprint.read().edges.iter()
+        let edges_to_remove: Vec<Edge> = self
+            .blueprint
+            .read()
+            .edges
+            .iter()
             .filter(|e| predicate(e))
             .cloned()
             .collect();
@@ -789,18 +970,16 @@ impl BlueprintStore {
     fn load_events(blueprint_dir: &Path) -> Vec<BlueprintEvent> {
         let events_path = blueprint_dir.join("events.msgpack");
         match std::fs::read(&events_path) {
-            Ok(bytes) => {
-                match rmp_serde::from_slice::<Vec<BlueprintEvent>>(&bytes) {
-                    Ok(events) => {
-                        tracing::info!("Blueprint: loaded {} events from disk", events.len());
-                        events
-                    }
-                    Err(e) => {
-                        tracing::warn!("Blueprint: failed to decode events: {}", e);
-                        Vec::new()
-                    }
+            Ok(bytes) => match rmp_serde::from_slice::<Vec<BlueprintEvent>>(&bytes) {
+                Ok(events) => {
+                    tracing::info!("Blueprint: loaded {} events from disk", events.len());
+                    events
                 }
-            }
+                Err(e) => {
+                    tracing::warn!("Blueprint: failed to decode events: {}", e);
+                    Vec::new()
+                }
+            },
             Err(_) => Vec::new(), // No events file yet — normal for fresh stores.
         }
     }
@@ -876,6 +1055,170 @@ impl BlueprintStore {
     pub fn is_persistent(&self) -> bool {
         self.blueprint_dir.is_some()
     }
+}
+
+fn node_context_summary(node: &BlueprintNode) -> String {
+    match node {
+        BlueprintNode::Decision(decision) => decision.context.clone(),
+        BlueprintNode::Technology(technology) => match &technology.version {
+            Some(version) => format!("{} (version {})", technology.rationale, version),
+            None => technology.rationale.clone(),
+        },
+        BlueprintNode::Component(component) => component.description.clone(),
+        BlueprintNode::Constraint(constraint) => constraint.description.clone(),
+        BlueprintNode::Pattern(pattern) => {
+            if pattern.rationale.trim().is_empty() {
+                pattern.description.clone()
+            } else {
+                format!("{} — {}", pattern.description, pattern.rationale)
+            }
+        }
+        BlueprintNode::QualityRequirement(requirement) => requirement.scenario.clone(),
+    }
+}
+
+fn node_search_corpus(node: &BlueprintNode) -> String {
+    let mut fields = vec![
+        node.name().to_lowercase(),
+        node.id().as_str().to_lowercase(),
+        node.type_name().to_lowercase(),
+        node.status().to_lowercase(),
+        node.tags().join(" ").to_lowercase(),
+        node_context_summary(node).to_lowercase(),
+    ];
+
+    match node {
+        BlueprintNode::Decision(decision) => {
+            fields.extend(
+                decision
+                    .options
+                    .iter()
+                    .map(|option| option.name.to_lowercase()),
+            );
+            fields.extend(
+                decision
+                    .consequences
+                    .iter()
+                    .map(|consequence| consequence.description.to_lowercase()),
+            );
+        }
+        BlueprintNode::Technology(technology) => {
+            if let Some(license) = &technology.license {
+                fields.push(license.to_lowercase());
+            }
+        }
+        BlueprintNode::Component(component) => {
+            fields.push(component.provides.join(" ").to_lowercase());
+            fields.push(component.consumes.join(" ").to_lowercase());
+        }
+        BlueprintNode::Constraint(constraint) => {
+            fields.push(constraint.source.to_lowercase());
+        }
+        BlueprintNode::Pattern(_) | BlueprintNode::QualityRequirement(_) => {}
+    }
+
+    if let Some(doc) = node.documentation() {
+        fields.push(doc.to_lowercase());
+    }
+
+    fields.join(" ")
+}
+
+fn truncate_context_text(text: &str, max_chars: usize) -> String {
+    let compact = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if compact.chars().count() <= max_chars {
+        return compact;
+    }
+
+    let truncated: String = compact.chars().take(max_chars.saturating_sub(1)).collect();
+    format!("{}…", truncated.trim_end())
+}
+
+fn collect_context_node_ids(
+    blueprint: &Blueprint,
+    root_ids: &[String],
+    depth: usize,
+) -> Vec<String> {
+    let mut ordered = Vec::new();
+    let mut visited = HashSet::new();
+    let mut queue = VecDeque::new();
+
+    for root in root_ids {
+        if visited.insert(root.clone()) {
+            ordered.push(root.clone());
+            queue.push_back((root.clone(), 0usize));
+        }
+    }
+
+    while let Some((current, current_depth)) = queue.pop_front() {
+        if current_depth >= depth {
+            continue;
+        }
+
+        let mut neighbors: Vec<String> = blueprint
+            .forward_neighbors(&current)
+            .iter()
+            .map(|(_, neighbor)| neighbor.clone())
+            .chain(
+                blueprint
+                    .reverse_neighbors(&current)
+                    .iter()
+                    .map(|(_, neighbor)| neighbor.clone()),
+            )
+            .collect();
+        neighbors.sort();
+        neighbors.dedup();
+
+        for neighbor in neighbors {
+            if visited.insert(neighbor.clone()) {
+                ordered.push(neighbor.clone());
+                queue.push_back((neighbor, current_depth + 1));
+            }
+        }
+    }
+
+    ordered
+}
+
+fn context_relation_lines(
+    blueprint: &Blueprint,
+    node_id: &str,
+    included: &HashSet<&str>,
+) -> Vec<String> {
+    let mut relations = Vec::new();
+
+    for (edge_type, target_id) in blueprint.forward_neighbors(node_id) {
+        if included.contains(target_id.as_str()) {
+            let target_name = blueprint
+                .nodes
+                .get(target_id)
+                .map(|node| node.name().to_string())
+                .unwrap_or_else(|| target_id.clone());
+            relations.push(format!(
+                "{} -> {} [`{}`]",
+                edge_type, target_name, target_id,
+            ));
+        }
+    }
+
+    for (edge_type, source_id) in blueprint.reverse_neighbors(node_id) {
+        if included.contains(source_id.as_str()) {
+            let source_name = blueprint
+                .nodes
+                .get(source_id)
+                .map(|node| node.name().to_string())
+                .unwrap_or_else(|| source_id.clone());
+            relations.push(format!(
+                "{} <- {} [`{}`]",
+                edge_type, source_name, source_id,
+            ));
+        }
+    }
+
+    relations.sort();
+    relations.dedup();
+    relations.truncate(4);
+    relations
 }
 
 // ---------------------------------------------------------------------------
@@ -1024,6 +1367,20 @@ mod tests {
         bp
     }
 
+    fn make_test_store() -> BlueprintStore {
+        let blueprint = make_test_blueprint();
+        let store = BlueprintStore::new();
+
+        for node in blueprint.nodes.into_values() {
+            store.upsert_node(node);
+        }
+        for edge in blueprint.edges {
+            store.add_edge(edge);
+        }
+
+        store
+    }
+
     #[test]
     fn blueprint_node_crud() {
         let mut bp = Blueprint::new();
@@ -1120,34 +1477,84 @@ mod tests {
     }
 
     #[test]
+    fn find_relevant_node_ids_matches_names_tags_and_docs() {
+        let store = make_test_store();
+        store.update_node("comp-cxdb", |node| {
+            if let BlueprintNode::Component(component) = node {
+                component.tags = vec!["storage".into(), "persistence".into()];
+                component.documentation = Some("Backs the persistence layer".into());
+            }
+        });
+
+        let ids = store.find_relevant_node_ids(
+            &["messagepack".into(), "storage".into(), "persistence".into()],
+            4,
+        );
+
+        assert!(ids.contains(&"dec-use-msgpack".to_string()));
+        assert!(ids.contains(&"comp-cxdb".to_string()));
+    }
+
+    #[test]
+    fn render_context_markdown_includes_neighbors_and_relations() {
+        let store = make_test_store();
+        let markdown = store
+            .render_context_markdown(&["dec-use-msgpack".into()], 1)
+            .expect("context markdown should exist");
+
+        assert!(markdown.contains("# Existing Blueprint Context"));
+        assert!(markdown
+            .contains("Use MessagePack for disk serialization [decision] `dec-use-msgpack`"));
+        assert!(markdown.contains("rmp-serde [technology] `tech-rmp-serde`"));
+        assert!(markdown.contains("relation: affects -> CXDB [`comp-cxdb`]"));
+        assert!(markdown.contains(
+            "relation: constrains <- File-system storage over SQLite [`con-fs-storage`]"
+        ));
+    }
+
+    #[test]
     fn topological_sort_with_cycle() {
         let mut bp = Blueprint::new();
 
         bp.upsert_node(BlueprintNode::Component(Component {
-            id: NodeId::from_raw("a"), name: "A".into(),
-            component_type: ComponentType::Module, description: "".into(),
-            provides: vec![], consumes: vec![],
-            status: ComponentStatus::Shipped, tags: vec![],
+            id: NodeId::from_raw("a"),
+            name: "A".into(),
+            component_type: ComponentType::Module,
+            description: "".into(),
+            provides: vec![],
+            consumes: vec![],
+            status: ComponentStatus::Shipped,
+            tags: vec![],
             documentation: None,
-            created_at: "".into(), updated_at: "".into(),
+            created_at: "".into(),
+            updated_at: "".into(),
         }));
         bp.upsert_node(BlueprintNode::Component(Component {
-            id: NodeId::from_raw("b"), name: "B".into(),
-            component_type: ComponentType::Module, description: "".into(),
-            provides: vec![], consumes: vec![],
-            status: ComponentStatus::Shipped, tags: vec![],
+            id: NodeId::from_raw("b"),
+            name: "B".into(),
+            component_type: ComponentType::Module,
+            description: "".into(),
+            provides: vec![],
+            consumes: vec![],
+            status: ComponentStatus::Shipped,
+            tags: vec![],
             documentation: None,
-            created_at: "".into(), updated_at: "".into(),
+            created_at: "".into(),
+            updated_at: "".into(),
         }));
 
         // a -> b -> a (cycle)
         bp.add_edge(Edge {
-            source: NodeId::from_raw("a"), target: NodeId::from_raw("b"),
-            edge_type: EdgeType::DependsOn, metadata: None,
+            source: NodeId::from_raw("a"),
+            target: NodeId::from_raw("b"),
+            edge_type: EdgeType::DependsOn,
+            metadata: None,
         });
         bp.add_edge(Edge {
-            source: NodeId::from_raw("b"), target: NodeId::from_raw("a"),
-            edge_type: EdgeType::DependsOn, metadata: None,
+            source: NodeId::from_raw("b"),
+            target: NodeId::from_raw("a"),
+            edge_type: EdgeType::DependsOn,
+            metadata: None,
         });
 
         assert!(bp.topological_sort().is_none());
@@ -1161,7 +1568,10 @@ mod tests {
         assert!(report.is_some());
         let report = report.unwrap();
 
-        assert_eq!(report.source_node_name, "Use MessagePack for disk serialization");
+        assert_eq!(
+            report.source_node_name,
+            "Use MessagePack for disk serialization"
+        );
         assert!(!report.entries.is_empty());
 
         // comp-cxdb should be marked as Reconverge/Deep (direct affects)
@@ -1217,10 +1627,14 @@ mod tests {
             title: "Test".into(),
             status: DecisionStatus::Proposed,
             context: "".into(),
-            options: vec![], consequences: vec![], assumptions: vec![],
-            supersedes: None, tags: vec![],
+            options: vec![],
+            consequences: vec![],
+            assumptions: vec![],
+            supersedes: None,
+            tags: vec![],
             documentation: None,
-            created_at: "".into(), updated_at: "".into(),
+            created_at: "".into(),
+            updated_at: "".into(),
         }));
 
         // In-memory store doesn't track dirty.
@@ -1244,8 +1658,11 @@ mod tests {
                 title: "Test Decision".into(),
                 status: DecisionStatus::Accepted,
                 context: "Testing persistence".into(),
-                options: vec![], consequences: vec![], assumptions: vec![],
-                supersedes: None, tags: vec!["test".into()],
+                options: vec![],
+                consequences: vec![],
+                assumptions: vec![],
+                supersedes: None,
+                tags: vec!["test".into()],
                 documentation: None,
                 created_at: "2026-03-01T00:00:00Z".into(),
                 updated_at: "2026-03-01T00:00:00Z".into(),
@@ -1258,7 +1675,8 @@ mod tests {
                 category: TechnologyCategory::Library,
                 ring: AdoptionRing::Adopt,
                 rationale: "Testing".into(),
-                license: None, tags: vec![],
+                license: None,
+                tags: vec![],
                 documentation: None,
                 created_at: "2026-03-01T00:00:00Z".into(),
                 updated_at: "2026-03-01T00:00:00Z".into(),
@@ -1308,25 +1726,37 @@ mod tests {
         let store = BlueprintStore::new();
 
         store.upsert_node(BlueprintNode::Component(Component {
-            id: NodeId::from_raw("a"), name: "A".into(),
-            component_type: ComponentType::Module, description: "".into(),
-            provides: vec![], consumes: vec![],
-            status: ComponentStatus::Shipped, tags: vec![],
+            id: NodeId::from_raw("a"),
+            name: "A".into(),
+            component_type: ComponentType::Module,
+            description: "".into(),
+            provides: vec![],
+            consumes: vec![],
+            status: ComponentStatus::Shipped,
+            tags: vec![],
             documentation: None,
-            created_at: "".into(), updated_at: "".into(),
+            created_at: "".into(),
+            updated_at: "".into(),
         }));
         store.upsert_node(BlueprintNode::Component(Component {
-            id: NodeId::from_raw("b"), name: "B".into(),
-            component_type: ComponentType::Module, description: "".into(),
-            provides: vec![], consumes: vec![],
-            status: ComponentStatus::Shipped, tags: vec![],
+            id: NodeId::from_raw("b"),
+            name: "B".into(),
+            component_type: ComponentType::Module,
+            description: "".into(),
+            provides: vec![],
+            consumes: vec![],
+            status: ComponentStatus::Shipped,
+            tags: vec![],
             documentation: None,
-            created_at: "".into(), updated_at: "".into(),
+            created_at: "".into(),
+            updated_at: "".into(),
         }));
 
         store.add_edge(Edge {
-            source: NodeId::from_raw("a"), target: NodeId::from_raw("b"),
-            edge_type: EdgeType::DependsOn, metadata: None,
+            source: NodeId::from_raw("a"),
+            target: NodeId::from_raw("b"),
+            edge_type: EdgeType::DependsOn,
+            metadata: None,
         });
 
         assert_eq!(store.counts(), (2, 1));
@@ -1346,10 +1776,14 @@ mod tests {
             title: "Original Title".into(),
             status: DecisionStatus::Proposed,
             context: "".into(),
-            options: vec![], consequences: vec![], assumptions: vec![],
-            supersedes: None, tags: vec![],
+            options: vec![],
+            consequences: vec![],
+            assumptions: vec![],
+            supersedes: None,
+            tags: vec![],
             documentation: None,
-            created_at: "".into(), updated_at: "".into(),
+            created_at: "".into(),
+            updated_at: "".into(),
         }));
 
         let updated = store.update_node("dec-test", |node| {
@@ -1376,10 +1810,14 @@ mod tests {
                 title: "Will be removed".into(),
                 status: DecisionStatus::Proposed,
                 context: "".into(),
-                options: vec![], consequences: vec![], assumptions: vec![],
-                supersedes: None, tags: vec![],
+                options: vec![],
+                consequences: vec![],
+                assumptions: vec![],
+                supersedes: None,
+                tags: vec![],
                 documentation: None,
-                created_at: "".into(), updated_at: "".into(),
+                created_at: "".into(),
+                updated_at: "".into(),
             }));
 
             store.upsert_node(BlueprintNode::Decision(Decision {
@@ -1387,16 +1825,22 @@ mod tests {
                 title: "Stays".into(),
                 status: DecisionStatus::Accepted,
                 context: "".into(),
-                options: vec![], consequences: vec![], assumptions: vec![],
-                supersedes: None, tags: vec![],
+                options: vec![],
+                consequences: vec![],
+                assumptions: vec![],
+                supersedes: None,
+                tags: vec![],
                 documentation: None,
-                created_at: "".into(), updated_at: "".into(),
+                created_at: "".into(),
+                updated_at: "".into(),
             }));
 
             store.flush().unwrap();
 
             // Verify both files exist.
-            assert!(data_dir.join("blueprint/nodes/dec-to-remove.msgpack").exists());
+            assert!(data_dir
+                .join("blueprint/nodes/dec-to-remove.msgpack")
+                .exists());
             assert!(data_dir.join("blueprint/nodes/dec-stays.msgpack").exists());
 
             // Remove one node and flush again.
@@ -1404,7 +1848,9 @@ mod tests {
             store.flush().unwrap();
 
             // File should be cleaned up.
-            assert!(!data_dir.join("blueprint/nodes/dec-to-remove.msgpack").exists());
+            assert!(!data_dir
+                .join("blueprint/nodes/dec-to-remove.msgpack")
+                .exists());
             assert!(data_dir.join("blueprint/nodes/dec-stays.msgpack").exists());
         }
 

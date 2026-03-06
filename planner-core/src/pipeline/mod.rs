@@ -14,34 +14,35 @@
 //! 10. **Present** — Telemetry Presenter → Plain English + Consequence Cards
 //! 11. **Approve** — Behavioral approval → Git Projection
 
-pub mod steps;
-pub mod pyramid;
-pub mod project;
-pub mod verification;
 pub mod audit;
 pub mod blueprint_emitter;
+pub mod project;
+pub mod pyramid;
+pub mod steps;
+pub mod verification;
 
+use std::collections::BTreeSet;
 use uuid::Uuid;
 
-use crate::llm::providers::LlmRouter;
+use crate::blueprint::BlueprintStore;
 use crate::cxdb::TurnStore;
 use crate::dtu::DtuRegistry;
-use crate::blueprint::BlueprintStore;
+use crate::llm::providers::LlmRouter;
 use planner_schemas::*;
 
-use steps::StepResult;
-use steps::intake;
-use steps::compile;
-use steps::linter;
-use steps::chunk_planner;
 use steps::ar;
 use steps::ar_refinement;
-use steps::ralph;
+use steps::chunk_planner;
+use steps::compile;
 use steps::factory;
 use steps::factory_worker;
-use steps::validate;
-use steps::telemetry;
 use steps::git;
+use steps::intake;
+use steps::linter;
+use steps::ralph;
+use steps::telemetry;
+use steps::validate;
+use steps::StepResult;
 
 use project::{ProjectRegistry, ProjectStatus};
 
@@ -76,7 +77,11 @@ impl<'a, S: TurnStore> PipelineConfig<'a, S> {
             if let Err(e) = store.store_turn(turn) {
                 tracing::warn!("Storage: failed to persist turn {}: {}", turn.turn_id, e);
             } else {
-                tracing::debug!("Storage: persisted {} (type={})", turn.turn_id, turn.type_id);
+                tracing::debug!(
+                    "Storage: persisted {} (type={})",
+                    turn.turn_id,
+                    turn.type_id
+                );
             }
         }
     }
@@ -116,6 +121,159 @@ impl<'a, S: TurnStore> PipelineConfig<'a, S> {
                 tracing::warn!("Blueprint: flush failed: {}", e);
             }
         }
+    }
+
+    /// Render a bounded Blueprint context block for the intake being compiled.
+    pub fn blueprint_context_for_intake(&self, intake: &IntakeV1) -> Option<String> {
+        self.blueprint_context_from_terms(
+            collect_intake_blueprint_terms(intake),
+            BLUEPRINT_CONTEXT_DEPTH,
+        )
+    }
+
+    /// Render a bounded Blueprint context block for the spec currently under review/generation.
+    pub fn blueprint_context_for_spec(&self, spec: &NLSpecV1) -> Option<String> {
+        self.blueprint_context_from_terms(
+            collect_spec_blueprint_terms(spec),
+            BLUEPRINT_CONTEXT_DEPTH,
+        )
+    }
+
+    fn blueprint_context_from_terms(&self, terms: Vec<String>, depth: usize) -> Option<String> {
+        let blueprints = self.blueprints?;
+        let node_ids = blueprints.find_relevant_node_ids(&terms, BLUEPRINT_CONTEXT_ROOT_LIMIT);
+        if node_ids.is_empty() {
+            return None;
+        }
+
+        tracing::debug!(
+            "Blueprint context: {} root node(s) selected from {} term(s)",
+            node_ids.len(),
+            terms.len(),
+        );
+        blueprints.render_context_markdown(&node_ids, depth)
+    }
+}
+
+const BLUEPRINT_CONTEXT_ROOT_LIMIT: usize = 6;
+const BLUEPRINT_CONTEXT_DEPTH: usize = 1;
+const BLUEPRINT_CONTEXT_STOPWORDS: &[&str] = &[
+    "the", "and", "for", "with", "that", "this", "from", "must", "mustn", "shall", "should",
+    "could", "would", "system", "project", "build", "user", "users", "into", "under", "over",
+    "only", "when", "where", "what", "which", "their", "there", "here", "have", "has", "will",
+    "using", "used", "needs", "need", "already", "current", "root", "chunk", "domain", "work",
+    "works",
+];
+
+fn collect_intake_blueprint_terms(intake: &IntakeV1) -> Vec<String> {
+    let mut terms = BTreeSet::new();
+
+    insert_blueprint_term(&mut terms, &intake.project_name);
+    insert_blueprint_term(&mut terms, &intake.feature_slug);
+    insert_blueprint_term(&mut terms, &intake.intent_summary);
+    extract_blueprint_terms_from_text(&mut terms, &intake.intent_summary);
+
+    insert_blueprint_term(&mut terms, &intake.environment.language);
+    insert_blueprint_term(&mut terms, &intake.environment.framework);
+    if let Some(package_manager) = &intake.environment.package_manager {
+        insert_blueprint_term(&mut terms, package_manager);
+    }
+    if let Some(build_tool) = &intake.environment.build_tool {
+        insert_blueprint_term(&mut terms, build_tool);
+    }
+    for dependency in &intake.environment.existing_dependencies {
+        insert_blueprint_term(&mut terms, dependency);
+        extract_blueprint_terms_from_text(&mut terms, dependency);
+    }
+
+    for anchor in &intake.sacred_anchors {
+        insert_blueprint_term(&mut terms, &anchor.id);
+        insert_blueprint_term(&mut terms, &anchor.statement);
+        extract_blueprint_terms_from_text(&mut terms, &anchor.statement);
+        if let Some(rationale) = &anchor.rationale {
+            extract_blueprint_terms_from_text(&mut terms, rationale);
+        }
+    }
+
+    for criterion in &intake.satisfaction_criteria_seeds {
+        extract_blueprint_terms_from_text(&mut terms, criterion);
+    }
+    for item in &intake.out_of_scope {
+        extract_blueprint_terms_from_text(&mut terms, item);
+    }
+
+    terms.into_iter().collect()
+}
+
+fn collect_spec_blueprint_terms(spec: &NLSpecV1) -> Vec<String> {
+    let mut terms = BTreeSet::new();
+
+    if let Some(intent_summary) = &spec.intent_summary {
+        insert_blueprint_term(&mut terms, intent_summary);
+        extract_blueprint_terms_from_text(&mut terms, intent_summary);
+    }
+
+    if let Some(anchors) = &spec.sacred_anchors {
+        for anchor in anchors {
+            insert_blueprint_term(&mut terms, &anchor.id);
+            insert_blueprint_term(&mut terms, &anchor.statement);
+            extract_blueprint_terms_from_text(&mut terms, &anchor.statement);
+        }
+    }
+
+    for requirement in &spec.requirements {
+        insert_blueprint_term(&mut terms, &requirement.id);
+        extract_blueprint_terms_from_text(&mut terms, &requirement.statement);
+    }
+    for constraint in &spec.architectural_constraints {
+        extract_blueprint_terms_from_text(&mut terms, constraint);
+    }
+    if let Some(contracts) = &spec.phase1_contracts {
+        for contract in contracts {
+            insert_blueprint_term(&mut terms, &contract.name);
+            extract_blueprint_terms_from_text(&mut terms, &contract.type_definition);
+        }
+    }
+    for dependency in &spec.external_dependencies {
+        insert_blueprint_term(&mut terms, &dependency.name);
+        extract_blueprint_terms_from_text(&mut terms, &dependency.usage_description);
+    }
+    for criterion in &spec.satisfaction_criteria {
+        insert_blueprint_term(&mut terms, &criterion.id);
+        extract_blueprint_terms_from_text(&mut terms, &criterion.description);
+    }
+
+    terms.into_iter().collect()
+}
+
+fn insert_blueprint_term(terms: &mut BTreeSet<String>, raw: &str) {
+    let normalized = raw.trim().to_lowercase();
+    if normalized.len() >= 3 && normalized.chars().any(|ch| ch.is_ascii_alphabetic()) {
+        terms.insert(normalized);
+    }
+}
+
+fn extract_blueprint_terms_from_text(terms: &mut BTreeSet<String>, text: &str) {
+    let normalized: String = text
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                ch.to_ascii_lowercase()
+            } else {
+                ' '
+            }
+        })
+        .collect();
+
+    for token in normalized.split_whitespace() {
+        let token = token.trim_matches('-').trim_matches('_');
+        if token.len() < 3 || BLUEPRINT_CONTEXT_STOPWORDS.contains(&token) {
+            continue;
+        }
+        if token.chars().all(|ch| ch.is_ascii_digit()) {
+            continue;
+        }
+        terms.insert(token.to_string());
     }
 }
 
@@ -286,10 +444,7 @@ impl Recipe {
                 step_id: "present-telemetry".into(),
                 name: "Telemetry Presenter".into(),
                 step_type: StepType::PresentTelemetry,
-                depends_on: vec![
-                    "validate-scenarios".into(),
-                    "deploy-sandbox".into(),
-                ],
+                depends_on: vec!["validate-scenarios".into(), "deploy-sandbox".into()],
             },
             PipelineStep {
                 step_id: "await-approval".into(),
@@ -359,7 +514,13 @@ pub async fn run_phase0_front_office_with_config<S: TurnStore>(
 
     // Persist intake as a Turn
     {
-        let turn = Turn::new(intake_result.clone(), None, run_id, "front-office", "intake");
+        let turn = Turn::new(
+            intake_result.clone(),
+            None,
+            run_id,
+            "front-office",
+            "intake",
+        );
         config.persist(&turn);
     }
 
@@ -377,15 +538,22 @@ pub async fn run_phase0_front_office_with_config<S: TurnStore>(
 
     // Step 3: Compile Spec(s)
     tracing::info!("Step 3: Compile NLSpec(s)");
+    let compile_blueprint_context = config.blueprint_context_for_intake(&intake_result);
     let mut specs = if chunk_plan.is_multi_chunk {
-        compile::compile_spec_multichunk(router, &intake_result, &chunk_plan).await?
+        compile::compile_spec_multichunk(
+            router,
+            &intake_result,
+            &chunk_plan,
+            compile_blueprint_context.as_deref(),
+        )
+        .await?
     } else {
-        vec![compile::compile_spec(router, &intake_result).await?]
+        vec![
+            compile::compile_spec(router, &intake_result, compile_blueprint_context.as_deref())
+                .await?,
+        ]
     };
-    tracing::info!(
-        "  → {} NLSpecV1 chunk(s) produced",
-        specs.len(),
-    );
+    tracing::info!("  → {} NLSpecV1 chunk(s) produced", specs.len(),);
 
     // Persist each NLSpecV1
     for spec in &specs {
@@ -409,7 +577,9 @@ pub async fn run_phase0_front_office_with_config<S: TurnStore>(
         );
         tracing::info!(
             "  → ContextPack: {} sections, ~{} tokens, truncated={}",
-            pack.sections.len(), pack.estimated_tokens, pack.was_truncated,
+            pack.sections.len(),
+            pack.estimated_tokens,
+            pack.was_truncated,
         );
     }
 
@@ -436,7 +606,10 @@ pub async fn run_phase0_front_office_with_config<S: TurnStore>(
                     if lint_attempt == 0 {
                         tracing::info!("  → Spec passes all linting rules");
                     } else {
-                        tracing::info!("  → Spec passes all linting rules after {} repair(s)", lint_attempt);
+                        tracing::info!(
+                            "  → Spec passes all linting rules after {} repair(s)",
+                            lint_attempt
+                        );
                     }
                     break;
                 }
@@ -445,14 +618,17 @@ pub async fn run_phase0_front_office_with_config<S: TurnStore>(
                     if lint_attempt > MAX_LINT_REPAIRS {
                         tracing::error!(
                             "  → {} lint violation(s) remain after {} repair attempts — aborting",
-                            violations.len(), MAX_LINT_REPAIRS
+                            violations.len(),
+                            MAX_LINT_REPAIRS
                         );
                         return Err(steps::StepError::LintFailure { violations });
                     }
 
                     tracing::warn!(
                         "  → {} lint violation(s) found, repair attempt {}/{}",
-                        violations.len(), lint_attempt, MAX_LINT_REPAIRS
+                        violations.len(),
+                        lint_attempt,
+                        MAX_LINT_REPAIRS
                     );
                     for v in &violations {
                         tracing::warn!("    {}", v);
@@ -461,10 +637,13 @@ pub async fn run_phase0_front_office_with_config<S: TurnStore>(
                     // Feed violations back to the LLM to repair the spec
                     let num_specs = specs.len();
                     for (i, spec) in specs.iter_mut().enumerate() {
-                        let spec_violations: Vec<&String> = violations.iter()
+                        let spec_violations: Vec<&String> = violations
+                            .iter()
                             .filter(|v| {
                                 // For single-chunk, all violations belong to spec 0
-                                if num_specs == 1 { return true; }
+                                if num_specs == 1 {
+                                    return true;
+                                }
                                 // For multi-chunk, match by chunk label prefix
                                 let chunk_label = match &spec.chunk {
                                     planner_schemas::ChunkType::Root => "[root]",
@@ -483,7 +662,8 @@ pub async fn run_phase0_front_office_with_config<S: TurnStore>(
                             continue;
                         }
 
-                        let violations_text = spec_violations.iter()
+                        let violations_text = spec_violations
+                            .iter()
                             .map(|v| format!("- {}", v))
                             .collect::<Vec<_>>()
                             .join("\n");
@@ -521,14 +701,18 @@ pub async fn run_phase0_front_office_with_config<S: TurnStore>(
 
                         match router.complete(repair_request).await {
                             Ok(response) => {
-                                let cleaned = crate::llm::json_repair::try_repair_json(&response.content)
-                                    .unwrap_or_else(|| steps::intake::strip_code_fences(&response.content));
+                                let cleaned =
+                                    crate::llm::json_repair::try_repair_json(&response.content)
+                                        .unwrap_or_else(|| {
+                                            steps::intake::strip_code_fences(&response.content)
+                                        });
 
                                 match serde_json::from_str::<NLSpecV1>(&cleaned) {
                                     Ok(repaired) => {
                                         tracing::info!(
                                             "    Repaired spec chunk {} ({} FRs)",
-                                            i, repaired.requirements.len()
+                                            i,
+                                            repaired.requirements.len()
                                         );
                                         *spec = repaired;
                                     }
@@ -559,20 +743,43 @@ pub async fn run_phase0_front_office_with_config<S: TurnStore>(
 
     // Step 5: Adversarial Review
     tracing::info!("Step 5: Adversarial Review");
+    let review_blueprint_context = config.blueprint_context_for_spec(&specs[0]);
     let mut ar_reports = if specs.len() > 1 {
-        let mut reports = ar::execute_adversarial_review_set(router, &specs, project_id).await?;
-        let coherence = ar::execute_cross_chunk_coherence_review(router, &specs, project_id).await?;
+        let mut reports = ar::execute_adversarial_review_set(
+            router,
+            &specs,
+            project_id,
+            review_blueprint_context.as_deref(),
+        )
+        .await?;
+        let coherence = ar::execute_cross_chunk_coherence_review(
+            router,
+            &specs,
+            project_id,
+            review_blueprint_context.as_deref(),
+        )
+        .await?;
         reports.push(coherence);
         reports
     } else {
-        vec![ar::execute_adversarial_review(router, &specs[0], project_id).await?]
+        vec![
+            ar::execute_adversarial_review(
+                router,
+                &specs[0],
+                project_id,
+                review_blueprint_context.as_deref(),
+            )
+            .await?,
+        ]
     };
 
     let total_blocking: u32 = ar_reports.iter().map(|r| r.blocking_count).sum();
     let total_advisory: u32 = ar_reports.iter().map(|r| r.advisory_count).sum();
     tracing::info!(
         "  → AR: {} total blocking, {} total advisory across {} report(s)",
-        total_blocking, total_advisory, ar_reports.len(),
+        total_blocking,
+        total_advisory,
+        ar_reports.len(),
     );
 
     // Persist each ArReportV1
@@ -593,14 +800,16 @@ pub async fn run_phase0_front_office_with_config<S: TurnStore>(
                 continue;
             }
             let spec = specs.remove(i);
-            let refinement = ar_refinement::execute_ar_refinement(
-                router, spec, &ar_reports[i], project_id,
-            ).await?;
+            let refinement =
+                ar_refinement::execute_ar_refinement(router, spec, &ar_reports[i], project_id)
+                    .await?;
 
             specs.insert(i, refinement.spec);
             tracing::info!(
                 "  → Chunk '{}' refinement: {} iterations, resolved={}",
-                ar_reports[i].chunk_name, refinement.iterations, refinement.resolved,
+                ar_reports[i].chunk_name,
+                refinement.iterations,
+                refinement.resolved,
             );
 
             if !refinement.resolved {
@@ -629,13 +838,34 @@ pub async fn run_phase0_front_office_with_config<S: TurnStore>(
         }
 
         tracing::info!("  Re-running AR on refined specs...");
+        let refined_review_blueprint_context = config.blueprint_context_for_spec(&specs[0]);
         ar_reports = if specs.len() > 1 {
-            let mut reports = ar::execute_adversarial_review_set(router, &specs, project_id).await?;
-            let coherence = ar::execute_cross_chunk_coherence_review(router, &specs, project_id).await?;
+            let mut reports = ar::execute_adversarial_review_set(
+                router,
+                &specs,
+                project_id,
+                refined_review_blueprint_context.as_deref(),
+            )
+            .await?;
+            let coherence = ar::execute_cross_chunk_coherence_review(
+                router,
+                &specs,
+                project_id,
+                refined_review_blueprint_context.as_deref(),
+            )
+            .await?;
             reports.push(coherence);
             reports
         } else {
-            vec![ar::execute_adversarial_review(router, &specs[0], project_id).await?]
+            vec![
+                ar::execute_adversarial_review(
+                    router,
+                    &specs[0],
+                    project_id,
+                    refined_review_blueprint_context.as_deref(),
+                )
+                .await?,
+            ]
         };
 
         let remaining_blocking: u32 = ar_reports.iter().map(|r| r.blocking_count).sum();
@@ -655,7 +885,10 @@ pub async fn run_phase0_front_office_with_config<S: TurnStore>(
                             "    [{}] {} — {}",
                             finding.affected_section,
                             finding.description,
-                            finding.suggested_resolution.as_deref().unwrap_or("no suggestion"),
+                            finding
+                                .suggested_resolution
+                                .as_deref()
+                                .unwrap_or("no suggestion"),
                         );
                     }
                 }
@@ -676,7 +909,8 @@ pub async fn run_phase0_front_office_with_config<S: TurnStore>(
     };
     tracing::info!(
         "  → GraphDotV1 produced: {} nodes, ${:.2} estimated cost",
-        graph_dot.node_count, graph_dot.estimated_cost_usd,
+        graph_dot.node_count,
+        graph_dot.estimated_cost_usd,
     );
 
     // Persist GraphDotV1
@@ -687,7 +921,10 @@ pub async fn run_phase0_front_office_with_config<S: TurnStore>(
 
     tracing::info!("Step 8: Generate Scenarios");
     let mut scenarios = compile::generate_scenarios(router, root_spec).await?;
-    tracing::info!("  → ScenarioSetV1 produced: {} scenarios", scenarios.scenarios.len());
+    tracing::info!(
+        "  → ScenarioSetV1 produced: {} scenarios",
+        scenarios.scenarios.len()
+    );
 
     // Persist ScenarioSetV1
     {
@@ -723,11 +960,20 @@ pub async fn run_phase0_front_office_with_config<S: TurnStore>(
 
     tracing::info!("Step 9: Generate AGENTS.md");
     let agents_manifest = compile::compile_agents_manifest(router, root_spec).await?;
-    tracing::info!("  → AgentsManifestV1 produced: {} bytes", agents_manifest.root_agents_md.len());
+    tracing::info!(
+        "  → AgentsManifestV1 produced: {} bytes",
+        agents_manifest.root_agents_md.len()
+    );
 
     // Persist AgentsManifestV1
     {
-        let turn = Turn::new(agents_manifest.clone(), None, run_id, "front-office", "agents-manifest");
+        let turn = Turn::new(
+            agents_manifest.clone(),
+            None,
+            run_id,
+            "front-office",
+            "agents-manifest",
+        );
         config.persist(&turn);
     }
 
@@ -751,8 +997,10 @@ pub async fn run_phase0_front_office_with_config<S: TurnStore>(
     let audit_report = audit::audit_lock_in(root_spec);
     tracing::info!(
         "  → Audit: {:?} risk (score={:.2}), {} findings, {} recommendations",
-        audit_report.overall_risk, audit_report.risk_score,
-        audit_report.findings.len(), audit_report.recommendations.len(),
+        audit_report.overall_risk,
+        audit_report.risk_score,
+        audit_report.findings.len(),
+        audit_report.recommendations.len(),
     );
 
     tracing::info!("Phase 6 Front Office: pipeline complete — ready for Kilroy handoff");
@@ -825,7 +1073,8 @@ pub async fn run_full_pipeline<S: TurnStore>(
     tracing::info!("═══════════════════════════════════════════════");
 
     // ---- Layer 1: Front Office ----
-    let front_office = run_phase0_front_office_with_config(config, project_id, user_description).await?;
+    let front_office =
+        run_phase0_front_office_with_config(config, project_id, user_description).await?;
 
     // ---- Project Registry: register this project ----
     // Wire in the ProjectRegistry so runs are tracked from pipeline start.
@@ -833,17 +1082,14 @@ pub async fn run_full_pipeline<S: TurnStore>(
     let project_name = front_office.intake.project_name.clone();
     let feature_slug = front_office.intake.feature_slug.clone();
     // register() rejects duplicate slugs; ignore if it fails (e.g., same slug in same run).
-    let _reg_result = project_registry.register(
-        project_name.clone(),
-        feature_slug.clone(),
-        vec![],
-    );
+    let _reg_result = project_registry.register(project_name.clone(), feature_slug.clone(), vec![]);
     let registry_project_id = project_registry
         .get_by_slug(&feature_slug)
         .map(|p| p.project_id);
     tracing::info!(
         "ProjectRegistry: registered '{}' (slug='{}')",
-        project_name, feature_slug,
+        project_name,
+        feature_slug,
     );
 
     // ---- Layer 1→2: Factory Worker + Validation Loop ----
@@ -869,10 +1115,15 @@ pub async fn run_full_pipeline<S: TurnStore>(
     // Previous output path for incremental retry (Attractor convergence).
     // Set after each factory attempt so retries can reuse the worktree.
     let mut previous_output_path: Option<String> = None;
+    let factory_blueprint_context = config.blueprint_context_for_spec(root_spec);
 
     loop {
         attempt += 1;
-        tracing::info!("─── Factory Worker (attempt {}/{}) ───", attempt, FACTORY_MAX_RETRIES + 1);
+        tracing::info!(
+            "─── Factory Worker (attempt {}/{}) ───",
+            attempt,
+            FACTORY_MAX_RETRIES + 1
+        );
 
         let feedback_slice: Option<&[GeneralizedError]> = if retry_feedback.is_empty() {
             None
@@ -887,6 +1138,7 @@ pub async fn run_full_pipeline<S: TurnStore>(
             &front_office.graph_dot,
             &front_office.agents_manifest,
             root_spec,
+            factory_blueprint_context.as_deref(),
             &mut budget,
             feedback_slice,
             prev_path_ref,
@@ -906,14 +1158,17 @@ pub async fn run_full_pipeline<S: TurnStore>(
             Err(e) => return Err(e),
         };
 
-        tracing::info!(
-            "  Factory: status={:?}",
-            factory_output.build_status,
-        );
+        tracing::info!("  Factory: status={:?}", factory_output.build_status,);
 
         // Persist FactoryOutputV1
         {
-            let turn = Turn::new(factory_output.clone(), None, run_id, "factory", "factory-output");
+            let turn = Turn::new(
+                factory_output.clone(),
+                None,
+                run_id,
+                "factory",
+                "factory-output",
+            );
             config.persist(&turn);
         }
 
@@ -943,12 +1198,19 @@ pub async fn run_full_pipeline<S: TurnStore>(
         // Keep whichever produced the most passing scenarios, regardless
         // of attempt order. This prevents a timeout/regression from
         // overwriting a better earlier result.
-        let current_pass_count = satisfaction.scenario_results
+        let current_pass_count = satisfaction
+            .scenario_results
             .iter()
             .filter(|r| r.majority_pass)
             .count();
-        let best_pass_count = best_satisfaction.as_ref()
-            .map(|s| s.scenario_results.iter().filter(|r| r.majority_pass).count())
+        let best_pass_count = best_satisfaction
+            .as_ref()
+            .map(|s| {
+                s.scenario_results
+                    .iter()
+                    .filter(|r| r.majority_pass)
+                    .count()
+            })
             .unwrap_or(0);
 
         if current_pass_count > best_pass_count || best_satisfaction.is_none() {
@@ -971,7 +1233,8 @@ pub async fn run_full_pipeline<S: TurnStore>(
                 current_pass_count,
                 satisfaction.scenario_results.len(),
                 best_pass_count,
-                best_satisfaction.as_ref()
+                best_satisfaction
+                    .as_ref()
                     .map(|s| s.scenario_results.len())
                     .unwrap_or(0),
             );
@@ -982,7 +1245,13 @@ pub async fn run_full_pipeline<S: TurnStore>(
 
             // Persist SatisfactionResultV1
             {
-                let turn = Turn::new(satisfaction.clone(), None, run_id, "validation", "satisfaction");
+                let turn = Turn::new(
+                    satisfaction.clone(),
+                    None,
+                    run_id,
+                    "validation",
+                    "satisfaction",
+                );
                 config.persist(&turn);
             }
 
@@ -991,7 +1260,13 @@ pub async fn run_full_pipeline<S: TurnStore>(
 
         // Persist failed SatisfactionResultV1
         {
-            let turn = Turn::new(satisfaction.clone(), None, run_id, "validation", "satisfaction");
+            let turn = Turn::new(
+                satisfaction.clone(),
+                None,
+                run_id,
+                "validation",
+                "satisfaction",
+            );
             config.persist(&turn);
         }
 
@@ -999,9 +1274,19 @@ pub async fn run_full_pipeline<S: TurnStore>(
             tracing::warn!("  Gates FAILED — no more retries");
             // Use best result instead of the last (possibly regressed) result.
             // This is the rejection sampling principle: keep the best survivor.
-            if let (Some(best_fo), Some(best_sat)) = (best_factory_output.take(), best_satisfaction.take()) {
-                if best_sat.scenario_results.iter().filter(|r| r.majority_pass).count()
-                    > satisfaction.scenario_results.iter().filter(|r| r.majority_pass).count()
+            if let (Some(best_fo), Some(best_sat)) =
+                (best_factory_output.take(), best_satisfaction.take())
+            {
+                if best_sat
+                    .scenario_results
+                    .iter()
+                    .filter(|r| r.majority_pass)
+                    .count()
+                    > satisfaction
+                        .scenario_results
+                        .iter()
+                        .filter(|r| r.majority_pass)
+                        .count()
                 {
                     tracing::info!(
                         "  Best-of-N: final result uses earlier attempt (better pass rate)"
@@ -1091,7 +1376,10 @@ pub async fn run_full_pipeline<S: TurnStore>(
     // ---- Project Registry: update status to Completed ----
     if let Some(reg_pid) = registry_project_id {
         let _ = project_registry.update_status(reg_pid, ProjectStatus::Completed);
-        tracing::info!("ProjectRegistry: project '{}' marked Completed", feature_slug);
+        tracing::info!(
+            "ProjectRegistry: project '{}' marked Completed",
+            feature_slug
+        );
     }
 
     // Final Blueprint flush
