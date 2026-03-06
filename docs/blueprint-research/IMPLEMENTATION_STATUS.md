@@ -1,7 +1,11 @@
 # Blueprint Implementation — Status Tracker
 
 **Started:** March 5, 2026
-**Last Updated:** March 5, 2026 (Gap audit + Phase G + Phase H plan)
+**Last Updated:** March 5, 2026 (Gap audit + Phase G + Phase H plan + deferred features spec)
+
+> **See also:** [`DEFERRED_RUST_FEATURES.md`](./DEFERRED_RUST_FEATURES.md) — Full implementation
+> specifications for all 5 remaining Rust-only features (C.4, C.5.7, D.3, G.6, H.2),
+> including exact file locations, code changes, acceptance criteria, and test plans.
 
 ## Research Documents (committed to repo)
 - `docs/blueprint-research/BLUEPRINT_DEEP_DIVE.md` — Decision audit, spec vs. code gap analysis
@@ -382,6 +386,21 @@ implemented. 5 were frontend-implementable; 2 were deferred as Rust-only.
 - `planner-web/src/components/Layout.tsx` — Added 'Events' sidebar item + activity icon
 - `planner-web/src/index.css` — Added drawer-tabs, event-timeline, global-event-timeline,
   event-filters, health-badge CSS classes
+
+## Deferred Rust-Only Features (5 remaining)
+
+All frontend work is complete. These 5 items require the Rust toolchain and are fully
+specified in [`DEFERRED_RUST_FEATURES.md`](./DEFERRED_RUST_FEATURES.md).
+
+| ID    | Feature                              | Phase | Complexity | Status  |
+|-------|--------------------------------------|-------|------------|---------|
+| C.4   | JSON Merge Patch (partial PATCH)     | C     | Low        | Pending |
+| C.5.7 | Attach documentation to nodes        | C.5   | Medium     | Pending |
+| D.3   | WebSocket streaming (reconvergence)  | D     | Medium     | Pending |
+| G.6   | Rust backend discovery scanners      | G     | High       | Pending |
+| H.2   | TUI Blueprint Table (ratatui)        | H     | Medium     | Pending |
+
+**Recommended order:** C.5.7 → C.4 → D.3 → H.2 → G.6 (features 3–5 can be parallelized)
 
 ## Test Results
 - Frontend: 166/166 tests passing (11 test files)
