@@ -54,6 +54,13 @@ function makeSession(overrides: Partial<Session>): Session {
     ],
     pipeline_running: false,
     intake_phase: 'waiting',
+    interview_live_attached: false,
+    can_resume_live: false,
+    can_resume_checkpoint: false,
+    can_restart_from_description: false,
+    can_retry_pipeline: false,
+    has_checkpoint: false,
+    resume_status: 'ready_to_start',
     ...overrides,
   };
 }
@@ -104,6 +111,8 @@ describe('SessionPage resume behavior', () => {
       intake_phase: 'pipeline_running',
       pipeline_running: true,
       project_description: 'Build timer',
+      can_resume_live: true,
+      resume_status: 'live_attach_available',
     });
     mockGetSession.mockResolvedValue({ session });
 
@@ -125,11 +134,31 @@ describe('SessionPage resume behavior', () => {
     expect(lastHookCall?.initialSession?.intake_phase).toBe('pipeline_running');
   });
 
-  it('does not auto-restart existing interviewing sessions and shows warning banner', async () => {
+  it('does not attach when phase is pipeline_running but capability says no live resume', async () => {
+    const session = makeSession({
+      intake_phase: 'pipeline_running',
+      pipeline_running: true,
+      can_resume_live: false,
+      resume_status: 'interview_resume_unknown',
+    });
+    mockGetSession.mockResolvedValue({ session });
+
+    renderSessionPage('/session/abc');
+
+    await waitFor(() => {
+      expect(mockGetSession).toHaveBeenCalledWith('abc');
+    });
+
+    expect(mockAttach).not.toHaveBeenCalled();
+  });
+
+  it('shows restart-only warning for detached interviewing sessions', async () => {
     const session = makeSession({
       intake_phase: 'interviewing',
       pipeline_running: false,
       project_description: 'Build timer',
+      can_restart_from_description: true,
+      resume_status: 'interview_restart_only',
     });
     mockGetSession.mockResolvedValue({ session });
 
@@ -142,5 +171,23 @@ describe('SessionPage resume behavior', () => {
     expect(mockAttach).not.toHaveBeenCalled();
     expect(mockSendDescription).not.toHaveBeenCalled();
     expect(screen.getByText(/live interview resume is not supported yet/i)).toBeInTheDocument();
+  });
+
+  it('shows unknown resume-state warning for interviewing sessions with unknown status', async () => {
+    const session = makeSession({
+      intake_phase: 'interviewing',
+      pipeline_running: false,
+      can_restart_from_description: false,
+      resume_status: 'interview_resume_unknown',
+    });
+    mockGetSession.mockResolvedValue({ session });
+
+    renderSessionPage('/session/abc');
+
+    await waitFor(() => {
+      expect(mockGetSession).toHaveBeenCalledWith('abc');
+    });
+
+    expect(screen.getByText(/interview resume state is unknown/i)).toBeInTheDocument();
   });
 });

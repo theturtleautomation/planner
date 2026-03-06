@@ -241,8 +241,7 @@ export default function Dashboard() {
         }}>
           <span style={{ color: 'var(--color-primary)', fontWeight: 600 }}>TIP</span>
           {' '}— Each session maintains its own conversation history and pipeline state.
-          Sessions are isolated and can be resumed at any time.
-          Interview sessions marked `Resume Interview*` may require restart until live interview resume is implemented.
+          Session actions now reflect backend capability flags (live attach, checkpoint resume, restart-only, or unknown).
         </div>
       </div>
     </Layout>
@@ -312,6 +311,31 @@ function formatDuration(ms: number): string {
   return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
 }
 
+function getPrimaryActionLabel(session: Session): string {
+  if (session.can_resume_checkpoint) return 'Resume Interview';
+  if (session.can_resume_live) return 'Reconnect';
+  if (session.can_restart_from_description) return 'Restart from Description';
+  if (session.can_retry_pipeline) return 'Retry Pipeline';
+  if (session.resume_status === 'ready_to_start') return 'Start Interview';
+  return 'Open Session';
+}
+
+function getInterviewResumeLabel(session: Session): string | null {
+  if (session.intake_phase !== 'interviewing') return null;
+  switch (session.resume_status) {
+    case 'interview_attached':
+      return 'attached';
+    case 'interview_checkpoint_resumable':
+      return 'resumable';
+    case 'interview_restart_only':
+      return 'restart-only';
+    case 'interview_resume_unknown':
+      return 'resume-unknown';
+    default:
+      return null;
+  }
+}
+
 function SessionCard({ session, onClick }: SessionCardProps) {
   const messageCount = session.messages?.length ?? 0;
 
@@ -354,17 +378,8 @@ function SessionCard({ session, onClick }: SessionCardProps) {
   // Convergence
   const convergencePct = session.belief_state?.convergence_pct;
   const hasConvergence = convergencePct !== undefined && convergencePct !== null;
-
-  const actionLabel =
-    phase === 'pipeline_running'
-      ? 'Resume Build'
-      : phase === 'complete'
-      ? 'Open Results'
-      : phase === 'interviewing'
-      ? 'Resume Interview*'
-      : phase === 'error'
-      ? 'View Error'
-      : 'Open Session';
+  const actionLabel = getPrimaryActionLabel(session);
+  const interviewResumeLabel = getInterviewResumeLabel(session);
 
   // Classification
   const classification = session.classification;
@@ -512,6 +527,18 @@ function SessionCard({ session, onClick }: SessionCardProps) {
               whiteSpace: 'nowrap',
             }}>
               · {currentStep}
+            </span>
+          )}
+          {interviewResumeLabel && (
+            <span style={{
+              color: interviewResumeLabel === 'resumable'
+                ? 'var(--color-primary)'
+                : 'var(--color-gold)',
+              fontSize: '10px',
+              fontFamily: 'monospace',
+              whiteSpace: 'nowrap',
+            }}>
+              · {interviewResumeLabel}
             </span>
           )}
         </div>

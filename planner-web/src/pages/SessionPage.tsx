@@ -12,7 +12,36 @@ import SessionStatusHeader from '../components/SessionStatusHeader.tsx';
 import { createApiClient } from '../api/client.ts';
 import { useGetAccessToken } from '../auth/useAuthenticatedFetch.ts';
 import { useSocraticWebSocket } from '../hooks/useSocraticWebSocket.ts';
-import type { Session } from '../types.ts';
+import type { ResumeStatus, Session } from '../types.ts';
+
+function getInterviewResumeNotice(status: ResumeStatus):
+  | { tone: 'warning' | 'info'; text: string }
+  | null {
+  switch (status) {
+    case 'interview_attached':
+      return {
+        tone: 'info',
+        text: 'This interview is currently attached to a live websocket session.',
+      };
+    case 'interview_checkpoint_resumable':
+      return {
+        tone: 'info',
+        text: 'This interview is resumable from a saved checkpoint. Reconnecting now…',
+      };
+    case 'interview_restart_only':
+      return {
+        tone: 'warning',
+        text: 'Live interview resume is not supported yet. Restarting will begin from the saved description.',
+      };
+    case 'interview_resume_unknown':
+      return {
+        tone: 'warning',
+        text: 'Interview resume state is unknown for this session. It may require restart from the saved description.',
+      };
+    default:
+      return null;
+  }
+}
 
 export default function SessionPage() {
   const { id: routeId } = useParams<{ id: string }>();
@@ -93,8 +122,7 @@ export default function SessionPage() {
   useEffect(() => {
     if (!session || !sessionId) return;
     if (autoAttachAttemptedRef.current === sessionId) return;
-    const phase = session.intake_phase;
-    if (phase === 'pipeline_running' || phase === 'complete' || phase === 'error') {
+    if (session.can_resume_live || session.can_resume_checkpoint) {
       autoAttachAttemptedRef.current = sessionId;
       socratic.attach();
     }
@@ -416,10 +444,12 @@ export default function SessionPage() {
   const isComplete = effectivePhase === 'complete';
   const isError = effectivePhase === 'error';
   const isExistingSessionRoute = Boolean(routeId && routeId !== 'new');
-  const showInterviewResumeNotice =
+  const interviewResumeNotice =
     isExistingSessionRoute &&
     session?.intake_phase === 'interviewing' &&
-    !socratic.isConnected;
+    !socratic.isConnected
+      ? getInterviewResumeNotice(session.resume_status)
+      : null;
 
   return (
     <Layout sessionId={sessionId} isConnected={socratic.isConnected}>
@@ -466,17 +496,23 @@ export default function SessionPage() {
         )}
 
         {/* Interview resume limitation banner */}
-        {showInterviewResumeNotice && (
+        {interviewResumeNotice && (
           <div style={{
             padding: '10px 16px',
-            background: 'rgba(255,215,0,0.08)',
-            borderBottom: '1px solid rgba(255,215,0,0.35)',
-            color: 'var(--color-gold)',
+            background: interviewResumeNotice.tone === 'warning'
+              ? 'rgba(255,215,0,0.08)'
+              : 'rgba(0,212,255,0.08)',
+            borderBottom: interviewResumeNotice.tone === 'warning'
+              ? '1px solid rgba(255,215,0,0.35)'
+              : '1px solid rgba(0,212,255,0.35)',
+            color: interviewResumeNotice.tone === 'warning'
+              ? 'var(--color-gold)'
+              : 'var(--color-primary)',
             fontSize: '12px',
             textAlign: 'center',
             flexShrink: 0,
           }}>
-            Live interview resume is not supported yet. Restarting will begin from the saved description.
+            {interviewResumeNotice.text}
           </div>
         )}
 

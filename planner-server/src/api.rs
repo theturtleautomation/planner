@@ -2,23 +2,26 @@
 //!
 //! Provides REST API for the Socratic Lobby web frontend.
 
-use std::path::PathBuf;
-use std::sync::Arc;
 use axum::{
-    extract::{ws::{Message, WebSocket}, Path, Query, State, WebSocketUpgrade},
+    extract::{
+        ws::{Message, WebSocket},
+        Path, Query, State, WebSocketUpgrade,
+    },
     http::StatusCode,
     response::{IntoResponse, Json},
     routing::{get, post},
     Router,
 };
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
+use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::AppState;
 use crate::auth::{auth_middleware, Claims};
 use crate::session::Session;
 use crate::ws;
 use crate::ws_socratic;
+use crate::AppState;
 
 fn apply_json_merge_patch(target: &mut serde_json::Value, patch: serde_json::Value) {
     match patch {
@@ -27,7 +30,9 @@ fn apply_json_merge_patch(target: &mut serde_json::Value, patch: serde_json::Val
                 *target = serde_json::Value::Object(serde_json::Map::new());
             }
 
-            let target_map = target.as_object_mut().expect("target must be object after initialization");
+            let target_map = target
+                .as_object_mut()
+                .expect("target must be object after initialization");
             for (key, value) in patch_map {
                 if value.is_null() {
                     target_map.remove(&key);
@@ -345,7 +350,6 @@ pub struct AdminEventsQuery {
     pub session_id: Option<String>,
 }
 
-
 pub fn routes(state: Arc<AppState>) -> Router {
     let public = Router::new()
         .route("/health", get(health))
@@ -368,9 +372,20 @@ pub fn routes(state: Arc<AppState>) -> Router {
         .route("/sessions/{id}/events", get(get_session_events))
         // Blueprint API — Living System Blueprint graph management
         .route("/blueprint", get(get_blueprint))
-        .route("/blueprint/nodes", get(list_blueprint_nodes).post(create_blueprint_node))
-        .route("/blueprint/nodes/{nodeId}", get(get_blueprint_node).patch(update_blueprint_node).delete(delete_blueprint_node))
-        .route("/blueprint/edges", post(create_blueprint_edge).delete(delete_blueprint_edge))
+        .route(
+            "/blueprint/nodes",
+            get(list_blueprint_nodes).post(create_blueprint_node),
+        )
+        .route(
+            "/blueprint/nodes/{nodeId}",
+            get(get_blueprint_node)
+                .patch(update_blueprint_node)
+                .delete(delete_blueprint_node),
+        )
+        .route(
+            "/blueprint/edges",
+            post(create_blueprint_edge).delete(delete_blueprint_edge),
+        )
         .route("/blueprint/history", get(list_blueprint_history))
         .route("/blueprint/events", get(list_blueprint_events))
         .route("/blueprint/impact-preview", post(impact_preview))
@@ -378,8 +393,14 @@ pub fn routes(state: Arc<AppState>) -> Router {
         .route("/blueprint/reconverge/ws", get(reconverge_ws_handler))
         .route("/blueprint/discovery/scan", post(run_discovery_scan))
         .route("/blueprint/discovery/proposals", get(list_proposals))
-        .route("/blueprint/discovery/proposals/{id}/accept", post(accept_proposal))
-        .route("/blueprint/discovery/proposals/{id}/reject", post(reject_proposal))
+        .route(
+            "/blueprint/discovery/proposals/{id}/accept",
+            post(accept_proposal),
+        )
+        .route(
+            "/blueprint/discovery/proposals/{id}/reject",
+            post(reject_proposal),
+        )
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             auth_middleware,
@@ -396,8 +417,16 @@ pub fn routes(state: Arc<AppState>) -> Router {
 
 async fn health(State(state): State<Arc<AppState>>) -> Json<HealthResponse> {
     let router = planner_core::llm::providers::LlmRouter::from_env();
-    let providers: Vec<String> = router.available_providers().iter().map(|s| s.to_string()).collect();
-    let status = if providers.is_empty() { "degraded" } else { "ok" };
+    let providers: Vec<String> = router
+        .available_providers()
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    let status = if providers.is_empty() {
+        "degraded"
+    } else {
+        "ok"
+    };
 
     Json(HealthResponse {
         status: status.into(),
@@ -414,7 +443,9 @@ async fn admin_status(State(state): State<Arc<AppState>>) -> Json<AdminStatusRes
 
     // Session stats — use snapshot to avoid marking all sessions dirty.
     let active = state.sessions.count();
-    let total_events: usize = state.sessions.snapshot_all_events()
+    let total_events: usize = state
+        .sessions
+        .snapshot_all_events()
         .iter()
         .map(|(_, events)| events.len())
         .sum();
@@ -438,13 +469,20 @@ async fn admin_status(State(state): State<Arc<AppState>>) -> Json<AdminStatusRes
         },
     ];
 
-    let status = if providers.iter().any(|p| p.available) { "ok" } else { "degraded" };
+    let status = if providers.iter().any(|p| p.available) {
+        "ok"
+    } else {
+        "degraded"
+    };
 
     Json(AdminStatusResponse {
         status: status.into(),
         version: "0.1.0".into(),
         uptime_secs,
-        sessions: AdminSessionStats { active, total_events },
+        sessions: AdminSessionStats {
+            active,
+            total_events,
+        },
         providers,
     })
 }
@@ -457,24 +495,25 @@ async fn admin_events(
 
     // Parse optional session_id filter
     let filter_session_id: Option<uuid::Uuid> = match query.session_id {
-        Some(ref raw) => {
-            Some(uuid::Uuid::parse_str(raw).map_err(|_| {
-                (
-                    StatusCode::BAD_REQUEST,
-                    Json(ErrorResponse { error: "Invalid session_id: not a valid UUID".into(), code: None }),
-                )
-            })?)
-        }
+        Some(ref raw) => Some(uuid::Uuid::parse_str(raw).map_err(|_| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: "Invalid session_id: not a valid UUID".into(),
+                    code: None,
+                }),
+            )
+        })?),
         None => None,
     };
 
     // Parse optional level filter
     let filter_level: Option<EventLevel> = match query.level.as_deref() {
-        Some("info")  => Some(EventLevel::Info),
-        Some("warn")  => Some(EventLevel::Warn),
+        Some("info") => Some(EventLevel::Info),
+        Some("warn") => Some(EventLevel::Warn),
         Some("error") => Some(EventLevel::Error),
-        Some(_)       => None,
-        None          => None,
+        Some(_) => None,
+        None => None,
     };
 
     let limit = query.limit.unwrap_or(100).min(1000);
@@ -507,16 +546,16 @@ async fn admin_events(
             id: e.id.to_string(),
             timestamp: e.timestamp.to_rfc3339(),
             level: match e.level {
-                EventLevel::Info  => "info".into(),
-                EventLevel::Warn  => "warn".into(),
+                EventLevel::Info => "info".into(),
+                EventLevel::Warn => "warn".into(),
                 EventLevel::Error => "error".into(),
             },
             source: match e.source {
                 EventSource::SocraticEngine => "socratic_engine".into(),
-                EventSource::LlmRouter      => "llm_router".into(),
-                EventSource::Pipeline       => "pipeline".into(),
-                EventSource::Factory        => "factory".into(),
-                EventSource::System         => "system".into(),
+                EventSource::LlmRouter => "llm_router".into(),
+                EventSource::Pipeline => "pipeline".into(),
+                EventSource::Factory => "factory".into(),
+                EventSource::System => "system".into(),
             },
             session_id: e.session_id.map(|id| id.to_string()),
             step: e.step,
@@ -593,10 +632,7 @@ async fn create_session(
     let session = state.sessions.create(&claims.sub);
     tracing::info!("Created session: {} for user: {}", session.id, claims.sub);
 
-    (
-        StatusCode::CREATED,
-        Json(CreateSessionResponse { session }),
-    )
+    (StatusCode::CREATED, Json(CreateSessionResponse { session }))
 }
 
 async fn get_session(
@@ -608,11 +644,17 @@ async fn get_session(
         Ok(session) => Ok(Json(GetSessionResponse { session })),
         Err(Some(())) => Err((
             StatusCode::FORBIDDEN,
-            Json(ErrorResponse { error: "Access denied".into(), code: None }),
+            Json(ErrorResponse {
+                error: "Access denied".into(),
+                code: None,
+            }),
         )),
         Err(None) => Err((
             StatusCode::NOT_FOUND,
-            Json(ErrorResponse { error: format!("Session not found: {}", id), code: None }),
+            Json(ErrorResponse {
+                error: format!("Session not found: {}", id),
+                code: None,
+            }),
         )),
     }
 }
@@ -640,13 +682,19 @@ async fn send_message(
         Err(Some(())) => {
             return Err((
                 StatusCode::FORBIDDEN,
-                Json(ErrorResponse { error: "Access denied".into(), code: None }),
+                Json(ErrorResponse {
+                    error: "Access denied".into(),
+                    code: None,
+                }),
             ));
         }
         Err(None) => {
             return Err((
                 StatusCode::NOT_FOUND,
-                Json(ErrorResponse { error: format!("Session not found: {}", id), code: None }),
+                Json(ErrorResponse {
+                    error: format!("Session not found: {}", id),
+                    code: None,
+                }),
             ));
         }
     }
@@ -700,17 +748,22 @@ async fn send_message(
 
             // Use safe index access for the response messages.
             let msgs = &session.messages;
-            let planner_msg = msgs.last().cloned().unwrap_or_else(|| crate::session::SessionMessage {
-                id: uuid::Uuid::new_v4(),
-                role: "planner".into(),
-                content: "(no response)".into(),
-                timestamp: chrono::Utc::now().to_rfc3339(),
-            });
-            let user_msg = msgs.iter().rev().nth(1).cloned().unwrap_or_else(|| crate::session::SessionMessage {
-                id: uuid::Uuid::new_v4(),
-                role: "user".into(),
-                content: content.clone(),
-                timestamp: chrono::Utc::now().to_rfc3339(),
+            let planner_msg =
+                msgs.last()
+                    .cloned()
+                    .unwrap_or_else(|| crate::session::SessionMessage {
+                        id: uuid::Uuid::new_v4(),
+                        role: "planner".into(),
+                        content: "(no response)".into(),
+                        timestamp: chrono::Utc::now().to_rfc3339(),
+                    });
+            let user_msg = msgs.iter().rev().nth(1).cloned().unwrap_or_else(|| {
+                crate::session::SessionMessage {
+                    id: uuid::Uuid::new_v4(),
+                    role: "user".into(),
+                    content: content.clone(),
+                    timestamp: chrono::Utc::now().to_rfc3339(),
+                }
             });
 
             Ok(Json(SendMessageResponse {
@@ -740,20 +793,16 @@ pub async fn run_pipeline_for_session(state: Arc<AppState>, session_id: Uuid, de
 
     let router = planner_core::llm::providers::LlmRouter::from_env();
 
-    let worker =
-        match planner_core::pipeline::steps::factory_worker::CodexFactoryWorker::new() {
-            Ok(w) => w,
-            Err(e) => {
-                state.sessions.update(session_id, |s| {
-                    s.add_message(
-                        "planner",
-                        &format!("Pipeline setup failed: {}", e),
-                    );
-                    s.pipeline_running = false;
-                });
-                return;
-            }
-        };
+    let worker = match planner_core::pipeline::steps::factory_worker::CodexFactoryWorker::new() {
+        Ok(w) => w,
+        Err(e) => {
+            state.sessions.update(session_id, |s| {
+                s.add_message("planner", &format!("Pipeline setup failed: {}", e));
+                s.pipeline_running = false;
+            });
+            return;
+        }
+    };
 
     let project_id = Uuid::new_v4();
 
@@ -825,13 +874,12 @@ pub async fn run_pipeline_for_session(state: Arc<AppState>, session_id: Uuid, de
         }
         None => {
             // No durable storage — run with in-memory CxdbEngine (store: None).
-            let config =
-                planner_core::pipeline::PipelineConfig::<planner_core::cxdb::CxdbEngine> {
-                    router: &router,
-                    store: None,
-                    dtu_registry: None,
-                    blueprints: Some(&state.blueprints),
-                };
+            let config = planner_core::pipeline::PipelineConfig::<planner_core::cxdb::CxdbEngine> {
+                router: &router,
+                store: None,
+                dtu_registry: None,
+                blueprints: Some(&state.blueprints),
+            };
 
             match planner_core::pipeline::run_full_pipeline(
                 &config,
@@ -896,31 +944,35 @@ async fn list_turns(
         Err(Some(())) => {
             return Err((
                 StatusCode::FORBIDDEN,
-                Json(ErrorResponse { error: "Access denied".into(), code: None }),
+                Json(ErrorResponse {
+                    error: "Access denied".into(),
+                    code: None,
+                }),
             ));
         }
         Err(None) => {
             return Err((
                 StatusCode::NOT_FOUND,
-                Json(ErrorResponse { error: format!("Session not found: {}", id), code: None }),
+                Json(ErrorResponse {
+                    error: format!("Session not found: {}", id),
+                    code: None,
+                }),
             ));
         }
     };
 
     // Query CXDB for turns belonging to this session's project.
     let turns = match (&state.cxdb, session.cxdb_project_id) {
-        (Some(engine), Some(project_id)) => {
-            engine
-                .list_turn_metadata_for_project(project_id)
-                .into_iter()
-                .map(|m| TurnResponse {
-                    turn_id: m.turn_id,
-                    type_id: m.type_id,
-                    timestamp: m.timestamp,
-                    produced_by: m.produced_by,
-                })
-                .collect::<Vec<_>>()
-        }
+        (Some(engine), Some(project_id)) => engine
+            .list_turn_metadata_for_project(project_id)
+            .into_iter()
+            .map(|m| TurnResponse {
+                turn_id: m.turn_id,
+                type_id: m.type_id,
+                timestamp: m.timestamp,
+                produced_by: m.produced_by,
+            })
+            .collect::<Vec<_>>(),
         _ => Vec::new(),
     };
 
@@ -943,26 +995,30 @@ async fn list_runs(
         Err(Some(())) => {
             return Err((
                 StatusCode::FORBIDDEN,
-                Json(ErrorResponse { error: "Access denied".into(), code: None }),
+                Json(ErrorResponse {
+                    error: "Access denied".into(),
+                    code: None,
+                }),
             ));
         }
         Err(None) => {
             return Err((
                 StatusCode::NOT_FOUND,
-                Json(ErrorResponse { error: format!("Session not found: {}", id), code: None }),
+                Json(ErrorResponse {
+                    error: format!("Session not found: {}", id),
+                    code: None,
+                }),
             ));
         }
     };
 
     // Query CXDB for runs belonging to this session's project.
     let runs = match (&state.cxdb, session.cxdb_project_id) {
-        (Some(engine), Some(project_id)) => {
-            engine
-                .list_runs(project_id)
-                .into_iter()
-                .map(|r| r.to_string())
-                .collect::<Vec<_>>()
-        }
+        (Some(engine), Some(project_id)) => engine
+            .list_runs(project_id)
+            .into_iter()
+            .map(|r| r.to_string())
+            .collect::<Vec<_>>(),
         _ => Vec::new(),
     };
 
@@ -984,7 +1040,13 @@ async fn get_session_events(
     axum::extract::Query(query): axum::extract::Query<EventsQuery>,
 ) -> Result<Json<SessionEventsResponse>, (StatusCode, Json<ErrorResponse>)> {
     let session_id = Uuid::parse_str(&id).map_err(|_| {
-        (StatusCode::BAD_REQUEST, Json(ErrorResponse { error: "Invalid session ID".into(), code: None }))
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "Invalid session ID".into(),
+                code: None,
+            }),
+        )
     })?;
 
     let session = match state.sessions.get_if_owned(session_id, &claims.sub) {
@@ -993,11 +1055,25 @@ async fn get_session_events(
             // Allow dev|local sessions to be read by anyone (dev mode compat).
             match state.sessions.get(session_id) {
                 Some(s) if s.user_id == "dev|local" => s,
-                _ => return Err((StatusCode::FORBIDDEN, Json(ErrorResponse { error: "Not your session".into(), code: None }))),
+                _ => {
+                    return Err((
+                        StatusCode::FORBIDDEN,
+                        Json(ErrorResponse {
+                            error: "Not your session".into(),
+                            code: None,
+                        }),
+                    ))
+                }
             }
         }
         Err(None) => {
-            return Err((StatusCode::NOT_FOUND, Json(ErrorResponse { error: "Session not found".into(), code: None })));
+            return Err((
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "Session not found".into(),
+                    code: None,
+                }),
+            ));
         }
     };
 
@@ -1019,7 +1095,9 @@ async fn get_session_events(
     // Filter by source
     if let Some(ref source) = query.source {
         let target_source = match source.to_lowercase().as_str() {
-            "socratic" | "socratic_engine" => Some(planner_core::observability::EventSource::SocraticEngine),
+            "socratic" | "socratic_engine" => {
+                Some(planner_core::observability::EventSource::SocraticEngine)
+            }
             "llm" | "llm_router" => Some(planner_core::observability::EventSource::LlmRouter),
             "pipeline" => Some(planner_core::observability::EventSource::Pipeline),
             "factory" => Some(planner_core::observability::EventSource::Factory),
@@ -1061,12 +1139,8 @@ async fn ws_handler(
             state.sessions.touch(id);
             ws.on_upgrade(move |socket| ws::handle_ws(socket, state, id))
         }
-        Err(Some(())) => {
-            (StatusCode::FORBIDDEN, "Access denied").into_response()
-        }
-        Err(None) => {
-            (StatusCode::NOT_FOUND, "Session not found").into_response()
-        }
+        Err(Some(())) => (StatusCode::FORBIDDEN, "Access denied").into_response(),
+        Err(None) => (StatusCode::NOT_FOUND, "Session not found").into_response(),
     }
 }
 
@@ -1090,13 +1164,19 @@ async fn start_socratic(
         Err(Some(())) => {
             return Err((
                 StatusCode::FORBIDDEN,
-                Json(ErrorResponse { error: "Access denied".into(), code: None }),
+                Json(ErrorResponse {
+                    error: "Access denied".into(),
+                    code: None,
+                }),
             ));
         }
         Err(None) => {
             return Err((
                 StatusCode::NOT_FOUND,
-                Json(ErrorResponse { error: format!("Session not found: {}", id), code: None }),
+                Json(ErrorResponse {
+                    error: format!("Session not found: {}", id),
+                    code: None,
+                }),
             ));
         }
     }
@@ -1105,6 +1185,7 @@ async fn start_socratic(
     state.sessions.update(id, |s| {
         s.project_description = Some(req.description.clone());
         s.intake_phase = "interviewing".into();
+        s.interview_live_attached = false;
     });
 
     // Touch to extend expiry.
@@ -1128,9 +1209,7 @@ async fn socratic_ws_handler(
     match state.sessions.get_if_owned(id, &claims.sub) {
         Ok(_) => {
             state.sessions.touch(id);
-            ws.on_upgrade(move |socket| {
-                ws_socratic::handle_socratic_ws(socket, state, id)
-            })
+            ws.on_upgrade(move |socket| ws_socratic::handle_socratic_ws(socket, state, id))
         }
         Err(Some(())) => (StatusCode::FORBIDDEN, "Access denied").into_response(),
         Err(None) => (StatusCode::NOT_FOUND, "Session not found").into_response(),
@@ -1159,11 +1238,17 @@ async fn get_belief_state(
         }
         Err(Some(())) => Err((
             StatusCode::FORBIDDEN,
-            Json(ErrorResponse { error: "Access denied".into(), code: None }),
+            Json(ErrorResponse {
+                error: "Access denied".into(),
+                code: None,
+            }),
         )),
         Err(None) => Err((
             StatusCode::NOT_FOUND,
-            Json(ErrorResponse { error: format!("Session not found: {}", id), code: None }),
+            Json(ErrorResponse {
+                error: format!("Session not found: {}", id),
+                code: None,
+            }),
         )),
     }
 }
@@ -1178,14 +1263,19 @@ async fn get_blueprint(
     _claims: Claims,
 ) -> Json<BlueprintResponse> {
     let bp = state.blueprints.snapshot();
-    let edges: Vec<EdgePayload> = bp.edges.iter().map(|e| EdgePayload {
-        source: e.source.0.clone(),
-        target: e.target.0.clone(),
-        edge_type: e.edge_type,
-        metadata: e.metadata.clone(),
-    }).collect();
+    let edges: Vec<EdgePayload> = bp
+        .edges
+        .iter()
+        .map(|e| EdgePayload {
+            source: e.source.0.clone(),
+            target: e.target.0.clone(),
+            edge_type: e.edge_type,
+            metadata: e.metadata.clone(),
+        })
+        .collect();
 
-    let counts: std::collections::HashMap<String, usize> = bp.counts_by_type()
+    let counts: std::collections::HashMap<String, usize> = bp
+        .counts_by_type()
         .into_iter()
         .map(|(k, v)| (k.to_string(), v))
         .collect();
@@ -1210,7 +1300,10 @@ async fn list_blueprint_nodes(
         None => state.blueprints.list_summaries(),
     };
     let count = summaries.len();
-    Json(NodeListResponse { nodes: summaries, count })
+    Json(NodeListResponse {
+        nodes: summaries,
+        count,
+    })
 }
 
 /// POST /blueprint/nodes — Create a new blueprint node.
@@ -1222,7 +1315,10 @@ async fn create_blueprint_node(
     let id = node.id().0.clone();
     state.blueprints.upsert_node(node.clone());
     tracing::info!("Blueprint node created: {}", id);
-    (StatusCode::CREATED, Json(serde_json::to_value(&node).unwrap_or_default()))
+    (
+        StatusCode::CREATED,
+        Json(serde_json::to_value(&node).unwrap_or_default()),
+    )
 }
 
 /// GET /blueprint/nodes/{nodeId} — Get a single blueprint node.
@@ -1235,7 +1331,10 @@ async fn get_blueprint_node(
         Some(node) => Ok(Json(serde_json::to_value(&node).unwrap_or_default())),
         None => Err((
             StatusCode::NOT_FOUND,
-            Json(ErrorResponse { error: format!("Blueprint node not found: {}", node_id), code: Some("NODE_NOT_FOUND".into()) }),
+            Json(ErrorResponse {
+                error: format!("Blueprint node not found: {}", node_id),
+                code: Some("NODE_NOT_FOUND".into()),
+            }),
         )),
     }
 }
@@ -1285,8 +1384,8 @@ async fn update_blueprint_node(
 
     apply_json_merge_patch(&mut merged, patch);
 
-    let node: planner_schemas::artifacts::blueprint::BlueprintNode =
-        serde_json::from_value(merged).map_err(|err| {
+    let node: planner_schemas::artifacts::blueprint::BlueprintNode = serde_json::from_value(merged)
+        .map_err(|err| {
             (
                 StatusCode::BAD_REQUEST,
                 Json(ErrorResponse {
@@ -1328,7 +1427,10 @@ async fn delete_blueprint_node(
         }
         None => Err((
             StatusCode::NOT_FOUND,
-            Json(ErrorResponse { error: format!("Blueprint node not found: {}", node_id), code: Some("NODE_NOT_FOUND".into()) }),
+            Json(ErrorResponse {
+                error: format!("Blueprint node not found: {}", node_id),
+                code: Some("NODE_NOT_FOUND".into()),
+            }),
         )),
     }
 }
@@ -1368,7 +1470,12 @@ async fn create_blueprint_edge(
         metadata: payload.metadata.clone(),
     };
     state.blueprints.add_edge(edge);
-    tracing::info!("Blueprint edge created: {} -[{}]-> {}", payload.source, payload.edge_type, payload.target);
+    tracing::info!(
+        "Blueprint edge created: {} -[{}]-> {}",
+        payload.source,
+        payload.edge_type,
+        payload.target
+    );
     Ok((StatusCode::CREATED, Json(payload)))
 }
 
@@ -1387,7 +1494,13 @@ async fn delete_blueprint_edge(
     });
 
     if removed > 0 {
-        tracing::info!("Blueprint edge(s) deleted: {} -[{}]-> {} ({})", source, edge_type, target, removed);
+        tracing::info!(
+            "Blueprint edge(s) deleted: {} -[{}]-> {} ({})",
+            source,
+            edge_type,
+            target,
+            removed
+        );
         Ok(StatusCode::NO_CONTENT)
     } else {
         Err((
@@ -1406,10 +1519,13 @@ async fn list_blueprint_history(
     _claims: Claims,
 ) -> Json<HistoryListResponse> {
     let raw = state.blueprints.list_history();
-    let snapshots = raw.into_iter().map(|(ts, fname)| SnapshotEntry {
-        timestamp: ts,
-        filename: fname,
-    }).collect();
+    let snapshots = raw
+        .into_iter()
+        .map(|(ts, fname)| SnapshotEntry {
+            timestamp: ts,
+            filename: fname,
+        })
+        .collect();
     Json(HistoryListResponse { snapshots })
 }
 
@@ -1427,16 +1543,28 @@ async fn list_blueprint_events(
     let total = all_events.len();
 
     // Most recent first, with optional limit.
-    let events: Vec<BlueprintEventPayload> = all_events.iter().rev()
+    let events: Vec<BlueprintEventPayload> = all_events
+        .iter()
+        .rev()
         .take(query.limit.unwrap_or(usize::MAX))
         .map(|e| {
             // Derive event_type tag from the variant.
             let event_type = match e {
-                planner_schemas::artifacts::blueprint::BlueprintEvent::NodeCreated { .. } => "node_created",
-                planner_schemas::artifacts::blueprint::BlueprintEvent::NodeUpdated { .. } => "node_updated",
-                planner_schemas::artifacts::blueprint::BlueprintEvent::NodeDeleted { .. } => "node_deleted",
-                planner_schemas::artifacts::blueprint::BlueprintEvent::EdgeCreated { .. } => "edge_created",
-                planner_schemas::artifacts::blueprint::BlueprintEvent::EdgesDeleted { .. } => "edges_deleted",
+                planner_schemas::artifacts::blueprint::BlueprintEvent::NodeCreated { .. } => {
+                    "node_created"
+                }
+                planner_schemas::artifacts::blueprint::BlueprintEvent::NodeUpdated { .. } => {
+                    "node_updated"
+                }
+                planner_schemas::artifacts::blueprint::BlueprintEvent::NodeDeleted { .. } => {
+                    "node_deleted"
+                }
+                planner_schemas::artifacts::blueprint::BlueprintEvent::EdgeCreated { .. } => {
+                    "edge_created"
+                }
+                planner_schemas::artifacts::blueprint::BlueprintEvent::EdgesDeleted { .. } => {
+                    "edges_deleted"
+                }
             };
             BlueprintEventPayload {
                 event_type: event_type.to_string(),
@@ -1455,8 +1583,14 @@ async fn impact_preview(
     State(state): State<Arc<AppState>>,
     _claims: Claims,
     Json(req): Json<ImpactPreviewRequest>,
-) -> Result<Json<planner_schemas::artifacts::blueprint::ImpactReport>, (StatusCode, Json<ErrorResponse>)> {
-    match state.blueprints.impact_analysis(&req.node_id, &req.change_description) {
+) -> Result<
+    Json<planner_schemas::artifacts::blueprint::ImpactReport>,
+    (StatusCode, Json<ErrorResponse>),
+> {
+    match state
+        .blueprints
+        .impact_analysis(&req.node_id, &req.change_description)
+    {
         Some(report) => Ok(Json(report)),
         None => Err((
             StatusCode::NOT_FOUND,
@@ -1555,7 +1689,10 @@ fn build_reconverge_response(req: &ReconvergeRequest) -> ReconvergeResponse {
             planner_schemas::artifacts::blueprint::ImpactAction::Remove => "remove",
         };
 
-        let is_deep = matches!(entry.severity, planner_schemas::artifacts::blueprint::ImpactSeverity::Deep);
+        let is_deep = matches!(
+            entry.severity,
+            planner_schemas::artifacts::blueprint::ImpactSeverity::Deep
+        );
 
         let status = if !req.auto_apply || is_deep {
             needs_review += 1;
@@ -1614,9 +1751,15 @@ async fn reconverge_ws_handler(
     ws.on_upgrade(move |socket| handle_reconverge_ws(socket, state))
 }
 
-async fn send_reconverge_ws_message(socket: &mut WebSocket, message: ReconvergeWsMessage) -> Result<(), ()> {
+async fn send_reconverge_ws_message(
+    socket: &mut WebSocket,
+    message: ReconvergeWsMessage,
+) -> Result<(), ()> {
     let payload = serde_json::to_string(&message).map_err(|_| ())?;
-    socket.send(Message::Text(payload.into())).await.map_err(|_| ())
+    socket
+        .send(Message::Text(payload.into()))
+        .await
+        .map_err(|_| ())
 }
 
 async fn handle_reconverge_ws(mut socket: WebSocket, state: Arc<AppState>) {
@@ -1648,7 +1791,9 @@ async fn handle_reconverge_ws(mut socket: WebSocket, state: Arc<AppState>) {
     if let Err((_, Json(error))) = ensure_reconverge_source_exists(&state, &req.source_node_id) {
         let _ = send_reconverge_ws_message(
             &mut socket,
-            ReconvergeWsMessage::Error { message: error.error },
+            ReconvergeWsMessage::Error {
+                message: error.error,
+            },
         )
         .await;
         return;
@@ -1665,14 +1810,13 @@ async fn handle_reconverge_ws(mut socket: WebSocket, state: Arc<AppState>) {
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }
 
-    let _ = send_reconverge_ws_message(
-        &mut socket,
-        ReconvergeWsMessage::Summary(response.summary),
-    )
-    .await;
+    let _ = send_reconverge_ws_message(&mut socket, ReconvergeWsMessage::Summary(response.summary))
+        .await;
 }
 
-fn parse_proposal_status(status: Option<&str>) -> Result<Option<planner_core::discovery::ProposalStatus>, String> {
+fn parse_proposal_status(
+    status: Option<&str>,
+) -> Result<Option<planner_core::discovery::ProposalStatus>, String> {
     match status {
         None => Ok(None),
         Some("pending") => Ok(Some(planner_core::discovery::ProposalStatus::Pending)),
@@ -1714,7 +1858,10 @@ async fn run_discovery_scan(
         return Err((
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse {
-                error: format!("Discovery scan root does not exist or is not a directory: {}", project_root.display()),
+                error: format!(
+                    "Discovery scan root does not exist or is not a directory: {}",
+                    project_root.display()
+                ),
                 code: Some("INVALID_SCAN_ROOT".into()),
             }),
         ));
@@ -1725,8 +1872,12 @@ async fn run_discovery_scan(
     for scanner in requested {
         let started = std::time::Instant::now();
         let scan_output = match scanner.as_str() {
-            "cargo_toml" => planner_core::discovery::scan_cargo_toml(&project_root, &state.blueprints),
-            "directory_structure" => planner_core::discovery::scan_directory_structure(&project_root, &state.blueprints),
+            "cargo_toml" => {
+                planner_core::discovery::scan_cargo_toml(&project_root, &state.blueprints)
+            }
+            "directory_structure" => {
+                planner_core::discovery::scan_directory_structure(&project_root, &state.blueprints)
+            }
             other => {
                 return Err((
                     StatusCode::BAD_REQUEST,
@@ -1738,15 +1889,19 @@ async fn run_discovery_scan(
             }
         };
 
-        let (inserted, deduped) = state.proposals.insert_many(scan_output.proposals).map_err(|err| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: format!("Failed to persist discovery proposals: {}", err),
-                    code: Some("PROPOSAL_PERSIST_FAILED".into()),
-                }),
-            )
-        })?;
+        let (inserted, deduped) =
+            state
+                .proposals
+                .insert_many(scan_output.proposals)
+                .map_err(|err| {
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(ErrorResponse {
+                            error: format!("Failed to persist discovery proposals: {}", err),
+                            code: Some("PROPOSAL_PERSIST_FAILED".into()),
+                        }),
+                    )
+                })?;
 
         results.push(DiscoveryScanResult {
             scanner,
@@ -1758,7 +1913,10 @@ async fn run_discovery_scan(
     }
 
     let total_proposed = results.iter().map(|result| result.proposed_count).sum();
-    Ok(Json(DiscoveryRunResponse { results, total_proposed }))
+    Ok(Json(DiscoveryRunResponse {
+        results,
+        total_proposed,
+    }))
 }
 
 async fn list_proposals(
@@ -1794,7 +1952,8 @@ async fn accept_proposal(
                 code: Some("PROPOSAL_UPDATE_FAILED".into()),
             }),
         )
-    })? else {
+    })?
+    else {
         return Err((
             StatusCode::NOT_FOUND,
             Json(ErrorResponse {
@@ -1826,15 +1985,19 @@ async fn reject_proposal(
     Path(proposal_id): Path<String>,
     Json(req): Json<RejectProposalRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
-    let Some(proposal) = state.proposals.mark_rejected(&proposal_id, req.reason).map_err(|err| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
-                error: format!("Failed to update proposal state: {}", err),
-                code: Some("PROPOSAL_UPDATE_FAILED".into()),
-            }),
-        )
-    })? else {
+    let Some(proposal) = state
+        .proposals
+        .mark_rejected(&proposal_id, req.reason)
+        .map_err(|err| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("Failed to update proposal state: {}", err),
+                    code: Some("PROPOSAL_UPDATE_FAILED".into()),
+                }),
+            )
+        })?
+    else {
         return Err((
             StatusCode::NOT_FOUND,
             Json(ErrorResponse {
@@ -1857,8 +2020,8 @@ async fn reject_proposal(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::session::SessionStore;
     use crate::auth::AuthConfig;
+    use crate::session::SessionStore;
     use axum::body::Body;
     use axum::http::Request;
     use tower::ServiceExt;
@@ -1889,7 +2052,9 @@ mod tests {
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
 
-        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let health: HealthResponse = serde_json::from_slice(&body).unwrap();
         assert!(health.status == "ok" || health.status == "degraded");
         assert_eq!(health.sessions_active, 0);
@@ -1935,7 +2100,9 @@ mod tests {
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
 
-        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let models: ModelsResponse = serde_json::from_slice(&body).unwrap();
         assert!(models.models.len() >= 6);
     }
@@ -1954,7 +2121,9 @@ mod tests {
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::CREATED);
 
-        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let created: CreateSessionResponse = serde_json::from_slice(&body).unwrap();
         assert_eq!(created.session.messages.len(), 1);
         // In dev mode, user_id is "dev|local"
@@ -1980,7 +2149,9 @@ mod tests {
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
 
-        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let listed: ListSessionsResponse = serde_json::from_slice(&body).unwrap();
         assert_eq!(listed.sessions.len(), 2);
     }
@@ -2001,7 +2172,9 @@ mod tests {
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
 
-        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let wrapped: GetSessionResponse = serde_json::from_slice(&body).unwrap();
         assert_eq!(wrapped.session.id, id);
     }
@@ -2062,7 +2235,9 @@ mod tests {
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
 
-        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let response: SendMessageResponse = serde_json::from_slice(&body).unwrap();
         assert_eq!(response.user_message.role, "user");
         assert_eq!(response.planner_message.role, "planner");
@@ -2169,7 +2344,9 @@ mod tests {
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
 
-        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let listed: ListTurnsResponse = serde_json::from_slice(&body).unwrap();
         assert_eq!(listed.turns.len(), 0);
         assert_eq!(listed.count, 0);
@@ -2221,7 +2398,9 @@ mod tests {
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
 
-        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let run_list: RunListResponse = serde_json::from_slice(&body).unwrap();
         assert_eq!(run_list.runs.len(), 0);
     }
@@ -2275,7 +2454,9 @@ mod tests {
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
 
-        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let result: SessionEventsResponse = serde_json::from_slice(&body).unwrap();
         assert_eq!(result.events.len(), 0);
         assert_eq!(result.count, 0);
@@ -2284,15 +2465,23 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_events_with_data() {
-        use planner_core::observability::{PlannerEvent, EventSource};
+        use planner_core::observability::{EventSource, PlannerEvent};
         let state = test_state();
         let session_obj = state.sessions.create("dev|local");
         let id = session_obj.id;
 
         // Add events to the session.
         state.sessions.update(id, |s| {
-            s.record_event(PlannerEvent::info(EventSource::Pipeline, "step.start", "Pipeline started"));
-            s.record_event(PlannerEvent::error(EventSource::LlmRouter, "llm.call.error", "LLM failed"));
+            s.record_event(PlannerEvent::info(
+                EventSource::Pipeline,
+                "step.start",
+                "Pipeline started",
+            ));
+            s.record_event(PlannerEvent::error(
+                EventSource::LlmRouter,
+                "llm.call.error",
+                "LLM failed",
+            ));
         });
 
         let app = routes(state);
@@ -2305,7 +2494,9 @@ mod tests {
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
 
-        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let result: SessionEventsResponse = serde_json::from_slice(&body).unwrap();
         assert_eq!(result.count, 2);
         assert_eq!(result.events.len(), 2);
@@ -2313,7 +2504,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_events_filter_level() {
-        use planner_core::observability::{PlannerEvent, EventSource};
+        use planner_core::observability::{EventSource, PlannerEvent};
         let state = test_state();
         let session_obj = state.sessions.create("dev|local");
         let id = session_obj.id;
@@ -2334,7 +2525,9 @@ mod tests {
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
 
-        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let result: SessionEventsResponse = serde_json::from_slice(&body).unwrap();
         // count = total matching filter, events = paginated slice
         assert_eq!(result.count, 1);
@@ -2415,7 +2608,8 @@ mod tests {
     }
 
     fn temp_scan_root(prefix: &str) -> PathBuf {
-        let path = std::env::temp_dir().join(format!("planner-api-{}-{}", prefix, uuid::Uuid::new_v4()));
+        let path =
+            std::env::temp_dir().join(format!("planner-api-{}-{}", prefix, uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&path).unwrap();
         path
     }
@@ -2433,7 +2627,9 @@ mod tests {
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
 
-        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let bp: BlueprintResponse = serde_json::from_slice(&body).unwrap();
         assert_eq!(bp.total_nodes, 0);
         assert_eq!(bp.total_edges, 0);
@@ -2457,7 +2653,9 @@ mod tests {
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::CREATED);
 
-        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let node: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(node["node_type"], "decision");
         assert_eq!(node["id"], "dec-use-msgpack-a1b2c3d4");
@@ -2482,7 +2680,9 @@ mod tests {
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
 
-        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let returned: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(returned["title"], "Use MessagePack for disk serialization");
     }
@@ -2522,7 +2722,9 @@ mod tests {
             .unwrap();
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
-        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let list: NodeListResponse = serde_json::from_slice(&body).unwrap();
         assert_eq!(list.count, 2);
     }
@@ -2547,7 +2749,9 @@ mod tests {
             .unwrap();
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
-        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let list: NodeListResponse = serde_json::from_slice(&body).unwrap();
         assert_eq!(list.count, 1);
         assert_eq!(list.nodes[0].node_type, "decision");
@@ -2578,7 +2782,9 @@ mod tests {
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
 
-        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let returned: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(returned["title"], "Use MessagePack v2");
     }
@@ -2618,7 +2824,10 @@ mod tests {
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
 
-        let updated = state.blueprints.get_node("dec-use-msgpack-a1b2c3d4").unwrap();
+        let updated = state
+            .blueprints
+            .get_node("dec-use-msgpack-a1b2c3d4")
+            .unwrap();
         assert_eq!(updated.tags(), &["new-tag"]);
         assert_eq!(updated.name(), "Use MessagePack for disk serialization");
     }
@@ -2660,11 +2869,20 @@ mod tests {
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::CREATED);
 
-        let stored = state.blueprints.get_node("dec-use-msgpack-a1b2c3d4").unwrap();
-        assert_eq!(stored.documentation(), Some("# Decision Notes\n\nDocumented"));
+        let stored = state
+            .blueprints
+            .get_node("dec-use-msgpack-a1b2c3d4")
+            .unwrap();
+        assert_eq!(
+            stored.documentation(),
+            Some("# Decision Notes\n\nDocumented")
+        );
 
         let summaries = state.blueprints.list_summaries();
-        assert!(summaries.iter().any(|summary| summary.id.as_str() == "dec-use-msgpack-a1b2c3d4" && summary.has_documentation));
+        assert!(summaries
+            .iter()
+            .any(|summary| summary.id.as_str() == "dec-use-msgpack-a1b2c3d4"
+                && summary.has_documentation));
     }
 
     #[tokio::test]
@@ -2679,13 +2897,18 @@ mod tests {
             .method("PATCH")
             .uri("/blueprint/nodes/dec-use-msgpack-a1b2c3d4")
             .header("content-type", "application/json")
-            .body(Body::from(serde_json::json!({ "documentation": "## Updated docs" }).to_string()))
+            .body(Body::from(
+                serde_json::json!({ "documentation": "## Updated docs" }).to_string(),
+            ))
             .unwrap();
 
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
 
-        let stored = state.blueprints.get_node("dec-use-msgpack-a1b2c3d4").unwrap();
+        let stored = state
+            .blueprints
+            .get_node("dec-use-msgpack-a1b2c3d4")
+            .unwrap();
         assert_eq!(stored.documentation(), Some("## Updated docs"));
     }
 
@@ -2709,7 +2932,10 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::NO_CONTENT);
 
         // Verify it's actually gone.
-        assert!(state.blueprints.get_node("dec-use-msgpack-a1b2c3d4").is_none());
+        assert!(state
+            .blueprints
+            .get_node("dec-use-msgpack-a1b2c3d4")
+            .is_none());
     }
 
     #[tokio::test]
@@ -2798,12 +3024,18 @@ mod tests {
         state.blueprints.upsert_node(dec);
         state.blueprints.upsert_node(tech);
 
-        state.blueprints.add_edge(planner_schemas::artifacts::blueprint::Edge {
-            source: planner_schemas::artifacts::blueprint::NodeId::from_raw("dec-use-msgpack-a1b2c3d4"),
-            target: planner_schemas::artifacts::blueprint::NodeId::from_raw("tech-rust-b2c3d4e5"),
-            edge_type: planner_schemas::artifacts::blueprint::EdgeType::Affects,
-            metadata: None,
-        });
+        state
+            .blueprints
+            .add_edge(planner_schemas::artifacts::blueprint::Edge {
+                source: planner_schemas::artifacts::blueprint::NodeId::from_raw(
+                    "dec-use-msgpack-a1b2c3d4",
+                ),
+                target: planner_schemas::artifacts::blueprint::NodeId::from_raw(
+                    "tech-rust-b2c3d4e5",
+                ),
+                edge_type: planner_schemas::artifacts::blueprint::EdgeType::Affects,
+                metadata: None,
+            });
 
         let app = routes(state);
 
@@ -2822,7 +3054,9 @@ mod tests {
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
 
-        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let report: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(report["source_node_id"], "dec-use-msgpack-a1b2c3d4");
         // tech-rust should be affected.
@@ -2863,7 +3097,9 @@ mod tests {
             .method("POST")
             .uri("/blueprint/nodes")
             .header("content-type", "application/json")
-            .body(Body::from(serde_json::to_string(&sample_decision_json()).unwrap()))
+            .body(Body::from(
+                serde_json::to_string(&sample_decision_json()).unwrap(),
+            ))
             .unwrap();
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::CREATED);
@@ -2874,7 +3110,9 @@ mod tests {
             .method("POST")
             .uri("/blueprint/nodes")
             .header("content-type", "application/json")
-            .body(Body::from(serde_json::to_string(&sample_technology_json()).unwrap()))
+            .body(Body::from(
+                serde_json::to_string(&sample_technology_json()).unwrap(),
+            ))
             .unwrap();
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::CREATED);
@@ -2886,7 +3124,9 @@ mod tests {
             .body(Body::empty())
             .unwrap();
         let resp = app.oneshot(req).await.unwrap();
-        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let bp: BlueprintResponse = serde_json::from_slice(&body).unwrap();
         assert_eq!(bp.total_nodes, 2);
 
@@ -2920,7 +3160,9 @@ mod tests {
             .unwrap();
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
-        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let report: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert!(!report["entries"].as_array().unwrap().is_empty());
 
@@ -2941,7 +3183,9 @@ mod tests {
             .body(Body::empty())
             .unwrap();
         let resp = app.oneshot(req).await.unwrap();
-        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let bp: BlueprintResponse = serde_json::from_slice(&body).unwrap();
         assert_eq!(bp.total_nodes, 1);
         assert_eq!(bp.total_edges, 0);
@@ -2961,7 +3205,9 @@ mod tests {
 
         let edge = planner_schemas::artifacts::blueprint::Edge {
             source: planner_schemas::artifacts::blueprint::NodeId::from_raw("tech-rust-b2c3d4e5"),
-            target: planner_schemas::artifacts::blueprint::NodeId::from_raw("dec-use-msgpack-a1b2c3d4"),
+            target: planner_schemas::artifacts::blueprint::NodeId::from_raw(
+                "dec-use-msgpack-a1b2c3d4",
+            ),
             edge_type: planner_schemas::artifacts::blueprint::EdgeType::DecidedBy,
             metadata: None,
         };
@@ -3024,7 +3270,9 @@ mod tests {
             .unwrap();
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
-        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let history: HistoryListResponse = serde_json::from_slice(&body).unwrap();
         assert!(history.snapshots.is_empty());
     }
@@ -3040,7 +3288,9 @@ mod tests {
             .unwrap();
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
-        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let events: BlueprintEventsResponse = serde_json::from_slice(&body).unwrap();
         assert_eq!(events.total, 0);
         assert!(events.events.is_empty());
@@ -3056,7 +3306,9 @@ mod tests {
             .method("POST")
             .uri("/blueprint/nodes")
             .header("content-type", "application/json")
-            .body(Body::from(serde_json::to_string(&sample_decision_json()).unwrap()))
+            .body(Body::from(
+                serde_json::to_string(&sample_decision_json()).unwrap(),
+            ))
             .unwrap();
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::CREATED);
@@ -3069,7 +3321,9 @@ mod tests {
             .unwrap();
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
-        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let events: BlueprintEventsResponse = serde_json::from_slice(&body).unwrap();
         assert_eq!(events.total, 1);
         assert_eq!(events.events[0].event_type, "node_created");
@@ -3097,7 +3351,9 @@ mod tests {
             .body(Body::empty())
             .unwrap();
         let resp = app.oneshot(req).await.unwrap();
-        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let events: BlueprintEventsResponse = serde_json::from_slice(&body).unwrap();
         assert_eq!(events.total, 1);
         assert_eq!(events.events[0].event_type, "node_created");
@@ -3128,7 +3384,9 @@ mod tests {
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
 
-        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let response: DiscoveryRunResponse = serde_json::from_slice(&body).unwrap();
         assert_eq!(response.total_proposed, 1);
         assert_eq!(state.proposals.list(None).len(), 1);
@@ -3229,7 +3487,10 @@ mod tests {
             source_artifact: Some("workspace/Cargo.toml".into()),
             review_note: Some("duplicate".into()),
         };
-        state.proposals.insert_many(vec![pending, rejected]).unwrap();
+        state
+            .proposals
+            .insert_many(vec![pending, rejected])
+            .unwrap();
 
         let app = routes(state);
         let req = Request::builder()
@@ -3239,7 +3500,9 @@ mod tests {
 
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
-        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let response: ProposedNodesResponse = serde_json::from_slice(&body).unwrap();
         assert_eq!(response.total, 1);
         assert_eq!(response.proposals[0].id, "proposal-rejected");

@@ -47,6 +47,13 @@ export interface ChatMessage {
 
 /** Mirrors the server-side intake_phase field on Session. */
 export type IntakePhase = 'waiting' | 'interviewing' | 'pipeline_running' | 'complete' | 'error';
+export type ResumeStatus =
+  | 'ready_to_start'
+  | 'live_attach_available'
+  | 'interview_attached'
+  | 'interview_restart_only'
+  | 'interview_resume_unknown'
+  | 'interview_checkpoint_resumable';
 
 // ─── Socratic Types ──────────────────────────────────────────────────────────
 
@@ -130,6 +137,13 @@ export interface Session {
   stages: PipelineStage[];
   pipeline_running: boolean;
   intake_phase: IntakePhase;
+  interview_live_attached: boolean;
+  can_resume_live: boolean;
+  can_resume_checkpoint: boolean;
+  can_restart_from_description: boolean;
+  can_retry_pipeline: boolean;
+  has_checkpoint: boolean;
+  resume_status: ResumeStatus;
   belief_state?: BeliefState | null;
   classification?: Classification | null;
   project_description?: string | null;

@@ -16,14 +16,14 @@
 //! - **Atomic writes**: Each flush writes to a `.tmp` file then renames,
 //!   ensuring a crash mid-write never corrupts the on-disk copy.
 
-use std::collections::{HashMap, HashSet};
-use std::path::{Path, PathBuf};
+use chrono::Utc;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 use uuid::Uuid;
-use chrono::Utc;
 
-use planner_schemas::artifacts::socratic::{RequirementsBeliefState, DomainClassification};
+use planner_schemas::artifacts::socratic::{DomainClassification, RequirementsBeliefState};
 
 // ---------------------------------------------------------------------------
 // Session Types
@@ -33,7 +33,7 @@ use planner_schemas::artifacts::socratic::{RequirementsBeliefState, DomainClassi
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionMessage {
     pub id: Uuid,
-    pub role: String,      // "user", "planner", "system"
+    pub role: String, // "user", "planner", "system"
     pub content: String,
     pub timestamp: String,
 }
@@ -42,7 +42,25 @@ pub struct SessionMessage {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PipelineStageInfo {
     pub name: String,
-    pub status: String,    // "pending", "running", "complete", "failed"
+    pub status: String, // "pending", "running", "complete", "failed"
+}
+
+/// Backend-computed resume state exposed to the web UI.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ResumeStatus {
+    ReadyToStart,
+    LiveAttachAvailable,
+    InterviewAttached,
+    InterviewRestartOnly,
+    InterviewResumeUnknown,
+    InterviewCheckpointResumable,
+}
+
+impl Default for ResumeStatus {
+    fn default() -> Self {
+        Self::InterviewResumeUnknown
+    }
 }
 
 /// A planning session.
@@ -62,7 +80,6 @@ pub struct Session {
     // -----------------------------------------------------------------------
     // Socratic interview state
     // -----------------------------------------------------------------------
-
     /// Current belief state from the Socratic interview.
     pub belief_state: Option<RequirementsBeliefState>,
 
@@ -72,6 +89,35 @@ pub struct Session {
     /// Phase of the intake process.
     /// One of: "waiting", "interviewing", "pipeline_running", "complete".
     pub intake_phase: String,
+
+    /// Whether an interview websocket is currently attached.
+    /// This is only meaningful while `intake_phase == "interviewing"`.
+    #[serde(default)]
+    pub interview_live_attached: bool,
+
+    /// Whether this session can currently be resumed via a live runtime attach.
+    #[serde(default)]
+    pub can_resume_live: bool,
+
+    /// Whether this session can currently be resumed from a durable checkpoint.
+    #[serde(default)]
+    pub can_resume_checkpoint: bool,
+
+    /// Whether restart-from-description is available for this session.
+    #[serde(default)]
+    pub can_restart_from_description: bool,
+
+    /// Whether retrying the pipeline is currently supported for this session.
+    #[serde(default)]
+    pub can_retry_pipeline: bool,
+
+    /// Whether a durable interview checkpoint exists.
+    #[serde(default)]
+    pub has_checkpoint: bool,
+
+    /// High-level backend truth for resume UX.
+    #[serde(default)]
+    pub resume_status: ResumeStatus,
 
     /// Structured event log for this session.
     #[serde(default)]
@@ -92,7 +138,7 @@ pub struct Session {
 impl Session {
     pub fn new(user_id: &str) -> Self {
         let now = Utc::now();
-        Session {
+        let mut session = Session {
             id: Uuid::new_v4(),
             user_id: user_id.to_string(),
             created_at: now.to_rfc3339(),
@@ -101,54 +147,169 @@ impl Session {
                 id: Uuid::new_v4(),
                 role: "system".into(),
                 content: "Welcome to Planner v2 — Socratic Planning Session. \
-                         Describe what you want to build.".into(),
+                         Describe what you want to build."
+                    .into(),
                 timestamp: now.to_rfc3339(),
             }],
             stages: vec![
-                PipelineStageInfo { name: "Intake".into(), status: "pending".into() },
-                PipelineStageInfo { name: "Chunk".into(), status: "pending".into() },
-                PipelineStageInfo { name: "Compile".into(), status: "pending".into() },
-                PipelineStageInfo { name: "Lint".into(), status: "pending".into() },
-                PipelineStageInfo { name: "AR Review".into(), status: "pending".into() },
-                PipelineStageInfo { name: "Refine".into(), status: "pending".into() },
-                PipelineStageInfo { name: "Scenarios".into(), status: "pending".into() },
-                PipelineStageInfo { name: "Ralph".into(), status: "pending".into() },
-                PipelineStageInfo { name: "Graph".into(), status: "pending".into() },
-                PipelineStageInfo { name: "Factory".into(), status: "pending".into() },
-                PipelineStageInfo { name: "Validate".into(), status: "pending".into() },
-                PipelineStageInfo { name: "Git".into(), status: "pending".into() },
+                PipelineStageInfo {
+                    name: "Intake".into(),
+                    status: "pending".into(),
+                },
+                PipelineStageInfo {
+                    name: "Chunk".into(),
+                    status: "pending".into(),
+                },
+                PipelineStageInfo {
+                    name: "Compile".into(),
+                    status: "pending".into(),
+                },
+                PipelineStageInfo {
+                    name: "Lint".into(),
+                    status: "pending".into(),
+                },
+                PipelineStageInfo {
+                    name: "AR Review".into(),
+                    status: "pending".into(),
+                },
+                PipelineStageInfo {
+                    name: "Refine".into(),
+                    status: "pending".into(),
+                },
+                PipelineStageInfo {
+                    name: "Scenarios".into(),
+                    status: "pending".into(),
+                },
+                PipelineStageInfo {
+                    name: "Ralph".into(),
+                    status: "pending".into(),
+                },
+                PipelineStageInfo {
+                    name: "Graph".into(),
+                    status: "pending".into(),
+                },
+                PipelineStageInfo {
+                    name: "Factory".into(),
+                    status: "pending".into(),
+                },
+                PipelineStageInfo {
+                    name: "Validate".into(),
+                    status: "pending".into(),
+                },
+                PipelineStageInfo {
+                    name: "Git".into(),
+                    status: "pending".into(),
+                },
             ],
             pipeline_running: false,
             project_description: None,
             belief_state: None,
             classification: None,
             intake_phase: "waiting".into(),
+            interview_live_attached: false,
+            can_resume_live: false,
+            can_resume_checkpoint: false,
+            can_restart_from_description: false,
+            can_retry_pipeline: false,
+            has_checkpoint: false,
+            resume_status: ResumeStatus::default(),
             events: Vec::new(),
             current_step: None,
             error_message: None,
             cxdb_project_id: None,
+        };
+        session.recompute_capabilities();
+        session
+    }
+
+    fn has_saved_description(&self) -> bool {
+        self.project_description
+            .as_deref()
+            .map(|v| !v.trim().is_empty())
+            .unwrap_or(false)
+    }
+
+    /// Recompute capability flags from the current session state.
+    ///
+    /// This keeps UI-facing workflow controls derived from backend truth,
+    /// rather than client-side phase inference.
+    pub fn recompute_capabilities(&mut self) {
+        let has_description = self.has_saved_description();
+
+        self.can_resume_checkpoint = false;
+        self.can_retry_pipeline = false;
+
+        match self.intake_phase.as_str() {
+            "waiting" => {
+                self.can_resume_live = false;
+                self.can_restart_from_description = false;
+                self.resume_status = ResumeStatus::ReadyToStart;
+                self.interview_live_attached = false;
+            }
+            "interviewing" => {
+                self.can_resume_live = false;
+                self.can_restart_from_description = has_description;
+                if self.interview_live_attached {
+                    self.resume_status = ResumeStatus::InterviewAttached;
+                } else if self.has_checkpoint {
+                    self.can_resume_checkpoint = true;
+                    self.resume_status = ResumeStatus::InterviewCheckpointResumable;
+                } else if has_description {
+                    self.resume_status = ResumeStatus::InterviewRestartOnly;
+                } else {
+                    self.resume_status = ResumeStatus::InterviewResumeUnknown;
+                }
+            }
+            "pipeline_running" | "complete" | "error" => {
+                self.can_resume_live = true;
+                self.can_restart_from_description = has_description;
+                self.resume_status = ResumeStatus::LiveAttachAvailable;
+                self.interview_live_attached = false;
+            }
+            _ => {
+                self.can_resume_live = false;
+                self.can_restart_from_description = has_description;
+                self.resume_status = ResumeStatus::InterviewResumeUnknown;
+                self.interview_live_attached = false;
+            }
         }
     }
 
     /// Count LLM calls from the event log.
     pub fn llm_call_count(&self) -> usize {
-        self.events.iter().filter(|e| {
-            e.source == planner_core::observability::EventSource::LlmRouter
-                && e.step.as_deref().map(|s| s.starts_with("llm.call.complete")).unwrap_or(false)
-        }).count()
+        self.events
+            .iter()
+            .filter(|e| {
+                e.source == planner_core::observability::EventSource::LlmRouter
+                    && e.step
+                        .as_deref()
+                        .map(|s| s.starts_with("llm.call.complete"))
+                        .unwrap_or(false)
+            })
+            .count()
     }
 
     /// Total LLM latency from the event log.
     pub fn llm_total_latency_ms(&self) -> u64 {
-        self.events.iter().filter(|e| {
-            e.source == planner_core::observability::EventSource::LlmRouter
-                && e.step.as_deref().map(|s| s.starts_with("llm.call.complete")).unwrap_or(false)
-        }).filter_map(|e| e.duration_ms).sum()
+        self.events
+            .iter()
+            .filter(|e| {
+                e.source == planner_core::observability::EventSource::LlmRouter
+                    && e.step
+                        .as_deref()
+                        .map(|s| s.starts_with("llm.call.complete"))
+                        .unwrap_or(false)
+            })
+            .filter_map(|e| e.duration_ms)
+            .sum()
     }
 
     /// Count errors from the event log.
     pub fn error_count(&self) -> usize {
-        self.events.iter().filter(|e| e.level == planner_core::observability::EventLevel::Error).count()
+        self.events
+            .iter()
+            .filter(|e| e.level == planner_core::observability::EventLevel::Error)
+            .count()
     }
 
     /// Push an event into this session's log and update current_step/error_message.
@@ -191,11 +352,18 @@ pub struct SessionSummary {
     pub last_accessed: String,
     pub pipeline_running: bool,
     pub intake_phase: String,
+    pub interview_live_attached: bool,
     pub project_description: Option<String>,
     pub message_count: usize,
     pub event_count: usize,
     pub current_step: Option<String>,
     pub error_message: Option<String>,
+    pub can_resume_live: bool,
+    pub can_resume_checkpoint: bool,
+    pub can_restart_from_description: bool,
+    pub can_retry_pipeline: bool,
+    pub has_checkpoint: bool,
+    pub resume_status: ResumeStatus,
 }
 
 // ---------------------------------------------------------------------------
@@ -264,18 +432,17 @@ impl SessionStore {
             };
 
             match std::fs::read(&path) {
-                Ok(bytes) => {
-                    match rmp_serde::from_slice::<Session>(&bytes) {
-                        Ok(session) => {
-                            tracing::debug!("Loaded session {} from disk", id);
-                            sessions.insert(id, session);
-                        }
-                        Err(e) => {
-                            tracing::error!("Failed to decode session {}: {}", id, e);
-                            load_errors += 1;
-                        }
+                Ok(bytes) => match rmp_serde::from_slice::<Session>(&bytes) {
+                    Ok(mut session) => {
+                        session.recompute_capabilities();
+                        tracing::debug!("Loaded session {} from disk", id);
+                        sessions.insert(id, session);
                     }
-                }
+                    Err(e) => {
+                        tracing::error!("Failed to decode session {}: {}", id, e);
+                        load_errors += 1;
+                    }
+                },
                 Err(e) => {
                     tracing::error!("Failed to read session file {}: {}", name, e);
                     load_errors += 1;
@@ -287,7 +454,8 @@ impl SessionStore {
         if load_errors > 0 {
             tracing::warn!(
                 "Session store: loaded {} sessions, {} files had errors",
-                count, load_errors,
+                count,
+                load_errors,
             );
         } else if count > 0 {
             tracing::info!("Session store: loaded {} sessions from disk", count);
@@ -326,8 +494,8 @@ impl SessionStore {
     pub fn get_if_owned(&self, id: Uuid, user_id: &str) -> Result<Session, Option<()>> {
         match self.sessions.read().get(&id) {
             Some(session) if session.user_id == user_id => Ok(session.clone()),
-            Some(_) => Err(Some(())),  // exists but wrong owner
-            None => Err(None),          // does not exist
+            Some(_) => Err(Some(())), // exists but wrong owner
+            None => Err(None),        // does not exist
         }
     }
 
@@ -352,6 +520,7 @@ impl SessionStore {
         let mut sessions = self.sessions.write();
         if let Some(session) = sessions.get_mut(&id) {
             f(session);
+            session.recompute_capabilities();
             session.last_accessed = Utc::now().to_rfc3339();
             self.mark_dirty(id);
             Some(session.clone())
@@ -454,9 +623,7 @@ impl SessionStore {
         };
 
         // Snapshot dirty IDs without clearing — we remove only on success.
-        let dirty_ids: Vec<Uuid> = {
-            self.dirty.read().iter().copied().collect()
-        };
+        let dirty_ids: Vec<Uuid> = { self.dirty.read().iter().copied().collect() };
 
         if dirty_ids.is_empty() {
             return (0, 0);
@@ -472,15 +639,13 @@ impl SessionStore {
             let mut snapshots = Vec::with_capacity(dirty_ids.len());
             for id in &dirty_ids {
                 match sessions.get(id) {
-                    Some(session) => {
-                        match rmp_serde::to_vec(session) {
-                            Ok(bytes) => snapshots.push((*id, bytes)),
-                            Err(e) => {
-                                tracing::error!("Failed to encode session {}: {}", id, e);
-                                errors += 1;
-                            }
+                    Some(session) => match rmp_serde::to_vec(session) {
+                        Ok(bytes) => snapshots.push((*id, bytes)),
+                        Err(e) => {
+                            tracing::error!("Failed to encode session {}: {}", id, e);
+                            errors += 1;
                         }
-                    }
+                    },
                     None => {
                         // Session deleted between mark and flush — clear dirty.
                         self.dirty.write().remove(id);
@@ -556,7 +721,9 @@ impl SessionStore {
     ///
     /// Returns `(session_id, events)` pairs. Does NOT mark anything dirty.
     /// Use this for admin endpoints that need to aggregate events.
-    pub fn snapshot_all_events(&self) -> Vec<(Uuid, Vec<planner_core::observability::PlannerEvent>)> {
+    pub fn snapshot_all_events(
+        &self,
+    ) -> Vec<(Uuid, Vec<planner_core::observability::PlannerEvent>)> {
         self.sessions
             .read()
             .iter()
@@ -579,15 +746,21 @@ impl SessionStore {
                 last_accessed: s.last_accessed.clone(),
                 pipeline_running: s.pipeline_running,
                 intake_phase: s.intake_phase.clone(),
+                interview_live_attached: s.interview_live_attached,
                 project_description: s.project_description.clone(),
                 message_count: s.messages.len(),
                 event_count: s.events.len(),
                 current_step: s.current_step.clone(),
                 error_message: s.error_message.clone(),
+                can_resume_live: s.can_resume_live,
+                can_resume_checkpoint: s.can_resume_checkpoint,
+                can_restart_from_description: s.can_restart_from_description,
+                can_retry_pipeline: s.can_retry_pipeline,
+                has_checkpoint: s.has_checkpoint,
+                resume_status: s.resume_status,
             })
             .collect()
     }
-
 } // impl SessionStore
 
 // ---------------------------------------------------------------------------
@@ -609,6 +782,90 @@ mod tests {
         assert_eq!(session.events.len(), 0);
         assert!(session.current_step.is_none());
         assert!(session.error_message.is_none());
+        assert_eq!(session.resume_status, ResumeStatus::ReadyToStart);
+        assert!(!session.interview_live_attached);
+        assert!(!session.can_resume_live);
+        assert!(!session.can_resume_checkpoint);
+        assert!(!session.has_checkpoint);
+    }
+
+    #[test]
+    fn session_capabilities_follow_phase_truth() {
+        let store = SessionStore::new();
+        let created = store.create("dev|local");
+        let id = created.id;
+
+        let waiting = store.get(id).unwrap();
+        assert_eq!(waiting.resume_status, ResumeStatus::ReadyToStart);
+        assert!(!waiting.can_resume_live);
+
+        let interviewing_attached = store
+            .update(id, |s| {
+                s.intake_phase = "interviewing".into();
+                s.project_description = Some("Build timer".into());
+                s.interview_live_attached = true;
+            })
+            .unwrap();
+        assert_eq!(
+            interviewing_attached.resume_status,
+            ResumeStatus::InterviewAttached
+        );
+        assert!(interviewing_attached.interview_live_attached);
+        assert!(!interviewing_attached.can_resume_live);
+        assert!(!interviewing_attached.can_resume_checkpoint);
+
+        let interviewing_restart = store
+            .update(id, |s| {
+                s.intake_phase = "interviewing".into();
+                s.project_description = Some("Build timer".into());
+                s.interview_live_attached = false;
+            })
+            .unwrap();
+        assert_eq!(
+            interviewing_restart.resume_status,
+            ResumeStatus::InterviewRestartOnly
+        );
+        assert!(!interviewing_restart.can_resume_live);
+        assert!(interviewing_restart.can_restart_from_description);
+
+        let interviewing_unknown = store
+            .update(id, |s| {
+                s.intake_phase = "interviewing".into();
+                s.project_description = None;
+                s.has_checkpoint = false;
+                s.interview_live_attached = false;
+            })
+            .unwrap();
+        assert_eq!(
+            interviewing_unknown.resume_status,
+            ResumeStatus::InterviewResumeUnknown
+        );
+        assert!(!interviewing_unknown.can_resume_live);
+        assert!(!interviewing_unknown.can_restart_from_description);
+
+        let interviewing_checkpoint = store
+            .update(id, |s| {
+                s.intake_phase = "interviewing".into();
+                s.project_description = Some("Build timer".into());
+                s.has_checkpoint = true;
+                s.interview_live_attached = false;
+            })
+            .unwrap();
+        assert_eq!(
+            interviewing_checkpoint.resume_status,
+            ResumeStatus::InterviewCheckpointResumable
+        );
+        assert!(interviewing_checkpoint.has_checkpoint);
+        assert!(interviewing_checkpoint.can_resume_checkpoint);
+
+        let live_attach = store
+            .update(id, |s| {
+                s.intake_phase = "pipeline_running".into();
+                s.project_description = Some("Build timer".into());
+            })
+            .unwrap();
+        assert_eq!(live_attach.resume_status, ResumeStatus::LiveAttachAvailable);
+        assert!(live_attach.can_resume_live);
     }
 
     #[test]
@@ -637,10 +894,12 @@ mod tests {
         assert_eq!(retrieved.user_id, "user1");
 
         // Update
-        let updated = store.update(id, |s| {
-            s.add_message("user", "Hello");
-            s.pipeline_running = true;
-        }).unwrap();
+        let updated = store
+            .update(id, |s| {
+                s.add_message("user", "Hello");
+                s.pipeline_running = true;
+            })
+            .unwrap();
         assert_eq!(updated.messages.len(), 2);
         assert!(updated.pipeline_running);
 
@@ -683,7 +942,7 @@ mod tests {
 
     #[test]
     fn session_serialization() {
-        use planner_core::observability::{PlannerEvent, EventSource};
+        use planner_core::observability::{EventSource, PlannerEvent};
         let mut session = Session::new("auth0|abc123");
         // Add an event so we can verify round-trip.
         let event = PlannerEvent::info(EventSource::Pipeline, "test.step", "Test event");
@@ -700,7 +959,7 @@ mod tests {
 
     #[test]
     fn session_helper_methods() {
-        use planner_core::observability::{PlannerEvent, EventSource};
+        use planner_core::observability::{EventSource, PlannerEvent};
         let mut session = Session::new("auth0|test");
 
         // Initially zero.
@@ -709,32 +968,22 @@ mod tests {
         assert_eq!(session.error_count(), 0);
 
         // Record an LLM complete event.
-        let llm_event = PlannerEvent::info(
-            EventSource::LlmRouter,
-            "llm.call.complete",
-            "LLM done",
-        ).with_duration(123);
+        let llm_event = PlannerEvent::info(EventSource::LlmRouter, "llm.call.complete", "LLM done")
+            .with_duration(123);
         session.record_event(llm_event);
         assert_eq!(session.llm_call_count(), 1);
         assert_eq!(session.llm_total_latency_ms(), 123);
         assert_eq!(session.current_step.as_deref(), Some("llm.call.complete"));
 
         // Record an error event.
-        let err_event = PlannerEvent::error(
-            EventSource::Pipeline,
-            "pipeline.error",
-            "Something failed",
-        );
+        let err_event =
+            PlannerEvent::error(EventSource::Pipeline, "pipeline.error", "Something failed");
         session.record_event(err_event);
         assert_eq!(session.error_count(), 1);
         assert_eq!(session.error_message.as_deref(), Some("Something failed"));
 
         // LLM start event should NOT count toward llm_call_count.
-        let start_event = PlannerEvent::info(
-            EventSource::LlmRouter,
-            "llm.call.start",
-            "Starting",
-        );
+        let start_event = PlannerEvent::info(EventSource::LlmRouter, "llm.call.start", "Starting");
         session.record_event(start_event);
         assert_eq!(session.llm_call_count(), 1); // still 1
     }
@@ -837,21 +1086,32 @@ mod tests {
             // Verify the session survived the "restart".
             assert_eq!(store.count(), 1);
 
-            let session = store.get(session_id).expect("session should survive restart");
+            let session = store
+                .get(session_id)
+                .expect("session should survive restart");
             assert_eq!(session.user_id, "dev|local");
-            assert_eq!(session.project_description.as_deref(), Some("Docker CLI manager"));
+            assert_eq!(
+                session.project_description.as_deref(),
+                Some("Docker CLI manager")
+            );
             assert_eq!(session.intake_phase, "interviewing");
 
             // 1 system welcome + 3 user/planner messages = 4 total
             assert_eq!(session.messages.len(), 4);
             assert_eq!(session.messages[1].content, user_msg_content);
             assert_eq!(session.messages[1].role, "user");
-            assert_eq!(session.messages[2].content, "What programming language would you prefer?");
+            assert_eq!(
+                session.messages[2].content,
+                "What programming language would you prefer?"
+            );
             assert_eq!(session.messages[3].content, "Rust, obviously.");
 
             // Event survived too.
             assert_eq!(session.events.len(), 1);
-            assert_eq!(session.events[0].step.as_deref(), Some("socratic.question.asked"));
+            assert_eq!(
+                session.events[0].step.as_deref(),
+                Some("socratic.question.asked")
+            );
 
             // IDs list works.
             let ids = store.list_ids();
@@ -936,7 +1196,12 @@ mod tests {
             // Back-date the expired session.
             {
                 let old_time = (chrono::Utc::now() - chrono::Duration::seconds(7200)).to_rfc3339();
-                store.sessions.write().get_mut(&expired_id).unwrap().last_accessed = old_time;
+                store
+                    .sessions
+                    .write()
+                    .get_mut(&expired_id)
+                    .unwrap()
+                    .last_accessed = old_time;
             }
 
             // Run cleanup.
@@ -945,8 +1210,13 @@ mod tests {
             assert_eq!(store.count(), 1);
 
             // Verify the file was deleted.
-            let expired_path = data_dir.join("sessions").join(format!("{}.msgpack", expired_id));
-            assert!(!expired_path.exists(), "expired session file should be deleted");
+            let expired_path = data_dir
+                .join("sessions")
+                .join(format!("{}.msgpack", expired_id));
+            assert!(
+                !expired_path.exists(),
+                "expired session file should be deleted"
+            );
         }
 
         // Reload — only fresh session should exist.
@@ -977,7 +1247,8 @@ mod tests {
         std::fs::write(
             sessions_dir.join(format!("{}.msgpack.tmp", Uuid::new_v4())),
             b"garbage data",
-        ).unwrap();
+        )
+        .unwrap();
 
         let store = SessionStore::open(&data_dir).unwrap();
         assert_eq!(store.count(), 1);
@@ -996,14 +1267,19 @@ mod tests {
         // Write a valid session.
         let valid = Session::new("dev|valid");
         let valid_bytes = rmp_serde::to_vec(&valid).unwrap();
-        std::fs::write(sessions_dir.join(format!("{}.msgpack", valid.id)), &valid_bytes).unwrap();
+        std::fs::write(
+            sessions_dir.join(format!("{}.msgpack", valid.id)),
+            &valid_bytes,
+        )
+        .unwrap();
 
         // Write a corrupt file.
         let corrupt_id = Uuid::new_v4();
         std::fs::write(
             sessions_dir.join(format!("{}.msgpack", corrupt_id)),
             b"this is not messagepack",
-        ).unwrap();
+        )
+        .unwrap();
 
         // Store should load the valid session and skip the corrupt one.
         let store = SessionStore::open(&data_dir).unwrap();
@@ -1017,7 +1293,7 @@ mod tests {
     fn messagepack_round_trip_fidelity() {
         // Verify that MessagePack encoding preserves all session fields
         // with the same fidelity as JSON (which is already tested elsewhere).
-        use planner_core::observability::{PlannerEvent, EventSource};
+        use planner_core::observability::{EventSource, PlannerEvent};
 
         let mut session = Session::new("auth0|roundtrip");
         session.add_message("user", "Build me something complex");
@@ -1039,7 +1315,10 @@ mod tests {
 
         assert_eq!(decoded.id, session.id);
         assert_eq!(decoded.user_id, "auth0|roundtrip");
-        assert_eq!(decoded.project_description.as_deref(), Some("A complex system"));
+        assert_eq!(
+            decoded.project_description.as_deref(),
+            Some("A complex system")
+        );
         assert_eq!(decoded.intake_phase, "interviewing");
         assert!(decoded.pipeline_running);
         assert_eq!(decoded.messages.len(), 2);
@@ -1047,7 +1326,10 @@ mod tests {
         assert_eq!(decoded.events[0].duration_ms, Some(456));
         assert_eq!(decoded.events[0].metadata["model"], "gemini-2.5-pro");
         assert_eq!(decoded.events[0].metadata["tokens"], 1500);
-        assert_eq!(decoded.events[1].level, planner_core::observability::EventLevel::Error);
+        assert_eq!(
+            decoded.events[1].level,
+            planner_core::observability::EventLevel::Error
+        );
         assert_eq!(decoded.error_message.as_deref(), Some("Timeout"));
         assert_eq!(decoded.current_step.as_deref(), Some("pipeline.fail"));
         assert_eq!(decoded.stages.len(), 12);
