@@ -61,6 +61,8 @@ function makeSession(overrides: Partial<Session>): Session {
     can_retry_pipeline: false,
     has_checkpoint: false,
     resume_status: 'ready_to_start',
+    socratic_run_id: null,
+    checkpoint: null,
     ...overrides,
   };
 }
@@ -189,5 +191,45 @@ describe('SessionPage resume behavior', () => {
     });
 
     expect(screen.getByText(/interview resume state is unknown/i)).toBeInTheDocument();
+  });
+
+  it('renders saved checkpoint details for detached interviews', async () => {
+    const session = makeSession({
+      intake_phase: 'interviewing',
+      has_checkpoint: true,
+      can_resume_checkpoint: true,
+      resume_status: 'interview_checkpoint_resumable',
+      checkpoint: {
+        socratic_run_id: '11111111-1111-1111-1111-111111111111',
+        classification: null,
+        belief_state: null,
+        current_question: {
+          question: 'What are the core user roles?',
+          target_dimension: 'Stakeholders',
+          quick_options: [],
+          allow_skip: true,
+        },
+        pending_draft: {
+          sections: [{ heading: 'Goal', content: 'Draft goal section' }],
+          assumptions: [],
+          not_discussed: [],
+        },
+        contradictions: [],
+        stale_turns: 1,
+        draft_shown_at_turn: 2,
+        last_checkpoint_at: '2026-03-06T12:00:00Z',
+      },
+    });
+    mockGetSession.mockResolvedValue({ session });
+
+    renderSessionPage('/session/abc');
+
+    await waitFor(() => {
+      expect(mockGetSession).toHaveBeenCalledWith('abc');
+    });
+
+    expect(screen.getByText(/saved interview checkpoint/i)).toBeInTheDocument();
+    expect(screen.getByText(/current question: what are the core user roles\?/i)).toBeInTheDocument();
+    expect(screen.getByText(/pending draft: goal/i)).toBeInTheDocument();
   });
 });

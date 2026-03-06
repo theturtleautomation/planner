@@ -45,6 +45,18 @@ function buildInitialStages(): PipelineStage[] {
   return PIPELINE_STAGE_NAMES.map((name) => ({ name, status: 'pending' as StageStatus }));
 }
 
+function normalizeDimensionLabel(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (value && typeof value === 'object') {
+    const keys = Object.keys(value as Record<string, unknown>);
+    if (keys.length === 1) {
+      const inner = (value as Record<string, unknown>)[keys[0]];
+      if (typeof inner === 'string') return inner;
+    }
+  }
+  return JSON.stringify(value);
+}
+
 type GetTokenFn = () => Promise<string>;
 
 /** The current question being posed to the user, if any. */
@@ -188,25 +200,11 @@ export function useSocraticWebSocket({
       }
 
       case 'belief_state_update': {
-        // Normalise dimension names: serde-serialised Rust enums like
-        // Dimension::Custom("X") arrive as {"custom": "X"} — unwrap them
-        // to plain strings so React never receives objects as children.
-        const normDim = (v: unknown): string => {
-          if (typeof v === 'string') return v;
-          if (v && typeof v === 'object') {
-            const keys = Object.keys(v as Record<string, unknown>);
-            if (keys.length === 1) {
-              const inner = (v as Record<string, unknown>)[keys[0]];
-              if (typeof inner === 'string') return inner;
-            }
-          }
-          return JSON.stringify(v);
-        };
         const bs: BeliefState = {
           filled: msg.filled as BeliefState['filled'],
           uncertain: msg.uncertain as BeliefState['uncertain'],
-          missing: (msg.missing ?? []).map(normDim),
-          out_of_scope: (msg.out_of_scope ?? []).map(normDim),
+          missing: (msg.missing ?? []).map(normalizeDimensionLabel),
+          out_of_scope: (msg.out_of_scope ?? []).map(normalizeDimensionLabel),
           convergence_pct: msg.convergence_pct,
         };
         setBeliefState(bs);
@@ -473,18 +471,56 @@ export function useSocraticWebSocket({
     if (initialSession.id !== sessionId) return;
     if (hydratedSessionIdRef.current === sessionId) return;
 
+    const checkpoint = initialSession.checkpoint ?? null;
+    const checkpointBeliefState = checkpoint?.belief_state ?? null;
+    const checkpointQuestion = checkpoint?.current_question ?? null;
+    const checkpointDraft = checkpoint?.pending_draft ?? null;
+
+    const hydratedQuestion: CurrentQuestion | null = checkpointQuestion
+      ? {
+          text: checkpointQuestion.question,
+          targetDimension: normalizeDimensionLabel(checkpointQuestion.target_dimension),
+          quickOptions: checkpointQuestion.quick_options ?? [],
+          allowSkip: checkpointQuestion.allow_skip,
+        }
+      : null;
+
+    const hydratedDraft: SpeculativeDraft | null = checkpointDraft
+      ? {
+          sections: checkpointDraft.sections.map((section) => ({
+            heading: section.heading,
+            content: section.content,
+          })),
+          assumptions: checkpointDraft.assumptions.map((assumption) => ({
+            dimension: normalizeDimensionLabel(assumption.dimension),
+            assumption: assumption.assumption,
+          })),
+          not_discussed: (checkpointDraft.not_discussed ?? []).map(normalizeDimensionLabel),
+        }
+      : null;
+
+    const hydratedContradictions: Contradiction[] = (checkpoint?.contradictions ?? []).map(
+      (entry) => ({
+        dimension_a: normalizeDimensionLabel(entry.dimension_a),
+        value_a: entry.value_a,
+        dimension_b: normalizeDimensionLabel(entry.dimension_b),
+        value_b: entry.value_b,
+        explanation: entry.explanation,
+      }),
+    );
+
     setIntakePhase(initialSession.intake_phase ?? 'waiting');
     setMessages(initialSession.messages ?? []);
-    setClassification(initialSession.classification ?? null);
-    setBeliefState(initialSession.belief_state ?? null);
+    setClassification(initialSession.classification ?? checkpoint?.classification ?? null);
+    setBeliefState(initialSession.belief_state ?? checkpointBeliefState);
     setStages(initialSession.stages?.length ? initialSession.stages : buildInitialStages());
     setEvents(initialSession.events ?? []);
     setCurrentStep(initialSession.current_step ?? null);
-    setConvergencePct(initialSession.belief_state?.convergence_pct ?? 0);
-    setCurrentQuestion(null);
-    setSpeculativeDraft(null);
+    setConvergencePct((initialSession.belief_state ?? checkpointBeliefState)?.convergence_pct ?? 0);
+    setCurrentQuestion(hydratedQuestion);
+    setSpeculativeDraft(hydratedDraft);
     setConfirmedSections(new Set());
-    setContradictions([]);
+    setContradictions(hydratedContradictions);
     setPipelineComplete(initialSession.intake_phase === 'complete');
     setPipelineSummary(initialSession.intake_phase === 'complete' ? 'Pipeline finished' : null);
 

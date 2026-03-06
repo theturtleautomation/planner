@@ -23,7 +23,9 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
-use planner_schemas::artifacts::socratic::{DomainClassification, RequirementsBeliefState};
+use planner_schemas::artifacts::socratic::{
+    Contradiction, DomainClassification, QuestionOutput, RequirementsBeliefState, SpeculativeDraft,
+};
 
 // ---------------------------------------------------------------------------
 // Session Types
@@ -63,6 +65,51 @@ impl Default for ResumeStatus {
     }
 }
 
+/// Durable interview checkpoint used for detached session recovery UX.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InterviewCheckpoint {
+    /// Stable run identifier reused for CXDB and checkpoint persistence.
+    pub socratic_run_id: Uuid,
+    /// Latest domain classification, when available.
+    pub classification: Option<DomainClassification>,
+    /// Latest belief-state snapshot.
+    pub belief_state: Option<RequirementsBeliefState>,
+    /// Last asked question, if waiting for user input.
+    pub current_question: Option<QuestionOutput>,
+    /// Last speculative draft generated, if awaiting reaction.
+    pub pending_draft: Option<SpeculativeDraft>,
+    /// Active contradictions captured so far.
+    #[serde(default)]
+    pub contradictions: Vec<Contradiction>,
+    /// Consecutive stale-turn counter.
+    #[serde(default)]
+    pub stale_turns: u32,
+    /// Turn index where the last draft was shown.
+    pub draft_shown_at_turn: Option<u32>,
+    /// RFC3339 timestamp of the last checkpoint write.
+    pub last_checkpoint_at: String,
+}
+
+impl InterviewCheckpoint {
+    pub fn new(socratic_run_id: Uuid) -> Self {
+        Self {
+            socratic_run_id,
+            classification: None,
+            belief_state: None,
+            current_question: None,
+            pending_draft: None,
+            contradictions: Vec::new(),
+            stale_turns: 0,
+            draft_shown_at_turn: None,
+            last_checkpoint_at: Utc::now().to_rfc3339(),
+        }
+    }
+
+    pub fn touch(&mut self) {
+        self.last_checkpoint_at = Utc::now().to_rfc3339();
+    }
+}
+
 /// A planning session.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Session {
@@ -85,6 +132,14 @@ pub struct Session {
 
     /// Domain classification produced at the start of the interview.
     pub classification: Option<DomainClassification>,
+
+    /// Stable identifier for this session's Socratic run.
+    #[serde(default)]
+    pub socratic_run_id: Option<Uuid>,
+
+    /// Durable checkpoint for detached interview recovery.
+    #[serde(default)]
+    pub checkpoint: Option<InterviewCheckpoint>,
 
     /// Phase of the intake process.
     /// One of: "waiting", "interviewing", "pipeline_running", "complete".
@@ -205,6 +260,8 @@ impl Session {
             project_description: None,
             belief_state: None,
             classification: None,
+            socratic_run_id: None,
+            checkpoint: None,
             intake_phase: "waiting".into(),
             interview_live_attached: false,
             can_resume_live: false,
@@ -229,12 +286,38 @@ impl Session {
             .unwrap_or(false)
     }
 
+    /// Ensure this session has a stable Socratic run ID and return it.
+    pub fn ensure_socratic_run_id(&mut self) -> Uuid {
+        if let Some(id) = self.socratic_run_id {
+            id
+        } else {
+            let id = Uuid::new_v4();
+            self.socratic_run_id = Some(id);
+            id
+        }
+    }
+
+    /// Ensure this session has a mutable checkpoint and return it.
+    pub fn ensure_checkpoint(&mut self) -> &mut InterviewCheckpoint {
+        let run_id = self.ensure_socratic_run_id();
+        let checkpoint = self
+            .checkpoint
+            .get_or_insert_with(|| InterviewCheckpoint::new(run_id));
+        checkpoint.socratic_run_id = run_id;
+        self.has_checkpoint = true;
+        checkpoint
+    }
+
     /// Recompute capability flags from the current session state.
     ///
     /// This keeps UI-facing workflow controls derived from backend truth,
     /// rather than client-side phase inference.
     pub fn recompute_capabilities(&mut self) {
         let has_description = self.has_saved_description();
+
+        if self.checkpoint.is_some() {
+            self.has_checkpoint = true;
+        }
 
         self.can_resume_checkpoint = false;
         self.can_retry_pipeline = false;
@@ -787,6 +870,8 @@ mod tests {
         assert!(!session.can_resume_live);
         assert!(!session.can_resume_checkpoint);
         assert!(!session.has_checkpoint);
+        assert!(session.socratic_run_id.is_none());
+        assert!(session.checkpoint.is_none());
     }
 
     #[test]
@@ -1120,6 +1205,82 @@ mod tests {
         }
 
         // Cleanup.
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    fn disk_backed_store_persists_interview_checkpoint() {
+        use planner_schemas::{
+            Dimension, DraftSection, QuestionOutput, QuickOption, SpeculativeDraft,
+        };
+
+        let data_dir = temp_data_dir();
+        let run_id = Uuid::new_v4();
+        let session_id;
+
+        {
+            let store = SessionStore::open(&data_dir).unwrap();
+            let created = store.create("dev|local");
+            session_id = created.id;
+
+            store.update(session_id, |s| {
+                s.socratic_run_id = Some(run_id);
+                let checkpoint = s.ensure_checkpoint();
+                checkpoint.current_question = Some(QuestionOutput {
+                    question: "What are the core user roles?".into(),
+                    target_dimension: Dimension::Stakeholders,
+                    quick_options: vec![QuickOption {
+                        label: "Single user".into(),
+                        value: "single_user".into(),
+                    }],
+                    allow_skip: true,
+                });
+                checkpoint.pending_draft = Some(SpeculativeDraft {
+                    sections: vec![DraftSection {
+                        heading: "Goal".into(),
+                        content: "Build a resilient task tracker".into(),
+                        dimensions: vec![Dimension::Goal],
+                    }],
+                    assumptions: Vec::new(),
+                    not_discussed: vec![Dimension::Integrations],
+                });
+                checkpoint.stale_turns = 2;
+                checkpoint.draft_shown_at_turn = Some(4);
+                checkpoint.touch();
+            });
+
+            let (flushed, errors) = store.flush_dirty();
+            assert_eq!(flushed, 1);
+            assert_eq!(errors, 0);
+        }
+
+        {
+            let store = SessionStore::open(&data_dir).unwrap();
+            let loaded = store.get(session_id).expect("session should load");
+            assert_eq!(loaded.socratic_run_id, Some(run_id));
+            assert!(loaded.has_checkpoint);
+
+            let checkpoint = loaded.checkpoint.expect("checkpoint should persist");
+            assert_eq!(checkpoint.socratic_run_id, run_id);
+            assert_eq!(
+                checkpoint
+                    .current_question
+                    .as_ref()
+                    .map(|q| q.question.as_str()),
+                Some("What are the core user roles?")
+            );
+            assert_eq!(
+                checkpoint
+                    .pending_draft
+                    .as_ref()
+                    .and_then(|d| d.sections.first())
+                    .map(|s| s.heading.as_str()),
+                Some("Goal")
+            );
+            assert_eq!(checkpoint.stale_turns, 2);
+            assert_eq!(checkpoint.draft_shown_at_turn, Some(4));
+        }
+
         let _ = std::fs::remove_dir_all(&data_dir);
     }
 

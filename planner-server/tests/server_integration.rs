@@ -61,6 +61,34 @@ async fn spawn_test_server(
     (addr, handle)
 }
 
+async fn wait_for_ws_message_type(
+    ws: &mut tokio_tungstenite::WebSocketStream<
+        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+    >,
+    message_type: &str,
+) -> serde_json::Value {
+    loop {
+        let next = tokio::time::timeout(Duration::from_secs(2), ws.next())
+            .await
+            .expect("timed out waiting for ws message")
+            .expect("websocket closed unexpectedly")
+            .expect("websocket error");
+
+        let text = match next {
+            Message::Text(t) => t,
+            Message::Close(_) => {
+                panic!("websocket closed before receiving message type {message_type}")
+            }
+            _ => continue,
+        };
+
+        let parsed: serde_json::Value = serde_json::from_str(&text).unwrap();
+        if parsed["type"] == message_type {
+            return parsed;
+        }
+    }
+}
+
 // ===========================================================================
 // Tier 2: Server Integration Tests
 // ===========================================================================
@@ -385,6 +413,68 @@ async fn tier2_session_capability_mapping() {
     assert_eq!(waiting_summary["can_resume_live"], false);
 }
 
+/// Test 4b: Session payload exposes durable interview checkpoint fields.
+#[tokio::test]
+async fn tier2_session_exposes_interview_checkpoint_payload() {
+    use planner_schemas::{Dimension, DraftSection, QuestionOutput, SpeculativeDraft};
+
+    let state = test_state();
+    let session = state.sessions.create("dev|local");
+    let session_id = session.id;
+    let run_id = Uuid::new_v4();
+
+    state.sessions.update(session_id, |s| {
+        s.intake_phase = "interviewing".into();
+        s.socratic_run_id = Some(run_id);
+        let checkpoint = s.ensure_checkpoint();
+        checkpoint.current_question = Some(QuestionOutput {
+            question: "What are the main user roles?".into(),
+            target_dimension: Dimension::Stakeholders,
+            quick_options: Vec::new(),
+            allow_skip: true,
+        });
+        checkpoint.pending_draft = Some(SpeculativeDraft {
+            sections: vec![DraftSection {
+                heading: "Goal".into(),
+                content: "Draft goal summary".into(),
+                dimensions: vec![Dimension::Goal],
+            }],
+            assumptions: Vec::new(),
+            not_discussed: Vec::new(),
+        });
+        checkpoint.stale_turns = 1;
+        checkpoint.touch();
+    });
+
+    let req = Request::builder()
+        .uri(format!("/sessions/{}", session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = test_app(state).oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let parsed: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let checkpoint = &parsed["session"]["checkpoint"];
+
+    assert_eq!(parsed["session"]["socratic_run_id"], run_id.to_string());
+    assert!(parsed["session"]["has_checkpoint"]
+        .as_bool()
+        .unwrap_or(false));
+    assert_eq!(
+        checkpoint["current_question"]["question"],
+        "What are the main user roles?"
+    );
+    assert_eq!(
+        checkpoint["pending_draft"]["sections"][0]["heading"],
+        "Goal"
+    );
+    assert_eq!(checkpoint["stale_turns"], 1);
+    assert!(checkpoint["last_checkpoint_at"].is_string());
+}
+
 /// Test 4: Sending a message triggers the pipeline.
 ///
 /// Verifies the full request→handler→session-update flow:
@@ -623,6 +713,137 @@ async fn tier2_socratic_ws_reconnect_detached_interview_stays_detached() {
     assert_eq!(after.resume_status, ResumeStatus::InterviewRestartOnly);
     assert_eq!(after.can_resume_live, false);
     assert_eq!(after.can_resume_checkpoint, false);
+
+    handle.abort();
+}
+
+/// Test 10: Reconnecting to a checkpoint-resumable interview re-emits the
+/// pending question without requiring a new initial socratic_response.
+#[tokio::test]
+async fn tier2_socratic_ws_reconnect_checkpoint_reemits_question() {
+    use planner_schemas::{
+        ComplexityTier, Dimension, DomainClassification, ProjectType, QuestionOutput,
+        RequirementsBeliefState,
+    };
+
+    let state = test_state();
+    let session = state.sessions.create("dev|local");
+    let session_id = session.id;
+
+    let classification = DomainClassification {
+        project_type: ProjectType::WebApp,
+        complexity: ComplexityTier::Standard,
+        detected_signals: vec!["web".into()],
+        required_dimensions: Dimension::required_for(&ProjectType::WebApp),
+    };
+    let belief_state = RequirementsBeliefState::from_classification(&classification);
+
+    state.sessions.update(session_id, |s| {
+        s.intake_phase = "interviewing".into();
+        s.project_description = Some("Build a timer app".into());
+        s.interview_live_attached = false;
+        s.socratic_run_id = Some(Uuid::new_v4());
+        s.classification = Some(classification.clone());
+        s.belief_state = Some(belief_state.clone());
+        let checkpoint = s.ensure_checkpoint();
+        checkpoint.classification = Some(classification.clone());
+        checkpoint.belief_state = Some(belief_state.clone());
+        checkpoint.current_question = Some(QuestionOutput {
+            question: "Who is the primary user?".into(),
+            target_dimension: Dimension::Stakeholders,
+            quick_options: Vec::new(),
+            allow_skip: true,
+        });
+        checkpoint.pending_draft = None;
+        checkpoint.touch();
+    });
+
+    let app = test_app(state.clone());
+    let (addr, handle) = spawn_test_server(app).await;
+    let ws_url = format!("ws://{}/sessions/{}/socratic/ws", addr, session_id);
+
+    let (mut ws, _) = connect_async(ws_url).await.unwrap();
+    let question = wait_for_ws_message_type(&mut ws, "question").await;
+    assert_eq!(question["text"], "Who is the primary user?");
+
+    let _ = ws.close(None).await;
+    tokio::time::sleep(Duration::from_millis(250)).await;
+
+    let after = state.sessions.get(session_id).unwrap();
+    assert_eq!(after.intake_phase, "interviewing");
+    assert_eq!(after.interview_live_attached, false);
+    assert_eq!(
+        after.resume_status,
+        ResumeStatus::InterviewCheckpointResumable
+    );
+    assert_eq!(after.can_resume_checkpoint, true);
+
+    handle.abort();
+}
+
+/// Test 11: Reconnecting to a checkpoint-resumable interview re-emits the
+/// pending draft when no question is pending.
+#[tokio::test]
+async fn tier2_socratic_ws_reconnect_checkpoint_reemits_draft() {
+    use planner_schemas::{
+        ComplexityTier, Dimension, DomainClassification, DraftSection, ProjectType,
+        RequirementsBeliefState, SpeculativeDraft,
+    };
+
+    let state = test_state();
+    let session = state.sessions.create("dev|local");
+    let session_id = session.id;
+
+    let classification = DomainClassification {
+        project_type: ProjectType::WebApp,
+        complexity: ComplexityTier::Standard,
+        detected_signals: vec!["web".into()],
+        required_dimensions: Dimension::required_for(&ProjectType::WebApp),
+    };
+    let belief_state = RequirementsBeliefState::from_classification(&classification);
+
+    state.sessions.update(session_id, |s| {
+        s.intake_phase = "interviewing".into();
+        s.project_description = Some("Build a timer app".into());
+        s.interview_live_attached = false;
+        s.socratic_run_id = Some(Uuid::new_v4());
+        s.classification = Some(classification.clone());
+        s.belief_state = Some(belief_state.clone());
+        let checkpoint = s.ensure_checkpoint();
+        checkpoint.classification = Some(classification.clone());
+        checkpoint.belief_state = Some(belief_state.clone());
+        checkpoint.current_question = None;
+        checkpoint.pending_draft = Some(SpeculativeDraft {
+            sections: vec![DraftSection {
+                heading: "Goal".into(),
+                content: "Build a timer app with presets.".into(),
+                dimensions: vec![Dimension::Goal],
+            }],
+            assumptions: Vec::new(),
+            not_discussed: Vec::new(),
+        });
+        checkpoint.touch();
+    });
+
+    let app = test_app(state.clone());
+    let (addr, handle) = spawn_test_server(app).await;
+    let ws_url = format!("ws://{}/sessions/{}/socratic/ws", addr, session_id);
+
+    let (mut ws, _) = connect_async(ws_url).await.unwrap();
+    let draft = wait_for_ws_message_type(&mut ws, "speculative_draft").await;
+    assert_eq!(draft["sections"][0]["heading"], "Goal");
+
+    let _ = ws.close(None).await;
+    tokio::time::sleep(Duration::from_millis(250)).await;
+
+    let after = state.sessions.get(session_id).unwrap();
+    assert_eq!(after.intake_phase, "interviewing");
+    assert_eq!(after.interview_live_attached, false);
+    assert_eq!(
+        after.resume_status,
+        ResumeStatus::InterviewCheckpointResumable
+    );
+    assert_eq!(after.can_resume_checkpoint, true);
 
     handle.abort();
 }

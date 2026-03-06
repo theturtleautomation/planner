@@ -35,5 +35,8 @@ pub use constitution::{check_coverage, evaluate_question, load_constitution};
 pub use convergence::check_convergence;
 pub use domain_classifier::classify_domain;
 pub use question_planner::{plan_next_question, select_target_dimension};
-pub use socratic_engine::{run_interview, session_to_intake, SocraticIO};
+pub use socratic_engine::{
+    run_interview, run_interview_from_checkpoint, session_to_intake, CheckpointResumeState,
+    ResumePendingPrompt, SocraticIO,
+};
 pub use speculative_draft::{format_draft_for_display, generate_draft, should_trigger_draft};

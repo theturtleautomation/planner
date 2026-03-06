@@ -112,6 +112,44 @@ export interface SpeculativeDraft {
   not_discussed: string[];
 }
 
+export interface CheckpointQuestion {
+  question: string;
+  target_dimension: string | Record<string, unknown>;
+  quick_options: QuickOption[];
+  allow_skip: boolean;
+}
+
+export interface CheckpointDraft {
+  sections: Array<{ heading: string; content: string }>;
+  assumptions: Array<{
+    dimension: string | Record<string, unknown>;
+    assumption: string;
+    confidence: number;
+  }>;
+  not_discussed: Array<string | Record<string, unknown>>;
+}
+
+export interface CheckpointContradiction {
+  dimension_a: string | Record<string, unknown>;
+  value_a: string;
+  dimension_b: string | Record<string, unknown>;
+  value_b: string;
+  explanation: string;
+  resolved?: boolean;
+}
+
+export interface InterviewCheckpoint {
+  socratic_run_id: string;
+  classification?: Classification | null;
+  belief_state?: BeliefState | null;
+  current_question?: CheckpointQuestion | null;
+  pending_draft?: CheckpointDraft | null;
+  contradictions: CheckpointContradiction[];
+  stale_turns: number;
+  draft_shown_at_turn?: number | null;
+  last_checkpoint_at: string;
+}
+
 // ─── Observability ──────────────────────────────────────────────────────────
 
 export type EventLevel = 'info' | 'warn' | 'error';
@@ -146,6 +184,8 @@ export interface Session {
   resume_status: ResumeStatus;
   belief_state?: BeliefState | null;
   classification?: Classification | null;
+  socratic_run_id?: string | null;
+  checkpoint?: InterviewCheckpoint | null;
   project_description?: string | null;
   events?: PlannerEvent[];
   current_step?: string | null;

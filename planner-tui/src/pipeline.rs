@@ -35,6 +35,7 @@
 
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
+use uuid::Uuid;
 
 use planner_core::observability::{ChannelEventSink, EventSink, EventSource, PlannerEvent};
 use planner_schemas::SocraticEvent;
@@ -282,7 +283,13 @@ pub fn spawn_socratic_interview(
                 planner_core::pipeline::steps::socratic::run_interview::<
                     TuiSocraticIO,
                     planner_core::cxdb::durable::DurableCxdbEngine,
-                >(&router, &*io, Some(engine), &initial_message)
+                >(
+                    &router,
+                    &*io,
+                    Some(engine),
+                    Uuid::new_v4(),
+                    &initial_message,
+                )
                 .await
             }
             None => {
@@ -293,6 +300,7 @@ pub fn spawn_socratic_interview(
                     &router,
                     &*io,
                     None::<&planner_core::cxdb::CxdbEngine>,
+                    Uuid::new_v4(),
                     &initial_message,
                 )
                 .await

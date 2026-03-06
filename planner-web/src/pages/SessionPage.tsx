@@ -12,7 +12,7 @@ import SessionStatusHeader from '../components/SessionStatusHeader.tsx';
 import { createApiClient } from '../api/client.ts';
 import { useGetAccessToken } from '../auth/useAuthenticatedFetch.ts';
 import { useSocraticWebSocket } from '../hooks/useSocraticWebSocket.ts';
-import type { ResumeStatus, Session } from '../types.ts';
+import type { InterviewCheckpoint, ResumeStatus, Session } from '../types.ts';
 
 function getInterviewResumeNotice(status: ResumeStatus):
   | { tone: 'warning' | 'info'; text: string }
@@ -41,6 +41,45 @@ function getInterviewResumeNotice(status: ResumeStatus):
     default:
       return null;
   }
+}
+
+function formatCheckpointTimestamp(raw: string): string {
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return raw;
+  return parsed.toLocaleString();
+}
+
+function formatDimensionLabel(value: string | Record<string, unknown> | undefined): string {
+  if (!value) return 'Unknown';
+  if (typeof value === 'string') return value;
+  const keys = Object.keys(value);
+  if (keys.length === 1) {
+    const inner = value[keys[0]];
+    if (typeof inner === 'string') return inner;
+  }
+  return JSON.stringify(value);
+}
+
+function getCheckpointSummary(checkpoint: InterviewCheckpoint): string[] {
+  const lines: string[] = [];
+  if (checkpoint.current_question?.question) {
+    lines.push(`Current question: ${checkpoint.current_question.question}`);
+  }
+  if (checkpoint.pending_draft?.sections?.length) {
+    const heading = checkpoint.pending_draft.sections[0]?.heading;
+    if (heading) {
+      lines.push(`Pending draft: ${heading}`);
+    } else {
+      lines.push('Pending draft is available.');
+    }
+  }
+  if (checkpoint.contradictions?.length) {
+    const unresolved = checkpoint.contradictions.filter((c) => !c.resolved).length;
+    if (unresolved > 0) {
+      lines.push(`${unresolved} unresolved contradiction${unresolved === 1 ? '' : 's'}.`);
+    }
+  }
+  return lines;
 }
 
 export default function SessionPage() {
@@ -450,6 +489,15 @@ export default function SessionPage() {
     !socratic.isConnected
       ? getInterviewResumeNotice(session.resume_status)
       : null;
+  const detachedCheckpoint =
+    isExistingSessionRoute &&
+    session?.intake_phase === 'interviewing' &&
+    !socratic.isConnected
+      ? session?.checkpoint ?? null
+      : null;
+  const checkpointSummaryLines = detachedCheckpoint
+    ? getCheckpointSummary(detachedCheckpoint)
+    : [];
 
   return (
     <Layout sessionId={sessionId} isConnected={socratic.isConnected}>
@@ -513,6 +561,36 @@ export default function SessionPage() {
             flexShrink: 0,
           }}>
             {interviewResumeNotice.text}
+          </div>
+        )}
+
+        {detachedCheckpoint && (
+          <div style={{
+            padding: '10px 16px',
+            background: 'rgba(0,212,255,0.06)',
+            borderBottom: '1px solid rgba(0,212,255,0.30)',
+            color: 'var(--color-text)',
+            fontSize: '12px',
+            lineHeight: '1.45',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '4px',
+            flexShrink: 0,
+          }}>
+            <span style={{ color: 'var(--color-primary)', fontWeight: 700, letterSpacing: '0.04em' }}>
+              Saved Interview Checkpoint
+            </span>
+            <span style={{ color: 'var(--color-text-muted)' }}>
+              Last saved: {formatCheckpointTimestamp(detachedCheckpoint.last_checkpoint_at)}
+            </span>
+            {detachedCheckpoint.current_question && (
+              <span>
+                Target dimension: {formatDimensionLabel(detachedCheckpoint.current_question.target_dimension)}
+              </span>
+            )}
+            {checkpointSummaryLines.map((line) => (
+              <span key={line}>{line}</span>
+            ))}
           </div>
         )}
 

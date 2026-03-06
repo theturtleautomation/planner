@@ -13,6 +13,21 @@ loading the entire system into working memory.
 - Keep each step small enough to complete and verify in one focused pass.
 - Add tests at the same time as behavior changes.
 
+## Implementation Status (Updated 2026-03-06)
+
+- Phase 2 status: complete
+- Phase 2.1: complete (`InterviewCheckpoint` persisted in session model)
+- Phase 2.2: complete (stable `socratic_run_id` created and reused)
+- Phase 2.3: complete (checkpoint writes on classification, belief updates, question, draft, contradiction, convergence)
+- Phase 2.4: complete (checkpoint fields exposed and rendered in web UI)
+- Phase 2.5: complete (checkpoint persistence + payload tests added)
+
+- Phase 3 status: complete for checkpoint resume path
+- Phase 3.1: complete (server accepts detached `interviewing` checkpoint reconnect without new initial `socratic_response`)
+- Phase 3.2: complete (pending question/draft re-emitted; regenerate-next-prompt path when no pending prompt)
+- Phase 3.3: complete (capability-driven auto-attach + resumable session UI copy/state)
+- Phase 3.4: complete (integration tests for checkpoint reconnect prompt replay + session-page resume behavior tests)
+
 ---
 
 ## Phase 0: Make The Current UI Truthful
@@ -613,3 +628,28 @@ UI.
 The plan is successful when a user can manage the full session workflow from the
 web UI without relying on server-side guesswork, hidden state, or restart-only
 fallbacks.
+
+---
+
+## Review Gaps (Track At End Of Review)
+
+### Gap R1: Checkpoint stale-turn accuracy for skip-only turns
+
+Current status:
+- Phase 2 checkpoint writes are event-driven and update `stale_turns` when a
+  `belief_state_update` event is emitted.
+
+Known gap:
+- skip-only interview turns can increase engine `stale_turns` without emitting
+  a belief-state update, which can leave checkpoint `stale_turns` lower than
+  in-memory runtime state after detach.
+
+Impact:
+- low for UI hydration
+- medium for future resume logic in Phase 3 if resume behavior depends on exact
+  stale-turn count
+
+Proposed follow-up:
+- when implementing Phase 3 resume, either:
+  - persist `stale_turns` directly from engine state on every loop iteration, or
+  - emit an explicit stale-turn checkpoint event for skip/no-progress turns.

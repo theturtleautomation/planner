@@ -1186,6 +1186,9 @@ async fn start_socratic(
         s.project_description = Some(req.description.clone());
         s.intake_phase = "interviewing".into();
         s.interview_live_attached = false;
+        s.ensure_socratic_run_id();
+        s.checkpoint = None;
+        s.has_checkpoint = false;
     });
 
     // Touch to extend expiry.

@@ -30,6 +30,10 @@ use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use planner_core::observability::EventSink;
+use planner_core::pipeline::steps::socratic::convergence;
+use planner_core::pipeline::steps::socratic::{
+    run_interview_from_checkpoint, CheckpointResumeState, ResumePendingPrompt,
+};
 
 use planner_schemas::{
     ConvergenceResult, DomainClassification, QuestionOutput, RequirementsBeliefState,
@@ -309,6 +313,142 @@ fn mark_interview_detached_if_active(state: &Arc<AppState>, session_id: Uuid) {
     });
 }
 
+fn sorted_uncertain_confidences(state: &RequirementsBeliefState) -> Vec<f32> {
+    let mut entries: Vec<(String, f32)> = state
+        .uncertain
+        .iter()
+        .map(|(dim, (_slot, conf))| (dim.label(), *conf))
+        .collect();
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
+    entries.into_iter().map(|(_, conf)| conf).collect()
+}
+
+fn apply_checkpoint_from_event(state: &Arc<AppState>, session_id: Uuid, event: &SocraticEvent) {
+    let _ = state.sessions.update(session_id, |s| match event {
+        SocraticEvent::Classified { classification } => {
+            s.classification = Some(classification.clone());
+            let checkpoint = s.ensure_checkpoint();
+            checkpoint.classification = Some(classification.clone());
+            checkpoint.touch();
+        }
+        SocraticEvent::BeliefStateUpdate { state: next_state } => {
+            let previous_state = s
+                .checkpoint
+                .as_ref()
+                .and_then(|cp| cp.belief_state.as_ref())
+                .cloned();
+            let previous_stale_turns = s.checkpoint.as_ref().map(|cp| cp.stale_turns).unwrap_or(0);
+
+            let is_stale_turn = previous_state.as_ref().map_or(false, |prev| {
+                let before_uncertain_confs = sorted_uncertain_confidences(prev);
+                let after_uncertain_confs = sorted_uncertain_confidences(next_state);
+                convergence::is_stale_turn(
+                    prev.filled.len(),
+                    next_state.filled.len(),
+                    &before_uncertain_confs,
+                    &after_uncertain_confs,
+                )
+            });
+
+            s.belief_state = Some(next_state.clone());
+            let checkpoint = s.ensure_checkpoint();
+            checkpoint.belief_state = Some(next_state.clone());
+            checkpoint.contradictions = next_state.contradictions.clone();
+            checkpoint.current_question = None;
+            checkpoint.pending_draft = None;
+            checkpoint.stale_turns = if is_stale_turn {
+                previous_stale_turns.saturating_add(1)
+            } else {
+                0
+            };
+            checkpoint.touch();
+        }
+        SocraticEvent::Question { output } => {
+            let checkpoint = s.ensure_checkpoint();
+            checkpoint.current_question = Some(output.clone());
+            checkpoint.pending_draft = None;
+            checkpoint.touch();
+        }
+        SocraticEvent::SpeculativeDraftReady { draft } => {
+            let draft_turn = s
+                .checkpoint
+                .as_ref()
+                .and_then(|cp| cp.belief_state.as_ref())
+                .map(|bs| bs.turn_count);
+            let checkpoint = s.ensure_checkpoint();
+            checkpoint.current_question = None;
+            checkpoint.pending_draft = Some(draft.clone());
+            if let Some(turn) = draft_turn {
+                checkpoint.draft_shown_at_turn = Some(turn);
+            }
+            checkpoint.touch();
+        }
+        SocraticEvent::ContradictionDetected { contradiction } => {
+            let checkpoint = s.ensure_checkpoint();
+            checkpoint.contradictions.push(contradiction.clone());
+            checkpoint.touch();
+        }
+        SocraticEvent::Converged { .. } => {
+            let checkpoint = s.ensure_checkpoint();
+            checkpoint.current_question = None;
+            checkpoint.pending_draft = None;
+            checkpoint.touch();
+        }
+        SocraticEvent::SystemMessage { .. } | SocraticEvent::Error { .. } => {}
+    });
+}
+
+fn apply_checkpoint_from_server_message(
+    state: &Arc<AppState>,
+    session_id: Uuid,
+    server_msg: &ServerMessage,
+) {
+    if let ServerMessage::ChatMessage { role, content, .. } = server_msg {
+        if role == "event" {
+            if let Ok(event) = serde_json::from_str::<SocraticEvent>(content) {
+                apply_checkpoint_from_event(state, session_id, &event);
+            }
+        }
+    }
+}
+
+fn build_checkpoint_resume_state(
+    session: &crate::session::Session,
+) -> Option<CheckpointResumeState> {
+    let checkpoint = session.checkpoint.clone()?;
+    let classification = checkpoint
+        .classification
+        .clone()
+        .or_else(|| session.classification.clone());
+
+    let belief_state = checkpoint
+        .belief_state
+        .clone()
+        .or_else(|| session.belief_state.clone())
+        .or_else(|| {
+            classification
+                .as_ref()
+                .map(RequirementsBeliefState::from_classification)
+        })?;
+
+    let pending_prompt = if let Some(output) = checkpoint.current_question.clone() {
+        Some(ResumePendingPrompt::Question(output))
+    } else {
+        checkpoint
+            .pending_draft
+            .clone()
+            .map(ResumePendingPrompt::Draft)
+    };
+
+    Some(CheckpointResumeState {
+        belief_state,
+        classification,
+        stale_turns: checkpoint.stale_turns,
+        draft_shown_at_turn: checkpoint.draft_shown_at_turn,
+        pending_prompt,
+    })
+}
+
 // ---------------------------------------------------------------------------
 // handle_socratic_ws — main WebSocket handler
 // ---------------------------------------------------------------------------
@@ -339,11 +479,18 @@ pub async fn handle_socratic_ws(mut socket: WebSocket, state: Arc<AppState>, ses
     }
 
     // Attach-only resume for non-waiting terminal/build phases.
-    let intake_phase = state
+    let (intake_phase, checkpoint_resume_state) = state
         .sessions
         .get(session_id)
-        .map(|s| s.intake_phase.clone())
-        .unwrap_or_else(|| "waiting".to_string());
+        .map(|s| {
+            let resume_state = if s.intake_phase == "interviewing" && !s.interview_live_attached {
+                build_checkpoint_resume_state(&s)
+            } else {
+                None
+            };
+            (s.intake_phase.clone(), resume_state)
+        })
+        .unwrap_or_else(|| ("waiting".to_string(), None));
     if intake_phase == "pipeline_running" || intake_phase == "complete" || intake_phase == "error" {
         handle_resume_ws(socket, state, session_id).await;
         return;
@@ -356,12 +503,25 @@ pub async fn handle_socratic_ws(mut socket: WebSocket, state: Arc<AppState>, ses
     let (input_tx, input_rx) = mpsc::unbounded_channel::<String>();
     let input_rx = Arc::new(Mutex::new(input_rx));
 
-    // Wait for the first SocraticResponse / StartPipeline to get the initial
-    // project description before launching the engine.
-    let initial_description = loop {
-        match socket.recv().await {
-            Some(Ok(Message::Text(text))) => {
-                match serde_json::from_str::<ClientMessage>(&text) {
+    enum InterviewStartMode {
+        Fresh { initial_description: String },
+        CheckpointResume { resume_state: CheckpointResumeState },
+    }
+
+    let start_mode = if let Some(resume_state) = checkpoint_resume_state {
+        let _ = state.sessions.update(session_id, |s| {
+            s.intake_phase = "interviewing".into();
+            s.interview_live_attached = true;
+            s.ensure_socratic_run_id();
+        });
+        InterviewStartMode::CheckpointResume { resume_state }
+    } else {
+        // Wait for the first SocraticResponse / StartPipeline to get the
+        // initial project description before launching the engine.
+        let initial_description = loop {
+            match socket.recv().await {
+                Some(Ok(Message::Text(text))) => match serde_json::from_str::<ClientMessage>(&text)
+                {
                     Ok(ClientMessage::SocraticResponse { content }) => break content,
                     Ok(ClientMessage::StartPipeline { description }) => break description,
                     Ok(ClientMessage::Done) => {
@@ -377,22 +537,35 @@ pub async fn handle_socratic_ws(mut socket: WebSocket, state: Arc<AppState>, ses
                         );
                         continue;
                     }
+                },
+                Some(Ok(Message::Close(_))) | None => {
+                    mark_interview_detached_if_active(&state, session_id);
+                    return;
                 }
+                _ => continue,
             }
-            Some(Ok(Message::Close(_))) | None => {
-                mark_interview_detached_if_active(&state, session_id);
-                return;
-            }
-            _ => continue,
+        };
+
+        // Mark session as interviewing and ensure a stable Socratic run ID.
+        let _ = state.sessions.update(session_id, |s| {
+            s.intake_phase = "interviewing".into();
+            s.interview_live_attached = true;
+            let run_id = s.ensure_socratic_run_id();
+            s.checkpoint = Some(crate::session::InterviewCheckpoint::new(run_id));
+            s.has_checkpoint = true;
+            s.add_message("user", &initial_description);
+        });
+
+        InterviewStartMode::Fresh {
+            initial_description,
         }
     };
 
-    // Mark session as interviewing.
-    state.sessions.update(session_id, |s| {
-        s.intake_phase = "interviewing".into();
-        s.interview_live_attached = true;
-        s.add_message("user", &initial_description);
-    });
+    let run_id = state
+        .sessions
+        .get(session_id)
+        .and_then(|s| s.socratic_run_id)
+        .unwrap_or_else(Uuid::new_v4);
 
     // Build the IO bridge and spawn the engine.
     // Note: we pass a *clone* of event_tx to the IO bridge and drop the
@@ -413,10 +586,16 @@ pub async fn handle_socratic_ws(mut socket: WebSocket, state: Arc<AppState>, ses
     drop(event_tx); // keep channel alive only through io's clone
 
     let router = planner_core::llm::providers::LlmRouter::from_env();
+    let requires_immediate_llm = match &start_mode {
+        InterviewStartMode::Fresh { .. } => true,
+        InterviewStartMode::CheckpointResume { resume_state } => {
+            resume_state.pending_prompt.is_none()
+        }
+    };
 
     // Pre-flight check: warn if no LLM providers are available.
     let available = router.available_providers();
-    if available.is_empty() {
+    if requires_immediate_llm && available.is_empty() {
         tracing::error!(
             "Session {}: No LLM CLI providers found. Install and authenticate at least one of: claude, gemini, codex",
             session_id
@@ -437,11 +616,18 @@ pub async fn handle_socratic_ws(mut socket: WebSocket, state: Arc<AppState>, ses
         });
         return;
     }
-    tracing::info!(
-        "Session {}: LLM providers available: {:?}",
-        session_id,
-        available
-    );
+    if available.is_empty() {
+        tracing::warn!(
+            "Session {}: resuming from checkpoint prompt without pre-flight providers; LLM will be required after the next user response",
+            session_id
+        );
+    } else {
+        tracing::info!(
+            "Session {}: LLM providers available: {:?}",
+            session_id,
+            available
+        );
+    }
 
     // Emit the session-start lifecycle event.
     event_sink.emit(
@@ -457,29 +643,59 @@ pub async fn handle_socratic_ws(mut socket: WebSocket, state: Arc<AppState>, ses
     );
 
     let state_for_engine = state.clone();
+    let start_mode_for_engine = start_mode;
 
     // Spawn the interview engine as a background task.
     let sink = event_sink.clone();
     let engine_handle = tokio::spawn(async move {
-        let result = match state_for_engine.cxdb.as_ref() {
-            Some(engine) => {
-                planner_core::pipeline::steps::socratic::run_interview::<
-                    WsSocraticIO,
-                    planner_core::cxdb::durable::DurableCxdbEngine,
-                >(&router, &*io, Some(engine), &initial_description)
-                .await
-            }
-            None => {
-                planner_core::pipeline::steps::socratic::run_interview::<
-                    WsSocraticIO,
-                    planner_core::cxdb::CxdbEngine,
-                >(
-                    &router,
-                    &*io,
-                    None::<&planner_core::cxdb::CxdbEngine>,
-                    &initial_description,
-                )
-                .await
+        let result = match start_mode_for_engine {
+            InterviewStartMode::Fresh {
+                initial_description,
+            } => match state_for_engine.cxdb.as_ref() {
+                Some(engine) => {
+                    planner_core::pipeline::steps::socratic::run_interview::<
+                        WsSocraticIO,
+                        planner_core::cxdb::durable::DurableCxdbEngine,
+                    >(&router, &*io, Some(engine), run_id, &initial_description)
+                    .await
+                }
+                None => {
+                    planner_core::pipeline::steps::socratic::run_interview::<
+                        WsSocraticIO,
+                        planner_core::cxdb::CxdbEngine,
+                    >(
+                        &router,
+                        &*io,
+                        None::<&planner_core::cxdb::CxdbEngine>,
+                        run_id,
+                        &initial_description,
+                    )
+                    .await
+                }
+            },
+            InterviewStartMode::CheckpointResume { resume_state } => {
+                match state_for_engine.cxdb.as_ref() {
+                    Some(engine) => {
+                        run_interview_from_checkpoint::<
+                            WsSocraticIO,
+                            planner_core::cxdb::durable::DurableCxdbEngine,
+                        >(
+                            &router, &*io, Some(engine), run_id, resume_state.clone()
+                        )
+                        .await
+                    }
+                    None => run_interview_from_checkpoint::<
+                        WsSocraticIO,
+                        planner_core::cxdb::CxdbEngine,
+                    >(
+                        &router,
+                        &*io,
+                        None::<&planner_core::cxdb::CxdbEngine>,
+                        run_id,
+                        resume_state,
+                    )
+                    .await,
+                }
             }
         };
 
@@ -495,6 +711,15 @@ pub async fn handle_socratic_ws(mut socket: WebSocket, state: Arc<AppState>, ses
                 state_for_engine.sessions.update(session_id, |s| {
                     s.belief_state = Some(session.belief_state.clone());
                     s.classification = session.belief_state.classification.clone();
+                    let checkpoint = s.ensure_checkpoint();
+                    checkpoint.belief_state = Some(session.belief_state.clone());
+                    checkpoint.classification = session.belief_state.classification.clone();
+                    checkpoint.contradictions = session.belief_state.contradictions.clone();
+                    if did_converge {
+                        checkpoint.current_question = None;
+                        checkpoint.pending_draft = None;
+                    }
+                    checkpoint.touch();
                     if did_converge {
                         s.intake_phase = "pipeline_running".into();
                         s.interview_live_attached = false;
@@ -568,6 +793,7 @@ pub async fn handle_socratic_ws(mut socket: WebSocket, state: Arc<AppState>, ses
             msg = event_rx.recv() => {
                 match msg {
                     Some(server_msg) => {
+                        apply_checkpoint_from_server_message(&state, session_id, &server_msg);
                         if let Ok(json) = serde_json::to_string(&server_msg) {
                             if socket.send(Message::Text(json.into())).await.is_err() {
                                 mark_interview_detached_if_active(&state, session_id);
@@ -983,6 +1209,21 @@ async fn handle_resume_ws(mut socket: WebSocket, state: Arc<AppState>, session_i
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::session::SessionStore;
+    use crate::AppState;
+    use planner_schemas::{ComplexityTier, Dimension, DraftSection, ProjectType, QuickOption};
+
+    fn test_state() -> Arc<AppState> {
+        Arc::new(AppState {
+            sessions: SessionStore::new(),
+            auth_config: None,
+            event_store: None,
+            cxdb: None,
+            started_at: std::time::Instant::now(),
+            blueprints: planner_core::blueprint::BlueprintStore::new(),
+            proposals: planner_core::discovery::ProposalStore::new(),
+        })
+    }
 
     #[tokio::test]
     async fn ws_socratic_io_send_classification() {
@@ -1130,5 +1371,96 @@ mod tests {
             }
             other => panic!("expected ChatMessage with event role, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn checkpoint_updates_on_question_event() {
+        let state = test_state();
+        let session = state.sessions.create("dev|local");
+        let session_id = session.id;
+
+        let event = SocraticEvent::Question {
+            output: QuestionOutput {
+                question: "Who will use this tool most often?".into(),
+                target_dimension: Dimension::Stakeholders,
+                quick_options: vec![QuickOption {
+                    label: "Internal team".into(),
+                    value: "internal_team".into(),
+                }],
+                allow_skip: true,
+            },
+        };
+
+        apply_checkpoint_from_event(&state, session_id, &event);
+
+        let after = state
+            .sessions
+            .get(session_id)
+            .expect("session should exist");
+        let checkpoint = after.checkpoint.expect("checkpoint should be present");
+        assert_eq!(
+            checkpoint
+                .current_question
+                .as_ref()
+                .map(|q| q.question.as_str()),
+            Some("Who will use this tool most often?")
+        );
+        assert!(after.has_checkpoint);
+    }
+
+    #[test]
+    fn checkpoint_updates_on_draft_event() {
+        let state = test_state();
+        let session = state.sessions.create("dev|local");
+        let session_id = session.id;
+
+        let classification = DomainClassification {
+            project_type: ProjectType::WebApp,
+            complexity: ComplexityTier::Standard,
+            detected_signals: vec!["web".into()],
+            required_dimensions: Dimension::required_for(&ProjectType::WebApp),
+        };
+        let mut belief_state = RequirementsBeliefState::from_classification(&classification);
+        belief_state.turn_count = 3;
+
+        apply_checkpoint_from_event(
+            &state,
+            session_id,
+            &SocraticEvent::BeliefStateUpdate {
+                state: belief_state.clone(),
+            },
+        );
+
+        let draft = SpeculativeDraft {
+            sections: vec![DraftSection {
+                heading: "Goal".into(),
+                content: "Build a resilient task tracker".into(),
+                dimensions: vec![Dimension::Goal],
+            }],
+            assumptions: Vec::new(),
+            not_discussed: vec![Dimension::Integrations],
+        };
+        apply_checkpoint_from_event(
+            &state,
+            session_id,
+            &SocraticEvent::SpeculativeDraftReady {
+                draft: draft.clone(),
+            },
+        );
+
+        let after = state
+            .sessions
+            .get(session_id)
+            .expect("session should exist");
+        let checkpoint = after.checkpoint.expect("checkpoint should be present");
+        assert_eq!(
+            checkpoint
+                .pending_draft
+                .as_ref()
+                .and_then(|d| d.sections.first())
+                .map(|s| s.heading.as_str()),
+            Some("Goal")
+        );
+        assert_eq!(checkpoint.draft_shown_at_turn, Some(3));
     }
 }
