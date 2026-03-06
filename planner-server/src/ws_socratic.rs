@@ -338,6 +338,17 @@ pub async fn handle_socratic_ws(
         return;
     }
 
+    // Attach-only resume for non-waiting terminal/build phases.
+    let intake_phase = state
+        .sessions
+        .get(session_id)
+        .map(|s| s.intake_phase.clone())
+        .unwrap_or_else(|| "waiting".to_string());
+    if intake_phase == "pipeline_running" || intake_phase == "complete" || intake_phase == "error" {
+        handle_resume_ws(socket, state, session_id).await;
+        return;
+    }
+
     // Channel: engine → WebSocket (outbound events)
     let (event_tx, mut event_rx) = mpsc::unbounded_channel::<ServerMessage>();
 
@@ -797,6 +808,131 @@ pub async fn handle_socratic_ws(
                         Some(Ok(Message::Close(_))) | None => return,
                         _ => {}
                     }
+                }
+            }
+        }
+    }
+}
+
+/// Attach to an already-started session without restarting interview state.
+///
+/// Used for sessions in `pipeline_running`, `complete`, or `error`.
+/// This path is strictly read-only against session state and only forwards
+/// incremental updates/events to the client.
+async fn handle_resume_ws(
+    mut socket: WebSocket,
+    state: Arc<AppState>,
+    session_id: Uuid,
+) {
+    let Some(initial) = state.sessions.get(session_id) else {
+        return;
+    };
+    let initial_phase = initial.intake_phase.clone();
+
+    // Frontend hydrates snapshot via REST first; only stream updates from now on.
+    let mut last_msg_count = initial.messages.len();
+    let mut last_sent_stages: Vec<(String, String)> = initial
+        .stages
+        .iter()
+        .map(|s| (s.name.clone(), s.status.clone()))
+        .collect();
+    let mut interval = tokio::time::interval(std::time::Duration::from_millis(500));
+
+    loop {
+        tokio::select! {
+            _ = interval.tick() => {
+                let session = match state.sessions.get(session_id) {
+                    Some(s) => s,
+                    None => return,
+                };
+
+                // Forward any new chat messages since attach.
+                let current_count = session.messages.len();
+                for msg in session.messages.iter().skip(last_msg_count) {
+                    let server_msg = ServerMessage::ChatMessage {
+                        id: msg.id.to_string(),
+                        role: msg.role.clone(),
+                        content: msg.content.clone(),
+                        timestamp: msg.timestamp.clone(),
+                    };
+                    if let Ok(json) = serde_json::to_string(&server_msg) {
+                        if socket.send(Message::Text(json.into())).await.is_err() {
+                            return;
+                        }
+                    }
+                }
+                last_msg_count = current_count;
+
+                // Forward stage updates only when changed since attach.
+                let current_stages: Vec<(String, String)> = session
+                    .stages
+                    .iter()
+                    .map(|s| (s.name.clone(), s.status.clone()))
+                    .collect();
+                for stage in &session.stages {
+                    let last_status = last_sent_stages
+                        .iter()
+                        .find(|(name, _)| name == &stage.name)
+                        .map(|(_, status)| status.as_str());
+                    if last_status != Some(stage.status.as_str()) {
+                        let server_msg = ServerMessage::StageUpdate {
+                            stage: stage.name.clone(),
+                            status: stage.status.clone(),
+                        };
+                        if let Ok(json) = serde_json::to_string(&server_msg) {
+                            if socket.send(Message::Text(json.into())).await.is_err() {
+                                return;
+                            }
+                        }
+                    }
+                }
+                last_sent_stages = current_stages;
+
+                // Send terminal notifications for completed/errored sessions.
+                if initial_phase == "complete" || session.intake_phase == "complete" {
+                    let success = session.stages.iter().all(|s| s.status == "complete");
+                    let server_msg = ServerMessage::PipelineComplete {
+                        success,
+                        summary: "Pipeline finished".into(),
+                    };
+                    if let Ok(json) = serde_json::to_string(&server_msg) {
+                        let _ = socket.send(Message::Text(json.into())).await;
+                    }
+                    return;
+                }
+
+                if initial_phase == "error" || session.intake_phase == "error" {
+                    let err = session
+                        .error_message
+                        .clone()
+                        .unwrap_or_else(|| "Session is in an error state".into());
+                    let server_msg = ServerMessage::Error { message: err };
+                    if let Ok(json) = serde_json::to_string(&server_msg) {
+                        let _ = socket.send(Message::Text(json.into())).await;
+                    }
+                    return;
+                }
+
+                // Pipeline-running attach: close when pipeline completes.
+                if initial_phase == "pipeline_running"
+                    && !session.pipeline_running
+                    && session.project_description.is_some()
+                {
+                    let success = session.stages.iter().all(|s| s.status == "complete");
+                    let server_msg = ServerMessage::PipelineComplete {
+                        success,
+                        summary: "Pipeline finished".into(),
+                    };
+                    if let Ok(json) = serde_json::to_string(&server_msg) {
+                        let _ = socket.send(Message::Text(json.into())).await;
+                    }
+                    return;
+                }
+            }
+            msg = socket.recv() => {
+                match msg {
+                    Some(Ok(Message::Close(_))) | None => return,
+                    _ => {}
                 }
             }
         }

@@ -242,6 +242,7 @@ export default function Dashboard() {
           <span style={{ color: 'var(--color-primary)', fontWeight: 600 }}>TIP</span>
           {' '}— Each session maintains its own conversation history and pipeline state.
           Sessions are isolated and can be resumed at any time.
+          Interview sessions marked `Resume Interview*` may require restart until live interview resume is implemented.
         </div>
       </div>
     </Layout>
@@ -353,6 +354,17 @@ function SessionCard({ session, onClick }: SessionCardProps) {
   // Convergence
   const convergencePct = session.belief_state?.convergence_pct;
   const hasConvergence = convergencePct !== undefined && convergencePct !== null;
+
+  const actionLabel =
+    phase === 'pipeline_running'
+      ? 'Resume Build'
+      : phase === 'complete'
+      ? 'Open Results'
+      : phase === 'interviewing'
+      ? 'Resume Interview*'
+      : phase === 'error'
+      ? 'View Error'
+      : 'Open Session';
 
   // Classification
   const classification = session.classification;
@@ -552,6 +564,17 @@ function SessionCard({ session, onClick }: SessionCardProps) {
                 · {durationText}
               </span>
             )}
+          </span>
+          <span style={{
+            color: 'var(--color-text-muted)',
+            fontSize: '10px',
+            fontWeight: 600,
+            letterSpacing: '0.04em',
+            textTransform: 'uppercase',
+            opacity: 0.85,
+            whiteSpace: 'nowrap',
+          }}>
+            {actionLabel}
           </span>
           <span style={{ color: 'var(--color-text-muted)', fontSize: '11px' }}>→</span>
         </div>

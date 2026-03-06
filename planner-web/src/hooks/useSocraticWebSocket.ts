@@ -27,6 +27,7 @@ import type {
   PlannerEvent,
   QuickOption,
   ServerWsMessage,
+  Session,
   SpeculativeDraft,
   StageStatus,
 } from '../types.ts';
@@ -57,6 +58,7 @@ export interface CurrentQuestion {
 export interface UseSocraticWebSocketOptions {
   sessionId: string | null;
   getToken: GetTokenFn;
+  initialSession?: Session | null;
 }
 
 export interface UseSocraticWebSocketResult {
@@ -89,6 +91,7 @@ export interface UseSocraticWebSocketResult {
   currentStep: string | null;
 
   // Actions
+  attach: () => void;
   sendDescription: (description: string) => void;
   sendResponse: (content: string) => void;
   skipQuestion: () => void;
@@ -111,6 +114,7 @@ const BASE_DELAY_MS = 1000;
 export function useSocraticWebSocket({
   sessionId,
   getToken,
+  initialSession = null,
 }: UseSocraticWebSocketOptions): UseSocraticWebSocketResult {
   // Connection
   const [isConnected, setIsConnected] = useState(false);
@@ -149,6 +153,7 @@ export function useSocraticWebSocket({
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
   const sessionIdRef = useRef(sessionId);
+  const hydratedSessionIdRef = useRef<string | null>(null);
 
   useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
 
@@ -429,6 +434,7 @@ export function useSocraticWebSocket({
   useEffect(() => {
     mountedRef.current = true;
     retryCountRef.current = 0;
+    hydratedSessionIdRef.current = null;
 
     // Reset all state when session changes
     setIsConnected(false);
@@ -461,6 +467,30 @@ export function useSocraticWebSocket({
     };
   }, [sessionId]);
 
+  // Seed local websocket state from REST session snapshot.
+  useEffect(() => {
+    if (!initialSession || !sessionId) return;
+    if (initialSession.id !== sessionId) return;
+    if (hydratedSessionIdRef.current === sessionId) return;
+
+    setIntakePhase(initialSession.intake_phase ?? 'waiting');
+    setMessages(initialSession.messages ?? []);
+    setClassification(initialSession.classification ?? null);
+    setBeliefState(initialSession.belief_state ?? null);
+    setStages(initialSession.stages?.length ? initialSession.stages : buildInitialStages());
+    setEvents(initialSession.events ?? []);
+    setCurrentStep(initialSession.current_step ?? null);
+    setConvergencePct(initialSession.belief_state?.convergence_pct ?? 0);
+    setCurrentQuestion(null);
+    setSpeculativeDraft(null);
+    setConfirmedSections(new Set());
+    setContradictions([]);
+    setPipelineComplete(initialSession.intake_phase === 'complete');
+    setPipelineSummary(initialSession.intake_phase === 'complete' ? 'Pipeline finished' : null);
+
+    hydratedSessionIdRef.current = sessionId;
+  }, [initialSession, sessionId]);
+
   // -------------------------------------------------------------------------
   // Send helpers
   // -------------------------------------------------------------------------
@@ -472,6 +502,11 @@ export function useSocraticWebSocket({
       console.warn('[Socratic WS] cannot send, socket not open');
     }
   }, []);
+
+  /** Attach to an existing Socratic WebSocket session without restarting interview flow. */
+  const attach = useCallback((): void => {
+    void connect();
+  }, [connect]);
 
   /** Send the initial project description — this starts the interview. */
   const sendDescription = useCallback((description: string): void => {
@@ -590,6 +625,7 @@ export function useSocraticWebSocket({
     pipelineSummary,
     events,
     currentStep,
+    attach,
     sendDescription,
     sendResponse,
     skipQuestion,

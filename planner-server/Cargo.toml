@@ -29,3 +29,7 @@ jsonwebtoken = { workspace = true }
 rmp-serde = { workspace = true }
 parking_lot = { workspace = true }
 async-trait = { workspace = true }
+
+[dev-dependencies]
+futures-util = "0.3"
+tokio-tungstenite = { workspace = true }

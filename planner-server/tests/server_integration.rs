@@ -14,9 +14,13 @@
 //! This file is NEW and does NOT modify any existing test files.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
+use futures_util::StreamExt;
+use tokio::net::TcpListener;
+use tokio_tungstenite::{connect_async, tungstenite::Message};
 use tower::ServiceExt;
 use uuid::Uuid;
 
@@ -44,6 +48,15 @@ fn test_state() -> Arc<AppState> {
 /// Build the full API router with the given state.
 fn test_app(state: Arc<AppState>) -> axum::Router {
     api::routes(state)
+}
+
+async fn spawn_test_server(app: axum::Router) -> (std::net::SocketAddr, tokio::task::JoinHandle<()>) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let handle = tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+    (addr, handle)
 }
 
 // ===========================================================================
@@ -298,4 +311,81 @@ async fn tier2_session_not_found() {
 
     let resp2 = app2.oneshot(req2).await.unwrap();
     assert_eq!(resp2.status(), StatusCode::NOT_FOUND);
+}
+
+/// Test 6: Attaching to a pipeline-running Socratic websocket session does not
+/// restart interviewing state or append a duplicate initial user message.
+#[tokio::test]
+async fn tier2_socratic_ws_attach_pipeline_running_is_idempotent() {
+    let state = test_state();
+    let session = state.sessions.create("dev|local");
+    let session_id = session.id;
+
+    state.sessions.update(session_id, |s| {
+        s.intake_phase = "pipeline_running".into();
+        s.pipeline_running = true;
+        s.project_description = Some("Build a timer app".into());
+    });
+
+    let baseline = state.sessions.get(session_id).unwrap();
+    let baseline_msg_count = baseline.messages.len();
+    let baseline_phase = baseline.intake_phase.clone();
+
+    let app = test_app(state.clone());
+    let (addr, handle) = spawn_test_server(app).await;
+    let ws_url = format!("ws://{}/sessions/{}/socratic/ws", addr, session_id);
+
+    let (mut ws, _) = connect_async(ws_url).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(250)).await;
+
+    let after = state.sessions.get(session_id).unwrap();
+    assert_eq!(after.intake_phase, baseline_phase);
+    assert_eq!(after.messages.len(), baseline_msg_count);
+    assert_eq!(after.pipeline_running, true);
+
+    let _ = ws.close(None).await;
+    handle.abort();
+}
+
+/// Test 7: Attaching to a completed Socratic websocket session returns a
+/// pipeline_complete event without restarting session state.
+#[tokio::test]
+async fn tier2_socratic_ws_attach_complete_returns_pipeline_complete() {
+    let state = test_state();
+    let session = state.sessions.create("dev|local");
+    let session_id = session.id;
+
+    state.sessions.update(session_id, |s| {
+        s.intake_phase = "complete".into();
+        s.pipeline_running = false;
+        s.project_description = Some("Build a timer app".into());
+        for stage in &mut s.stages {
+            stage.status = "complete".into();
+        }
+    });
+
+    let app = test_app(state.clone());
+    let (addr, handle) = spawn_test_server(app).await;
+    let ws_url = format!("ws://{}/sessions/{}/socratic/ws", addr, session_id);
+
+    let (mut ws, _) = connect_async(ws_url).await.unwrap();
+    let next = tokio::time::timeout(Duration::from_secs(2), ws.next())
+        .await
+        .expect("timed out waiting for ws message")
+        .expect("websocket closed unexpectedly")
+        .expect("websocket error");
+
+    let text = match next {
+        Message::Text(t) => t,
+        other => panic!("expected text ws message, got {:?}", other),
+    };
+    let parsed: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(parsed["type"], "pipeline_complete");
+
+    let after = state.sessions.get(session_id).unwrap();
+    assert_eq!(after.intake_phase, "complete");
+    assert_eq!(after.pipeline_running, false);
+
+    let _ = ws.close(None).await;
+    handle.abort();
 }

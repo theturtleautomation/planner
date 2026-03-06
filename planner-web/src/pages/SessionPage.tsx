@@ -41,7 +41,7 @@ export default function SessionPage() {
   const setShowDraft = (v: boolean) => setRightTab(v ? 'draft' : 'belief');
 
   // Socratic WebSocket hook
-  const socratic = useSocraticWebSocket({ sessionId, getToken });
+  const socratic = useSocraticWebSocket({ sessionId, getToken, initialSession: session });
 
   // Auto-show draft when it arrives
   useEffect(() => {
@@ -50,13 +50,13 @@ export default function SessionPage() {
     }
   }, [socratic.speculativeDraft]);
 
-  // Track whether we've triggered auto-connect for an existing session
-  const autoConnectAttemptedRef = useRef(false);
+  // Track whether we've triggered attach for an existing session
+  const autoAttachAttemptedRef = useRef<string | null>(null);
 
   // ── Init: create or load session ──
   useEffect(() => {
     let cancelled = false;
-    autoConnectAttemptedRef.current = false;
+    autoAttachAttemptedRef.current = null;
 
     const init = async (): Promise<void> => {
       try {
@@ -89,15 +89,14 @@ export default function SessionPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeId]);
 
-  // Auto-connect WS for existing sessions that are already in progress
+  // Auto-attach WS for existing sessions that should resume in read-only mode.
   useEffect(() => {
-    if (!session || !sessionId || autoConnectAttemptedRef.current) return;
+    if (!session || !sessionId) return;
+    if (autoAttachAttemptedRef.current === sessionId) return;
     const phase = session.intake_phase;
-    if (phase === 'interviewing' || phase === 'pipeline_running' || phase === 'complete') {
-      autoConnectAttemptedRef.current = true;
-      // Seed the description if available so sendDescription can reconnect
-      const desc = session.project_description ?? '';
-      socratic.sendDescription(desc);
+    if (phase === 'pipeline_running' || phase === 'complete' || phase === 'error') {
+      autoAttachAttemptedRef.current = sessionId;
+      socratic.attach();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, sessionId]);
@@ -416,6 +415,11 @@ export default function SessionPage() {
   const isPipelineRunning = effectivePhase === 'pipeline_running';
   const isComplete = effectivePhase === 'complete';
   const isError = effectivePhase === 'error';
+  const isExistingSessionRoute = Boolean(routeId && routeId !== 'new');
+  const showInterviewResumeNotice =
+    isExistingSessionRoute &&
+    session?.intake_phase === 'interviewing' &&
+    !socratic.isConnected;
 
   return (
     <Layout sessionId={sessionId} isConnected={socratic.isConnected}>
@@ -458,6 +462,21 @@ export default function SessionPage() {
             >
               ← Back
             </button>
+          </div>
+        )}
+
+        {/* Interview resume limitation banner */}
+        {showInterviewResumeNotice && (
+          <div style={{
+            padding: '10px 16px',
+            background: 'rgba(255,215,0,0.08)',
+            borderBottom: '1px solid rgba(255,215,0,0.35)',
+            color: 'var(--color-gold)',
+            fontSize: '12px',
+            textAlign: 'center',
+            flexShrink: 0,
+          }}>
+            Live interview resume is not supported yet. Restarting will begin from the saved description.
           </div>
         )}
 
@@ -506,7 +525,7 @@ export default function SessionPage() {
 
             <MessageInput
               onSend={(content) => socratic.sendResponse(content)}
-              intakePhase={socratic.intakePhase}
+              intakePhase={effectivePhase}
               currentQuestion={socratic.currentQuestion}
               onSkip={socratic.skipQuestion}
               onDone={socratic.sendDone}
