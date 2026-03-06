@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import type { EdgeType, NodeSummary } from '../types/blueprint.ts';
 
 // ─── Props ──────────────────────────────────────────────────────────────────
@@ -44,16 +44,16 @@ export default function AddEdgeModal({ isOpen, nodes, defaultSourceId, onClose, 
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Reset form when modal opens
-  const prevOpen = useState(isOpen)[0];
-  if (isOpen && !prevOpen) {
-    // Can't use useEffect for this without a ref; just let state initialize
-  }
-
-  // Initialize source from defaultSourceId when opening
-  useState(() => {
-    if (defaultSourceId) setSourceId(defaultSourceId);
-  });
+  // Reset form when modal opens and re-initialize from defaultSourceId
+  useEffect(() => {
+    if (isOpen) {
+      setSourceId(defaultSourceId ?? '');
+      setTargetId('');
+      setEdgeType('depends_on');
+      setMetadata('');
+      setError(null);
+    }
+  }, [isOpen, defaultSourceId]);
 
   const handleCreate = useCallback(async () => {
     if (!sourceId || !targetId) {

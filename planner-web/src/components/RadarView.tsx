@@ -32,8 +32,15 @@ function inferCategory(node: NodeSummary): string {
   return 'library';
 }
 
-// Maps ring from tags
+// Maps ring from status (primary) or tags (fallback)
 function inferRing(node: NodeSummary): number {
+  // Primary: check node.status which maps from TechnologyNode.ring
+  const s = node.status.toLowerCase();
+  if (s === 'adopt') return 0;
+  if (s === 'trial') return 1;
+  if (s === 'assess') return 2;
+  if (s === 'hold') return 3;
+  // Fallback: check tags
   const tags = node.tags.map(t => t.toLowerCase());
   if (tags.includes('adopt')) return 0;
   if (tags.includes('trial')) return 1;

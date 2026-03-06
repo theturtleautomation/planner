@@ -120,6 +120,11 @@
   `.node-list-panel`, `.node-list-toolbar`, `.node-list-search`
   - Also added preemptive reconvergence CSS (`.recon-panel`, `.recon-step`, `.recon-summary`)
 - [x] C.5.5 — Verification: `tsc --noEmit` clean, 166/166 vitest passing, Vite build succeeds
+- [x] C.5.6 — Completeness indicators (approximate — scores based on NodeSummary generic fields;
+  type-specific field depth requires server-side enrichment or full-node fetch)
+- [—] C.5.7 — DEFERRED: Attach documentation to any node (markdown body rendered in drawer)
+  - Requires new `documentation` field in node types + schema extension + storage support
+  - Blocked on Rust schema + persistence changes (same category as C.4, D.3, G.6)
 ### Phase D: Reconvergence Engine [COMPLETE]
 - [x] D.1 — Reconvergence types in `blueprint.ts`
   - `ReconvergenceStepStatus` ('pending' | 'running' | 'done' | 'skipped' | 'error')
@@ -383,3 +388,16 @@ implemented. 5 were frontend-implementable; 2 were deferred as Rust-only.
 - TypeScript: compiles clean (`tsc --noEmit`)
 - Vite build: succeeds (production bundle built)
 - Rust: cargo check/test deferred to CI (no Rust toolchain in sandbox)
+
+## Code Audit Fixes (Post-Phase H)
+After a comprehensive deep-read audit of all frontend source files (A–H),
+7 issues were identified and all fixable items resolved:
+
+- [x] **BUG-1 (Critical):** `edgeData` → `edges` in BlueprintGraph.tsx line 352 — runtime crash fix
+- [x] **ISSUE-2 (Medium):** AddEdgeModal `useState` patterns → proper `useEffect` for form reset
+- [x] **ISSUE-3 (Medium):** Added "Create Snapshot" button to EventTimelinePage snapshots tab
+- [x] **ISSUE-4 (Medium):** Improved completeness scoring + documented NodeSummary limitation
+- [x] **ISSUE-5 (Medium):** Tracked C.5.7 as deferred in this document (was previously omitted)
+- [x] **NOTE-6 (Low):** RadarView `inferRing()` now checks `node.status` before tags fallback
+- [x] **NOTE-7 (Low):** Added `supersedes` to EDGE_STYLES legend + `edgeDash()` function
+- Full audit report: `docs/blueprint-research/PHASE_AUDIT_REPORT.md`

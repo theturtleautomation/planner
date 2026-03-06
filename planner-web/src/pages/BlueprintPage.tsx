@@ -34,6 +34,7 @@ const NODE_TYPES: { value: NodeType | null; label: string; icon: string }[] = [
 const EDGE_STYLES: { type: string; label: string; dash: string }[] = [
   { type: 'depends_on',  label: 'depends on', dash: '' },
   { type: 'decided_by',  label: 'decided by', dash: '8,4' },
+  { type: 'supersedes',  label: 'supersedes', dash: '4,2,1,2' },
   { type: 'constrains',  label: 'constrains', dash: '3,3' },
   { type: 'uses',        label: 'uses',       dash: '' },
   { type: 'implements',  label: 'implements', dash: '2,4' },

@@ -51,6 +51,7 @@ function edgeColor(type: EdgeType | string): string {
 function edgeDash(type: string): string {
   switch (type) {
     case 'decided_by':  return '8,4';
+    case 'supersedes':  return '4,2,1,2';
     case 'constrains':  return '3,3';
     case 'implements':  return '2,4';
     case 'satisfies':   return '8,3,2,3';
@@ -349,7 +350,7 @@ export default function BlueprintGraph({
     nodeSel.each(function(d) {
       const updMs = new Date(d.updated_at).getTime();
       const isStale = !isNaN(updMs) && (nowMs - updMs) > STALE_DAYS * 86400000;
-      const isOrphan = !edgeData.some(e => e.source === d.id || e.target === d.id);
+      const isOrphan = !edges.some(e => e.source === d.id || e.target === d.id);
       if (!isStale && !isOrphan) return;
       const s = NODE_SIZES[d.node_type] || NODE_SIZES.decision;
       const g = d3.select(this);

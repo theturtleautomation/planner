@@ -62,6 +62,22 @@ export default function EventTimelinePage() {
     if (activeSection === 'snapshots') loadSnapshots();
   }, [activeSection, loadSnapshots]);
 
+  // ─── Create snapshot ─────────────────────────────────────────────────
+
+  const [creatingSnapshot, setCreatingSnapshot] = useState(false);
+
+  const handleCreateSnapshot = useCallback(async () => {
+    setCreatingSnapshot(true);
+    try {
+      await api.createBlueprintSnapshot();
+      await loadSnapshots();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setCreatingSnapshot(false);
+    }
+  }, [api, loadSnapshots]);
+
   // ─── Filtering ─────────────────────────────────────────────────────────────
 
   const filtered = useMemo(() => {
@@ -98,6 +114,15 @@ export default function EventTimelinePage() {
           </p>
         </div>
         <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
+          {activeSection === 'snapshots' && (
+            <button className="btn btn-primary" onClick={handleCreateSnapshot} disabled={creatingSnapshot}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/>
+                <polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
+              </svg>
+              {creatingSnapshot ? 'Creating…' : 'Create Snapshot'}
+            </button>
+          )}
           <button className="btn btn-outline" onClick={activeSection === 'events' ? loadEvents : loadSnapshots} disabled={loading || snapshotsLoading}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
               <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/>

@@ -168,14 +168,22 @@ function defaultColumns(edges: EdgePayload[]): ColumnDef[] {
 }
 
 // ─── Completeness score ─────────────────────────────────────────────────────
+// NOTE: NodeSummary is a flat type with only generic fields (name, status,
+// node_type, tags, updated_at). Type-specific field depth (e.g. Decision
+// options, Technology version) requires a server-side enrichment or full-node
+// fetch. This score is approximate — a high score means the summary fields
+// are populated, not that the full node is complete.
 
 function completenessScore(node: NodeSummary): number {
   let filled = 0;
-  let total = 4; // name, status, type, at least 1 tag
+  const total = 5; // name, status, node_type, ≥1 tag, updated recently
   if (node.name && node.name.trim()) filled++;
   if (node.status && node.status.trim()) filled++;
   if (node.node_type) filled++;
   if (node.tags.length > 0) filled++;
+  // Bonus: updated_at is recent (within 90 days) → node is actively maintained
+  const updMs = new Date(node.updated_at).getTime();
+  if (!isNaN(updMs) && (Date.now() - updMs) < 90 * 86400000) filled++;
   return Math.round((filled / total) * 100);
 }
 
