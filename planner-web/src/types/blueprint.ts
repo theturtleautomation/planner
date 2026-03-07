@@ -35,6 +35,8 @@ export type ImpactAction = 'reconverge' | 'update' | 'invalidate' | 'add' | 'rem
 export type ImpactSeverity = 'shallow' | 'medium' | 'deep';
 export type ScopeClass = 'global' | 'project' | 'project_contextual' | 'unscoped';
 export type ScopeVisibility = 'shared' | 'project_local' | 'unscoped';
+export type NodeLifecycle = 'active' | 'archived';
+export type BlueprintExportKind = 'single_record' | 'scoped_view';
 
 export interface ProjectScope {
   project_id: string;
@@ -53,12 +55,20 @@ export interface SharedScope {
   inherit_to_linked_projects: boolean;
 }
 
+export interface OverrideScope {
+  shared_source_id: string;
+  override_reason?: string;
+  effective_from?: string;
+}
+
 export interface NodeScope {
   scope_class: ScopeClass;
   project?: ProjectScope;
   secondary: SecondaryScopeRefs;
   is_shared: boolean;
   shared?: SharedScope;
+  lifecycle: NodeLifecycle;
+  override_scope?: OverrideScope;
 }
 
 // ─── Node summary (used in list endpoints) ─────────────────────────────────
@@ -71,10 +81,14 @@ export interface NodeSummary {
   scope_class: ScopeClass;
   scope_visibility: ScopeVisibility;
   is_shared: boolean;
+  lifecycle: NodeLifecycle;
   project_id?: string;
   project_name?: string;
   secondary_scope: SecondaryScopeRefs;
   linked_project_ids: string[];
+  override_source_id?: string;
+  override_reason?: string;
+  override_effective_from?: string;
   tags: string[];
   has_documentation: boolean;
   updated_at: string;
@@ -260,7 +274,8 @@ export type BlueprintEventType =
   | 'node_updated'
   | 'node_deleted'
   | 'edge_created'
-  | 'edges_deleted';
+  | 'edges_deleted'
+  | 'export_recorded';
 
 export interface BlueprintEventPayload {
   event_type: BlueprintEventType;

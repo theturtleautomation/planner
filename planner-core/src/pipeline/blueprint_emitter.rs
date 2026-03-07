@@ -53,6 +53,8 @@ fn project_scope_from_name(project_name: &str) -> NodeScope {
         secondary: SecondaryScopeRefs::default(),
         is_shared: false,
         shared: None,
+        lifecycle: NodeLifecycle::Active,
+        override_scope: None,
     }
 }
 
@@ -66,6 +68,8 @@ fn scope_for_spec(spec: &NLSpecV1) -> NodeScope {
         secondary: SecondaryScopeRefs::default(),
         is_shared: false,
         shared: None,
+        lifecycle: NodeLifecycle::Active,
+        override_scope: None,
     };
 
     if let planner_schemas::ChunkType::Domain { name } = &spec.chunk {

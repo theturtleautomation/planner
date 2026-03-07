@@ -240,6 +240,7 @@ pub struct NodesQuery {
     pub node_type: Option<String>,
     pub scope_class: Option<planner_schemas::artifacts::blueprint::ScopeClass>,
     pub scope_visibility: Option<planner_schemas::artifacts::blueprint::ScopeVisibility>,
+    pub lifecycle: Option<planner_schemas::artifacts::blueprint::NodeLifecycle>,
     pub project_id: Option<String>,
     pub feature: Option<String>,
     pub widget: Option<String>,
@@ -286,6 +287,28 @@ pub struct BlueprintEventsQuery {
 pub struct BlueprintEventsResponse {
     pub events: Vec<BlueprintEventPayload>,
     pub total: usize,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RecordBlueprintExportRequest {
+    pub kind: planner_schemas::artifacts::blueprint::BlueprintExportKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub node_id: Option<String>,
+    pub node_count: usize,
+    #[serde(default)]
+    pub edge_count: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope_snapshot: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RecordBlueprintExportResponse {
+    pub export_id: String,
+    pub recorded_at: String,
 }
 
 /// A single event in the API response.
@@ -436,6 +459,7 @@ pub fn routes(state: Arc<AppState>) -> Router {
         )
         .route("/blueprint/history", get(list_blueprint_history))
         .route("/blueprint/events", get(list_blueprint_events))
+        .route("/blueprint/exports", post(record_blueprint_export))
         .route("/blueprint/impact-preview", post(impact_preview))
         .route("/blueprint/reconverge", post(reconverge_blueprint))
         .route("/blueprint/reconverge/ws", get(reconverge_ws_handler))
@@ -1761,12 +1785,104 @@ fn filter_node_summaries(
         {
             return false;
         }
+        if query
+            .lifecycle
+            .as_ref()
+            .is_some_and(|lifecycle| node.lifecycle != *lifecycle)
+        {
+            return false;
+        }
         if !matches_project_scope(node, query) {
             return false;
         }
         matches_secondary_scope(node, query)
     });
     summaries
+}
+
+fn node_tags_mut(
+    node: &mut planner_schemas::artifacts::blueprint::BlueprintNode,
+) -> &mut Vec<String> {
+    use planner_schemas::artifacts::blueprint::BlueprintNode;
+    match node {
+        BlueprintNode::Decision(n) => &mut n.tags,
+        BlueprintNode::Technology(n) => &mut n.tags,
+        BlueprintNode::Component(n) => &mut n.tags,
+        BlueprintNode::Constraint(n) => &mut n.tags,
+        BlueprintNode::Pattern(n) => &mut n.tags,
+        BlueprintNode::QualityRequirement(n) => &mut n.tags,
+    }
+}
+
+fn node_scope_mut(
+    node: &mut planner_schemas::artifacts::blueprint::BlueprintNode,
+) -> &mut planner_schemas::artifacts::blueprint::NodeScope {
+    use planner_schemas::artifacts::blueprint::BlueprintNode;
+    match node {
+        BlueprintNode::Decision(n) => &mut n.scope,
+        BlueprintNode::Technology(n) => &mut n.scope,
+        BlueprintNode::Component(n) => &mut n.scope,
+        BlueprintNode::Constraint(n) => &mut n.scope,
+        BlueprintNode::Pattern(n) => &mut n.scope,
+        BlueprintNode::QualityRequirement(n) => &mut n.scope,
+    }
+}
+
+fn normalize_blueprint_node_metadata(
+    node: &mut planner_schemas::artifacts::blueprint::BlueprintNode,
+) {
+    const ARCHIVED_TAG: &str = "archived";
+    const OVERRIDE_PREFIX: &str = "overrides:";
+
+    let mut seen = std::collections::HashSet::new();
+    let mut migrated_archived = false;
+    let mut migrated_override_source: Option<String> = None;
+    let tags = node_tags_mut(node);
+    let mut normalized_tags = Vec::with_capacity(tags.len());
+
+    for raw_tag in tags.iter() {
+        let trimmed = raw_tag.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let lower = trimmed.to_ascii_lowercase();
+        if lower == ARCHIVED_TAG {
+            migrated_archived = true;
+            continue;
+        }
+        if lower.starts_with(OVERRIDE_PREFIX) {
+            if migrated_override_source.is_none() {
+                let source = trimmed[OVERRIDE_PREFIX.len()..].trim();
+                if !source.is_empty() {
+                    migrated_override_source = Some(source.to_string());
+                }
+            }
+            continue;
+        }
+        if seen.insert(lower) {
+            normalized_tags.push(trimmed.to_string());
+        }
+    }
+    *tags = normalized_tags;
+
+    let scope = node_scope_mut(node);
+    if migrated_archived
+        && matches!(
+            scope.lifecycle,
+            planner_schemas::artifacts::blueprint::NodeLifecycle::Active
+        )
+    {
+        scope.lifecycle = planner_schemas::artifacts::blueprint::NodeLifecycle::Archived;
+    }
+    if scope.override_scope.is_none() {
+        if let Some(source) = migrated_override_source {
+            scope.override_scope = Some(planner_schemas::artifacts::blueprint::OverrideScope {
+                shared_source_id: source,
+                override_reason: Some("migrated from legacy override tag".into()),
+                effective_from: None,
+            });
+        }
+    }
 }
 
 fn validate_blueprint_node_scope(
@@ -1837,6 +1953,22 @@ fn validate_blueprint_node_scope(
         return Err("shared metadata is only allowed when is_shared=true".into());
     }
 
+    if let Some(override_scope) = &scope.override_scope {
+        if override_scope.shared_source_id.trim().is_empty() {
+            return Err("override_scope.shared_source_id cannot be blank".into());
+        }
+        if scope.is_shared {
+            return Err("shared records cannot define override_scope".into());
+        }
+        if matches!(
+            scope.scope_class,
+            planner_schemas::artifacts::blueprint::ScopeClass::Unscoped
+                | planner_schemas::artifacts::blueprint::ScopeClass::Global
+        ) {
+            return Err("override_scope requires project or project_contextual scope".into());
+        }
+    }
+
     Ok(())
 }
 
@@ -1901,8 +2033,9 @@ async fn list_blueprint_nodes(
 async fn create_blueprint_node(
     State(state): State<Arc<AppState>>,
     _claims: Claims,
-    Json(node): Json<planner_schemas::artifacts::blueprint::BlueprintNode>,
+    Json(mut node): Json<planner_schemas::artifacts::blueprint::BlueprintNode>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, Json<ErrorResponse>)> {
+    normalize_blueprint_node_metadata(&mut node);
     validate_blueprint_node_scope(&node).map_err(|message| {
         (
             StatusCode::BAD_REQUEST,
@@ -1985,8 +2118,8 @@ async fn update_blueprint_node(
 
     apply_json_merge_patch(&mut merged, patch);
 
-    let node: planner_schemas::artifacts::blueprint::BlueprintNode = serde_json::from_value(merged)
-        .map_err(|err| {
+    let mut node: planner_schemas::artifacts::blueprint::BlueprintNode =
+        serde_json::from_value(merged).map_err(|err| {
             (
                 StatusCode::BAD_REQUEST,
                 Json(ErrorResponse {
@@ -2009,6 +2142,8 @@ async fn update_blueprint_node(
             }),
         ));
     }
+
+    normalize_blueprint_node_metadata(&mut node);
 
     validate_blueprint_node_scope(&node).map_err(|message| {
         (
@@ -2176,6 +2311,9 @@ async fn list_blueprint_events(
                 planner_schemas::artifacts::blueprint::BlueprintEvent::EdgesDeleted { .. } => {
                     "edges_deleted"
                 }
+                planner_schemas::artifacts::blueprint::BlueprintEvent::ExportRecorded {
+                    ..
+                } => "export_recorded",
             };
             BlueprintEventPayload {
                 event_type: event_type.to_string(),
@@ -2187,6 +2325,58 @@ async fn list_blueprint_events(
         .collect();
 
     Json(BlueprintEventsResponse { events, total })
+}
+
+/// POST /blueprint/exports — Record a durable export activity event.
+async fn record_blueprint_export(
+    State(state): State<Arc<AppState>>,
+    claims: Claims,
+    Json(req): Json<RecordBlueprintExportRequest>,
+) -> Result<(StatusCode, Json<RecordBlueprintExportResponse>), (StatusCode, Json<ErrorResponse>)> {
+    if req.node_count == 0 {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "node_count must be greater than zero".into(),
+                code: Some("INVALID_EXPORT_PAYLOAD".into()),
+            }),
+        ));
+    }
+
+    if matches!(
+        req.kind,
+        planner_schemas::artifacts::blueprint::BlueprintExportKind::SingleRecord
+    ) && req.node_id.is_none()
+    {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "single_record exports require node_id".into(),
+                code: Some("INVALID_EXPORT_PAYLOAD".into()),
+            }),
+        ));
+    }
+
+    let export_id = format!("exp-{}", Uuid::new_v4());
+    state.blueprints.record_export_event(
+        export_id.clone(),
+        req.kind,
+        Some(claims.sub),
+        req.node_id,
+        req.node_count,
+        req.edge_count,
+        req.project_id,
+        req.project_name,
+        req.scope_snapshot,
+    );
+
+    Ok((
+        StatusCode::CREATED,
+        Json(RecordBlueprintExportResponse {
+            export_id,
+            recorded_at: chrono::Utc::now().to_rfc3339(),
+        }),
+    ))
 }
 
 /// POST /blueprint/impact-preview — Analyze downstream impact of a node change.
@@ -4222,6 +4412,50 @@ mod tests {
         let events: BlueprintEventsResponse = serde_json::from_slice(&body).unwrap();
         assert_eq!(events.total, 1);
         assert_eq!(events.events[0].event_type, "node_created");
+    }
+
+    #[tokio::test]
+    async fn test_record_blueprint_export_event() {
+        let state = test_state();
+        let app = routes(state.clone());
+
+        let payload = serde_json::json!({
+            "kind": "scoped_view",
+            "node_count": 3,
+            "edge_count": 1,
+            "project_id": "proj-alpha",
+            "project_name": "Alpha Project",
+            "scope_snapshot": {
+                "filters": {
+                    "feature": "task-tracker",
+                    "component": "task-widget"
+                }
+            }
+        });
+        let req = Request::builder()
+            .method("POST")
+            .uri("/blueprint/exports")
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_string(&payload).unwrap()))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::CREATED);
+
+        let app = routes(state.clone());
+        let req = Request::builder()
+            .uri("/blueprint/events")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let events: BlueprintEventsResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(events.total, 1);
+        assert_eq!(events.events[0].event_type, "export_recorded");
+        assert_eq!(events.events[0].data["project_id"], "proj-alpha");
+        assert_eq!(events.events[0].data["node_count"], 3);
     }
 
     #[tokio::test]

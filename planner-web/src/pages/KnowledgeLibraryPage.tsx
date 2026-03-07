@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import Layout from '../components/Layout.tsx';
 import NodeListPanel from '../components/NodeListPanel.tsx';
@@ -31,9 +31,9 @@ const NODE_TYPE_LABELS: Record<NodeType, string> = {
 
 const FAVORITES_STORAGE_KEY = 'knowledge-project-favorites';
 const SCOPED_FILTERS_STORAGE_PREFIX = 'knowledge-scoped-filters';
-const ACTION_HISTORY_STORAGE_PREFIX = 'knowledge-action-history';
 const STALE_THRESHOLD_DAYS = 30;
-const ARCHIVED_TAG = 'archived';
+const LEGACY_ARCHIVED_TAG = 'archived';
+const LEGACY_OVERRIDE_PREFIX = 'overrides:';
 const MAX_BRANCH_ACTION_NODES = 25;
 
 type UpdatedDateFilter = 'all' | 'last_7d' | 'last_30d' | 'last_90d' | 'older_90d';
@@ -60,14 +60,6 @@ interface ScopedFiltersState {
   documentation: DocumentationFilter;
   lifecycle: LifecycleFilter;
   updatedDate: UpdatedDateFilter;
-}
-
-interface KnowledgeActionLogEntry {
-  id: string;
-  timestamp: string;
-  action: 'archive' | 'restore' | 'export' | 'branch' | 'create';
-  count: number;
-  details: string;
 }
 
 interface FilterOption {
@@ -180,6 +172,8 @@ interface ProjectSummary {
   id: string;
   name: string;
   description: string;
+  ownerLabel: string | null;
+  teamLabel: string | null;
   totalKnowledge: number;
   localKnowledge: number;
   sharedKnowledge: number;
@@ -199,9 +193,19 @@ interface ProjectAccumulator {
   docsCount: number;
   newestActivityMs: number;
   tagCounts: Map<string, { label: string; count: number }>;
+  ownerCounts: Map<string, { label: string; count: number }>;
+  teamCounts: Map<string, { label: string; count: number }>;
   localKnowledge: number;
   sharedKnowledge: number;
   projectNameCounts: Map<string, number>;
+}
+
+interface ProjectEventEntry {
+  id: string;
+  timestamp: string;
+  kind: 'mutation' | 'export';
+  summary: string;
+  details: string;
 }
 
 function isMajorType(value: string): value is NodeType {
@@ -327,10 +331,6 @@ function scopedFiltersStorageKey(projectId?: string): string {
   return `${SCOPED_FILTERS_STORAGE_PREFIX}:${projectId ?? 'global'}`;
 }
 
-function actionHistoryStorageKey(projectId?: string): string {
-  return `${ACTION_HISTORY_STORAGE_PREFIX}:${projectId ?? 'global'}`;
-}
-
 function normalizeFilterString(value: unknown): string {
   if (typeof value !== 'string') return 'all';
   const normalized = value.trim();
@@ -422,29 +422,6 @@ function readScopedFilters(projectId?: string): ScopedFiltersState {
   }
 }
 
-function readActionHistory(projectId?: string): KnowledgeActionLogEntry[] {
-  if (typeof window === 'undefined') return [];
-  try {
-    const raw = window.localStorage.getItem(actionHistoryStorageKey(projectId));
-    if (!raw) return [];
-    const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter((entry): entry is KnowledgeActionLogEntry => (
-        Boolean(entry)
-        && typeof entry === 'object'
-        && typeof (entry as KnowledgeActionLogEntry).id === 'string'
-        && typeof (entry as KnowledgeActionLogEntry).timestamp === 'string'
-        && typeof (entry as KnowledgeActionLogEntry).action === 'string'
-        && typeof (entry as KnowledgeActionLogEntry).count === 'number'
-        && typeof (entry as KnowledgeActionLogEntry).details === 'string'
-      ))
-      .slice(0, 100);
-  } catch {
-    return [];
-  }
-}
-
 function buildFilterOptions(values: string[], limit = 12): FilterOption[] {
   const counts = new Map<string, FilterOption>();
   for (const rawValue of values) {
@@ -463,15 +440,27 @@ function buildFilterOptions(values: string[], limit = 12): FilterOption[] {
     .slice(0, limit);
 }
 
-function extractOwnerLabel(node: NodeSummary): string | null {
-  for (const rawTag of node.tags) {
-    const tag = rawTag.trim();
-    if (!tag) continue;
-    const lower = tag.toLowerCase();
-    if (lower.startsWith('owner:') || lower.startsWith('owner=')) {
-      const value = tag.slice(tag.indexOf(':') >= 0 ? tag.indexOf(':') + 1 : tag.indexOf('=') + 1).trim();
+function extractTagValue(rawTag: string, prefixes: string[]): string | null {
+  const tag = rawTag.trim();
+  if (!tag) return null;
+  const lower = tag.toLowerCase();
+
+  for (const prefix of prefixes) {
+    if (lower.startsWith(`${prefix}:`) || lower.startsWith(`${prefix}=`)) {
+      const separatorIndex = tag.indexOf(':') >= 0 ? tag.indexOf(':') : tag.indexOf('=');
+      const value = tag.slice(separatorIndex + 1).trim();
       if (value) return value;
     }
+  }
+
+  return null;
+}
+
+function extractOwnerLabel(node: NodeSummary): string | null {
+  for (const rawTag of node.tags) {
+    const fromPrefix = extractTagValue(rawTag, ['owner']);
+    if (fromPrefix) return fromPrefix;
+    const tag = rawTag.trim();
     if (tag.startsWith('@') && tag.length > 1) {
       return tag.slice(1);
     }
@@ -479,8 +468,212 @@ function extractOwnerLabel(node: NodeSummary): string | null {
   return null;
 }
 
+function extractTeamLabel(node: NodeSummary): string | null {
+  for (const rawTag of node.tags) {
+    const value = extractTagValue(rawTag, ['team', 'owning-team', 'owning_team', 'squad']);
+    if (value) return value;
+  }
+  return null;
+}
+
+function isProjectSignalTag(rawTag: string): boolean {
+  const tag = rawTag.trim().toLowerCase();
+  return Boolean(tag)
+    && !tag.startsWith('owner:')
+    && !tag.startsWith('owner=')
+    && !tag.startsWith('team:')
+    && !tag.startsWith('team=')
+    && !tag.startsWith('owning-team:')
+    && !tag.startsWith('owning-team=')
+    && !tag.startsWith('owning_team:')
+    && !tag.startsWith('owning_team=')
+    && tag !== LEGACY_ARCHIVED_TAG
+    && tag !== 'branch'
+    && !tag.startsWith('lineage:branch-of:')
+    && !tag.startsWith(LEGACY_OVERRIDE_PREFIX);
+}
+
+function pickTopLabel(map: Map<string, { label: string; count: number }>): string | null {
+  const winner = Array.from(map.values())
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))[0];
+  return winner?.label ?? null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function readString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function readStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((entry): entry is string => typeof entry === 'string')
+    .map(entry => entry.trim())
+    .filter(Boolean);
+}
+
+function nodeTypeLabel(nodeType: string | null): string {
+  if (!nodeType) return 'record';
+  if (nodeType in NODE_TYPE_LABELS) {
+    const pluralLabel = NODE_TYPE_LABELS[nodeType as NodeType];
+    return pluralLabel.endsWith('s') ? pluralLabel.slice(0, -1).toLowerCase() : pluralLabel.toLowerCase();
+  }
+  return nodeType.replace(/_/g, ' ');
+}
+
+function eventNodeName(node: Record<string, unknown> | null): string {
+  if (!node) return 'record';
+  return readString(node.name)
+    ?? readString(node.title)
+    ?? readString(node.scenario)
+    ?? readString(node.id)
+    ?? 'record';
+}
+
+function eventNodeTags(node: Record<string, unknown> | null): string[] {
+  if (!node) return [];
+  return readStringArray(node.tags);
+}
+
+function eventNodeLifecycle(node: Record<string, unknown> | null): 'active' | 'archived' {
+  if (!node) return 'active';
+  const scope = isRecord(node.scope) ? node.scope : null;
+  const lifecycle = readString(scope?.lifecycle);
+  if (lifecycle === 'archived') return 'archived';
+  if (lifecycle === 'active') return 'active';
+  const hasLegacyArchivedTag = eventNodeTags(node)
+    .some(tag => tag.trim().toLowerCase() === LEGACY_ARCHIVED_TAG);
+  return hasLegacyArchivedTag ? 'archived' : 'active';
+}
+
+function eventNodeMatchesProject(node: Record<string, unknown> | null, projectId: string): boolean {
+  if (!node) return false;
+  const scope = isRecord(node.scope) ? node.scope : null;
+  if (!scope) return false;
+  const project = isRecord(scope.project) ? scope.project : null;
+  if (readString(project?.project_id) === projectId) {
+    return true;
+  }
+  const shared = isRecord(scope.shared) ? scope.shared : null;
+  return readStringArray(shared?.linked_project_ids).includes(projectId);
+}
+
+function summarizeProjectEvent(
+  event: { event_type: string; summary: string; timestamp: string; data: Record<string, unknown> },
+  projectId: string,
+  projectNodeIds: Set<string>,
+): ProjectEventEntry | null {
+  switch (event.event_type) {
+    case 'node_created': {
+      const node = isRecord(event.data.node) ? event.data.node : null;
+      if (!eventNodeMatchesProject(node, projectId)) return null;
+      const tags = eventNodeTags(node);
+      const branched = tags.some(tag => tag.trim().toLowerCase() === 'branch')
+        || tags.some(tag => tag.trim().toLowerCase().startsWith('lineage:branch-of:'));
+      const name = eventNodeName(node);
+      const type = nodeTypeLabel(readString(node?.node_type));
+      return {
+        id: `event:${event.timestamp}:${event.summary}`,
+        timestamp: event.timestamp,
+        kind: 'mutation',
+        summary: branched ? `Branched ${type} '${name}'` : `Created ${type} '${name}'`,
+        details: event.summary,
+      };
+    }
+    case 'node_updated': {
+      const before = isRecord(event.data.before) ? event.data.before : null;
+      const after = isRecord(event.data.after) ? event.data.after : null;
+      if (!eventNodeMatchesProject(after, projectId) && !eventNodeMatchesProject(before, projectId)) return null;
+      const beforeArchived = eventNodeLifecycle(before) === 'archived';
+      const afterArchived = eventNodeLifecycle(after) === 'archived';
+      const name = eventNodeName(after ?? before);
+      const type = nodeTypeLabel(readString(after?.node_type) ?? readString(before?.node_type));
+      const summary = afterArchived && !beforeArchived
+        ? `Archived ${type} '${name}'`
+        : !afterArchived && beforeArchived
+          ? `Restored ${type} '${name}'`
+          : `Updated ${type} '${name}'`;
+      return {
+        id: `event:${event.timestamp}:${event.summary}`,
+        timestamp: event.timestamp,
+        kind: 'mutation',
+        summary,
+        details: event.summary,
+      };
+    }
+    case 'node_deleted': {
+      const node = isRecord(event.data.node) ? event.data.node : null;
+      if (!eventNodeMatchesProject(node, projectId)) return null;
+      const name = eventNodeName(node);
+      const type = nodeTypeLabel(readString(node?.node_type));
+      return {
+        id: `event:${event.timestamp}:${event.summary}`,
+        timestamp: event.timestamp,
+        kind: 'mutation',
+        summary: `Deleted ${type} '${name}'`,
+        details: event.summary,
+      };
+    }
+    case 'edge_created': {
+      const edge = isRecord(event.data.edge) ? event.data.edge : null;
+      const source = readString(edge?.source);
+      const target = readString(edge?.target);
+      if (!source || !target) return null;
+      if (!projectNodeIds.has(source) && !projectNodeIds.has(target)) return null;
+      return {
+        id: `event:${event.timestamp}:${event.summary}`,
+        timestamp: event.timestamp,
+        kind: 'mutation',
+        summary: 'Created relationship',
+        details: event.summary,
+      };
+    }
+    case 'edges_deleted': {
+      const edges = Array.isArray(event.data.edges) ? event.data.edges : [];
+      const relevant = edges.some(edge => {
+        if (!isRecord(edge)) return false;
+        const source = readString(edge.source);
+        const target = readString(edge.target);
+        return Boolean(source && projectNodeIds.has(source)) || Boolean(target && projectNodeIds.has(target));
+      });
+      if (!relevant) return null;
+      return {
+        id: `event:${event.timestamp}:${event.summary}`,
+        timestamp: event.timestamp,
+        kind: 'mutation',
+        summary: 'Removed relationship',
+        details: event.summary,
+      };
+    }
+    case 'export_recorded': {
+      const exportProjectId = readString(event.data.project_id);
+      if (exportProjectId !== projectId) return null;
+      const kind = readString(event.data.kind) ?? 'scoped_view';
+      const nodeCount = typeof event.data.node_count === 'number' ? event.data.node_count : 0;
+      const edgeCount = typeof event.data.edge_count === 'number' ? event.data.edge_count : 0;
+      const nodeId = readString(event.data.node_id);
+      const summary = kind === 'single_record'
+        ? `Exported single record${nodeId ? ` (${nodeId})` : ''}`
+        : `Exported scoped view (${nodeCount} records)`;
+      return {
+        id: `event:${event.timestamp}:${event.summary}`,
+        timestamp: event.timestamp,
+        kind: 'export',
+        summary,
+        details: `${event.summary} · ${nodeCount} nodes · ${edgeCount} edges`,
+      };
+    }
+    default:
+      return null;
+  }
+}
+
 function isArchivedNode(node: NodeSummary): boolean {
-  return node.tags.some(tag => tag.trim().toLowerCase() === ARCHIVED_TAG);
+  if (node.lifecycle === 'archived') return true;
+  return node.tags.some(tag => tag.trim().toLowerCase() === LEGACY_ARCHIVED_TAG);
 }
 
 function normalizeTags(tags: string[]): string[] {
@@ -571,7 +764,14 @@ export default function KnowledgeLibraryPage() {
   const isProjectLanding = !isProjectScoped && !isGlobalView;
 
   const getToken = useGetAccessToken();
-  const api = useMemo(() => createApiClient(getToken), [getToken]);
+  const getTokenRef = useRef(getToken);
+  useEffect(() => {
+    getTokenRef.current = getToken;
+  }, [getToken]);
+  const api = useMemo(
+    () => createApiClient(() => getTokenRef.current()),
+    [],
+  );
 
   const [blueprint, setBlueprint] = useState<BlueprintResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -588,7 +788,8 @@ export default function KnowledgeLibraryPage() {
   const [actionNotice, setActionNotice] = useState<string | null>(null);
   const [projectSection, setProjectSection] = useState<ProjectSection>('overview');
   const [createModalOpen, setCreateModalOpen] = useState(false);
-  const [actionHistory, setActionHistory] = useState<KnowledgeActionLogEntry[]>(() => readActionHistory(projectId));
+  const [projectEvents, setProjectEvents] = useState<ProjectEventEntry[]>([]);
+  const [reviewBusyNodeId, setReviewBusyNodeId] = useState<string | null>(null);
 
   // Delete state
   const [deleteNodeId, setDeleteNodeId] = useState<string | null>(null);
@@ -609,6 +810,21 @@ export default function KnowledgeLibraryPage() {
           : undefined
       );
       setBlueprint(data);
+      if (isProjectScoped && projectId) {
+        try {
+          const eventResponse = await api.listBlueprintEvents({ limit: 250 });
+          const projectNodeIds = new Set(data.nodes.map(node => node.id));
+          const nextProjectEvents = eventResponse.events
+            .map(event => summarizeProjectEvent(event, projectId, projectNodeIds))
+            .filter((entry): entry is ProjectEventEntry => entry !== null)
+            .slice(0, 40);
+          setProjectEvents(nextProjectEvents);
+        } catch {
+          setProjectEvents([]);
+        }
+      } else {
+        setProjectEvents([]);
+      }
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -640,7 +856,7 @@ export default function KnowledgeLibraryPage() {
     ));
     setSelectedNodeIds(previous => (previous.length === 0 ? previous : []));
     setActionNotice(previous => (previous === null ? previous : null));
-    setActionHistory(readActionHistory(projectId));
+    setProjectEvents([]);
     setProjectSection('overview');
   }, [projectId]);
 
@@ -683,21 +899,6 @@ export default function KnowledgeLibraryPage() {
     const timeout = window.setTimeout(() => setActionNotice(null), 4000);
     return () => window.clearTimeout(timeout);
   }, [actionNotice]);
-
-  const recordActionHistory = useCallback((entry: Omit<KnowledgeActionLogEntry, 'id' | 'timestamp'>) => {
-    const nextEntry: KnowledgeActionLogEntry = {
-      id: uuidv4(),
-      timestamp: new Date().toISOString(),
-      ...entry,
-    };
-    setActionHistory(previous => {
-      const next = [nextEntry, ...previous].slice(0, 100);
-      if (typeof window !== 'undefined') {
-        window.localStorage.setItem(actionHistoryStorageKey(projectId), JSON.stringify(next));
-      }
-      return next;
-    });
-  }, [projectId]);
 
   // ─── Handlers ───────────────────────────────────────────────────────────
 
@@ -937,6 +1138,14 @@ export default function KnowledgeLibraryPage() {
 
   const selectedNodes = useMemo(() => nodes.filter(node => selectedNodeSet.has(node.id)), [nodes, selectedNodeSet]);
   const selectedArchivedCount = useMemo(() => selectedNodes.filter(isArchivedNode).length, [selectedNodes]);
+  const exportTargetNodeId = useMemo(() => {
+    if (selectedNodeIds.length === 1) return selectedNodeIds[0];
+    return selectedNodeId;
+  }, [selectedNodeId, selectedNodeIds]);
+  const exportTargetLabel = useMemo(
+    () => nodes.find(node => node.id === exportTargetNodeId)?.name ?? exportTargetNodeId,
+    [exportTargetNodeId, nodes],
+  );
 
   const activeFilterTokens = useMemo(() => {
     const tokens: string[] = [];
@@ -1013,6 +1222,55 @@ export default function KnowledgeLibraryPage() {
     setSelectedNodeIds([]);
   }, [projectId]);
 
+  const resolveUnscopedNode = useCallback(async (
+    node: NodeSummary,
+    target: 'project' | 'global',
+  ) => {
+    const lifecycle = node.lifecycle === 'archived' ? 'archived' : 'active';
+    setReviewBusyNodeId(node.id);
+    try {
+      if (target === 'project') {
+        if (!projectId) {
+          setActionNotice('Open a project-scoped view to assign unscoped records to a project.');
+          return;
+        }
+        await api.updateBlueprintNode(node.id, {
+          scope: {
+            scope_class: 'project',
+            project: {
+              project_id: projectId,
+              project_name: scopedProjectName ?? projectId,
+            },
+            secondary: {},
+            is_shared: false,
+            shared: null,
+            lifecycle,
+            override_scope: null,
+          },
+        } as unknown as Partial<BlueprintNode>);
+        setActionNotice(`Assigned '${node.name}' to project scope.`);
+      } else {
+        await api.updateBlueprintNode(node.id, {
+          scope: {
+            scope_class: 'global',
+            project: null,
+            secondary: {},
+            is_shared: false,
+            shared: null,
+            lifecycle,
+            override_scope: null,
+          },
+        } as unknown as Partial<BlueprintNode>);
+        setActionNotice(`Marked '${node.name}' as intentionally global.`);
+      }
+      await loadBlueprint();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setReviewBusyNodeId(previous => (previous === node.id ? null : previous));
+    }
+  }, [api, loadBlueprint, projectId, scopedProjectName]);
+
   const toggleSelectedNode = useCallback((nodeId: string, selected: boolean) => {
     setSelectedNodeIds(previous => {
       if (selected) {
@@ -1040,22 +1298,19 @@ export default function KnowledgeLibraryPage() {
       await Promise.all(selectedNodeIds.map(async nodeId => {
         const node = nodes.find(entry => entry.id === nodeId);
         if (!node || isArchivedNode(node)) return;
-        const nextTags = normalizeTags([...node.tags, ARCHIVED_TAG]);
-        await api.updateBlueprintNode(nodeId, { tags: nextTags } as Partial<BlueprintNode>);
+        await api.updateBlueprintNode(
+          nodeId,
+          { scope: { lifecycle: 'archived' } } as unknown as Partial<BlueprintNode>,
+        );
       }));
       await loadBlueprint();
       setActionNotice(`Archived ${selectedNodeIds.length} record${selectedNodeIds.length === 1 ? '' : 's'} in current scope.`);
-      recordActionHistory({
-        action: 'archive',
-        count: selectedNodeIds.length,
-        details: `Archived ${selectedNodeIds.length} record${selectedNodeIds.length === 1 ? '' : 's'}`,
-      });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setActionBusy(null);
     }
-  }, [api, loadBlueprint, nodes, recordActionHistory, selectedNodeIds]);
+  }, [api, loadBlueprint, nodes, selectedNodeIds]);
 
   const restoreSelected = useCallback(async () => {
     if (selectedNodeIds.length === 0) return;
@@ -1068,24 +1323,76 @@ export default function KnowledgeLibraryPage() {
       await Promise.all(selectedNodeIds.map(async nodeId => {
         const node = nodes.find(entry => entry.id === nodeId);
         if (!node || !isArchivedNode(node)) return;
-        const nextTags = normalizeTags(node.tags.filter(tag => tag.trim().toLowerCase() !== ARCHIVED_TAG));
-        await api.updateBlueprintNode(nodeId, { tags: nextTags } as Partial<BlueprintNode>);
+        await api.updateBlueprintNode(
+          nodeId,
+          { scope: { lifecycle: 'active' } } as unknown as Partial<BlueprintNode>,
+        );
       }));
       await loadBlueprint();
-      setActionNotice(`Restored archived tag on ${selectedNodeIds.length} record${selectedNodeIds.length === 1 ? '' : 's'}.`);
-      recordActionHistory({
-        action: 'restore',
-        count: selectedNodeIds.length,
-        details: `Restored ${selectedNodeIds.length} archived record${selectedNodeIds.length === 1 ? '' : 's'}`,
-      });
+      setActionNotice(`Restored ${selectedNodeIds.length} archived record${selectedNodeIds.length === 1 ? '' : 's'}.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setActionBusy(null);
     }
-  }, [api, loadBlueprint, nodes, recordActionHistory, selectedNodeIds]);
+  }, [api, loadBlueprint, nodes, selectedNodeIds]);
 
-  const exportScopedView = useCallback(() => {
+  const exportSingleRecord = useCallback(async () => {
+    if (!exportTargetNodeId) return;
+    setActionBusy('export');
+    try {
+      const record = await api.getBlueprintNode(exportTargetNodeId);
+      const payload = {
+        exported_at: new Date().toISOString(),
+        scope: {
+          project_id: projectId ?? null,
+          project_name: isProjectScoped ? scopedProjectName : 'All Projects',
+        },
+        node: record,
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const fileStem = exportTargetNodeId.replace(/[^a-z0-9_-]+/gi, '-').toLowerCase();
+      link.href = url;
+      link.download = `knowledge-record-${fileStem || 'export'}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      await api.recordBlueprintExport({
+        kind: 'single_record',
+        nodeId: exportTargetNodeId,
+        nodeCount: 1,
+        edgeCount: 0,
+        projectId,
+        projectName: isProjectScoped ? scopedProjectName ?? projectId : 'All Projects',
+        scopeSnapshot: {
+          filters: scopedFilters,
+          selected_node_id: exportTargetNodeId,
+        },
+      });
+      if (isProjectScoped) {
+        await loadBlueprint();
+      }
+      setActionNotice(`Exported ${exportTargetLabel ?? 'selected record'} as JSON.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setActionBusy(null);
+    }
+  }, [
+    api,
+    exportTargetLabel,
+    exportTargetNodeId,
+    isProjectScoped,
+    loadBlueprint,
+    projectId,
+    scopedFilters,
+    scopedProjectName,
+  ]);
+
+  const exportScopedView = useCallback(async () => {
     setActionBusy('export');
     try {
       const payload = {
@@ -1112,12 +1419,21 @@ export default function KnowledgeLibraryPage() {
       link.click();
       link.remove();
       URL.revokeObjectURL(url);
-      setActionNotice(`Exported ${sectionFilteredNodes.length} scoped record${sectionFilteredNodes.length === 1 ? '' : 's'} as JSON.`);
-      recordActionHistory({
-        action: 'export',
-        count: sectionFilteredNodes.length,
-        details: `Exported ${sectionFilteredNodes.length} visible record${sectionFilteredNodes.length === 1 ? '' : 's'} from ${projectSection}`,
+      await api.recordBlueprintExport({
+        kind: 'scoped_view',
+        nodeCount: sectionFilteredNodes.length,
+        edgeCount: sectionFilteredEdges.length,
+        projectId,
+        projectName: isProjectScoped ? scopedProjectName ?? projectId : 'All Projects',
+        scopeSnapshot: {
+          filters: scopedFilters,
+          section: projectSection,
+        },
       });
+      setActionNotice(`Exported ${sectionFilteredNodes.length} scoped record${sectionFilteredNodes.length === 1 ? '' : 's'} as JSON.`);
+      if (isProjectScoped) {
+        await loadBlueprint();
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -1125,9 +1441,9 @@ export default function KnowledgeLibraryPage() {
     }
   }, [
     isProjectScoped,
+    loadBlueprint,
     projectId,
     projectSection,
-    recordActionHistory,
     scopedFilters,
     scopedProjectName,
     sectionFilteredEdges,
@@ -1154,17 +1470,12 @@ export default function KnowledgeLibraryPage() {
           ? `Branched ${created} selected record${created === 1 ? '' : 's'}.`
           : `Branched ${created} scoped record${created === 1 ? '' : 's'} (max ${MAX_BRANCH_ACTION_NODES} per action).`,
       );
-      recordActionHistory({
-        action: 'branch',
-        count: created,
-        details: `Branched ${created} record${created === 1 ? '' : 's'} from ${projectSection}`,
-      });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setActionBusy(null);
     }
-  }, [api, loadBlueprint, projectSection, recordActionHistory, sectionFilteredNodes, selectedNodeIds]);
+  }, [api, loadBlueprint, sectionFilteredNodes, selectedNodeIds]);
 
   const handleCreateNode = useCallback(async (node: BlueprintNode) => {
     setActionBusy('create');
@@ -1173,18 +1484,13 @@ export default function KnowledgeLibraryPage() {
       await loadBlueprint();
       const display = nodeDisplayName(node);
       setActionNotice(`Created ${display} in current scoped context.`);
-      recordActionHistory({
-        action: 'create',
-        count: 1,
-        details: `Created ${display}`,
-      });
       setCreateModalOpen(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setActionBusy(null);
     }
-  }, [api, loadBlueprint, recordActionHistory]);
+  }, [api, loadBlueprint]);
 
   const favoriteProjectSet = useMemo(() => new Set(favoriteProjectIds), [favoriteProjectIds]);
 
@@ -1211,6 +1517,8 @@ export default function KnowledgeLibraryPage() {
         docsCount: 0,
         newestActivityMs: 0,
         tagCounts: new Map(),
+        ownerCounts: new Map(),
+        teamCounts: new Map(),
         localKnowledge: 0,
         sharedKnowledge: 0,
         projectNameCounts: new Map(),
@@ -1273,9 +1581,16 @@ export default function KnowledgeLibraryPage() {
           bucket.projectNameCounts.set(projectName, (bucket.projectNameCounts.get(projectName) ?? 0) + 1);
         }
 
+        if (isLocal) {
+          const owner = extractOwnerLabel(node);
+          if (owner) upsertCount(bucket.ownerCounts, owner);
+          const team = extractTeamLabel(node);
+          if (team) upsertCount(bucket.teamCounts, team);
+        }
+
         for (const tag of node.tags) {
           const normalizedTag = tag.trim();
-          if (!normalizedTag) continue;
+          if (!normalizedTag || !isProjectSignalTag(normalizedTag)) continue;
           upsertCount(bucket.tagCounts, normalizedTag);
         }
       }
@@ -1313,6 +1628,8 @@ export default function KnowledgeLibraryPage() {
         id,
         resolvedName,
         description,
+        pickTopLabel(bucket.ownerCounts) ?? '',
+        pickTopLabel(bucket.teamCounts) ?? '',
         ...topTags,
       ]
         .join(' ')
@@ -1322,6 +1639,8 @@ export default function KnowledgeLibraryPage() {
         id,
         name: resolvedName,
         description,
+        ownerLabel: pickTopLabel(bucket.ownerCounts),
+        teamLabel: pickTopLabel(bucket.teamCounts),
         totalKnowledge,
         localKnowledge: bucket.localKnowledge,
         sharedKnowledge: bucket.sharedKnowledge,
@@ -1372,6 +1691,14 @@ export default function KnowledgeLibraryPage() {
       .sort((left, right) => parseIsoTimeMs(right.updated_at) - parseIsoTimeMs(left.updated_at))
       .slice(0, 12);
   }, [filteredNodes]);
+  const projectMutationEvents = useMemo(
+    () => projectEvents.filter(entry => entry.kind === 'mutation'),
+    [projectEvents],
+  );
+  const durableExportEvents = useMemo(
+    () => projectEvents.filter(entry => entry.kind === 'export'),
+    [projectEvents],
+  );
 
   const lineageEntries = useMemo(() => {
     return nodes
@@ -1423,6 +1750,10 @@ export default function KnowledgeLibraryPage() {
       },
     },
   ]), [archivedCount, missingScopeCount, orphanCount, setScopedFilter, staleCount]);
+  const unscopedReviewNodes = useMemo(
+    () => nodes.filter(node => (node.scope_class ?? 'unscoped') === 'unscoped').slice(0, 20),
+    [nodes],
+  );
 
   const initialCreateScope = useMemo(() => {
     const contextualFeature = scopedFilters.feature !== 'all' ? scopedFilters.feature : (deepLink.filters.feature ?? '');
@@ -1710,7 +2041,15 @@ export default function KnowledgeLibraryPage() {
               <button
                 type="button"
                 className="scope-action-btn"
-                onClick={exportScopedView}
+                onClick={() => void exportSingleRecord()}
+                disabled={!exportTargetNodeId || actionBusy !== null}
+              >
+                Export selected record
+              </button>
+              <button
+                type="button"
+                className="scope-action-btn"
+                onClick={() => void exportScopedView()}
                 disabled={visibleNodesForView.length === 0 || actionBusy !== null}
               >
                 Export current scoped view
@@ -1814,8 +2153,8 @@ export default function KnowledgeLibraryPage() {
                   </div>
 
                   <p className="knowledge-section-muted" style={{ marginTop: 'var(--space-3)' }}>
-                    Shared guidance can be overridden locally by tagging project-local records with
-                    <code style={{ marginLeft: '4px' }}>overrides:&lt;shared-node-id&gt;</code>.
+                    Shared guidance overrides are represented as first-class scope relations on
+                    project-local records.
                   </p>
 
                   <div className="knowledge-review-queue">
@@ -1831,6 +2170,45 @@ export default function KnowledgeLibraryPage() {
                       </button>
                     ))}
                   </div>
+
+                  {unscopedReviewNodes.length > 0 && (
+                    <div style={{ marginTop: 'var(--space-4)' }}>
+                      <h3 className="knowledge-section-subtitle">Unscoped Review Workflow</h3>
+                      <p className="knowledge-section-muted">
+                        Resolve ambiguous records by assigning project scope or marking intentionally global.
+                      </p>
+                      <div className="knowledge-review-queue" style={{ marginTop: 'var(--space-2)' }}>
+                        {unscopedReviewNodes.map(node => {
+                          const busy = reviewBusyNodeId === node.id;
+                          return (
+                            <div key={`unscoped-${node.id}`} className="knowledge-review-queue-item" style={{ alignItems: 'stretch', gap: 'var(--space-2)' }}>
+                              <span style={{ fontWeight: 600 }}>{node.name}</span>
+                              <span style={{ color: 'var(--color-text-faint)', fontSize: 'var(--text-xs)' }}>{node.node_type}</span>
+                              <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+                                <button
+                                  type="button"
+                                  className="scope-action-btn"
+                                  disabled={busy || !isProjectScoped}
+                                  onClick={() => void resolveUnscopedNode(node, 'project')}
+                                  title={isProjectScoped ? 'Assign to current project scope' : 'Open a project view to assign project scope'}
+                                >
+                                  {busy ? 'Saving…' : 'Assign to project'}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="scope-action-btn"
+                                  disabled={busy}
+                                  onClick={() => void resolveUnscopedNode(node, 'global')}
+                                >
+                                  Mark global
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1838,14 +2216,27 @@ export default function KnowledgeLibraryPage() {
                 <div className="knowledge-section-panel">
                   <div className="knowledge-activity-columns">
                     <div>
-                      <h3 className="knowledge-section-subtitle">Action History</h3>
-                      {actionHistory.length === 0 && (
-                        <p className="knowledge-section-muted">No archive, restore, export, branch, or create actions yet.</p>
+                      <h3 className="knowledge-section-subtitle">Project Event History</h3>
+                      {projectMutationEvents.length === 0 && (
+                        <p className="knowledge-section-muted">No durable project activity captured yet.</p>
                       )}
-                      {actionHistory.map(entry => (
+                      {projectMutationEvents.map(entry => (
                         <div key={entry.id} className="knowledge-activity-item">
-                          <span>{entry.action}</span>
-                          <span>{entry.count}</span>
+                          <span>{entry.summary}</span>
+                          <span>durable</span>
+                          <span>{new Date(entry.timestamp).toLocaleString()}</span>
+                          <p>{entry.details}</p>
+                        </div>
+                      ))}
+
+                      <h3 className="knowledge-section-subtitle">Durable Export History</h3>
+                      {durableExportEvents.length === 0 && (
+                        <p className="knowledge-section-muted">No durable export activity recorded yet.</p>
+                      )}
+                      {durableExportEvents.map(entry => (
+                        <div key={entry.id} className="knowledge-activity-item">
+                          <span>{entry.summary}</span>
+                          <span>durable</span>
                           <span>{new Date(entry.timestamp).toLocaleString()}</span>
                           <p>{entry.details}</p>
                         </div>
@@ -1980,6 +2371,12 @@ export default function KnowledgeLibraryPage() {
                       <p className="project-card-description">{project.description}</p>
 
                       <div className="project-card-meta">
+                        {project.ownerLabel && (
+                          <span className="project-card-meta-item">Owner: {project.ownerLabel}</span>
+                        )}
+                        {project.teamLabel && (
+                          <span className="project-card-meta-item">Team: {project.teamLabel}</span>
+                        )}
                         <span className="project-card-meta-item">Knowledge: {project.totalKnowledge}</span>
                         <span className="project-card-meta-item">Local: {project.localKnowledge}</span>
                         <span className="project-card-meta-item">Shared: {project.sharedKnowledge}</span>

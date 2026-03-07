@@ -598,6 +598,10 @@ impl BlueprintStore {
                 BlueprintEvent::EdgesDeleted { edges, .. } => edges
                     .iter()
                     .any(|e| e.source.0 == node_id || e.target.0 == node_id),
+                BlueprintEvent::ExportRecorded {
+                    node_id: export_node_id,
+                    ..
+                } => export_node_id.as_deref() == Some(node_id),
             })
             .cloned()
             .collect()
@@ -871,6 +875,35 @@ impl BlueprintStore {
             });
         }
         removed
+    }
+
+    /// Record a durable export event for project activity history.
+    pub fn record_export_event(
+        &self,
+        export_id: String,
+        kind: BlueprintExportKind,
+        actor: Option<String>,
+        node_id: Option<String>,
+        node_count: usize,
+        edge_count: usize,
+        project_id: Option<String>,
+        project_name: Option<String>,
+        scope_snapshot: Option<serde_json::Value>,
+    ) {
+        let ts = Self::now_iso();
+        self.mark_dirty();
+        self.append_event(BlueprintEvent::ExportRecorded {
+            export_id,
+            kind,
+            actor,
+            node_id,
+            node_count,
+            edge_count,
+            project_id,
+            project_name,
+            scope_snapshot,
+            timestamp: ts,
+        });
     }
 
     // -----------------------------------------------------------------------

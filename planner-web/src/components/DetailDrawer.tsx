@@ -34,6 +34,7 @@ const DEFAULT_SCOPE: NodeScope = {
   scope_class: 'unscoped',
   secondary: {},
   is_shared: false,
+  lifecycle: 'active',
 };
 
 // ─── Props ──────────────────────────────────────────────────────────────────
@@ -223,6 +224,17 @@ export default function DetailDrawer({
           >
             {SCOPE_VISIBILITY_LABELS[scopeVisibility] ?? scopeVisibility}
           </span>
+          <span
+            className="health-badge"
+            style={{
+              color: scope.lifecycle === 'archived' ? 'var(--color-warning)' : 'var(--color-success)',
+              background: scope.lifecycle === 'archived'
+                ? 'rgba(234,179,8,0.14)'
+                : 'rgba(34,197,94,0.14)',
+            }}
+          >
+            {scope.lifecycle === 'archived' ? 'Archived' : 'Active'}
+          </span>
         </div>
         {scope.project && (
           <div className="drawer-description">
@@ -241,6 +253,13 @@ export default function DetailDrawer({
           <div className="drawer-description" style={{ marginTop: '4px' }}>
             <strong>Linked Projects:</strong>{' '}
             {(scope.shared?.linked_project_ids ?? []).join(', ') || 'none'}
+          </div>
+        )}
+        {scope.override_scope && (
+          <div className="drawer-description" style={{ marginTop: '4px' }}>
+            <strong>Overrides:</strong> {scope.override_scope.shared_source_id}
+            {scope.override_scope.override_reason ? ` · ${scope.override_scope.override_reason}` : ''}
+            {scope.override_scope.effective_from ? ` · effective ${scope.override_scope.effective_from}` : ''}
           </div>
         )}
       </div>

@@ -99,6 +99,8 @@ function buildScope(params: {
           inherit_to_linked_projects: params.inheritToLinkedProjects,
         }
       : undefined,
+    lifecycle: 'active',
+    override_scope: undefined,
   };
 }
 

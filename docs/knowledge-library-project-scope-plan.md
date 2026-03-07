@@ -426,35 +426,278 @@ The system improves incrementally without waiting for a single large redesign.
 
 ## Implementation Status (2026-03-07)
 
-- Phase 5 complete:
+### Completion Snapshot
+
+#### Complete now
+
+- Project scope model exists in schema and API, including `global`, `project`,
+  `project-contextual`, and `unscoped`.
+- Project landing page is live with project cards, search, sort, favorites, and
+  an explicit `All Knowledge` entry point.
+- Project cards show owner or owning team, counts, stale items, last activity,
+  and health summary.
+- Project-scoped routes, persistent scope header, active filter chips, and
+  project reset or broaden actions are live.
+- Create, archive, restore, scoped-view export, single-record export, and
+  branch actions are available from the project-scoped surface.
+- Contextual deep-link parameters, scoped entry behavior, and back-navigation
+  are live for the currently implemented source surfaces.
+- Project IA is split into overview, inventory, architecture, quality, and
+  activity sections.
+- Activity includes durable blueprint mutation history, review queues, recent
+  node changes, branch lineage, and local export history.
+- Shared vs local visibility filters, scope badges, completeness scoring,
+  health metrics, and review queues are live.
+- Create, restore, move, and branch flows preserve or confirm scope as defined
+  in the current UX.
+
+#### Not complete yet
+
+- Legacy migration and review for ambiguous or unscoped records is not yet a
+  first-class product flow.
+- Deep-link rollout is still limited to Blueprint and Discovery; broader source
+  surface coverage is not complete.
+- Archive lifecycle is still tag-based rather than a first-class persisted
+  lifecycle field.
+- Shared-knowledge override semantics are still tag-based rather than a
+  first-class relation model.
+- Export history is still browser-local; blueprint mutation history is durable,
+  but export activity is not yet shared or server-backed.
+
+### Phase-By-Phase Detail
+
+- Phase 1 mostly complete:
+  - scope model exists in schema and API with `global`, `project`,
+    `project-contextual`, and `unscoped` states
+  - project and secondary scope validation is enforced on create and update
+  - shared knowledge can link into project views and is labeled distinctly
+  - gap: legacy migration and review workflow for ambiguous records is not yet a
+    first-class product flow
+- Phase 2 partial:
+  - project landing page, project routes, search, sort, favorites, and explicit
+    `All Knowledge` entry point are live
+  - project cards show owner or owning team, counts, stale items, last
+    activity, and health summary
+- Phase 3 mostly complete:
+  - project scope header, active filter visibility, persistent scoped chips, and
+    reset / broaden / global-view actions are live
+  - create, archive, restore, export, and branch actions are available from the
+    project-scoped surface
+  - gap: export history remains UI-local rather than durable and shared across
+    users
+- Phase 4 partial:
+  - canonical deep-link parameters and scoped entry behavior are live
+  - back-navigation works when originating context is supplied
+  - current source surfaces are Blueprint and Discovery
+  - gap: broader rollout to additional project surfaces is still incomplete
+- Phase 5 partial:
   - project IA is split into overview, inventory, architecture, quality, and
     activity sections
-  - activity includes action history, review queues, recent node changes, and
-    branch lineage
-- Phase 6 complete:
+  - activity shows durable project event history, review queues, recent node
+    changes, branch lineage, and local export history
+  - gap: export history is not yet a durable project-level activity stream
+- Phase 6 mostly complete:
   - shared vs local scope visibility filters are live in project views
   - scope class and scope visibility badges are shown for each record
   - local override representation is defined via `overrides:<shared-node-id>`
     and surfaced in the UI
-- Phase 7 complete:
-  - type-aware completeness logic replaced approximate scoring
-  - lifecycle active/archived filtering, health metrics, action history, and
-    lineage labeling are live
-  - review queues exist for unscoped, stale, orphaned, and archived records
-- Phase 8 complete:
+  - gap: override semantics remain tag-based rather than a first-class relation
+    model
+- Phase 7 partial:
+  - type-aware completeness scoring, health metrics, and review queues are live
+  - active vs archived filtering is present in project views
+  - gap: archive state is still represented by tags rather than a first-class
+    persisted lifecycle field
+  - gap: export activity is still stored in browser-local state, not a durable
+    shared audit log
+- Phase 8 mostly complete:
   - create flows auto-fill scope in project/contextual entry points
   - global create requires explicit scope selection unless shared knowledge is
     selected
   - scope move and restore flows require confirmation
   - branch flows preserve scope and lineage by default
-- Phase 9 complete:
+- Phase 9 partial:
   - 9.1 project landing and routes are live
   - 9.2 project-scoped filtering is live
-  - 9.3 deep links carry canonical scope identity and disable with explicit
-    messaging when scope identity is unavailable
+  - 9.3 deep links work from currently implemented source surfaces and disable
+    with explicit messaging when scope identity is unavailable
   - 9.4 project IA sectioning is live
-  - 9.5 scope governance, archive and restore, export, and branch flows are
-    live
+  - gap: 9.5 is only partially complete because lifecycle governance, export
+    durability, and audit history are not yet fully durable or complete
+  - scoped-view export and single-record export are live
+
+## Latest Remaining Gaps
+
+- Legacy scope migration and review for ambiguous or unscoped records is still
+  not a first-class product flow.
+- Deep-link rollout is still limited to the currently implemented source
+  surfaces: Blueprint and Discovery.
+- Archive lifecycle is still tag-based rather than a first-class persisted
+  lifecycle field.
+- Shared-knowledge override semantics are still tag-based rather than a
+  first-class relation model.
+- Export history is still browser-local; blueprint mutation history is durable,
+  but export activity is not yet shared or server-backed.
+
+## Gap Closure Plan (Finish Unfinished Areas)
+
+### Workstream A: Legacy Scope Migration And Review
+
+### Goal
+
+Make ambiguous and unscoped legacy records resolvable through a repeatable
+product flow instead of ad hoc cleanup.
+
+### Deliverables
+
+- Add a migration classifier that proposes:
+  - project scope
+  - optional contextual scope
+  - confidence level
+- Add a first-class review queue for `unscoped` and low-confidence migrated
+  records.
+- Add reviewer actions:
+  - accept suggested scope
+  - edit scope before accept
+  - defer with required reason
+  - mark intentionally global
+- Add bulk review operations for high-confidence records with audit metadata.
+- Add migration telemetry:
+  - unresolved record count
+  - acceptance rate
+  - defer reasons
+
+### Done when
+
+- No legacy record remains outside one of these states:
+  - scoped
+  - intentionally global
+  - explicitly deferred with owner and due date
+- Reviewers can resolve ambiguous records without leaving project context.
+
+### Workstream B: Deep-Link Rollout Beyond Blueprint And Discovery
+
+### Goal
+
+Expand contextual entry to all major project surfaces that expose related
+knowledge actions.
+
+### Deliverables
+
+- Publish a source-surface integration checklist for deep-link readiness:
+  - project identity source
+  - contextual refs source
+  - return-navigation source
+- Roll out canonical scope identity contract to remaining surfaces in priority
+  order:
+  - Planner board
+  - Session workflow pages
+  - Report pages
+  - Admin observability drill-downs
+- Add contract validation in CI for source surfaces emitting
+  `View related knowledge`.
+- Add failure UX rules:
+  - disable action when required identity fields are missing
+  - show explicit reason
+  - log integration errors for owners
+
+### Done when
+
+- Every supported project surface opens Knowledge Library into the correct
+  project-scoped view with contextual filters prefilled.
+- Unsupported surfaces fail explicitly and never fall back silently to generic
+  global view.
+
+### Workstream C: Archive Lifecycle Field Hardening
+
+### Goal
+
+Replace tag-based archive semantics with a first-class persisted lifecycle
+model.
+
+### Deliverables
+
+- Add persisted lifecycle field with explicit allowed states:
+  - active
+  - archived
+- Migrate existing tag-based archive markers to lifecycle field.
+- Enforce lifecycle transitions via API rules and audit events.
+- Keep backward-compatible reads for old tags during migration window only.
+- Remove tag-derived lifecycle logic after migration completion.
+
+### Done when
+
+- Lifecycle state is sourced from persisted lifecycle field only.
+- Archive and restore behavior is consistent across UI, API, filters, and
+  audit history.
+
+### Workstream D: Shared Override Relation Model
+
+### Goal
+
+Replace tag-based shared override markers with explicit relation semantics.
+
+### Deliverables
+
+- Add first-class override relation model:
+  - `shared_source_id`
+  - `override_record_id`
+  - `override_reason`
+  - `effective_from`
+- Define and document resolution precedence between shared and local
+  project-specific records.
+- Surface override lineage and effective source in record details and activity.
+- Add validation to prevent circular or invalid override chains.
+
+### Done when
+
+- Override behavior is deterministic, queryable, and represented without tag
+  parsing.
+- Users can inspect shared source, local override, and precedence outcome from
+  the same project view.
+
+### Workstream E: Durable Export History And Audit
+
+### Goal
+
+Make export activity a shared, durable project event stream rather than local
+browser state.
+
+### Deliverables
+
+- Add server-backed export event store for:
+  - single-record export
+  - scoped-view export
+  - actor
+  - timestamp
+  - scope snapshot metadata
+- Add project activity timeline entries for export events.
+- Add export history API with project and scope filters.
+- Add retention and redaction policy for export audit payloads.
+
+### Done when
+
+- Export history is visible to authorized users across devices.
+- Export actions appear in project activity with actor and scope context.
+
+### Closure Sequence
+
+1. Ship Workstream C (lifecycle hardening) and Workstream E (durable export
+   history) together to complete governance durability.
+2. Ship Workstream D (override relation model) after lifecycle field migration
+   to avoid dual semantic migrations in one slice.
+3. Ship Workstream A (legacy migration and review) in parallel once lifecycle
+   and override foundations are stable.
+4. Complete Workstream B (deep-link rollout) progressively per source surface
+   using CI contract validation gates.
+
+### Final Done Criteria For This Plan
+
+- All five latest remaining gaps are implemented as first-class product flows
+  with persisted models and durable activity visibility.
+- Phase 9.5 is complete with lifecycle governance, shared override semantics,
+  and export audit durability fully live.
+- Remaining gap list can be removed from this document without caveats.
 
 ## Recommended MVP
 

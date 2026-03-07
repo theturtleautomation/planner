@@ -78,12 +78,13 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 const STALE_THRESHOLD_DAYS = 30;
-const ARCHIVED_TAG = 'archived';
+const LEGACY_ARCHIVED_TAG = 'archived';
 const LINEAGE_BRANCH_PREFIX = 'lineage:branch-of:';
 const OVERRIDE_PREFIX = 'overrides:';
 
 function isArchivedNode(node: NodeSummary): boolean {
-  return node.tags.some(tag => tag.trim().toLowerCase() === ARCHIVED_TAG);
+  if (node.lifecycle === 'archived') return true;
+  return node.tags.some(tag => tag.trim().toLowerCase() === LEGACY_ARCHIVED_TAG);
 }
 
 function branchLineageSource(node: NodeSummary): string | null {
@@ -97,6 +98,7 @@ function branchLineageSource(node: NodeSummary): string | null {
 }
 
 function overrideSource(node: NodeSummary): string | null {
+  if (node.override_source_id?.trim()) return node.override_source_id.trim();
   for (const rawTag of node.tags) {
     const lower = rawTag.trim().toLowerCase();
     if (!lower.startsWith(OVERRIDE_PREFIX)) continue;

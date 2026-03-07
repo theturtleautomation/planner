@@ -1,8 +1,10 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout.tsx';
 import { createApiClient } from '../api/client.ts';
 import { useGetAccessToken } from '../auth/useAuthenticatedFetch.ts';
 import type { BlueprintEventPayload, BlueprintEventType } from '../types/blueprint.ts';
+import { buildKnowledgeDeepLink } from '../lib/knowledgeDeepLinks.ts';
 
 // ─── Filter config ───────────────────────────────────────────────────────────
 
@@ -13,11 +15,13 @@ const EVENT_TYPES: { key: BlueprintEventType | 'all'; label: string }[] = [
   { key: 'node_deleted',   label: 'Deleted' },
   { key: 'edge_created',   label: 'Edge Created' },
   { key: 'edges_deleted',  label: 'Edges Deleted' },
+  { key: 'export_recorded', label: 'Exports' },
 ];
 
 // ─── Page Component ──────────────────────────────────────────────────────────
 
 export default function EventTimelinePage() {
+  const navigate = useNavigate();
   const getToken = useGetAccessToken();
   const api = useMemo(() => createApiClient(getToken), [getToken]);
 
@@ -84,6 +88,56 @@ export default function EventTimelinePage() {
     if (filterType === 'all') return events;
     return events.filter(e => e.event_type === filterType);
   }, [events, filterType]);
+
+  const eventKnowledgeLink = useCallback((evt: BlueprintEventPayload): string | null => {
+    const readString = (value: unknown): string | null => (
+      typeof value === 'string' && value.trim().length > 0 ? value.trim() : null
+    );
+    const asRecord = (value: unknown): Record<string, unknown> | null => (
+      value && typeof value === 'object' && !Array.isArray(value)
+        ? value as Record<string, unknown>
+        : null
+    );
+
+    const data = asRecord(evt.data) ?? {};
+    let node: Record<string, unknown> | null = null;
+    if (evt.event_type === 'node_created' || evt.event_type === 'node_deleted') {
+      node = asRecord(data.node);
+    } else if (evt.event_type === 'node_updated') {
+      node = asRecord(data.after) ?? asRecord(data.before);
+    }
+
+    if (node) {
+      const scope = asRecord(node.scope);
+      const project = asRecord(scope?.project);
+      const secondary = asRecord(scope?.secondary);
+      const projectId = readString(project?.project_id);
+      if (!projectId) return null;
+      const nodeType = readString(node.node_type);
+      const nodeName = readString(node.name);
+      return buildKnowledgeDeepLink({
+        projectId,
+        feature: readString(secondary?.feature) ?? undefined,
+        widget: readString(secondary?.widget) ?? undefined,
+        artifact: readString(secondary?.artifact) ?? undefined,
+        component: readString(secondary?.component) ?? (nodeType === 'component' ? nodeName ?? undefined : undefined),
+        originPath: '/events',
+        originLabel: 'Event Timeline',
+      });
+    }
+
+    if (evt.event_type === 'export_recorded') {
+      const projectId = readString(data.project_id);
+      if (!projectId) return null;
+      return buildKnowledgeDeepLink({
+        projectId,
+        originPath: '/events',
+        originLabel: 'Event Timeline',
+      });
+    }
+
+    return null;
+  }, []);
 
   // ─── Relative time display ─────────────────────────────────────────────────
 
@@ -205,6 +259,7 @@ export default function EventTimelinePage() {
       {!loading && !error && filtered.length > 0 && (
         <div className="global-event-timeline">
           {filtered.map((evt, i) => {
+            const relatedKnowledgeLink = eventKnowledgeLink(evt);
             const before = evt.event_type === 'node_updated' && evt.data?.before
               ? evt.data.before as Record<string, unknown> : null;
             const after = evt.event_type === 'node_updated' && evt.data?.after
@@ -232,6 +287,17 @@ export default function EventTimelinePage() {
                   </span>
                 </div>
                 <div className="global-event-summary">{evt.summary}</div>
+                {relatedKnowledgeLink && (
+                  <div style={{ marginTop: 'var(--space-2)' }}>
+                    <button
+                      className="btn btn-outline"
+                      style={{ fontSize: '0.625rem', padding: 'var(--space-1) var(--space-2)' }}
+                      onClick={() => navigate(relatedKnowledgeLink)}
+                    >
+                      View related knowledge
+                    </button>
+                  </div>
+                )}
 
                 {/* Diff view for node_updated events */}
                 {hasDiff && diffKeys.length > 0 && (

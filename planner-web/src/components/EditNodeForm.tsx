@@ -26,6 +26,7 @@ const DEFAULT_SCOPE: NodeScope = {
   scope_class: 'unscoped',
   secondary: {},
   is_shared: false,
+  lifecycle: 'active',
 };
 
 // ─── Props ──────────────────────────────────────────────────────────────────
@@ -103,6 +104,10 @@ function ScopeEditor({
           ? value.project
           : undefined,
       secondary: scopeClass === 'project_contextual' ? value.secondary : {},
+      override_scope:
+        scopeClass === 'project' || scopeClass === 'project_contextual'
+          ? value.override_scope
+          : undefined,
     });
   };
 
@@ -130,6 +135,19 @@ function ScopeEditor({
         <option value="global">Global</option>
         <option value="project">Project</option>
         <option value="project_contextual">Project Contextual</option>
+      </select>
+
+      <label className="field-label" style={{ marginTop: 'var(--space-3)' }}>Lifecycle</label>
+      <select
+        className="field-input"
+        value={value.lifecycle ?? 'active'}
+        onChange={e => onChange({
+          ...value,
+          lifecycle: e.target.value === 'archived' ? 'archived' : 'active',
+        })}
+      >
+        <option value="active">Active</option>
+        <option value="archived">Archived</option>
       </select>
 
       {(value.scope_class === 'project' || value.scope_class === 'project_contextual') && (
@@ -225,6 +243,7 @@ function ScopeEditor({
               shared: e.target.checked
                 ? value.shared ?? { linked_project_ids: [], inherit_to_linked_projects: true }
                 : undefined,
+              override_scope: e.target.checked ? undefined : value.override_scope,
             })
           }
         />
@@ -267,6 +286,67 @@ function ScopeEditor({
             />
             Inherit to linked project views
           </label>
+        </>
+      )}
+
+      {!value.is_shared && (
+        <>
+          <label className="field-label" style={{ marginTop: 'var(--space-3)' }}>
+            Overrides Shared Source ID
+          </label>
+          <input
+            className="field-input"
+            value={value.override_scope?.shared_source_id ?? ''}
+            placeholder="shared-node-id"
+            onChange={e => {
+              const sharedSourceId = e.target.value.trim();
+              if (!sharedSourceId) {
+                onChange({ ...value, override_scope: undefined });
+                return;
+              }
+              onChange({
+                ...value,
+                override_scope: {
+                  shared_source_id: sharedSourceId,
+                  override_reason: value.override_scope?.override_reason,
+                  effective_from: value.override_scope?.effective_from,
+                },
+              });
+            }}
+          />
+          <label className="field-label" style={{ marginTop: 'var(--space-2)' }}>Override Reason</label>
+          <input
+            className="field-input"
+            value={value.override_scope?.override_reason ?? ''}
+            onChange={e => {
+              if (!value.override_scope?.shared_source_id) return;
+              onChange({
+                ...value,
+                override_scope: {
+                  shared_source_id: value.override_scope.shared_source_id,
+                  override_reason: e.target.value.trim() || undefined,
+                  effective_from: value.override_scope.effective_from,
+                },
+              });
+            }}
+          />
+          <label className="field-label" style={{ marginTop: 'var(--space-2)' }}>Override Effective From (ISO)</label>
+          <input
+            className="field-input"
+            value={value.override_scope?.effective_from ?? ''}
+            placeholder="2026-03-07T00:00:00Z"
+            onChange={e => {
+              if (!value.override_scope?.shared_source_id) return;
+              onChange({
+                ...value,
+                override_scope: {
+                  shared_source_id: value.override_scope.shared_source_id,
+                  override_reason: value.override_scope.override_reason,
+                  effective_from: e.target.value.trim() || undefined,
+                },
+              });
+            }}
+          />
         </>
       )}
     </div>

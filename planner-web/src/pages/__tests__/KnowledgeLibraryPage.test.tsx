@@ -3,13 +3,21 @@ import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import KnowledgeLibraryPage from '../KnowledgeLibraryPage.tsx';
-import type { BlueprintResponse, NodeSummary } from '../../types/blueprint.ts';
+import type { BlueprintEventPayload, BlueprintNode, BlueprintResponse, NodeSummary } from '../../types/blueprint.ts';
 
 const mockGetBlueprint = vi.fn();
+const mockGetBlueprintNode = vi.fn();
+const mockListBlueprintEvents = vi.fn();
+const mockRecordBlueprintExport = vi.fn();
 
 vi.mock('../../api/client.ts', () => ({
   createApiClient: vi.fn(() => ({
     getBlueprint: mockGetBlueprint,
+    getBlueprintNode: mockGetBlueprintNode,
+    listBlueprintEvents: mockListBlueprintEvents,
+    recordBlueprintExport: mockRecordBlueprintExport,
+    updateBlueprintNode: vi.fn(),
+    createBlueprintNode: vi.fn(),
     deleteBlueprintNode: vi.fn(),
   })),
 }));
@@ -23,7 +31,32 @@ vi.mock('../../components/Layout.tsx', () => ({
 }));
 
 vi.mock('../../components/NodeListPanel.tsx', () => ({
-  default: () => <div data-testid="node-list-panel">Node List Panel</div>,
+  default: ({
+    nodes,
+    onSelectNode,
+    onToggleSelectNode,
+    selectedNodeIds = [],
+  }: {
+    nodes: NodeSummary[];
+    onSelectNode: (nodeId: string) => void;
+    onToggleSelectNode?: (nodeId: string, selected: boolean) => void;
+    selectedNodeIds?: string[];
+  }) => (
+    <div data-testid="node-list-panel">
+      {nodes.map(node => (
+        <button
+          key={node.id}
+          type="button"
+          onClick={() => {
+            onSelectNode(node.id);
+            onToggleSelectNode?.(node.id, !selectedNodeIds.includes(node.id));
+          }}
+        >
+          Select {node.name}
+        </button>
+      ))}
+    </div>
+  ),
 }));
 
 vi.mock('../../components/DetailDrawer.tsx', () => ({
@@ -43,6 +76,7 @@ function makeNode(overrides: Partial<NodeSummary>): NodeSummary {
     scope_class: 'project',
     scope_visibility: 'project_local',
     is_shared: false,
+    lifecycle: 'active',
     project_id: 'proj-alpha',
     project_name: 'Alpha Project',
     secondary_scope: {},
@@ -63,7 +97,7 @@ function makeBlueprint(): BlueprintResponse {
         project_id: 'proj-alpha',
         project_name: 'Alpha Project',
         node_type: 'decision',
-        tags: ['platform', 'api'],
+        tags: ['platform', 'api', 'owner:Alice', 'team:Platform'],
         has_documentation: true,
         updated_at: '2026-03-06T12:00:00Z',
       }),
@@ -113,6 +147,49 @@ function makeBlueprint(): BlueprintResponse {
   };
 }
 
+function makeBlueprintNode(overrides: Partial<BlueprintNode> = {}): BlueprintNode {
+  return {
+    node_type: 'decision',
+    id: 'alpha-local',
+    title: 'Alpha Decision',
+    status: 'accepted',
+    context: 'Decision context',
+    options: [],
+    consequences: [],
+    assumptions: [],
+    documentation: 'https://docs.example.test/alpha',
+    tags: ['platform', 'api', 'owner:Alice', 'team:Platform'],
+    scope: {
+      scope_class: 'project',
+      project: {
+        project_id: 'proj-alpha',
+        project_name: 'Alpha Project',
+      },
+      secondary: {},
+      is_shared: false,
+      lifecycle: 'active',
+    },
+    created_at: '2026-03-01T12:00:00Z',
+    updated_at: '2026-03-06T12:00:00Z',
+    ...overrides,
+  };
+}
+
+function makeProjectEvents(): BlueprintEventPayload[] {
+  return [
+    {
+      event_type: 'node_updated',
+      summary: "Updated decision 'alpha-local'",
+      timestamp: '2026-03-07T10:00:00Z',
+      data: {
+        node_id: 'alpha-local',
+        before: makeBlueprintNode({ tags: ['platform', 'api', 'owner:Alice', 'team:Platform'] }),
+        after: makeBlueprintNode({ tags: ['platform', 'api', 'owner:Alice', 'team:Platform', 'archived'] }),
+      },
+    },
+  ];
+}
+
 function renderPage(route: string) {
   render(
     <MemoryRouter initialEntries={[route]}>
@@ -130,6 +207,12 @@ describe('KnowledgeLibraryPage phase 2 routing', () => {
     vi.clearAllMocks();
     window.localStorage.clear();
     mockGetBlueprint.mockResolvedValue(makeBlueprint());
+    mockGetBlueprintNode.mockResolvedValue(makeBlueprintNode());
+    mockListBlueprintEvents.mockResolvedValue({ events: makeProjectEvents(), total: 1 });
+    mockRecordBlueprintExport.mockResolvedValue({
+      export_id: 'exp-test',
+      recorded_at: '2026-03-07T12:00:00Z',
+    });
   });
 
   it('shows project cards first on /knowledge with explicit All Knowledge entry point', async () => {
@@ -142,6 +225,8 @@ describe('KnowledgeLibraryPage phase 2 routing', () => {
     expect(screen.getByText('Alpha Project')).toBeInTheDocument();
     expect(screen.getByText('Beta Suite')).toBeInTheDocument();
     expect(screen.getByText('All Knowledge')).toBeInTheDocument();
+    expect(screen.getByText('Owner: Alice')).toBeInTheDocument();
+    expect(screen.getByText('Team: Platform')).toBeInTheDocument();
     expect(screen.queryByTestId('node-list-panel')).not.toBeInTheDocument();
   });
 
@@ -258,9 +343,30 @@ describe('KnowledgeLibraryPage phase 2 routing', () => {
 
     await user.click(screen.getByRole('button', { name: /activity/i }));
 
-    expect(screen.getByText(/action history/i)).toBeInTheDocument();
+    expect(screen.getByText(/project event history/i)).toBeInTheDocument();
     expect(screen.getByText(/review queue/i)).toBeInTheDocument();
     expect(screen.getByText(/recent node changes/i)).toBeInTheDocument();
+  });
+
+  it('exports a single selected record from project scope', async () => {
+    const user = userEvent.setup();
+    const createObjectUrl = vi.spyOn(window.URL, 'createObjectURL').mockReturnValue('blob:knowledge-record');
+    const revokeObjectUrl = vi.spyOn(window.URL, 'revokeObjectURL').mockImplementation(() => {});
+
+    renderPage('/knowledge/projects/proj-alpha');
+
+    await waitFor(() => {
+      expect(screen.getByText(/project: alpha project/i)).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: /select alpha decision/i }));
+    await user.click(screen.getByRole('button', { name: /export selected record/i }));
+
+    await waitFor(() => {
+      expect(mockGetBlueprintNode).toHaveBeenCalledWith('alpha-local');
+    });
+    expect(createObjectUrl).toHaveBeenCalled();
+    expect(revokeObjectUrl).toHaveBeenCalledWith('blob:knowledge-record');
   });
 
   it('supports contextual deep links with project + secondary scope filters', async () => {

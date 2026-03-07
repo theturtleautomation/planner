@@ -278,6 +278,20 @@ pub enum ScopeVisibility {
     Unscoped,
 }
 
+/// Lifecycle status for scoped knowledge records.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NodeLifecycle {
+    Active,
+    Archived,
+}
+
+impl Default for NodeLifecycle {
+    fn default() -> Self {
+        Self::Active
+    }
+}
+
 /// Primary software project scope.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectScope {
@@ -310,6 +324,16 @@ pub struct SharedScope {
     pub inherit_to_linked_projects: bool,
 }
 
+/// Explicit relation metadata when a local record overrides shared guidance.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OverrideScope {
+    pub shared_source_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub override_reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effective_from: Option<String>,
+}
+
 /// Scope payload attached to every node.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeScope {
@@ -323,6 +347,10 @@ pub struct NodeScope {
     pub is_shared: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shared: Option<SharedScope>,
+    #[serde(default)]
+    pub lifecycle: NodeLifecycle,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub override_scope: Option<OverrideScope>,
 }
 
 fn default_true() -> bool {
@@ -343,6 +371,8 @@ impl NodeScope {
             secondary: SecondaryScopeRefs::default(),
             is_shared: false,
             shared: None,
+            lifecycle: NodeLifecycle::Active,
+            override_scope: None,
         }
     }
 
@@ -712,6 +742,14 @@ pub struct ImpactReport {
     pub timestamp: String,
 }
 
+/// Export action type captured in durable activity history.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BlueprintExportKind {
+    SingleRecord,
+    ScopedView,
+}
+
 // ---------------------------------------------------------------------------
 // Blueprint — the top-level graph structure
 // ---------------------------------------------------------------------------
@@ -728,6 +766,8 @@ pub struct NodeSummary {
     pub scope_visibility: ScopeVisibility,
     #[serde(default)]
     pub is_shared: bool,
+    #[serde(default)]
+    pub lifecycle: NodeLifecycle,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -736,15 +776,44 @@ pub struct NodeSummary {
     pub secondary_scope: SecondaryScopeRefs,
     #[serde(default)]
     pub linked_project_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub override_source_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub override_reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub override_effective_from: Option<String>,
     pub tags: Vec<String>,
     #[serde(default)]
     pub has_documentation: bool,
     pub updated_at: String,
 }
 
+const LEGACY_ARCHIVED_TAG: &str = "archived";
+const LEGACY_OVERRIDE_PREFIX: &str = "overrides:";
+
+fn legacy_has_archived_tag(tags: &[String]) -> bool {
+    tags.iter()
+        .any(|tag| tag.trim().eq_ignore_ascii_case(LEGACY_ARCHIVED_TAG))
+}
+
+fn legacy_override_source(tags: &[String]) -> Option<String> {
+    tags.iter().find_map(|tag| {
+        let trimmed = tag.trim();
+        if !trimmed
+            .to_ascii_lowercase()
+            .starts_with(LEGACY_OVERRIDE_PREFIX)
+        {
+            return None;
+        }
+        let source = trimmed[LEGACY_OVERRIDE_PREFIX.len()..].trim();
+        (!source.is_empty()).then(|| source.to_string())
+    })
+}
+
 impl From<&BlueprintNode> for NodeSummary {
     fn from(node: &BlueprintNode) -> Self {
         let scope = node.scope();
+        let tags = node.tags().to_vec();
         let (project_id, project_name) = scope
             .project
             .as_ref()
@@ -760,6 +829,25 @@ impl From<&BlueprintNode> for NodeSummary {
             .as_ref()
             .map(|shared| shared.linked_project_ids.clone())
             .unwrap_or_default();
+        let lifecycle = if matches!(scope.lifecycle, NodeLifecycle::Archived)
+            || legacy_has_archived_tag(&tags)
+        {
+            NodeLifecycle::Archived
+        } else {
+            NodeLifecycle::Active
+        };
+        let (override_source_id, override_reason, override_effective_from) = scope
+            .override_scope
+            .as_ref()
+            .map(|override_scope| {
+                (
+                    Some(override_scope.shared_source_id.clone()),
+                    override_scope.override_reason.clone(),
+                    override_scope.effective_from.clone(),
+                )
+            })
+            .or_else(|| legacy_override_source(&tags).map(|source| (Some(source), None, None)))
+            .unwrap_or((None, None, None));
 
         NodeSummary {
             id: node.id().clone(),
@@ -769,11 +857,15 @@ impl From<&BlueprintNode> for NodeSummary {
             scope_class: scope.scope_class.clone(),
             scope_visibility: scope.visibility(),
             is_shared: scope.is_shared,
+            lifecycle,
             project_id,
             project_name,
             secondary_scope: scope.secondary.clone(),
             linked_project_ids,
-            tags: node.tags().to_vec(),
+            override_source_id,
+            override_reason,
+            override_effective_from,
+            tags,
             has_documentation: node.documentation().is_some(),
             updated_at: node.updated_at().to_string(),
         }
@@ -816,6 +908,24 @@ pub enum BlueprintEvent {
     EdgeCreated { edge: Edge, timestamp: String },
     /// One or more edges were deleted.
     EdgesDeleted { edges: Vec<Edge>, timestamp: String },
+    /// A user exported knowledge from a scoped view or single record.
+    ExportRecorded {
+        export_id: String,
+        kind: BlueprintExportKind,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        actor: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        node_id: Option<String>,
+        node_count: usize,
+        edge_count: usize,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        project_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        project_name: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        scope_snapshot: Option<serde_json::Value>,
+        timestamp: String,
+    },
 }
 
 impl BlueprintEvent {
@@ -826,7 +936,8 @@ impl BlueprintEvent {
             | Self::NodeUpdated { timestamp, .. }
             | Self::NodeDeleted { timestamp, .. }
             | Self::EdgeCreated { timestamp, .. }
-            | Self::EdgesDeleted { timestamp, .. } => timestamp,
+            | Self::EdgesDeleted { timestamp, .. }
+            | Self::ExportRecorded { timestamp, .. } => timestamp,
         }
     }
 
@@ -868,6 +979,31 @@ impl BlueprintEvent {
                 } else {
                     format!("Removed {} edges", edges.len())
                 }
+            }
+            Self::ExportRecorded {
+                kind,
+                node_id,
+                node_count,
+                edge_count,
+                project_id,
+                ..
+            } => {
+                let kind_label = match kind {
+                    BlueprintExportKind::SingleRecord => "single record",
+                    BlueprintExportKind::ScopedView => "scoped view",
+                };
+                let scope = project_id
+                    .as_deref()
+                    .map(|id| format!("project {}", id))
+                    .unwrap_or_else(|| "all projects".to_string());
+                let target = node_id
+                    .as_deref()
+                    .map(|id| format!(" ({})", id))
+                    .unwrap_or_default();
+                format!(
+                    "Exported {}{} in {} ({} nodes, {} edges)",
+                    kind_label, target, scope, node_count, edge_count
+                )
             }
         }
     }
@@ -1163,6 +1299,8 @@ mod tests {
                     linked_project_ids: vec!["proj-planner".into(), "proj-shared".into()],
                     inherit_to_linked_projects: true,
                 }),
+                lifecycle: NodeLifecycle::Active,
+                override_scope: None,
             },
             created_at: "2026-03-01T00:00:00Z".into(),
             updated_at: "2026-03-02T00:00:00Z".into(),
@@ -1245,6 +1383,8 @@ mod tests {
                 secondary: SecondaryScopeRefs::default(),
                 is_shared: false,
                 shared: None,
+                lifecycle: NodeLifecycle::Active,
+                override_scope: None,
             },
             created_at: "2026-03-01T00:00:00Z".into(),
             updated_at: "2026-03-01T00:00:00Z".into(),

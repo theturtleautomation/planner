@@ -26,6 +26,8 @@ import type {
   ProposedNodesResponse,
   ScopeClass,
   ScopeVisibility,
+  NodeLifecycle,
+  BlueprintExportKind,
 } from '../types/blueprint.ts';
 
 export { ApiError };
@@ -77,6 +79,7 @@ export function createApiClient(getToken: GetTokenFn) {
     nodeType?: string;
     scopeClass?: ScopeClass;
     scopeVisibility?: ScopeVisibility;
+    lifecycle?: NodeLifecycle;
     projectId?: string;
     feature?: string;
     widget?: string;
@@ -90,6 +93,7 @@ export function createApiClient(getToken: GetTokenFn) {
     if (params.nodeType) qs.set('type', params.nodeType);
     if (params.scopeClass) qs.set('scope_class', params.scopeClass);
     if (params.scopeVisibility) qs.set('scope_visibility', params.scopeVisibility);
+    if (params.lifecycle) qs.set('lifecycle', params.lifecycle);
     if (params.projectId) qs.set('project_id', params.projectId);
     if (params.feature) qs.set('feature', params.feature);
     if (params.widget) qs.set('widget', params.widget);
@@ -209,6 +213,7 @@ export function createApiClient(getToken: GetTokenFn) {
       nodeType?: string;
       scopeClass?: ScopeClass;
       scopeVisibility?: ScopeVisibility;
+      lifecycle?: NodeLifecycle;
       projectId?: string;
       feature?: string;
       widget?: string;
@@ -225,6 +230,7 @@ export function createApiClient(getToken: GetTokenFn) {
       nodeType?: string;
       scopeClass?: ScopeClass;
       scopeVisibility?: ScopeVisibility;
+      lifecycle?: NodeLifecycle;
       projectId?: string;
       feature?: string;
       widget?: string;
@@ -300,6 +306,30 @@ export function createApiClient(getToken: GetTokenFn) {
       if (params?.limit !== undefined) qs.set('limit', String(params.limit));
       const query = qs.toString() ? `?${qs.toString()}` : '';
       return apiFetch<BlueprintEventsResponse>(getToken, `/blueprint/events${query}`);
+    },
+
+    /** POST /blueprint/exports — Record a durable export event. */
+    recordBlueprintExport(payload: {
+      kind: BlueprintExportKind;
+      nodeId?: string;
+      nodeCount: number;
+      edgeCount?: number;
+      projectId?: string;
+      projectName?: string;
+      scopeSnapshot?: Record<string, unknown>;
+    }): Promise<{ export_id: string; recorded_at: string }> {
+      return apiFetch<{ export_id: string; recorded_at: string }>(getToken, '/blueprint/exports', {
+        method: 'POST',
+        body: JSON.stringify({
+          kind: payload.kind,
+          node_id: payload.nodeId,
+          node_count: payload.nodeCount,
+          edge_count: payload.edgeCount ?? 0,
+          project_id: payload.projectId,
+          project_name: payload.projectName,
+          scope_snapshot: payload.scopeSnapshot,
+        }),
+      });
     },
 
     /** POST /blueprint/impact-preview — Analyze impact of changing a node. */
