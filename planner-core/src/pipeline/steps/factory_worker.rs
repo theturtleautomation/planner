@@ -19,6 +19,8 @@ use uuid::Uuid;
 
 use super::{StepError, StepResult};
 
+const DEFAULT_WORKTREE_ROOT: &str = "/opt/planner/data/worktrees";
+
 // ---------------------------------------------------------------------------
 // FactoryWorker Trait
 // ---------------------------------------------------------------------------
@@ -58,7 +60,7 @@ pub struct WorkerConfig {
 impl Default for WorkerConfig {
     fn default() -> Self {
         WorkerConfig {
-            worktree: PathBuf::from("/tmp/planner-worktree"),
+            worktree: resolve_worktree_root(None).join("default"),
             model: crate::llm::DefaultModels::FACTORY_WORKER.to_string(),
             timeout_secs: 600, // 10 minutes
             max_retries: 1,
@@ -155,8 +157,8 @@ impl WorktreeManager {
 
     /// Create a new worktree manager using the default root.
     pub fn default_root() -> Self {
-        let root = std::env::var("PLANNER_WORKTREE_ROOT")
-            .unwrap_or_else(|_| "/tmp/planner-worktrees".to_string());
+        let configured_root = std::env::var("PLANNER_WORKTREE_ROOT").ok();
+        let root = resolve_worktree_root(configured_root.as_deref());
         WorktreeManager::new(root)
     }
 
@@ -332,6 +334,14 @@ impl WorktreeManager {
             );
         }
     }
+}
+
+fn resolve_worktree_root(configured_root: Option<&str>) -> PathBuf {
+    configured_root
+        .map(str::trim)
+        .filter(|root| !root.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(DEFAULT_WORKTREE_ROOT))
 }
 
 /// Information about a prepared worktree.
@@ -2184,9 +2194,33 @@ mod tests {
     #[test]
     fn worker_config_defaults() {
         let config = WorkerConfig::default();
+        assert_eq!(
+            config.worktree,
+            PathBuf::from(DEFAULT_WORKTREE_ROOT).join("default")
+        );
         assert_eq!(config.model, "gpt-5.3-codex");
         assert_eq!(config.timeout_secs, 600);
         assert_eq!(config.max_retries, 1);
+    }
+
+    #[test]
+    fn resolve_worktree_root_uses_service_data_dir_by_default() {
+        assert_eq!(
+            resolve_worktree_root(None),
+            PathBuf::from(DEFAULT_WORKTREE_ROOT)
+        );
+    }
+
+    #[test]
+    fn resolve_worktree_root_respects_explicit_override() {
+        assert_eq!(
+            resolve_worktree_root(Some("  /custom/worktrees  ")),
+            PathBuf::from("/custom/worktrees")
+        );
+        assert_eq!(
+            resolve_worktree_root(Some("   ")),
+            PathBuf::from(DEFAULT_WORKTREE_ROOT)
+        );
     }
 
     #[test]

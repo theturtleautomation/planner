@@ -620,6 +620,8 @@ do_build() {
 # ---------------------------------------------------------------------------
 do_install() {
     local update_only="${1:-false}"
+    local default_worktree_root="${DATA_DIR}/worktrees"
+    local legacy_worktree_root="/tmp/planner-worktrees"
 
     # Create service user (skip on update)
     if [[ "$update_only" == "false" ]]; then
@@ -631,6 +633,8 @@ do_install() {
 
     # Create extra directories for CLI tools and config
     mkdir -p "${INSTALL_DIR}" "${WEB_DIR}" "${DATA_DIR}" "${CONF_DIR}"
+    install -d -o "${SERVICE_USER}" -g "${SERVICE_USER}" -m 750 "${default_worktree_root}"
+    install -d -o "${SERVICE_USER}" -g "${SERVICE_USER}" -m 750 "${legacy_worktree_root}"
 
     # Set up CLI isolation directories
     setup_cli_isolation
