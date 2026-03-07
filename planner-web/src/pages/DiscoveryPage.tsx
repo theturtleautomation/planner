@@ -1,7 +1,9 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout.tsx';
 import { createApiClient } from '../api/client.ts';
 import { useGetAccessToken } from '../auth/useAuthenticatedFetch.ts';
+import { buildKnowledgeDeepLink } from '../lib/knowledgeDeepLinks.ts';
 import type { ProposedNode, ProposalStatus, DiscoverySource } from '../types/blueprint.ts';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -31,6 +33,7 @@ const SOURCE_LABELS: Record<DiscoverySource, string> = {
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function DiscoveryPage() {
+  const navigate = useNavigate();
   const getToken = useGetAccessToken();
   const api = useMemo(() => createApiClient(getToken), [getToken]);
 
@@ -117,6 +120,25 @@ export default function DiscoveryPage() {
   const getNodeDisplayName = (p: ProposedNode): string => {
     const n = p.node as unknown as Record<string, unknown>;
     return (n.name ?? n.title ?? n.scenario ?? p.id) as string;
+  };
+
+  const getRelatedKnowledgeLink = (proposal: ProposedNode): string | null => {
+    const projectId = proposal.node.scope.project?.project_id?.trim();
+    if (!projectId) return null;
+
+    const secondary = proposal.node.scope.secondary ?? {};
+    const component = secondary.component?.trim()
+      || (proposal.node.node_type === 'component' ? proposal.node.name.trim() : undefined);
+
+    return buildKnowledgeDeepLink({
+      projectId,
+      feature: secondary.feature,
+      widget: secondary.widget,
+      artifact: secondary.artifact,
+      component,
+      originPath: '/discovery',
+      originLabel: 'Discovery',
+    });
   };
 
   const confidenceColor = (c: number) => {
@@ -231,125 +253,147 @@ export default function DiscoveryPage() {
       {/* Proposal list */}
       {!loading && !error && proposals.length > 0 && (
         <div className="snapshot-list">
-          {proposals.map(p => (
-            <div
-              key={p.id}
-              className="snapshot-item"
-              style={{
-                flexDirection: 'column',
-                alignItems: 'stretch',
-                cursor: 'pointer',
-                borderColor: p.status === 'pending' ? 'color-mix(in srgb, var(--color-warning) 40%, var(--color-border))' : undefined,
-              }}
-              onClick={() => setExpandedId(expandedId === p.id ? null : p.id)}
-            >
-              {/* Summary row */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', width: '100%' }}>
-                <span style={{ fontSize: '1.2em' }} title={SOURCE_LABELS[p.source]}>
-                  {SOURCE_ICONS[p.source]}
-                </span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-                    <span style={{ fontWeight: 600, fontSize: 'var(--text-sm)' }}>
-                      {getNodeDisplayName(p)}
-                    </span>
-                    <span className={`badge badge-${p.node.node_type}`} style={{ fontSize: '0.5625rem' }}>
-                      {p.node.node_type}
-                    </span>
-                    <span style={{
-                      fontSize: '0.5625rem',
-                      fontWeight: 600,
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.08em',
-                      color: p.status === 'pending' ? 'var(--color-warning)' :
-                             p.status === 'accepted' ? 'var(--color-success)' :
-                             p.status === 'rejected' ? 'var(--color-error)' : 'var(--color-primary)',
-                    }}>
-                      {p.status}
-                    </span>
-                  </div>
-                  <div style={{
-                    fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)',
-                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  }}>
-                    {p.reason}
-                  </div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', flexShrink: 0 }}>
-                  <span style={{
-                    fontFamily: 'var(--font-mono)', fontSize: '0.625rem',
-                    fontWeight: 600, color: confidenceColor(p.confidence),
-                  }}>
-                    {Math.round(p.confidence * 100)}%
-                  </span>
-                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-faint)', whiteSpace: 'nowrap' }}>
-                    {relativeTime(p.proposed_at)}
-                  </span>
-                </div>
-              </div>
-
-              {/* Expanded details */}
-              {expandedId === p.id && (
-                <div style={{
-                  marginTop: 'var(--space-3)',
-                  paddingTop: 'var(--space-3)',
-                  borderTop: '1px solid var(--color-divider)',
+          {proposals.map(p => {
+            const relatedKnowledgeLink = getRelatedKnowledgeLink(p);
+            return (
+              <div
+                key={p.id}
+                className="snapshot-item"
+                style={{
+                  flexDirection: 'column',
+                  alignItems: 'stretch',
+                  cursor: 'pointer',
+                  borderColor: p.status === 'pending' ? 'color-mix(in srgb, var(--color-warning) 40%, var(--color-border))' : undefined,
                 }}
-                  onClick={e => e.stopPropagation()}
-                >
-                  {p.source_artifact && (
-                    <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-faint)', marginBottom: 'var(--space-2)' }}>
-                      <strong>Source:</strong>{' '}
-                      <span style={{ fontFamily: 'var(--font-mono)' }}>{p.source_artifact}</span>
+                onClick={() => setExpandedId(expandedId === p.id ? null : p.id)}
+              >
+                {/* Summary row */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', width: '100%' }}>
+                  <span style={{ fontSize: '1.2em' }} title={SOURCE_LABELS[p.source]}>
+                    {SOURCE_ICONS[p.source]}
+                  </span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                      <span style={{ fontWeight: 600, fontSize: 'var(--text-sm)' }}>
+                        {getNodeDisplayName(p)}
+                      </span>
+                      <span className={`badge badge-${p.node.node_type}`} style={{ fontSize: '0.5625rem' }}>
+                        {p.node.node_type}
+                      </span>
+                      <span style={{
+                        fontSize: '0.5625rem',
+                        fontWeight: 600,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.08em',
+                        color: p.status === 'pending' ? 'var(--color-warning)' :
+                               p.status === 'accepted' ? 'var(--color-success)' :
+                               p.status === 'rejected' ? 'var(--color-error)' : 'var(--color-primary)',
+                      }}>
+                        {p.status}
+                      </span>
                     </div>
-                  )}
-                  <details>
-                    <summary style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', cursor: 'pointer' }}>
-                      Full node data
-                    </summary>
-                    <pre style={{
-                      fontSize: '0.625rem', lineHeight: 1.4,
-                      padding: 'var(--space-2)', marginTop: 'var(--space-1)',
-                      background: 'var(--color-surface-offset)', borderRadius: 'var(--radius-sm)',
-                      overflow: 'auto', maxHeight: '200px',
+                    <div style={{
+                      fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)',
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                     }}>
-                      {JSON.stringify(p.node, null, 2)}
-                    </pre>
-                  </details>
-
-                  {p.status === 'pending' && (
-                    <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-3)' }}>
-                      <button
-                        className="btn btn-primary"
-                        style={{ fontSize: 'var(--text-xs)', padding: 'var(--space-1) var(--space-3)' }}
-                        onClick={() => handleAccept(p.id)}
-                        disabled={actionLoading === p.id}
-                      >
-                        {actionLoading === p.id ? '…' : '✓ Accept'}
-                      </button>
-                      <button
-                        className="btn btn-outline"
-                        style={{
-                          fontSize: 'var(--text-xs)', padding: 'var(--space-1) var(--space-3)',
-                          color: 'var(--color-error)', borderColor: 'var(--color-error)',
-                        }}
-                        onClick={() => handleReject(p.id)}
-                        disabled={actionLoading === p.id}
-                      >
-                        {actionLoading === p.id ? '…' : '✗ Reject'}
-                      </button>
+                      {p.reason}
                     </div>
-                  )}
-
-                  {p.reviewed_at && (
-                    <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-faint)', marginTop: 'var(--space-2)' }}>
-                      Reviewed {relativeTime(p.reviewed_at)}
-                    </div>
-                  )}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', flexShrink: 0 }}>
+                    <span style={{
+                      fontFamily: 'var(--font-mono)', fontSize: '0.625rem',
+                      fontWeight: 600, color: confidenceColor(p.confidence),
+                    }}>
+                      {Math.round(p.confidence * 100)}%
+                    </span>
+                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-faint)', whiteSpace: 'nowrap' }}>
+                      {relativeTime(p.proposed_at)}
+                    </span>
+                    <button
+                      className="btn btn-outline"
+                      style={{
+                        fontSize: '0.625rem',
+                        padding: 'var(--space-1) var(--space-2)',
+                        opacity: relatedKnowledgeLink ? 1 : 0.5,
+                      }}
+                      title={relatedKnowledgeLink
+                        ? 'Open related knowledge in the scoped project context'
+                        : 'Scope unavailable for this proposal'}
+                      disabled={!relatedKnowledgeLink}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        if (!relatedKnowledgeLink) return;
+                        void navigate(relatedKnowledgeLink);
+                      }}
+                    >
+                      View related knowledge
+                    </button>
+                  </div>
                 </div>
-              )}
-            </div>
-          ))}
+
+                {/* Expanded details */}
+                {expandedId === p.id && (
+                  <div style={{
+                    marginTop: 'var(--space-3)',
+                    paddingTop: 'var(--space-3)',
+                    borderTop: '1px solid var(--color-divider)',
+                  }}
+                    onClick={e => e.stopPropagation()}
+                  >
+                    {p.source_artifact && (
+                      <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-faint)', marginBottom: 'var(--space-2)' }}>
+                        <strong>Source:</strong>{' '}
+                        <span style={{ fontFamily: 'var(--font-mono)' }}>{p.source_artifact}</span>
+                      </div>
+                    )}
+                    <details>
+                      <summary style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', cursor: 'pointer' }}>
+                        Full node data
+                      </summary>
+                      <pre style={{
+                        fontSize: '0.625rem', lineHeight: 1.4,
+                        padding: 'var(--space-2)', marginTop: 'var(--space-1)',
+                        background: 'var(--color-surface-offset)', borderRadius: 'var(--radius-sm)',
+                        overflow: 'auto', maxHeight: '200px',
+                      }}>
+                        {JSON.stringify(p.node, null, 2)}
+                      </pre>
+                    </details>
+
+                    {p.status === 'pending' && (
+                      <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-3)' }}>
+                        <button
+                          className="btn btn-primary"
+                          style={{ fontSize: 'var(--text-xs)', padding: 'var(--space-1) var(--space-3)' }}
+                          onClick={() => handleAccept(p.id)}
+                          disabled={actionLoading === p.id}
+                        >
+                          {actionLoading === p.id ? '…' : '✓ Accept'}
+                        </button>
+                        <button
+                          className="btn btn-outline"
+                          style={{
+                            fontSize: 'var(--text-xs)', padding: 'var(--space-1) var(--space-3)',
+                            color: 'var(--color-error)', borderColor: 'var(--color-error)',
+                          }}
+                          onClick={() => handleReject(p.id)}
+                          disabled={actionLoading === p.id}
+                        >
+                          {actionLoading === p.id ? '…' : '✗ Reject'}
+                        </button>
+                      </div>
+                    )}
+
+                    {p.reviewed_at && (
+                      <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-faint)', marginTop: 'var(--space-2)' }}>
+                        Reviewed {relativeTime(p.reviewed_at)}
+                      </div>
+                    )}
+                  </div>
+                )}
+                </div>
+              );
+          })}
         </div>
       )}
     </Layout>

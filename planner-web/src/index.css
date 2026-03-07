@@ -1206,6 +1206,327 @@ textarea.field-input { resize: vertical; min-height: 60px; }
   background: var(--color-primary-highlight);
   color: var(--color-primary);
 }
+
+.knowledge-scope-shell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-6);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-raised);
+}
+
+.knowledge-scope-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.knowledge-scope-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.knowledge-scope-context {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.knowledge-scope-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: var(--radius-full);
+  border: 1px solid rgba(79, 152, 163, 0.45);
+  background: rgba(79, 152, 163, 0.16);
+  color: var(--color-text);
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+.knowledge-scope-subtle {
+  font-size: 0.625rem;
+  color: var(--color-text-faint);
+}
+
+.knowledge-scope-actions-inline {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.scope-action-btn {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-offset);
+  color: var(--color-text-muted);
+  padding: 4px 10px;
+  font-size: 0.625rem;
+  cursor: pointer;
+  transition: all var(--transition-interactive);
+}
+
+.scope-action-btn:hover {
+  color: var(--color-text);
+  border-color: var(--color-text-muted);
+}
+
+.scope-action-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.scope-action-link {
+  font-size: 0.625rem;
+}
+
+.knowledge-active-filter-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.knowledge-active-filter-label {
+  font-size: 0.5625rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-faint);
+}
+
+.knowledge-active-filter-empty {
+  font-size: 0.625rem;
+  color: var(--color-text-faint);
+}
+
+.knowledge-active-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  background: var(--color-surface-offset);
+  color: var(--color-text-muted);
+  font-size: 0.5625rem;
+  line-height: 1.4;
+}
+
+.knowledge-scope-notice {
+  font-size: 0.625rem;
+  color: var(--color-success);
+  border: 1px solid rgba(109, 170, 69, 0.5);
+  border-radius: var(--radius-md);
+  background: rgba(109, 170, 69, 0.12);
+  padding: 4px 8px;
+}
+
+.knowledge-chip-grid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.scope-chip-group {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-start;
+}
+
+.scope-chip-label {
+  min-width: 124px;
+  font-size: 0.625rem;
+  color: var(--color-text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding-top: 4px;
+}
+
+.scope-chip-options {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
+.scope-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  padding: 3px 10px;
+  font-size: 0.625rem;
+  color: var(--color-text-muted);
+  background: var(--color-surface-offset);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.scope-filter-chip:hover {
+  border-color: var(--color-text-muted);
+  color: var(--color-text);
+}
+
+.scope-filter-chip.active {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background: var(--color-primary-highlight);
+}
+
+.scope-filter-chip-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  border-radius: var(--radius-full);
+  font-size: 0.5625rem;
+  background: rgba(255, 255, 255, 0.05);
+  color: inherit;
+  font-family: var(--font-mono);
+}
+
+.knowledge-action-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.knowledge-section-tabs {
+  display: flex;
+  gap: 8px;
+  padding: var(--space-3) var(--space-6) 0;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.knowledge-section-tab {
+  border: 1px solid var(--color-border);
+  border-bottom: none;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  background: var(--color-surface-offset);
+  color: var(--color-text-muted);
+  padding: 6px 12px;
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.knowledge-section-tab.active {
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+}
+
+.knowledge-section-panel {
+  padding: var(--space-4) var(--space-6);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-raised);
+}
+
+.knowledge-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--space-3);
+}
+
+.knowledge-overview-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-offset);
+  padding: var(--space-3);
+}
+
+.knowledge-overview-label {
+  font-size: 0.5625rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-faint);
+}
+
+.knowledge-overview-value {
+  font-size: var(--text-md);
+  color: var(--color-text);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.knowledge-review-queue {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+.knowledge-review-queue-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-offset);
+  color: var(--color-text-muted);
+  padding: 6px 10px;
+  font-size: 0.625rem;
+  cursor: pointer;
+}
+
+.knowledge-review-queue-item:hover {
+  color: var(--color-text);
+}
+
+.knowledge-activity-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--space-4);
+}
+
+.knowledge-section-subtitle {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--color-text);
+}
+
+.knowledge-section-muted {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--color-text-faint);
+}
+
+.knowledge-activity-item {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-offset);
+  padding: 8px 10px;
+  margin-bottom: var(--space-2);
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 6px;
+  align-items: center;
+  color: var(--color-text-muted);
+  font-size: 0.625rem;
+}
+
+.knowledge-activity-item p {
+  margin: 2px 0 0;
+  grid-column: 1 / -1;
+  color: var(--color-text-faint);
+}
+
 .knowledge-content {
   flex: 1;
   overflow: hidden;
@@ -1397,6 +1718,19 @@ textarea.field-input { resize: vertical; min-height: 60px; }
   border: 1px dashed var(--color-border);
   border-radius: var(--radius-lg);
   padding: var(--space-6);
+}
+
+@media (max-width: 960px) {
+  .scope-chip-group {
+    flex-direction: column;
+  }
+  .scope-chip-label {
+    min-width: 0;
+    padding-top: 0;
+  }
+  .scope-chip-options {
+    width: 100%;
+  }
 }
 
 /* ── Node List Panel ────────────────────────────── */

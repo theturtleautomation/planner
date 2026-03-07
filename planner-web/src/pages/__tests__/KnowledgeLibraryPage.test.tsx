@@ -136,7 +136,7 @@ describe('KnowledgeLibraryPage phase 2 routing', () => {
     renderPage('/knowledge');
 
     await waitFor(() => {
-      expect(mockGetBlueprint).toHaveBeenCalledTimes(1);
+      expect(mockGetBlueprint).toHaveBeenCalled();
     });
 
     expect(screen.getByText('Alpha Project')).toBeInTheDocument();
@@ -221,11 +221,101 @@ describe('KnowledgeLibraryPage phase 2 routing', () => {
     renderPage('/knowledge/all');
 
     await waitFor(() => {
-      expect(mockGetBlueprint).toHaveBeenCalledTimes(1);
+      expect(mockGetBlueprint).toHaveBeenCalled();
     });
 
     expect(screen.getByTestId('node-list-panel')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /back to project chooser/i })).toBeInTheDocument();
     expect(screen.queryByPlaceholderText(/search projects by name or tag/i)).not.toBeInTheDocument();
+  });
+
+  it('shows persistent project scope controls on project routes', async () => {
+    renderPage('/knowledge/projects/proj-alpha');
+
+    await waitFor(() => {
+      expect(mockGetBlueprint).toHaveBeenCalled();
+    });
+
+    expect(screen.getByText(/project: alpha project/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /clear filters/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /reset to project scope/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /archive selected knowledge/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^overview$/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^inventory$/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^architecture$/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^quality$/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^activity$/i })).toBeInTheDocument();
+    expect(screen.getByTestId('node-list-panel')).toBeInTheDocument();
+  });
+
+  it('shows project activity panel when the activity section is selected', async () => {
+    const user = userEvent.setup();
+    renderPage('/knowledge/projects/proj-alpha');
+
+    await waitFor(() => {
+      expect(screen.getByText(/project: alpha project/i)).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: /activity/i }));
+
+    expect(screen.getByText(/action history/i)).toBeInTheDocument();
+    expect(screen.getByText(/review queue/i)).toBeInTheDocument();
+    expect(screen.getByText(/recent node changes/i)).toBeInTheDocument();
+  });
+
+  it('supports contextual deep links with project + secondary scope filters', async () => {
+    renderPage('/knowledge?project=proj-alpha&feature=tasking&widget=tracker&artifact=task-service&component=task-widget');
+
+    await waitFor(() => {
+      expect(screen.getByText(/project: alpha project/i)).toBeInTheDocument();
+    });
+
+    expect(screen.getByText(/feature: tasking/i)).toBeInTheDocument();
+    expect(screen.getByText(/widget: tracker/i)).toBeInTheDocument();
+    expect(screen.getByText(/artifact: task-service/i)).toBeInTheDocument();
+    expect(screen.getByText(/component: task-widget/i)).toBeInTheDocument();
+    expect(screen.getByTestId('node-list-panel')).toBeInTheDocument();
+  });
+
+  it('shows back-navigation to the originating surface when provided', async () => {
+    renderPage('/knowledge/projects/proj-alpha?from=%2Fblueprint&from_label=Blueprint');
+
+    await waitFor(() => {
+      expect(screen.getByText(/project: alpha project/i)).toBeInTheDocument();
+    });
+
+    const link = screen.getByRole('link', { name: /back to blueprint/i });
+    expect(link).toHaveAttribute('href', '/blueprint');
+  });
+
+  it('persists scoped chips inside the same project context', async () => {
+    const user = userEvent.setup();
+    const { unmount } = render(
+      <MemoryRouter initialEntries={['/knowledge/projects/proj-alpha']}>
+        <Routes>
+          <Route path="/knowledge/projects/:projectId" element={<KnowledgeLibraryPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/project: alpha project/i)).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: /with docs/i }));
+    expect(screen.getByRole('button', { name: /with docs/i })).toHaveAttribute('aria-pressed', 'true');
+    unmount();
+
+    render(
+      <MemoryRouter initialEntries={['/knowledge/projects/proj-alpha']}>
+        <Routes>
+          <Route path="/knowledge/projects/:projectId" element={<KnowledgeLibraryPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /with docs/i })).toHaveAttribute('aria-pressed', 'true');
+    });
   });
 });

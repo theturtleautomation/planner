@@ -232,6 +232,10 @@ Feature work opens directly into the relevant knowledge slice.
   - widget
   - artifact
   - component
+- Define a canonical scope identity contract for source surfaces so each
+  `View related knowledge` action can resolve:
+  - knowledge project ID
+  - optional contextual refs (feature, widget, artifact, component)
 - Add a standard `View related knowledge` action on project surfaces.
 - Support back-navigation to the originating surface.
 - Ensure contextual entry points prefill scope and filters instead of opening
@@ -404,6 +408,11 @@ The system improves incrementally without waiting for a single large redesign.
   - project-scoped filtering works
 - Phase 9.3 result:
   - deep links from widgets and artifacts work
+  - source surfaces provide canonical scope identity fields so contextual links
+    always resolve to the correct knowledge project
+  - if a surface cannot resolve scope identity, the entry action is disabled or
+    clearly indicates scope is unavailable instead of falling back silently to a
+    generic view
 - Phase 9.4 result:
   - project IA is split into inventory, architecture, quality, and activity
 - Phase 9.5 result:
@@ -414,6 +423,38 @@ The system improves incrementally without waiting for a single large redesign.
 
 - The team can ship usable slices that improve relevance without needing the
   full end-state first.
+
+## Implementation Status (2026-03-07)
+
+- Phase 5 complete:
+  - project IA is split into overview, inventory, architecture, quality, and
+    activity sections
+  - activity includes action history, review queues, recent node changes, and
+    branch lineage
+- Phase 6 complete:
+  - shared vs local scope visibility filters are live in project views
+  - scope class and scope visibility badges are shown for each record
+  - local override representation is defined via `overrides:<shared-node-id>`
+    and surfaced in the UI
+- Phase 7 complete:
+  - type-aware completeness logic replaced approximate scoring
+  - lifecycle active/archived filtering, health metrics, action history, and
+    lineage labeling are live
+  - review queues exist for unscoped, stale, orphaned, and archived records
+- Phase 8 complete:
+  - create flows auto-fill scope in project/contextual entry points
+  - global create requires explicit scope selection unless shared knowledge is
+    selected
+  - scope move and restore flows require confirmation
+  - branch flows preserve scope and lineage by default
+- Phase 9 complete:
+  - 9.1 project landing and routes are live
+  - 9.2 project-scoped filtering is live
+  - 9.3 deep links carry canonical scope identity and disable with explicit
+    messaging when scope identity is unavailable
+  - 9.4 project IA sectioning is live
+  - 9.5 scope governance, archive and restore, export, and branch flows are
+    live
 
 ## Recommended MVP
 

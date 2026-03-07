@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { NodeSummary, EdgePayload, NodeType } from '../types/blueprint.ts';
 
 // ─── Props ──────────────────────────────────────────────────────────────────
@@ -8,6 +8,9 @@ interface NodeListPanelProps {
   edges: EdgePayload[];
   nodeType: NodeType | null;
   onSelectNode: (nodeId: string) => void;
+  selectedNodeIds?: string[];
+  onToggleSelectNode?: (nodeId: string, selected: boolean) => void;
+  onToggleSelectAllVisible?: (nodeIds: string[], selected: boolean) => void;
   /** Column configuration per node type. */
   columns?: ColumnDef[];
 }
@@ -75,6 +78,33 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 const STALE_THRESHOLD_DAYS = 30;
+const ARCHIVED_TAG = 'archived';
+const LINEAGE_BRANCH_PREFIX = 'lineage:branch-of:';
+const OVERRIDE_PREFIX = 'overrides:';
+
+function isArchivedNode(node: NodeSummary): boolean {
+  return node.tags.some(tag => tag.trim().toLowerCase() === ARCHIVED_TAG);
+}
+
+function branchLineageSource(node: NodeSummary): string | null {
+  for (const rawTag of node.tags) {
+    const lower = rawTag.trim().toLowerCase();
+    if (!lower.startsWith(LINEAGE_BRANCH_PREFIX)) continue;
+    const source = rawTag.trim().slice(LINEAGE_BRANCH_PREFIX.length).trim();
+    if (source.length > 0) return source;
+  }
+  return null;
+}
+
+function overrideSource(node: NodeSummary): string | null {
+  for (const rawTag of node.tags) {
+    const lower = rawTag.trim().toLowerCase();
+    if (!lower.startsWith(OVERRIDE_PREFIX)) continue;
+    const source = rawTag.trim().slice(OVERRIDE_PREFIX.length).trim();
+    if (source.length > 0) return source;
+  }
+  return null;
+}
 
 function defaultColumns(edges: EdgePayload[]): ColumnDef[] {
   return [
@@ -87,9 +117,26 @@ function defaultColumns(edges: EdgePayload[]): ColumnDef[] {
         const isStale = !isNaN(updatedMs) && (Date.now() - updatedMs) > STALE_THRESHOLD_DAYS * 86400000;
         // Orphan detection: node with no edges
         const isOrphan = !edgeList.some(e => e.source === n.id || e.target === n.id);
+        const lineageSource = branchLineageSource(n);
+        const override = overrideSource(n);
         return (
           <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span style={{ fontWeight: 500 }}>{n.name}</span>
+            {isArchivedNode(n) && (
+              <span className="health-badge" title="Archived lifecycle state">
+                archived
+              </span>
+            )}
+            {lineageSource && (
+              <span className="health-badge" title={`Branched from ${lineageSource}`}>
+                branch
+              </span>
+            )}
+            {override && (
+              <span className="health-badge" title={`Overrides shared record ${override}`}>
+                override
+              </span>
+            )}
             {n.has_documentation && (
               <span className="health-badge" title="Documentation attached">
                 docs
@@ -239,33 +286,53 @@ function defaultColumns(edges: EdgePayload[]): ColumnDef[] {
 }
 
 // ─── Completeness score ─────────────────────────────────────────────────────
-// NOTE: NodeSummary is a flat type with only generic fields (name, status,
-// node_type, tags, updated_at). Type-specific field depth (e.g. Decision
-// options, Technology version) requires a server-side enrichment or full-node
-// fetch. This score is approximate — a high score means the summary fields
-// are populated, not that the full node is complete.
+function completenessScore(node: NodeSummary, edges: EdgePayload[]): number {
+  const updatedMs = new Date(node.updated_at).getTime();
+  const isFresh = !isNaN(updatedMs) && (Date.now() - updatedMs) < 90 * 86400000;
+  const isConnected = edges.some(e => e.source === node.id || e.target === node.id);
+  const hasProjectAssignment =
+    (node.scope_class === 'project' || node.scope_class === 'project_contextual')
+      ? Boolean(node.project_id?.trim())
+      : true;
+  const hasName = Boolean(node.name.trim());
+  const hasStatus = Boolean(node.status.trim());
+  const hasDocs = node.has_documentation;
+  const hasTags = node.tags.length > 0;
 
-function completenessScore(node: NodeSummary): number {
-  let filled = 0;
-  const total = 5; // name, status, node_type, ≥1 tag, updated recently
-  if (node.name && node.name.trim()) filled++;
-  if (node.status && node.status.trim()) filled++;
-  if (node.node_type) filled++;
-  if (node.tags.length > 0) filled++;
-  // Bonus: updated_at is recent (within 90 days) → node is actively maintained
-  const updMs = new Date(node.updated_at).getTime();
-  if (!isNaN(updMs) && (Date.now() - updMs) < 90 * 86400000) filled++;
-  return Math.round((filled / total) * 100);
+  const criteriaByType: Record<string, boolean[]> = {
+    decision: [hasName, hasStatus, hasTags, hasDocs, isConnected, isFresh, hasProjectAssignment],
+    technology: [hasName, hasStatus, hasTags, hasDocs, isFresh, hasProjectAssignment],
+    component: [hasName, hasStatus, hasTags, hasDocs, isConnected, isFresh, hasProjectAssignment],
+    constraint: [hasName, hasStatus, hasTags, hasDocs, isConnected, isFresh, hasProjectAssignment],
+    pattern: [hasName, hasStatus, hasTags, hasDocs, isConnected, isFresh, hasProjectAssignment],
+    quality_requirement: [hasStatus, hasTags, hasDocs, isFresh, hasProjectAssignment],
+  };
+
+  const criteria = criteriaByType[node.node_type] ?? [hasName, hasStatus, hasTags, hasDocs, isFresh];
+  const filled = criteria.filter(Boolean).length;
+  return Math.round((filled / Math.max(criteria.length, 1)) * 100);
 }
 
 // ─── Component ──────────────────────────────────────────────────────────────
 
-export default function NodeListPanel({ nodes, edges, nodeType, onSelectNode, columns }: NodeListPanelProps) {
+export default function NodeListPanel({
+  nodes,
+  edges,
+  nodeType,
+  onSelectNode,
+  selectedNodeIds = [],
+  onToggleSelectNode,
+  onToggleSelectAllVisible,
+  columns,
+}: NodeListPanelProps) {
   const [search, setSearch] = useState('');
   const [sortKey, setSortKey] = useState('name');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const selectAllRef = useRef<HTMLInputElement | null>(null);
 
   const cols = columns ?? defaultColumns(edges);
+  const selectedNodeSet = useMemo(() => new Set(selectedNodeIds), [selectedNodeIds]);
+  const selectionEnabled = Boolean(onToggleSelectNode);
 
   const filtered = useMemo(() => {
     let data = nodeType ? nodes.filter(n => n.node_type === nodeType) : [...nodes];
@@ -300,6 +367,15 @@ export default function NodeListPanel({ nodes, edges, nodeType, onSelectNode, co
     return data;
   }, [nodes, edges, nodeType, search, sortKey, sortDir, cols]);
 
+  const visibleNodeIds = useMemo(() => filtered.map(node => node.id), [filtered]);
+  const allVisibleSelected = visibleNodeIds.length > 0 && visibleNodeIds.every(nodeId => selectedNodeSet.has(nodeId));
+  const someVisibleSelected = !allVisibleSelected && visibleNodeIds.some(nodeId => selectedNodeSet.has(nodeId));
+
+  useEffect(() => {
+    if (!selectAllRef.current) return;
+    selectAllRef.current.indeterminate = someVisibleSelected;
+  }, [someVisibleSelected]);
+
   const handleSort = (key: string) => {
     if (sortKey === key) {
       setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -312,7 +388,7 @@ export default function NodeListPanel({ nodes, edges, nodeType, onSelectNode, co
   // Stats
   const totalCount = nodeType ? nodes.filter(n => n.node_type === nodeType).length : nodes.length;
   const avgCompleteness = filtered.length > 0
-    ? Math.round(filtered.reduce((sum, n) => sum + completenessScore(n), 0) / filtered.length)
+    ? Math.round(filtered.reduce((sum, n) => sum + completenessScore(n, edges), 0) / filtered.length)
     : 0;
 
   return (
@@ -347,6 +423,17 @@ export default function NodeListPanel({ nodes, edges, nodeType, onSelectNode, co
         <table className="data-table" style={{ width: '100%' }}>
           <thead>
             <tr>
+              {selectionEnabled && (
+                <th style={{ width: '40px' }}>
+                  <input
+                    ref={selectAllRef}
+                    type="checkbox"
+                    checked={allVisibleSelected}
+                    aria-label="Select all visible nodes"
+                    onChange={event => onToggleSelectAllVisible?.(visibleNodeIds, event.target.checked)}
+                  />
+                </th>
+              )}
               {cols.map(col => (
                 <th
                   key={col.key}
@@ -367,10 +454,20 @@ export default function NodeListPanel({ nodes, edges, nodeType, onSelectNode, co
           </thead>
           <tbody>
             {filtered.map(node => {
-              const score = completenessScore(node);
+              const score = completenessScore(node, edges);
               const scoreColor = score >= 75 ? 'var(--color-success)' : score >= 50 ? 'var(--color-warning)' : 'var(--color-error)';
               return (
                 <tr key={node.id} onClick={() => onSelectNode(node.id)}>
+                  {selectionEnabled && (
+                    <td onClick={event => event.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selectedNodeSet.has(node.id)}
+                        aria-label={`Select ${node.name}`}
+                        onChange={event => onToggleSelectNode?.(node.id, event.target.checked)}
+                      />
+                    </td>
+                  )}
                   {cols.map(col => (
                     <td key={col.key}>{col.render(node, edges)}</td>
                   ))}
@@ -389,7 +486,7 @@ export default function NodeListPanel({ nodes, edges, nodeType, onSelectNode, co
             })}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={cols.length + 1} style={{ textAlign: 'center', color: 'var(--color-text-faint)', padding: 'var(--space-8)' }}>
+                <td colSpan={cols.length + (selectionEnabled ? 2 : 1)} style={{ textAlign: 'center', color: 'var(--color-text-faint)', padding: 'var(--space-8)' }}>
                   {search ? 'No nodes match your search' : 'No nodes in this category yet'}
                 </td>
               </tr>

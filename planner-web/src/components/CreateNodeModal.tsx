@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import type {
   NodeType,
   BlueprintNode,
@@ -20,6 +20,19 @@ interface CreateNodeModalProps {
   isOpen: boolean;
   onClose: () => void;
   onCreate: (node: BlueprintNode) => Promise<void>;
+  initialScope?: {
+    scopeClass?: ScopeClass;
+    projectId?: string;
+    projectName?: string;
+    feature?: string;
+    widget?: string;
+    artifact?: string;
+    component?: string;
+    isShared?: boolean;
+    linkedProjectIds?: string[];
+    inheritToLinkedProjects?: boolean;
+  };
+  requireExplicitScopeSelection?: boolean;
 }
 
 const NODE_TYPE_OPTIONS: { value: NodeType; label: string }[] = [
@@ -91,7 +104,13 @@ function buildScope(params: {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function CreateNodeModal({ isOpen, onClose, onCreate }: CreateNodeModalProps) {
+export default function CreateNodeModal({
+  isOpen,
+  onClose,
+  onCreate,
+  initialScope,
+  requireExplicitScopeSelection = false,
+}: CreateNodeModalProps) {
   const [nodeType, setNodeType] = useState<NodeType>('decision');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -109,6 +128,7 @@ export default function CreateNodeModal({ isOpen, onClose, onCreate }: CreateNod
   const [isShared, setIsShared] = useState(false);
   const [linkedProjectIds, setLinkedProjectIds] = useState('');
   const [inheritToLinkedProjects, setInheritToLinkedProjects] = useState(true);
+  const [scopeSelectionAcknowledged, setScopeSelectionAcknowledged] = useState(false);
 
   // Decision fields
   const [context, setContext] = useState('');
@@ -139,6 +159,7 @@ export default function CreateNodeModal({ isOpen, onClose, onCreate }: CreateNod
   const [priority, setPriority] = useState<QualityPriority>('medium');
 
   const resetForm = useCallback(() => {
+    setNodeType('decision');
     setName('');
     setTags('');
     setScopeClass('unscoped');
@@ -169,7 +190,37 @@ export default function CreateNodeModal({ isOpen, onClose, onCreate }: CreateNod
     setPriority('medium');
     setError(null);
     setSaving(false);
+    setScopeSelectionAcknowledged(false);
   }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setError(null);
+    setSaving(false);
+
+    const nextScopeClass = initialScope?.scopeClass ?? 'unscoped';
+    setScopeClass(nextScopeClass);
+    setProjectId(initialScope?.projectId ?? '');
+    setProjectName(initialScope?.projectName ?? '');
+    setScopeFeature(initialScope?.feature ?? '');
+    setScopeWidget(initialScope?.widget ?? '');
+    setScopeArtifact(initialScope?.artifact ?? '');
+    setScopeComponent(initialScope?.component ?? '');
+    setIsShared(initialScope?.isShared ?? false);
+    setLinkedProjectIds((initialScope?.linkedProjectIds ?? []).join(', '));
+    setInheritToLinkedProjects(initialScope?.inheritToLinkedProjects ?? true);
+
+    const hasInitialScope =
+      nextScopeClass !== 'unscoped'
+      || Boolean(initialScope?.projectId?.trim())
+      || Boolean(initialScope?.projectName?.trim())
+      || Boolean(initialScope?.feature?.trim())
+      || Boolean(initialScope?.widget?.trim())
+      || Boolean(initialScope?.artifact?.trim())
+      || Boolean(initialScope?.component?.trim())
+      || Boolean(initialScope?.isShared);
+    setScopeSelectionAcknowledged(hasInitialScope);
+  }, [initialScope, isOpen]);
 
   const handleClose = useCallback(() => {
     resetForm();
@@ -197,6 +248,12 @@ export default function CreateNodeModal({ isOpen, onClose, onCreate }: CreateNod
 
     if ((scopeClass === 'project' || scopeClass === 'project_contextual') && !projectId.trim()) {
       setError('Project ID is required for project-scoped records');
+      setSaving(false);
+      return;
+    }
+
+    if (requireExplicitScopeSelection && !isShared && scopeClass === 'unscoped' && !scopeSelectionAcknowledged) {
+      setError('Select scope explicitly for global creation, or mark this record as shared.');
       setSaving(false);
       return;
     }
@@ -336,6 +393,7 @@ export default function CreateNodeModal({ isOpen, onClose, onCreate }: CreateNod
     constraintType, constraintSource,
     patternRationale,
     attribute, scenario, priority,
+    requireExplicitScopeSelection, scopeSelectionAcknowledged,
     onCreate, handleClose,
   ]);
 
@@ -392,7 +450,10 @@ export default function CreateNodeModal({ isOpen, onClose, onCreate }: CreateNod
               Scope Class
               <select
                 value={scopeClass}
-                onChange={e => setScopeClass(e.target.value as ScopeClass)}
+                onChange={e => {
+                  setScopeClass(e.target.value as ScopeClass);
+                  setScopeSelectionAcknowledged(true);
+                }}
                 className="field-input"
               >
                 <option value="unscoped">Unscoped</option>
@@ -450,10 +511,19 @@ export default function CreateNodeModal({ isOpen, onClose, onCreate }: CreateNod
               <input
                 type="checkbox"
                 checked={isShared}
-                onChange={e => setIsShared(e.target.checked)}
+                onChange={e => {
+                  setIsShared(e.target.checked);
+                  setScopeSelectionAcknowledged(true);
+                }}
               />
               Shared knowledge (inherited into linked project views)
             </label>
+
+            {requireExplicitScopeSelection && scopeClass === 'unscoped' && !scopeSelectionAcknowledged && (
+              <div style={{ fontSize: '0.625rem', color: 'var(--color-warning)' }}>
+                Global creation requires explicit scope selection, unless this record is marked shared.
+              </div>
+            )}
 
             {isShared && (
               <>

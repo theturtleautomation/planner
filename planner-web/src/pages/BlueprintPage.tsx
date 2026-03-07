@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout.tsx';
 import BlueprintGraph from '../components/BlueprintGraph.tsx';
 import TableView from '../components/TableView.tsx';
@@ -11,7 +12,8 @@ import AddEdgeModal from '../components/AddEdgeModal.tsx';
 import ReconvergencePanel from '../components/ReconvergencePanel.tsx';
 import { createApiClient } from '../api/client.ts';
 import { useGetAccessToken } from '../auth/useAuthenticatedFetch.ts';
-import type { BlueprintResponse, BlueprintNode, NodeType, NodeSummary, ImpactReport, EdgeType, ReconvergenceResult, ReconvergenceStep } from '../types/blueprint.ts';
+import { buildKnowledgeDeepLink } from '../lib/knowledgeDeepLinks.ts';
+import type { BlueprintResponse, BlueprintNode, NodeType, NodeSummary, ImpactReport, EdgeType, ReconvergenceResult, ReconvergenceStep, ScopeClass } from '../types/blueprint.ts';
 
 // ─── View types ─────────────────────────────────────────────────────────────
 
@@ -45,6 +47,7 @@ const EDGE_STYLES: { type: string; label: string; dash: string }[] = [
 // ─── BlueprintPage ──────────────────────────────────────────────────────────
 
 export default function BlueprintPage() {
+  const navigate = useNavigate();
   const getToken = useGetAccessToken();
   const api = useMemo(() => createApiClient(getToken), [getToken]);
 
@@ -270,6 +273,49 @@ export default function BlueprintPage() {
     return blueprint.nodes.find(n => n.id === hoveredNodeId) ?? null;
   }, [hoveredNodeId, blueprint]);
 
+  const selectedNode: NodeSummary | null = useMemo(() => {
+    if (!selectedNodeId || !blueprint) return null;
+    return blueprint.nodes.find(n => n.id === selectedNodeId) ?? null;
+  }, [blueprint, selectedNodeId]);
+
+  const relatedKnowledgeLink = useMemo(() => {
+    if (!selectedNode) return null;
+    const projectId = selectedNode.project_id?.trim();
+    if (!projectId) return null;
+
+    const secondary = selectedNode.secondary_scope ?? {};
+    const component = secondary.component?.trim()
+      || (selectedNode.node_type === 'component' ? selectedNode.name.trim() : undefined);
+
+    return buildKnowledgeDeepLink({
+      projectId,
+      feature: secondary.feature,
+      widget: secondary.widget,
+      artifact: secondary.artifact,
+      component,
+      originPath: '/blueprint',
+      originLabel: 'Blueprint',
+    });
+  }, [selectedNode]);
+
+  const createInitialScope = useMemo(() => {
+    if (!selectedNode?.project_id) return undefined;
+    const secondary = selectedNode.secondary_scope ?? {};
+    const hasSecondary = Boolean(
+      secondary.feature || secondary.widget || secondary.artifact || secondary.component,
+    );
+    const scopeClass: ScopeClass = hasSecondary ? 'project_contextual' : 'project';
+    return {
+      scopeClass,
+      projectId: selectedNode.project_id,
+      projectName: selectedNode.project_name ?? selectedNode.project_id,
+      feature: secondary.feature,
+      widget: secondary.widget,
+      artifact: secondary.artifact,
+      component: secondary.component,
+    };
+  }, [selectedNode]);
+
   // ─── Node counts for sidebar ────────────────────────────────────────────
 
   const nodeCounts = useMemo(() => {
@@ -451,6 +497,22 @@ export default function BlueprintPage() {
                 <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
               </svg>
               Impact
+            </button>
+
+            <button
+              className="btn btn-outline"
+              onClick={() => {
+                if (relatedKnowledgeLink) {
+                  void navigate(relatedKnowledgeLink);
+                }
+              }}
+              title={relatedKnowledgeLink
+                ? 'View related knowledge in project scope'
+                : 'Select a project-scoped node to view related knowledge'}
+              disabled={!relatedKnowledgeLink}
+              style={{ opacity: relatedKnowledgeLink ? 1 : 0.4 }}
+            >
+              View related knowledge
             </button>
           </div>
         </div>
@@ -642,6 +704,8 @@ export default function BlueprintPage() {
           isOpen={createModalOpen}
           onClose={() => setCreateModalOpen(false)}
           onCreate={handleCreateNode}
+          initialScope={createInitialScope}
+          requireExplicitScopeSelection
         />
 
         {/* Delete node confirmation */}

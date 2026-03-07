@@ -43,6 +43,27 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
+function normalizeScope(scope?: NodeScope): NodeScope {
+  return scope ?? DEFAULT_SCOPE;
+}
+
+function summarizeScope(scope?: NodeScope): string {
+  const normalized = normalizeScope(scope);
+  const parts: string[] = [normalized.scope_class];
+  if (normalized.project?.project_id) {
+    parts.push(`project=${normalized.project.project_id}`);
+  }
+  if (normalized.secondary.feature) parts.push(`feature=${normalized.secondary.feature}`);
+  if (normalized.secondary.widget) parts.push(`widget=${normalized.secondary.widget}`);
+  if (normalized.secondary.artifact) parts.push(`artifact=${normalized.secondary.artifact}`);
+  if (normalized.secondary.component) parts.push(`component=${normalized.secondary.component}`);
+  if (normalized.is_shared) {
+    const linked = normalized.shared?.linked_project_ids ?? [];
+    parts.push(`shared(${linked.length > 0 ? linked.join(', ') : 'no links'})`);
+  }
+  return parts.join(' · ');
+}
+
 function DocumentationField({
   value,
   onChange,
@@ -573,11 +594,25 @@ export default function EditNodeForm({ node, onSave, onCancel, saving }: EditNod
   const handleSave = useCallback(async () => {
     setError(null);
     try {
+      const originalScope = normalizeScope(node.scope);
+      const nextScope = normalizeScope(draft.scope);
+      const scopeChanged = JSON.stringify(originalScope) !== JSON.stringify(nextScope);
+      if (scopeChanged) {
+        const confirmed = window.confirm(
+          [
+            'You are changing this record scope.',
+            `From: ${summarizeScope(originalScope)}`,
+            `To: ${summarizeScope(nextScope)}`,
+            'This move requires review. Continue?',
+          ].join('\n'),
+        );
+        if (!confirmed) return;
+      }
       await onSave(draft);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Save failed');
     }
-  }, [draft, onSave]);
+  }, [draft, node.scope, onSave]);
 
   const renderForm = () => {
     switch (draft.node_type) {
