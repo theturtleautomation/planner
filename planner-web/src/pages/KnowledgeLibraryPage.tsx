@@ -5,10 +5,12 @@ import NodeListPanel from '../components/NodeListPanel.tsx';
 import DetailDrawer from '../components/DetailDrawer.tsx';
 import DeleteNodeDialog from '../components/DeleteNodeDialog.tsx';
 import CreateNodeModal from '../components/CreateNodeModal.tsx';
+import KnowledgeFilterBar, { type KnowledgeFilterDescriptor } from '../components/KnowledgeFilterBar.tsx';
 import { createApiClient } from '../api/client.ts';
 import { useGetAccessToken } from '../auth/useAuthenticatedFetch.ts';
 import { uuidv4 } from '../lib/uuid.ts';
 import { parseKnowledgeDeepLink } from '../lib/knowledgeDeepLinks.ts';
+import { labelNodeType, labelScopeClass, labelScopeVisibility, labelSecondaryScopeField } from '../lib/taxonomy.ts';
 import type { BlueprintNode, BlueprintResponse, NodeSummary, NodeType, ScopeClass, ScopeVisibility } from '../types/blueprint.ts';
 
 const MAJOR_TYPES: NodeType[] = [
@@ -21,12 +23,12 @@ const MAJOR_TYPES: NodeType[] = [
 ];
 
 const NODE_TYPE_LABELS: Record<NodeType, string> = {
-  decision: 'Decisions',
-  technology: 'Technologies',
-  component: 'Components',
-  constraint: 'Constraints',
-  pattern: 'Patterns',
-  quality_requirement: 'Quality',
+  decision: labelNodeType('decision', 'plural'),
+  technology: labelNodeType('technology', 'plural'),
+  component: labelNodeType('component', 'plural'),
+  constraint: labelNodeType('constraint', 'plural'),
+  pattern: labelNodeType('pattern', 'plural'),
+  quality_requirement: labelNodeType('quality_requirement', 'plural'),
 };
 
 const FAVORITES_STORAGE_KEY = 'knowledge-project-favorites';
@@ -62,17 +64,21 @@ interface ScopedFiltersState {
   updatedDate: UpdatedDateFilter;
 }
 
-interface FilterOption {
+interface FilterValueOption {
   value: string;
   label: string;
-  count: number;
 }
 
-interface ChipGroupProps {
+interface ActiveFilterToken {
+  key: keyof ScopedFiltersState;
   label: string;
-  value: string;
-  options: FilterOption[];
-  onChange: (value: string) => void;
+  removeLabel: string;
+}
+
+interface FilterEvaluationContext {
+  linkedNodeSet: Set<string>;
+  staleCutoffMs: number;
+  nowMs: number;
 }
 
 const DEFAULT_SCOPED_FILTERS: ScopedFiltersState = {
@@ -95,27 +101,27 @@ const DEFAULT_SCOPED_FILTERS: ScopedFiltersState = {
 
 const KNOWLEDGE_TYPE_FILTERS: { value: NodeType | 'all'; label: string }[] = [
   { value: 'all', label: 'All Types' },
-  { value: 'decision', label: 'Decisions' },
-  { value: 'technology', label: 'Technologies' },
-  { value: 'component', label: 'Components' },
-  { value: 'constraint', label: 'Constraints' },
-  { value: 'pattern', label: 'Patterns' },
-  { value: 'quality_requirement', label: 'Quality' },
+  { value: 'decision', label: labelNodeType('decision', 'plural') },
+  { value: 'technology', label: labelNodeType('technology', 'plural') },
+  { value: 'component', label: labelNodeType('component', 'plural') },
+  { value: 'constraint', label: labelNodeType('constraint', 'plural') },
+  { value: 'pattern', label: labelNodeType('pattern', 'plural') },
+  { value: 'quality_requirement', label: labelNodeType('quality_requirement', 'plural') },
 ];
 
 const SCOPE_CLASS_FILTERS: { value: ScopeClass | 'all'; label: string }[] = [
-  { value: 'all', label: 'All Scope' },
-  { value: 'project', label: 'Project' },
-  { value: 'project_contextual', label: 'Project Contextual' },
-  { value: 'global', label: 'Global' },
-  { value: 'unscoped', label: 'Unscoped' },
+  { value: 'all', label: 'All Placements' },
+  { value: 'project', label: labelScopeClass('project') },
+  { value: 'project_contextual', label: labelScopeClass('project_contextual') },
+  { value: 'global', label: labelScopeClass('global') },
+  { value: 'unscoped', label: labelScopeClass('unscoped') },
 ];
 
 const SCOPE_VISIBILITY_FILTERS: { value: ScopeVisibilityFilter; label: string }[] = [
   { value: 'all', label: 'Visible: All' },
-  { value: 'project_local', label: 'Project only' },
-  { value: 'shared', label: 'Inherited shared' },
-  { value: 'unscoped', label: 'Unscoped only' },
+  { value: 'project_local', label: labelScopeVisibility('project_local') },
+  { value: 'shared', label: labelScopeVisibility('shared') },
+  { value: 'unscoped', label: `${labelScopeClass('unscoped')} only` },
 ];
 
 const STALE_FILTERS: { value: StaleFilter; label: string }[] = [
@@ -422,22 +428,22 @@ function readScopedFilters(projectId?: string): ScopedFiltersState {
   }
 }
 
-function buildFilterOptions(values: string[], limit = 12): FilterOption[] {
-  const counts = new Map<string, FilterOption>();
+function buildFilterValueOptions(values: string[]): FilterValueOption[] {
+  const counts = new Map<string, FilterValueOption & { seedCount: number }>();
   for (const rawValue of values) {
     const normalized = rawValue.trim();
     if (!normalized) continue;
     const key = normalized.toLowerCase();
     const existing = counts.get(key);
     if (existing) {
-      existing.count += 1;
+      existing.seedCount += 1;
       continue;
     }
-    counts.set(key, { value: key, label: normalized, count: 1 });
+    counts.set(key, { value: key, label: normalized, seedCount: 1 });
   }
   return Array.from(counts.values())
-    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
-    .slice(0, limit);
+    .sort((a, b) => b.seedCount - a.seedCount || a.label.localeCompare(b.label))
+    .map(({ value, label }) => ({ value, label }));
 }
 
 function extractTagValue(rawTag: string, prefixes: string[]): string | null {
@@ -725,29 +731,73 @@ function toBranchNode(base: BlueprintNode): BlueprintNode {
   return clone;
 }
 
-function FilterChipGroup({ label, value, options, onChange }: ChipGroupProps) {
-  return (
-    <div className="scope-chip-group">
-      <span className="scope-chip-label">{label}</span>
-      <div className="scope-chip-options">
-        {options.map(option => {
-          const active = value === option.value;
-          return (
-            <button
-              key={`${label}-${option.value}`}
-              type="button"
-              className={`scope-filter-chip${active ? ' active' : ''}`}
-              aria-pressed={active}
-              onClick={() => onChange(option.value)}
-            >
-              <span>{option.label}</span>
-              <span className="scope-filter-chip-count">{option.count}</span>
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
+function nodeMatchesScopedFilters(
+  node: NodeSummary,
+  scopedFilters: ScopedFiltersState,
+  context: FilterEvaluationContext,
+): boolean {
+  const knowledgeType = scopedFilters.knowledgeType;
+  const scopeClass = scopedFilters.scopeClass;
+  const scopeVisibility = scopedFilters.scopeVisibility;
+  const feature = scopedFilters.feature.toLowerCase();
+  const widget = scopedFilters.widget.toLowerCase();
+  const artifact = scopedFilters.artifact.toLowerCase();
+  const component = scopedFilters.component.toLowerCase();
+  const tag = scopedFilters.tag.toLowerCase();
+  const owner = scopedFilters.owner.toLowerCase();
+  const status = scopedFilters.status.toLowerCase();
+  const lifecycle = scopedFilters.lifecycle;
+
+  if (knowledgeType !== 'all' && node.node_type !== knowledgeType) return false;
+  if (scopeClass !== 'all' && (node.scope_class ?? 'unscoped') !== scopeClass) return false;
+  const nodeScopeVisibility = node.scope_visibility ?? (node.is_shared ? 'shared' : 'unscoped');
+  if (scopeVisibility !== 'all' && nodeScopeVisibility !== scopeVisibility) return false;
+
+  const secondaryScope = node.secondary_scope ?? {};
+  if (feature !== 'all' && (secondaryScope.feature ?? '').trim().toLowerCase() !== feature) return false;
+  if (widget !== 'all' && (secondaryScope.widget ?? '').trim().toLowerCase() !== widget) return false;
+  if (artifact !== 'all' && (secondaryScope.artifact ?? '').trim().toLowerCase() !== artifact) return false;
+  if (component !== 'all' && (secondaryScope.component ?? '').trim().toLowerCase() !== component) return false;
+
+  if (tag !== 'all' && !node.tags.some(nodeTag => nodeTag.trim().toLowerCase() === tag)) return false;
+  if (owner !== 'all' && (extractOwnerLabel(node)?.toLowerCase() ?? '') !== owner) return false;
+  if (status !== 'all' && node.status.trim().toLowerCase() !== status) return false;
+
+  const archived = isArchivedNode(node);
+  if (lifecycle === 'active' && archived) return false;
+  if (lifecycle === 'archived' && !archived) return false;
+
+  const updatedMs = parseIsoTimeMs(node.updated_at);
+  const nodeIsStale = updatedMs <= context.staleCutoffMs;
+  if (scopedFilters.stale === 'stale' && !nodeIsStale) return false;
+  if (scopedFilters.stale === 'fresh' && nodeIsStale) return false;
+
+  const orphan = !context.linkedNodeSet.has(node.id);
+  if (scopedFilters.orphan === 'orphan' && !orphan) return false;
+  if (scopedFilters.orphan === 'connected' && orphan) return false;
+
+  if (scopedFilters.documentation === 'with_docs' && !node.has_documentation) return false;
+  if (scopedFilters.documentation === 'without_docs' && node.has_documentation) return false;
+
+  switch (scopedFilters.updatedDate) {
+    case 'last_7d':
+      if (updatedMs < context.nowMs - 7 * 24 * 60 * 60 * 1000) return false;
+      break;
+    case 'last_30d':
+      if (updatedMs < context.nowMs - 30 * 24 * 60 * 60 * 1000) return false;
+      break;
+    case 'last_90d':
+      if (updatedMs < context.nowMs - 90 * 24 * 60 * 60 * 1000) return false;
+      break;
+    case 'older_90d':
+      if (updatedMs >= context.nowMs - 90 * 24 * 60 * 60 * 1000) return false;
+      break;
+    case 'all':
+    default:
+      break;
+  }
+
+  return true;
 }
 
 // ─── Page Component ─────────────────────────────────────────────────────────
@@ -957,73 +1007,17 @@ export default function KnowledgeLibraryPage() {
   }, [edges]);
 
   const staleCutoffMs = Date.now() - STALE_THRESHOLD_DAYS * 24 * 60 * 60 * 1000;
+  const filterEvaluationContext = useMemo(
+    () => ({
+      linkedNodeSet,
+      staleCutoffMs,
+      nowMs: Date.now(),
+    }),
+    [linkedNodeSet, staleCutoffMs],
+  );
   const filteredNodes = useMemo(() => {
-    const knowledgeType = scopedFilters.knowledgeType;
-    const scopeClass = scopedFilters.scopeClass;
-    const scopeVisibility = scopedFilters.scopeVisibility;
-    const feature = scopedFilters.feature.toLowerCase();
-    const widget = scopedFilters.widget.toLowerCase();
-    const artifact = scopedFilters.artifact.toLowerCase();
-    const component = scopedFilters.component.toLowerCase();
-    const tag = scopedFilters.tag.toLowerCase();
-    const owner = scopedFilters.owner.toLowerCase();
-    const status = scopedFilters.status.toLowerCase();
-    const lifecycle = scopedFilters.lifecycle;
-    const nowMs = Date.now();
-
-    return nodes.filter(node => {
-      if (knowledgeType !== 'all' && node.node_type !== knowledgeType) return false;
-      if (scopeClass !== 'all' && (node.scope_class ?? 'unscoped') !== scopeClass) return false;
-      const nodeScopeVisibility = node.scope_visibility ?? (node.is_shared ? 'shared' : 'unscoped');
-      if (scopeVisibility !== 'all' && nodeScopeVisibility !== scopeVisibility) return false;
-
-      const secondaryScope = node.secondary_scope ?? {};
-      if (feature !== 'all' && (secondaryScope.feature ?? '').trim().toLowerCase() !== feature) return false;
-      if (widget !== 'all' && (secondaryScope.widget ?? '').trim().toLowerCase() !== widget) return false;
-      if (artifact !== 'all' && (secondaryScope.artifact ?? '').trim().toLowerCase() !== artifact) return false;
-      if (component !== 'all' && (secondaryScope.component ?? '').trim().toLowerCase() !== component) return false;
-
-      if (tag !== 'all' && !node.tags.some(nodeTag => nodeTag.trim().toLowerCase() === tag)) return false;
-      if (owner !== 'all' && (extractOwnerLabel(node)?.toLowerCase() ?? '') !== owner) return false;
-      if (status !== 'all' && node.status.trim().toLowerCase() !== status) return false;
-
-      const archived = isArchivedNode(node);
-      if (lifecycle === 'active' && archived) return false;
-      if (lifecycle === 'archived' && !archived) return false;
-
-      const updatedMs = parseIsoTimeMs(node.updated_at);
-      const nodeIsStale = updatedMs <= staleCutoffMs;
-      if (scopedFilters.stale === 'stale' && !nodeIsStale) return false;
-      if (scopedFilters.stale === 'fresh' && nodeIsStale) return false;
-
-      const orphan = !linkedNodeSet.has(node.id);
-      if (scopedFilters.orphan === 'orphan' && !orphan) return false;
-      if (scopedFilters.orphan === 'connected' && orphan) return false;
-
-      if (scopedFilters.documentation === 'with_docs' && !node.has_documentation) return false;
-      if (scopedFilters.documentation === 'without_docs' && node.has_documentation) return false;
-
-      switch (scopedFilters.updatedDate) {
-        case 'last_7d':
-          if (updatedMs < nowMs - 7 * 24 * 60 * 60 * 1000) return false;
-          break;
-        case 'last_30d':
-          if (updatedMs < nowMs - 30 * 24 * 60 * 60 * 1000) return false;
-          break;
-        case 'last_90d':
-          if (updatedMs < nowMs - 90 * 24 * 60 * 60 * 1000) return false;
-          break;
-        case 'older_90d':
-          if (updatedMs >= nowMs - 90 * 24 * 60 * 60 * 1000) return false;
-          break;
-        case 'all':
-        default:
-          break;
-      }
-
-      return true;
-    });
-  }, [linkedNodeSet, nodes, scopedFilters, staleCutoffMs]);
+    return nodes.filter(node => nodeMatchesScopedFilters(node, scopedFilters, filterEvaluationContext));
+  }, [filterEvaluationContext, nodes, scopedFilters]);
 
   const filteredNodeIdSet = useMemo(() => new Set(filteredNodes.map(node => node.id)), [filteredNodes]);
   const filteredEdges = useMemo(
@@ -1057,32 +1051,6 @@ export default function KnowledgeLibraryPage() {
     [edges, sectionNodeIdSet],
   );
 
-  const typeCounts = useMemo(() => {
-    const counts: Record<string, number> = { all: nodes.length };
-    for (const node of nodes) {
-      counts[node.node_type] = (counts[node.node_type] ?? 0) + 1;
-    }
-    return counts;
-  }, [nodes]);
-
-  const scopeCounts = useMemo(() => {
-    const counts: Record<string, number> = { all: nodes.length };
-    for (const node of nodes) {
-      const key = node.scope_class ?? 'unscoped';
-      counts[key] = (counts[key] ?? 0) + 1;
-    }
-    return counts;
-  }, [nodes]);
-
-  const visibilityCounts = useMemo(() => {
-    const counts: Record<string, number> = { all: nodes.length };
-    for (const node of nodes) {
-      const key = node.scope_visibility ?? (node.is_shared ? 'shared' : 'unscoped');
-      counts[key] = (counts[key] ?? 0) + 1;
-    }
-    return counts;
-  }, [nodes]);
-
   const lifecycleCounts = useMemo(() => {
     const archived = nodes.filter(isArchivedNode).length;
     const active = nodes.length - archived;
@@ -1094,7 +1062,10 @@ export default function KnowledgeLibraryPage() {
   }, [nodes]);
 
   const sharedCount = useMemo(() => nodes.filter(n => n.scope_visibility === 'shared' || n.is_shared).length, [nodes]);
-  const unscopedCount = scopeCounts.unscoped ?? 0;
+  const unscopedCount = useMemo(
+    () => nodes.filter(node => (node.scope_class ?? 'unscoped') === 'unscoped').length,
+    [nodes],
+  );
   const staleCount = useMemo(() => {
     return nodes.filter(node => parseIsoTimeMs(node.updated_at) <= staleCutoffMs).length;
   }, [nodes, staleCutoffMs]);
@@ -1107,34 +1078,309 @@ export default function KnowledgeLibraryPage() {
     return nodes.filter(node => parseIsoTimeMs(node.updated_at) >= cutoff).length;
   }, [nodes]);
 
-  const featureOptions = useMemo(
-    () => [{ value: 'all', label: 'All Features', count: nodes.length }, ...buildFilterOptions(nodes.map(node => node.secondary_scope?.feature ?? ''))],
+  const featureValueOptions = useMemo(
+    () => buildFilterValueOptions(nodes.map(node => node.secondary_scope?.feature ?? '')),
     [nodes],
   );
-  const widgetOptions = useMemo(
-    () => [{ value: 'all', label: 'All Widgets', count: nodes.length }, ...buildFilterOptions(nodes.map(node => node.secondary_scope?.widget ?? ''))],
+  const widgetValueOptions = useMemo(
+    () => buildFilterValueOptions(nodes.map(node => node.secondary_scope?.widget ?? '')),
     [nodes],
   );
-  const artifactOptions = useMemo(
-    () => [{ value: 'all', label: 'All Artifacts', count: nodes.length }, ...buildFilterOptions(nodes.map(node => node.secondary_scope?.artifact ?? ''))],
+  const artifactValueOptions = useMemo(
+    () => buildFilterValueOptions(nodes.map(node => node.secondary_scope?.artifact ?? '')),
     [nodes],
   );
-  const componentOptions = useMemo(
-    () => [{ value: 'all', label: 'All Components', count: nodes.length }, ...buildFilterOptions(nodes.map(node => node.secondary_scope?.component ?? ''))],
+  const componentValueOptions = useMemo(
+    () => buildFilterValueOptions(nodes.map(node => node.secondary_scope?.component ?? '')),
     [nodes],
   );
-  const tagOptions = useMemo(
-    () => [{ value: 'all', label: 'All Tags', count: nodes.length }, ...buildFilterOptions(nodes.flatMap(node => node.tags), 16)],
+  const tagValueOptions = useMemo(
+    () => buildFilterValueOptions(nodes.flatMap(node => node.tags)),
     [nodes],
   );
-  const ownerOptions = useMemo(
-    () => [{ value: 'all', label: 'All Owners', count: nodes.length }, ...buildFilterOptions(nodes.map(node => extractOwnerLabel(node) ?? ''))],
+  const ownerValueOptions = useMemo(
+    () => buildFilterValueOptions(nodes.map(node => extractOwnerLabel(node) ?? '')),
     [nodes],
   );
-  const statusOptions = useMemo(
-    () => [{ value: 'all', label: 'Any Status', count: nodes.length }, ...buildFilterOptions(nodes.map(node => node.status), 16)],
+  const statusValueOptions = useMemo(
+    () => buildFilterValueOptions(nodes.map(node => node.status)),
     [nodes],
   );
+
+  const countNodesForFilters = useCallback((candidateFilters: ScopedFiltersState): number => {
+    let count = 0;
+    for (const node of nodes) {
+      if (nodeMatchesScopedFilters(node, candidateFilters, filterEvaluationContext)) {
+        count += 1;
+      }
+    }
+    return count;
+  }, [filterEvaluationContext, nodes]);
+
+  const buildDescriptorOptions = useCallback(<K extends keyof ScopedFiltersState>(
+    key: K,
+    baseOptions: Array<{ value: string; label: string }>,
+  ) => {
+    const normalizedOptions = [...baseOptions];
+    const currentValue = String(scopedFilters[key]);
+    if (!normalizedOptions.some(option => option.value === currentValue)) {
+      normalizedOptions.push({
+        value: currentValue,
+        label: currentValue === 'all' ? 'All' : currentValue,
+      });
+    }
+
+    return normalizedOptions.map(option => {
+      const nextFilters = {
+        ...scopedFilters,
+        [key]: option.value,
+      } as ScopedFiltersState;
+      return {
+        value: option.value,
+        label: option.label,
+        count: countNodesForFilters(nextFilters),
+      };
+    });
+  }, [countNodesForFilters, scopedFilters]);
+
+  const knowledgeFilterDescriptors = useMemo<KnowledgeFilterDescriptor[]>(() => {
+    return [
+      {
+        key: 'knowledgeType',
+        label: 'Type',
+        shortLabel: 'Type',
+        placement: 'primary',
+        value: scopedFilters.knowledgeType,
+        options: buildDescriptorOptions(
+          'knowledgeType',
+          KNOWLEDGE_TYPE_FILTERS.map(option => ({ value: option.value, label: option.label })),
+        ),
+        onChange: (value) => {
+          setScopedFilters(previous => ({ ...previous, knowledgeType: value as ScopedFiltersState['knowledgeType'] }));
+        },
+      },
+      {
+        key: 'feature',
+        label: labelSecondaryScopeField('feature'),
+        shortLabel: labelSecondaryScopeField('feature'),
+        placement: 'primary',
+        value: scopedFilters.feature,
+        options: buildDescriptorOptions('feature', [
+          { value: 'all', label: 'All Feature Areas' },
+          ...featureValueOptions,
+        ]),
+        onChange: (value) => {
+          setScopedFilters(previous => ({ ...previous, feature: value }));
+        },
+      },
+      {
+        key: 'widget',
+        label: labelSecondaryScopeField('widget'),
+        shortLabel: labelSecondaryScopeField('widget'),
+        placement: 'primary',
+        value: scopedFilters.widget,
+        options: buildDescriptorOptions('widget', [
+          { value: 'all', label: 'All Surfaces' },
+          ...widgetValueOptions,
+        ]),
+        onChange: (value) => {
+          setScopedFilters(previous => ({ ...previous, widget: value }));
+        },
+      },
+      {
+        key: 'artifact',
+        label: 'Artifact',
+        shortLabel: 'Artifact',
+        placement: 'primary',
+        value: scopedFilters.artifact,
+        options: buildDescriptorOptions('artifact', [
+          { value: 'all', label: 'All Artifacts' },
+          ...artifactValueOptions,
+        ]),
+        onChange: (value) => {
+          setScopedFilters(previous => ({ ...previous, artifact: value }));
+        },
+      },
+      {
+        key: 'component',
+        label: labelSecondaryScopeField('component'),
+        shortLabel: labelSecondaryScopeField('component'),
+        placement: 'primary',
+        value: scopedFilters.component,
+        options: buildDescriptorOptions('component', [
+          { value: 'all', label: 'All Related Components' },
+          ...componentValueOptions,
+        ]),
+        onChange: (value) => {
+          setScopedFilters(previous => ({ ...previous, component: value }));
+        },
+      },
+      {
+        key: 'scopeClass',
+        label: 'Placement',
+        shortLabel: 'Placement',
+        placement: 'overflow',
+        value: scopedFilters.scopeClass,
+        options: buildDescriptorOptions(
+          'scopeClass',
+          SCOPE_CLASS_FILTERS.map(option => ({ value: option.value, label: option.label })),
+        ),
+        onChange: (value) => {
+          setScopedFilters(previous => ({ ...previous, scopeClass: value as ScopedFiltersState['scopeClass'] }));
+        },
+      },
+      {
+        key: 'scopeVisibility',
+        label: 'Availability',
+        shortLabel: 'Availability',
+        placement: 'overflow',
+        value: scopedFilters.scopeVisibility,
+        options: buildDescriptorOptions(
+          'scopeVisibility',
+          SCOPE_VISIBILITY_FILTERS.map(option => ({ value: option.value, label: option.label })),
+        ),
+        onChange: (value) => {
+          setScopedFilters(previous => ({ ...previous, scopeVisibility: value as ScopedFiltersState['scopeVisibility'] }));
+        },
+      },
+      {
+        key: 'owner',
+        label: 'Owner',
+        shortLabel: 'Owner',
+        placement: 'overflow',
+        value: scopedFilters.owner,
+        options: buildDescriptorOptions('owner', [
+          { value: 'all', label: 'All Owners' },
+          ...ownerValueOptions,
+        ]),
+        onChange: (value) => {
+          setScopedFilters(previous => ({ ...previous, owner: value }));
+        },
+      },
+      {
+        key: 'tag',
+        label: 'Tag',
+        shortLabel: 'Tag',
+        placement: 'overflow',
+        value: scopedFilters.tag,
+        options: buildDescriptorOptions('tag', [
+          { value: 'all', label: 'All Tags' },
+          ...tagValueOptions,
+        ]),
+        onChange: (value) => {
+          setScopedFilters(previous => ({ ...previous, tag: value }));
+        },
+      },
+      {
+        key: 'status',
+        label: 'Status',
+        shortLabel: 'Status',
+        placement: 'overflow',
+        value: scopedFilters.status,
+        options: buildDescriptorOptions('status', [
+          { value: 'all', label: 'Any Status' },
+          ...statusValueOptions,
+        ]),
+        onChange: (value) => {
+          setScopedFilters(previous => ({ ...previous, status: value }));
+        },
+      },
+      {
+        key: 'stale',
+        label: 'Freshness',
+        shortLabel: 'Freshness',
+        placement: 'overflow',
+        value: scopedFilters.stale,
+        options: buildDescriptorOptions(
+          'stale',
+          STALE_FILTERS.map(option => ({ value: option.value, label: option.label })),
+        ),
+        onChange: (value) => {
+          setScopedFilters(previous => ({ ...previous, stale: value as ScopedFiltersState['stale'] }));
+        },
+      },
+      {
+        key: 'orphan',
+        label: 'Connectivity',
+        shortLabel: 'Connectivity',
+        placement: 'overflow',
+        value: scopedFilters.orphan,
+        options: buildDescriptorOptions(
+          'orphan',
+          ORPHAN_FILTERS.map(option => ({ value: option.value, label: option.label })),
+        ),
+        onChange: (value) => {
+          setScopedFilters(previous => ({ ...previous, orphan: value as ScopedFiltersState['orphan'] }));
+        },
+      },
+      {
+        key: 'documentation',
+        label: 'Docs',
+        shortLabel: 'Docs',
+        placement: 'overflow',
+        value: scopedFilters.documentation,
+        options: buildDescriptorOptions(
+          'documentation',
+          DOC_FILTERS.map(option => ({ value: option.value, label: option.label })),
+        ),
+        onChange: (value) => {
+          setScopedFilters(previous => ({ ...previous, documentation: value as ScopedFiltersState['documentation'] }));
+        },
+      },
+      {
+        key: 'lifecycle',
+        label: 'Lifecycle',
+        shortLabel: 'Lifecycle',
+        placement: 'overflow',
+        value: scopedFilters.lifecycle,
+        options: buildDescriptorOptions(
+          'lifecycle',
+          LIFECYCLE_FILTERS.map(option => ({ value: option.value, label: option.label })),
+        ),
+        onChange: (value) => {
+          setScopedFilters(previous => ({ ...previous, lifecycle: value as ScopedFiltersState['lifecycle'] }));
+        },
+      },
+      {
+        key: 'updatedDate',
+        label: 'Updated',
+        shortLabel: 'Updated',
+        placement: 'overflow',
+        value: scopedFilters.updatedDate,
+        options: buildDescriptorOptions(
+          'updatedDate',
+          UPDATED_FILTERS.map(option => ({ value: option.value, label: option.label })),
+        ),
+        onChange: (value) => {
+          setScopedFilters(previous => ({ ...previous, updatedDate: value as ScopedFiltersState['updatedDate'] }));
+        },
+      },
+    ];
+  }, [
+    artifactValueOptions,
+    buildDescriptorOptions,
+    componentValueOptions,
+    featureValueOptions,
+    ownerValueOptions,
+    scopedFilters.artifact,
+    scopedFilters.component,
+    scopedFilters.documentation,
+    scopedFilters.feature,
+    scopedFilters.knowledgeType,
+    scopedFilters.lifecycle,
+    scopedFilters.orphan,
+    scopedFilters.owner,
+    scopedFilters.scopeClass,
+    scopedFilters.scopeVisibility,
+    scopedFilters.stale,
+    scopedFilters.status,
+    scopedFilters.tag,
+    scopedFilters.updatedDate,
+    scopedFilters.widget,
+    statusValueOptions,
+    tagValueOptions,
+    widgetValueOptions,
+  ]);
 
   const selectedNodes = useMemo(() => nodes.filter(node => selectedNodeSet.has(node.id)), [nodes, selectedNodeSet]);
   const selectedArchivedCount = useMemo(() => selectedNodes.filter(isArchivedNode).length, [selectedNodes]);
@@ -1148,39 +1394,134 @@ export default function KnowledgeLibraryPage() {
   );
 
   const activeFilterTokens = useMemo(() => {
-    const tokens: string[] = [];
-    if (scopedFilters.knowledgeType !== 'all') {
-      tokens.push(`Type: ${NODE_TYPE_LABELS[scopedFilters.knowledgeType]}`);
+    const optionLabel = (key: keyof ScopedFiltersState, value: string): string => {
+      const descriptor = knowledgeFilterDescriptors.find(entry => entry.key === key);
+      const matched = descriptor?.options.find(option => option.value === value);
+      return matched?.label ?? value;
+    };
+
+    const tokens: ActiveFilterToken[] = [];
+    if (scopedFilters.knowledgeType !== DEFAULT_SCOPED_FILTERS.knowledgeType) {
+      tokens.push({
+        key: 'knowledgeType',
+        label: `Type: ${optionLabel('knowledgeType', scopedFilters.knowledgeType)}`,
+        removeLabel: `Remove filter: Type ${optionLabel('knowledgeType', scopedFilters.knowledgeType)}`,
+      });
     }
-    if (scopedFilters.scopeClass !== 'all') {
-      const match = SCOPE_CLASS_FILTERS.find(option => option.value === scopedFilters.scopeClass);
-      tokens.push(`Scope: ${match?.label ?? scopedFilters.scopeClass}`);
+    if (scopedFilters.scopeClass !== DEFAULT_SCOPED_FILTERS.scopeClass) {
+      const label = optionLabel('scopeClass', scopedFilters.scopeClass);
+      tokens.push({
+        key: 'scopeClass',
+        label: `Placement: ${label}`,
+        removeLabel: `Remove filter: Placement ${label}`,
+      });
     }
-    if (scopedFilters.scopeVisibility !== 'all') {
-      const match = SCOPE_VISIBILITY_FILTERS.find(option => option.value === scopedFilters.scopeVisibility);
-      tokens.push(match?.label ?? `Visibility: ${scopedFilters.scopeVisibility}`);
+    if (scopedFilters.scopeVisibility !== DEFAULT_SCOPED_FILTERS.scopeVisibility) {
+      const label = optionLabel('scopeVisibility', scopedFilters.scopeVisibility);
+      tokens.push({
+        key: 'scopeVisibility',
+        label: `Availability: ${label}`,
+        removeLabel: `Remove filter: Availability ${label}`,
+      });
     }
-    if (scopedFilters.feature !== 'all') tokens.push(`Feature: ${scopedFilters.feature}`);
-    if (scopedFilters.widget !== 'all') tokens.push(`Widget: ${scopedFilters.widget}`);
-    if (scopedFilters.artifact !== 'all') tokens.push(`Artifact: ${scopedFilters.artifact}`);
-    if (scopedFilters.component !== 'all') tokens.push(`Component: ${scopedFilters.component}`);
-    if (scopedFilters.tag !== 'all') tokens.push(`Tag: ${scopedFilters.tag}`);
-    if (scopedFilters.owner !== 'all') tokens.push(`Owner: ${scopedFilters.owner}`);
-    if (scopedFilters.status !== 'all') tokens.push(`Status: ${scopedFilters.status}`);
-    if (scopedFilters.stale !== 'all') tokens.push(scopedFilters.stale === 'stale' ? 'Stale only' : 'Fresh only');
-    if (scopedFilters.orphan !== 'all') tokens.push(scopedFilters.orphan === 'orphan' ? 'Orphan only' : 'Connected only');
-    if (scopedFilters.documentation !== 'all') {
-      tokens.push(scopedFilters.documentation === 'with_docs' ? 'With docs' : 'Without docs');
+    if (scopedFilters.feature !== DEFAULT_SCOPED_FILTERS.feature) {
+      const label = optionLabel('feature', scopedFilters.feature);
+      tokens.push({
+        key: 'feature',
+        label: `${labelSecondaryScopeField('feature')}: ${label}`,
+        removeLabel: `Remove filter: ${labelSecondaryScopeField('feature')} ${label}`,
+      });
     }
-    if (scopedFilters.lifecycle !== 'all') {
-      tokens.push(scopedFilters.lifecycle === 'active' ? 'Active only' : 'Archived only');
+    if (scopedFilters.widget !== DEFAULT_SCOPED_FILTERS.widget) {
+      const label = optionLabel('widget', scopedFilters.widget);
+      tokens.push({
+        key: 'widget',
+        label: `${labelSecondaryScopeField('widget')}: ${label}`,
+        removeLabel: `Remove filter: ${labelSecondaryScopeField('widget')} ${label}`,
+      });
     }
-    if (scopedFilters.updatedDate !== 'all') {
-      const match = UPDATED_FILTERS.find(option => option.value === scopedFilters.updatedDate);
-      tokens.push(match?.label ?? scopedFilters.updatedDate);
+    if (scopedFilters.artifact !== DEFAULT_SCOPED_FILTERS.artifact) {
+      const label = optionLabel('artifact', scopedFilters.artifact);
+      tokens.push({
+        key: 'artifact',
+        label: `Artifact: ${label}`,
+        removeLabel: `Remove filter: Artifact ${label}`,
+      });
+    }
+    if (scopedFilters.component !== DEFAULT_SCOPED_FILTERS.component) {
+      const label = optionLabel('component', scopedFilters.component);
+      tokens.push({
+        key: 'component',
+        label: `${labelSecondaryScopeField('component')}: ${label}`,
+        removeLabel: `Remove filter: ${labelSecondaryScopeField('component')} ${label}`,
+      });
+    }
+    if (scopedFilters.tag !== DEFAULT_SCOPED_FILTERS.tag) {
+      const label = optionLabel('tag', scopedFilters.tag);
+      tokens.push({
+        key: 'tag',
+        label: `Tag: ${label}`,
+        removeLabel: `Remove filter: Tag ${label}`,
+      });
+    }
+    if (scopedFilters.owner !== DEFAULT_SCOPED_FILTERS.owner) {
+      const label = optionLabel('owner', scopedFilters.owner);
+      tokens.push({
+        key: 'owner',
+        label: `Owner: ${label}`,
+        removeLabel: `Remove filter: Owner ${label}`,
+      });
+    }
+    if (scopedFilters.status !== DEFAULT_SCOPED_FILTERS.status) {
+      const label = optionLabel('status', scopedFilters.status);
+      tokens.push({
+        key: 'status',
+        label: `Status: ${label}`,
+        removeLabel: `Remove filter: Status ${label}`,
+      });
+    }
+    if (scopedFilters.stale !== DEFAULT_SCOPED_FILTERS.stale) {
+      const label = optionLabel('stale', scopedFilters.stale);
+      tokens.push({
+        key: 'stale',
+        label,
+        removeLabel: `Remove filter: Freshness ${label}`,
+      });
+    }
+    if (scopedFilters.orphan !== DEFAULT_SCOPED_FILTERS.orphan) {
+      const label = optionLabel('orphan', scopedFilters.orphan);
+      tokens.push({
+        key: 'orphan',
+        label,
+        removeLabel: `Remove filter: Connectivity ${label}`,
+      });
+    }
+    if (scopedFilters.documentation !== DEFAULT_SCOPED_FILTERS.documentation) {
+      const label = optionLabel('documentation', scopedFilters.documentation);
+      tokens.push({
+        key: 'documentation',
+        label,
+        removeLabel: `Remove filter: Docs ${label}`,
+      });
+    }
+    if (scopedFilters.lifecycle !== DEFAULT_SCOPED_FILTERS.lifecycle) {
+      const label = optionLabel('lifecycle', scopedFilters.lifecycle);
+      tokens.push({
+        key: 'lifecycle',
+        label,
+        removeLabel: `Remove filter: Lifecycle ${label}`,
+      });
+    }
+    if (scopedFilters.updatedDate !== DEFAULT_SCOPED_FILTERS.updatedDate) {
+      const label = optionLabel('updatedDate', scopedFilters.updatedDate);
+      tokens.push({
+        key: 'updatedDate',
+        label,
+        removeLabel: `Remove filter: Updated ${label}`,
+      });
     }
     return tokens;
-  }, [scopedFilters]);
+  }, [knowledgeFilterDescriptors, scopedFilters]);
 
   const originBackLink = useMemo(() => {
     if (!deepLink.originPath) return null;
@@ -1215,12 +1556,6 @@ export default function KnowledgeLibraryPage() {
     setSelectedNodeIds([]);
     navigate(`/knowledge/projects/${encodeURIComponent(projectId)}`);
   }, [navigate, projectId]);
-
-  const broadenToAllProjectKnowledge = useCallback(() => {
-    if (!projectId) return;
-    setScopedFilters({ ...DEFAULT_SCOPED_FILTERS });
-    setSelectedNodeIds([]);
-  }, [projectId]);
 
   const resolveUnscopedNode = useCallback(async (
     node: NodeSummary,
@@ -1715,7 +2050,7 @@ export default function KnowledgeLibraryPage() {
   const reviewQueues = useMemo(() => ([
     {
       key: 'unscoped',
-      label: 'Unscoped records',
+      label: 'Needs scope',
       count: missingScopeCount,
       onOpen: () => {
         setScopedFilter('scopeClass', 'unscoped');
@@ -1804,7 +2139,7 @@ export default function KnowledgeLibraryPage() {
               {isProjectLanding
                 ? 'Choose a software project first, then drill into scoped knowledge.'
                 : isProjectScoped
-                  ? `Project-scoped view for ${scopedProjectName}. Shared knowledge linked to this project is included.`
+                  ? `Project-scoped view for ${scopedProjectName}. Shared across projects records linked to this project are included.`
                   : 'Global cross-project view for intentional broad exploration.'}
             </p>
             {isProjectLanding ? (
@@ -1851,7 +2186,7 @@ export default function KnowledgeLibraryPage() {
               </div>
               <div className="knowledge-stat">
                 <span className="knowledge-stat-value">{unscopedCount}</span>
-                <span className="knowledge-stat-label">Unscoped</span>
+                <span className="knowledge-stat-label">Needs Scope</span>
               </div>
             </div>
           )}
@@ -1879,16 +2214,11 @@ export default function KnowledgeLibraryPage() {
                     Create knowledge
                   </button>
                   <button type="button" className="scope-action-btn" onClick={clearScopedFilters}>
-                    Clear filters
+                    Clear all
                   </button>
                   {isProjectScoped && (
                     <button type="button" className="scope-action-btn" onClick={resetToProjectScope}>
                       Reset to project scope
-                    </button>
-                  )}
-                  {isProjectScoped && (
-                    <button type="button" className="scope-action-btn" onClick={broadenToAllProjectKnowledge}>
-                      Broaden to all project knowledge
                     </button>
                   )}
                   {!isGlobalView ? (
@@ -1899,13 +2229,24 @@ export default function KnowledgeLibraryPage() {
                 </div>
               </div>
 
+              <KnowledgeFilterBar descriptors={knowledgeFilterDescriptors} />
+
               <div className="knowledge-active-filter-row">
                 <span className="knowledge-active-filter-label">Active filters</span>
                 {activeFilterTokens.length === 0 && (
                   <span className="knowledge-active-filter-empty">none</span>
                 )}
                 {activeFilterTokens.map(token => (
-                  <span key={token} className="knowledge-active-filter-chip">{token}</span>
+                  <button
+                    key={`${token.key}:${token.label}`}
+                    type="button"
+                    className="knowledge-active-filter-chip"
+                    aria-label={token.removeLabel}
+                    onClick={() => setScopedFilter(token.key, DEFAULT_SCOPED_FILTERS[token.key])}
+                  >
+                    <span>{token.label}</span>
+                    <span className="knowledge-active-filter-chip-dismiss" aria-hidden="true">×</span>
+                  </button>
                 ))}
               </div>
 
@@ -1914,111 +2255,6 @@ export default function KnowledgeLibraryPage() {
                   {actionNotice}
                 </div>
               )}
-            </div>
-
-            <div className="knowledge-chip-grid">
-              <FilterChipGroup
-                label="Knowledge Type"
-                value={scopedFilters.knowledgeType}
-                options={KNOWLEDGE_TYPE_FILTERS.map(option => ({
-                  value: option.value,
-                  label: option.label,
-                  count: typeCounts[option.value] ?? 0,
-                }))}
-                onChange={value => setScopedFilter('knowledgeType', value as ScopedFiltersState['knowledgeType'])}
-              />
-              <FilterChipGroup
-                label="Scope Class"
-                value={scopedFilters.scopeClass}
-                options={SCOPE_CLASS_FILTERS.map(option => ({
-                  value: option.value,
-                  label: option.label,
-                  count: scopeCounts[option.value] ?? 0,
-                }))}
-                onChange={value => setScopedFilter('scopeClass', value as ScopedFiltersState['scopeClass'])}
-              />
-              <FilterChipGroup
-                label="Visibility"
-                value={scopedFilters.scopeVisibility}
-                options={SCOPE_VISIBILITY_FILTERS.map(option => ({
-                  value: option.value,
-                  label: option.label,
-                  count: visibilityCounts[option.value] ?? 0,
-                }))}
-                onChange={value => setScopedFilter('scopeVisibility', value as ScopedFiltersState['scopeVisibility'])}
-              />
-              <FilterChipGroup
-                label="Feature"
-                value={scopedFilters.feature}
-                options={featureOptions}
-                onChange={value => setScopedFilter('feature', value)}
-              />
-              <FilterChipGroup
-                label="Widget"
-                value={scopedFilters.widget}
-                options={widgetOptions}
-                onChange={value => setScopedFilter('widget', value)}
-              />
-              <FilterChipGroup
-                label="Artifact"
-                value={scopedFilters.artifact}
-                options={artifactOptions}
-                onChange={value => setScopedFilter('artifact', value)}
-              />
-              <FilterChipGroup
-                label="Component"
-                value={scopedFilters.component}
-                options={componentOptions}
-                onChange={value => setScopedFilter('component', value)}
-              />
-              <FilterChipGroup
-                label="Tag"
-                value={scopedFilters.tag}
-                options={tagOptions}
-                onChange={value => setScopedFilter('tag', value)}
-              />
-              <FilterChipGroup
-                label="Owner"
-                value={scopedFilters.owner}
-                options={ownerOptions}
-                onChange={value => setScopedFilter('owner', value)}
-              />
-              <FilterChipGroup
-                label="Status"
-                value={scopedFilters.status}
-                options={statusOptions}
-                onChange={value => setScopedFilter('status', value)}
-              />
-              <FilterChipGroup
-                label="Stale"
-                value={scopedFilters.stale}
-                options={STALE_FILTERS.map(option => ({ ...option, count: filteredNodes.length }))}
-                onChange={value => setScopedFilter('stale', value as ScopedFiltersState['stale'])}
-              />
-              <FilterChipGroup
-                label="Orphan"
-                value={scopedFilters.orphan}
-                options={ORPHAN_FILTERS.map(option => ({ ...option, count: filteredNodes.length }))}
-                onChange={value => setScopedFilter('orphan', value as ScopedFiltersState['orphan'])}
-              />
-              <FilterChipGroup
-                label="Documentation"
-                value={scopedFilters.documentation}
-                options={DOC_FILTERS.map(option => ({ ...option, count: filteredNodes.length }))}
-                onChange={value => setScopedFilter('documentation', value as ScopedFiltersState['documentation'])}
-              />
-              <FilterChipGroup
-                label="Lifecycle"
-                value={scopedFilters.lifecycle}
-                options={LIFECYCLE_FILTERS.map(option => ({ ...option, count: lifecycleCounts[option.value] ?? 0 }))}
-                onChange={value => setScopedFilter('lifecycle', value as ScopedFiltersState['lifecycle'])}
-              />
-              <FilterChipGroup
-                label="Updated Date"
-                value={scopedFilters.updatedDate}
-                options={UPDATED_FILTERS.map(option => ({ ...option, count: filteredNodes.length }))}
-                onChange={value => setScopedFilter('updatedDate', value as ScopedFiltersState['updatedDate'])}
-              />
             </div>
 
             <div className="knowledge-action-row">
@@ -2110,7 +2346,7 @@ export default function KnowledgeLibraryPage() {
                       </span>
                     </div>
                     <div className="knowledge-overview-card">
-                      <span className="knowledge-overview-label">Quality</span>
+                      <span className="knowledge-overview-label">{labelNodeType('quality_requirement', 'short')}</span>
                       <span className="knowledge-overview-value">
                         {nodes.filter(node => node.node_type === 'quality_requirement').length}
                       </span>
@@ -2135,7 +2371,7 @@ export default function KnowledgeLibraryPage() {
                       <span className="knowledge-overview-value">{orphanCount}</span>
                     </div>
                     <div className="knowledge-overview-card">
-                      <span className="knowledge-overview-label">Missing Scope</span>
+                      <span className="knowledge-overview-label">Needs Scope</span>
                       <span className="knowledge-overview-value">{missingScopeCount}</span>
                     </div>
                     <div className="knowledge-overview-card">
@@ -2173,7 +2409,7 @@ export default function KnowledgeLibraryPage() {
 
                   {unscopedReviewNodes.length > 0 && (
                     <div style={{ marginTop: 'var(--space-4)' }}>
-                      <h3 className="knowledge-section-subtitle">Unscoped Review Workflow</h3>
+                      <h3 className="knowledge-section-subtitle">Needs Scope Review Workflow</h3>
                       <p className="knowledge-section-muted">
                         Resolve ambiguous records by assigning project scope or marking intentionally global.
                       </p>

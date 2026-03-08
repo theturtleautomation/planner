@@ -1,0 +1,367 @@
+[
+  {
+    "name": "root",
+    "screenshot": "/home/thetu/planner/.tmp/visual-audit/root.png",
+    "title": "Planner v2 — Socratic Lobby",
+    "headings": [],
+    "buttons": [
+      "show archived",
+      "+ new session",
+      "Rename",
+      "Duplicate",
+      "Archive"
+    ],
+    "links": [
+      {
+        "text": "Sessions",
+        "href": "/"
+      },
+      {
+        "text": "Blueprint",
+        "href": "/blueprint"
+      },
+      {
+        "text": "Knowledge",
+        "href": "/knowledge"
+      },
+      {
+        "text": "Events",
+        "href": "/events"
+      },
+      {
+        "text": "Discovery",
+        "href": "/discovery"
+      },
+      {
+        "text": "Admin",
+        "href": "/admin"
+      },
+      {
+        "text": "blueprint →",
+        "href": "/blueprint"
+      },
+      {
+        "text": "admin →",
+        "href": "/admin"
+      }
+    ],
+    "navItems": [
+      "Sessions",
+      "Blueprint",
+      "Knowledge",
+      "Events",
+      "Discovery",
+      "Admin"
+    ],
+    "bodyText": "PlannerNavigationSessionsBlueprintKnowledgeEventsDiscoveryAdminDdevsessionsblueprint →admin →show archived+ new sessionactionable1attention needed0sort orderAttention and resumability first, then recent activity.Session f633443df633443d…Last activity 6m ago · Mar 7, 22:26waitingStart InterviewNo project description saved yet.Awaiting the initial project description.ready to start1 message0 eventsRenameDuplicateArchiveTIP The dashboard now uses backend session summaries directly for capability state, activity timing, and intervention signals.",
+    "path": "/"
+  },
+  {
+    "name": "knowledge-home",
+    "screenshot": "/home/thetu/planner/.tmp/visual-audit/knowledge-home.png",
+    "title": "Planner v2 — Socratic Lobby",
+    "headings": [
+      "Knowledge Library",
+      "All Knowledge",
+      "afc2fb66-0a2b-440e-9b2c-02b4ddc47665",
+      "Personal Task Tracker"
+    ],
+    "buttons": [
+      "★",
+      "★"
+    ],
+    "links": [
+      {
+        "text": "Sessions",
+        "href": "/"
+      },
+      {
+        "text": "Blueprint",
+        "href": "/blueprint"
+      },
+      {
+        "text": "Knowledge",
+        "href": "/knowledge"
+      },
+      {
+        "text": "Events",
+        "href": "/events"
+      },
+      {
+        "text": "Discovery",
+        "href": "/discovery"
+      },
+      {
+        "text": "Admin",
+        "href": "/admin"
+      },
+      {
+        "text": "Open All Knowledge",
+        "href": "/knowledge/all"
+      },
+      {
+        "text": "Open All Knowledge",
+        "href": "/knowledge/all"
+      },
+      {
+        "text": "Open Project View",
+        "href": "/knowledge/projects/afc2fb66-0a2b-440e-9b2c-02b4ddc47665"
+      },
+      {
+        "text": "Open Project View",
+        "href": "/knowledge/projects/proj-personal-task-tracker"
+      }
+    ],
+    "navItems": [
+      "Sessions",
+      "Blueprint",
+      "Knowledge",
+      "Events",
+      "Discovery",
+      "Admin"
+    ],
+    "bodyText": "PlannerNavigationSessionsBlueprintKnowledgeEventsDiscoveryAdminDdevKnowledge LibraryChoose a software project first, then drill into scoped knowledge.Open All Knowledge2Projects81Knowledge0Stale0Shared56UnscopedSort: HealthSort: Last activitySort: Knowledge countSort: Stale countSort: NameFavorites onlyAll KnowledgeCross-project browsing for architecture-wide audits and discovery.Nodes: 81Edges: 0Types: 4Open All Knowledgeafc2fb66-0a2b-440e-9b2c-02b4ddc47665afc2fb66-0a2b-440e-9b2c-02b4ddc47665★Focuses on root and spec; Health is moderate with mostly current documentation and room to improve docs coverage.Knowledge: 24Local: 24Shared: 0Stale: 0Last activity: Mar 7, 2026Updated 20h agoNeeds Attention · 55%Decisions: 0Technologies: 0Components: 7Constraints: 6Patterns: 0Quality: 11Open Project ViewPersonal Task Trackerproj-personal-task-tracker★Focuses on intake and scope; Health is weak with mostly current documentation and room to improve docs coverage.Knowledge: 1Local: 1Shared: 0Stale: 0Last activity: Mar 7, 2026Updated 20h agoAt Risk · 45%Decisions: 1Technologies: 0Components: 0Constraints: 0Patterns: 0Quality: 0Open Project View",
+    "path": "/knowledge"
+  },
+  {
+    "name": "knowledge-all",
+    "screenshot": "/home/thetu/planner/.tmp/visual-audit/knowledge-all.png",
+    "title": "Planner v2 — Socratic Lobby",
+    "headings": [
+      "Knowledge Library"
+    ],
+    "buttons": [
+      "Create knowledge",
+      "Clear filters",
+      "All Types81",
+      "Decisions3",
+      "Technologies0",
+      "Components21",
+      "Constraints22",
+      "Patterns0",
+      "Quality35",
+      "All Scope81",
+      "Project25",
+      "Project Contextual0",
+      "Global0",
+      "Unscoped56",
+      "Visible: All81",
+      "Project only25",
+      "Inherited shared0",
+      "Unscoped only56",
+      "All Features81",
+      "All Widgets81"
+    ],
+    "links": [
+      {
+        "text": "Sessions",
+        "href": "/"
+      },
+      {
+        "text": "Blueprint",
+        "href": "/blueprint"
+      },
+      {
+        "text": "Knowledge",
+        "href": "/knowledge"
+      },
+      {
+        "text": "Events",
+        "href": "/events"
+      },
+      {
+        "text": "Discovery",
+        "href": "/discovery"
+      },
+      {
+        "text": "Admin",
+        "href": "/admin"
+      },
+      {
+        "text": "Back to project chooser",
+        "href": "/knowledge"
+      }
+    ],
+    "navItems": [
+      "Sessions",
+      "Blueprint",
+      "Knowledge",
+      "Events",
+      "Discovery",
+      "Admin"
+    ],
+    "bodyText": "PlannerNavigationSessionsBlueprintKnowledgeEventsDiscoveryAdminDdevKnowledge LibraryGlobal cross-project view for intentional broad exploration.Back to project chooser81Nodes0Edges0Stale0Shared56UnscopedGlobal: All Projects81 visible0 selectedCreate knowledgeClear filtersGlobal view activeActive filtersActive onlyKnowledge TypeAll Types81Decisions3Technologies0Components21Constraints22Patterns0Quality35Scope ClassAll Scope81Project25Project Contextual0Global0Unscoped56VisibilityVisible: All81Project only25Inherited shared0Unscoped only56FeatureAll Features81WidgetAll Widgets81ArtifactAll Artifacts81ComponentAll Components81TagAll Tags81root73spec38definition-of-done19satisfaction16ar-review5blocking5intake3scope3OwnerAll Owners81StatusAny Status81Technical22Medium21Planned21Critical9High5Accepted3StaleStale: Any81Stale only81Fresh only81OrphanOrphan: Any81Orphan only81Connected only81DocumentationDocs: Any81With docs81Without docs81LifecycleLifecycle: Any81Active only81Archived only0Updated DateUpdated: Any81Last 7 days81Last 30 days81Last 90 days81Older than 90 days81Archive selected knowledgeRestore archived knowledgeExport selected recordExport current scoped viewDuplicate / bra",
+    "path": "/knowledge/all"
+  },
+  {
+    "name": "events",
+    "screenshot": "/home/thetu/planner/.tmp/visual-audit/events.png",
+    "title": "Planner v2 — Socratic Lobby",
+    "headings": [
+      "Event Timeline"
+    ],
+    "buttons": [
+      "Refresh",
+      "Events",
+      "Snapshots",
+      "All Events",
+      "Created",
+      "Updated",
+      "Deleted",
+      "Edge Created",
+      "Edges Deleted",
+      "Exports",
+      "View related knowledge",
+      "View related knowledge",
+      "View related knowledge",
+      "View related knowledge",
+      "View related knowledge",
+      "View related knowledge",
+      "View related knowledge",
+      "View related knowledge",
+      "View related knowledge",
+      "View related knowledge"
+    ],
+    "links": [
+      {
+        "text": "Sessions",
+        "href": "/"
+      },
+      {
+        "text": "Blueprint",
+        "href": "/blueprint"
+      },
+      {
+        "text": "Knowledge",
+        "href": "/knowledge"
+      },
+      {
+        "text": "Events",
+        "href": "/events"
+      },
+      {
+        "text": "Discovery",
+        "href": "/discovery"
+      },
+      {
+        "text": "Admin",
+        "href": "/admin"
+      }
+    ],
+    "navItems": [
+      "Sessions",
+      "Blueprint",
+      "Knowledge",
+      "Events",
+      "Discovery",
+      "Admin"
+    ],
+    "bodyText": "PlannerNavigationSessionsBlueprintKnowledgeEventsDiscoveryAdminDdevEvent TimelineAll changes across the blueprint — 81 eventsRefreshEventsSnapshotsAll EventsCreatedUpdatedDeletedEdge CreatedEdges DeletedExportsLast 50Last 100Last 250Last 500node created20h agoCreated constraint 'The DoD item 'produces no perceivable jank (60 fps target)' relies on subjective…'Details{ \"event_type\": \"node_created\", \"node\": { \"constraint_type\": \"technical\", \"created_at\": \"2026-03-07T01:57:12.071457575+00:00\", \"description\": \"[AR Finding AR-B-5] The DoD item 'produces no perceivable jank (60 fps target)' relies on subjective human observation ('perceivable jank') rather than a mechanically checkable factory condition.\\n\\nAffected: Definition of Done\\nResolution: Replace the subjective criteria with a mechanically verifiable metric, such as 'Automated tests can mount 200 task nodes and execute a complete/incomplete toggle in under X milliseconds', or remove the subjective 60fps target in favor of standard functional DOM assertions.\", \"id\": \"con-ar-ar-b-5-a777ff27\", \"node_type\": \"constraint\", \"scope\": { \"is_shared\": false, \"lifecycle\": \"active\", \"scope_class\": \"unscoped\", \"secondary\": {} }, \"source\": \"A",
+    "path": "/events"
+  },
+  {
+    "name": "admin",
+    "screenshot": "/home/thetu/planner/.tmp/visual-audit/admin.png",
+    "title": "Planner v2 — Socratic Lobby",
+    "headings": [],
+    "buttons": [
+      "all",
+      "error",
+      "warn",
+      "info"
+    ],
+    "links": [
+      {
+        "text": "Sessions",
+        "href": "/"
+      },
+      {
+        "text": "Blueprint",
+        "href": "/blueprint"
+      },
+      {
+        "text": "Knowledge",
+        "href": "/knowledge"
+      },
+      {
+        "text": "Events",
+        "href": "/events"
+      },
+      {
+        "text": "Discovery",
+        "href": "/discovery"
+      },
+      {
+        "text": "Admin",
+        "href": "/admin"
+      },
+      {
+        "text": "← dashboard",
+        "href": "/"
+      }
+    ],
+    "navItems": [
+      "Sessions",
+      "Blueprint",
+      "Knowledge",
+      "Events",
+      "Discovery",
+      "Admin"
+    ],
+    "bodyText": "PlannerNavigationSessionsBlueprintKnowledgeEventsDiscoveryAdminDdevsystem administration← dashboardsystem healthupdated 0s agostatusokversion0.1.0uptime3h 23mactive sessions1total events0llm providersanthropicbin: claude✓availablegooglebin: gemini✓availableopenaibin: codex✓availableevent log(0 total)· updated 0s agoallerrorwarninfono events",
+    "path": "/admin"
+  },
+  {
+    "name": "session-new",
+    "screenshot": "/home/thetu/planner/.tmp/visual-audit/session-new.png",
+    "title": "Planner v2 — Socratic Lobby",
+    "headings": [
+      "Describe your project"
+    ],
+    "buttons": [
+      "Rename",
+      "Duplicate",
+      "Archive",
+      "Export",
+      "Back to Dashboard",
+      "Start Interview →",
+      "send"
+    ],
+    "links": [
+      {
+        "text": "Sessions",
+        "href": "/"
+      },
+      {
+        "text": "Blueprint",
+        "href": "/blueprint"
+      },
+      {
+        "text": "Knowledge",
+        "href": "/knowledge"
+      },
+      {
+        "text": "Events",
+        "href": "/events"
+      },
+      {
+        "text": "Discovery",
+        "href": "/discovery"
+      },
+      {
+        "text": "Admin",
+        "href": "/admin"
+      }
+    ],
+    "navItems": [
+      "Sessions",
+      "Blueprint",
+      "Knowledge",
+      "Events",
+      "Discovery",
+      "Admin"
+    ],
+    "bodyText": "PlannerNavigationSessionsBlueprintKnowledgeEventsDiscoveryAdmindisconnectedDdevidleRenameDuplicateArchiveExportBack to Dashboard0LLM callsPlanner v2Describe your projectGive a brief overview — what you want to build, who it's for, and any important constraints. We'll ask focused questions to fill in the details.0 charsEnter to submitStart Interview →send",
+    "path": "/session/c093eb9a-0757-46be-bf9c-6a549fd71695"
+  }
+]

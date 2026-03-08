@@ -963,7 +963,6 @@ pub fn session_to_intake(session: &SocraticSession, project_id: Uuid) -> IntakeV
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
 
     fn make_complete_session() -> SocraticSession {
         let classification = DomainClassification {

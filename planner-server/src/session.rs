@@ -149,6 +149,12 @@ pub struct Session {
     pub stages: Vec<PipelineStageInfo>,
     pub pipeline_running: bool,
     pub project_description: Option<String>,
+    #[serde(default)]
+    pub project_id: Option<Uuid>,
+    #[serde(default)]
+    pub project_slug: Option<String>,
+    #[serde(default)]
+    pub project_name: Option<String>,
 
     // -----------------------------------------------------------------------
     // Socratic interview state
@@ -216,10 +222,13 @@ pub struct Session {
     /// Last error message (for quick display without scanning events).
     pub error_message: Option<String>,
 
-    /// CXDB project ID for this session's pipeline run(s).
-    /// Set when the pipeline starts; used by list_turns/list_runs.
+    /// Legacy CXDB project ID field retained for migration compatibility.
+    /// New session/project ownership should use `project_id`.
     #[serde(default)]
     pub cxdb_project_id: Option<Uuid>,
+    /// Session-owned index of pipeline run IDs.
+    #[serde(default)]
+    pub run_ids: Vec<Uuid>,
 }
 
 impl Session {
@@ -293,6 +302,9 @@ impl Session {
             ],
             pipeline_running: false,
             project_description: None,
+            project_id: None,
+            project_slug: None,
+            project_name: None,
             belief_state: None,
             classification: None,
             socratic_run_id: None,
@@ -310,6 +322,7 @@ impl Session {
             current_step: None,
             error_message: None,
             cxdb_project_id: None,
+            run_ids: Vec::new(),
         };
         session.recompute_capabilities();
         session
@@ -440,6 +453,9 @@ impl Session {
         duplicate.archived = false;
         duplicate.archived_at = None;
         duplicate.project_description = self.project_description.clone();
+        duplicate.project_id = self.project_id;
+        duplicate.project_slug = self.project_slug.clone();
+        duplicate.project_name = self.project_name.clone();
         duplicate.classification = checkpoint
             .as_ref()
             .and_then(|saved| saved.classification.clone())
@@ -462,6 +478,7 @@ impl Session {
         duplicate.current_step = None;
         duplicate.error_message = None;
         duplicate.cxdb_project_id = None;
+        duplicate.run_ids.clear();
         duplicate.reset_stage_statuses();
 
         let source_title = self.display_title();
@@ -678,6 +695,9 @@ pub struct SessionSummary {
     pub intake_phase: String,
     pub interview_live_attached: bool,
     pub project_description: Option<String>,
+    pub project_id: Option<Uuid>,
+    pub project_slug: Option<String>,
+    pub project_name: Option<String>,
     pub message_count: usize,
     pub event_count: usize,
     pub warning_count: usize,
@@ -877,6 +897,16 @@ impl SessionStore {
             .read()
             .values()
             .filter(|s| s.user_id == user_id)
+            .cloned()
+            .collect()
+    }
+
+    /// List all sessions owned by `user_id` for a specific project.
+    pub fn list_for_user_project(&self, user_id: &str, project_id: Uuid) -> Vec<Session> {
+        self.sessions
+            .read()
+            .values()
+            .filter(|s| s.user_id == user_id && s.project_id == Some(project_id))
             .cloned()
             .collect()
     }
@@ -1099,6 +1129,60 @@ impl SessionStore {
                 intake_phase: s.intake_phase.clone(),
                 interview_live_attached: s.interview_live_attached,
                 project_description: s.project_description.clone(),
+                project_id: s.project_id,
+                project_slug: s.project_slug.clone(),
+                project_name: s.project_name.clone(),
+                message_count: s.messages.len(),
+                event_count: s.events.len(),
+                warning_count: s.warning_count(),
+                error_count: s.error_count(),
+                current_step: s.current_step.clone(),
+                error_message: s.error_message.clone(),
+                can_resume_live: s.can_resume_live,
+                can_resume_checkpoint: s.can_resume_checkpoint,
+                can_restart_from_description: s.can_restart_from_description,
+                can_retry_pipeline: s.can_retry_pipeline,
+                has_checkpoint: s.has_checkpoint,
+                resume_status: s.resume_status,
+                classification: s.classification.clone(),
+                convergence_pct: s.belief_state.as_ref().map(|state| state.convergence_pct()),
+                checkpoint_last_saved_at: s
+                    .checkpoint
+                    .as_ref()
+                    .map(|checkpoint| checkpoint.last_checkpoint_at.clone()),
+            })
+            .collect()
+    }
+
+    /// Return lightweight session summaries for a user within one project.
+    pub fn list_summaries_for_user_project(
+        &self,
+        user_id: &str,
+        project_id: Uuid,
+        include_archived: bool,
+    ) -> Vec<SessionSummary> {
+        self.sessions
+            .read()
+            .values()
+            .filter(|s| s.user_id == user_id)
+            .filter(|s| s.project_id == Some(project_id))
+            .filter(|s| include_archived || !s.archived)
+            .map(|s| SessionSummary {
+                id: s.id,
+                user_id: s.user_id.clone(),
+                title: s.title.clone(),
+                archived: s.archived,
+                archived_at: s.archived_at.clone(),
+                created_at: s.created_at.clone(),
+                last_accessed: s.last_accessed.clone(),
+                last_activity_at: s.last_activity_at(),
+                pipeline_running: s.pipeline_running,
+                intake_phase: s.intake_phase.clone(),
+                interview_live_attached: s.interview_live_attached,
+                project_description: s.project_description.clone(),
+                project_id: s.project_id,
+                project_slug: s.project_slug.clone(),
+                project_name: s.project_name.clone(),
                 message_count: s.messages.len(),
                 event_count: s.events.len(),
                 warning_count: s.warning_count(),

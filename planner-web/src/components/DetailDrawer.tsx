@@ -5,30 +5,9 @@ import type { BlueprintNode, EdgePayload, DecisionNode, TechnologyNode, Componen
 import type { ApiClient } from '../api/client.ts';
 import { useState, useCallback } from 'react';
 import EditNodeForm from './EditNodeForm.tsx';
+import { labelComponentType, labelNodeType, labelScopeClass, labelScopeField, labelScopeVisibility } from '../lib/taxonomy.ts';
 
 // ─── Type → badge class mapping ────────────────────────────────────────────
-
-const TYPE_LABELS: Record<string, string> = {
-  decision: 'Decision',
-  technology: 'Technology',
-  component: 'Component',
-  constraint: 'Constraint',
-  pattern: 'Pattern',
-  quality_requirement: 'Quality',
-};
-
-const SCOPE_CLASS_LABELS: Record<string, string> = {
-  global: 'Global',
-  project: 'Project',
-  project_contextual: 'Project Contextual',
-  unscoped: 'Unscoped',
-};
-
-const SCOPE_VISIBILITY_LABELS: Record<string, string> = {
-  shared: 'Shared',
-  project_local: 'Project Local',
-  unscoped: 'Unscoped',
-};
 
 const DEFAULT_SCOPE: NodeScope = {
   scope_class: 'unscoped',
@@ -68,6 +47,7 @@ export default function DetailDrawer({
   const [loading, setLoading] = useState(false);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [applyingSuggestedName, setApplyingSuggestedName] = useState(false);
   const [activeTab, setActiveTab] = useState<'details' | 'history' | 'docs'>('details');
   const [events, setEvents] = useState<BlueprintEventPayload[]>([]);
   const [eventsLoading, setEventsLoading] = useState(false);
@@ -184,9 +164,27 @@ export default function DetailDrawer({
     setEditing(false);
   }, []);
 
+  const handleUseSuggestedName = useCallback(async (component: ComponentNode) => {
+    if (!nodeId || !component.naming?.generated_name) return;
+    setApplyingSuggestedName(true);
+    try {
+      const updated = await api.updateBlueprintNode(nodeId, {
+        name: component.naming.generated_name,
+        naming: {
+          ...component.naming,
+          source: 'generated',
+        },
+      } as Partial<BlueprintNode>);
+      setNode(updated);
+      onNodeUpdated?.();
+    } finally {
+      setApplyingSuggestedName(false);
+    }
+  }, [api, nodeId, onNodeUpdated]);
+
   const nodeType = node?.node_type ?? '';
   const typeBadge = `badge-${nodeType}`;
-  const typeLabel = TYPE_LABELS[nodeType] ?? nodeType;
+  const typeLabel = labelNodeType(nodeType);
   const documentation = node?.documentation?.trim() ?? '';
   const effectiveNodeScope = (node as { scope?: NodeScope } | null)?.scope ?? DEFAULT_SCOPE;
 
@@ -203,7 +201,7 @@ export default function DetailDrawer({
         <div className="drawer-section-title">Scope</div>
         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: 'var(--space-2)' }}>
           <span className="health-badge" style={{ color: 'var(--color-text-muted)', background: 'var(--color-surface-offset)' }}>
-            {SCOPE_CLASS_LABELS[scope.scope_class] ?? scope.scope_class}
+            {labelScopeClass(scope.scope_class)}
           </span>
           <span
             className="health-badge"
@@ -222,7 +220,7 @@ export default function DetailDrawer({
                     : 'rgba(234,179,8,0.14)',
             }}
           >
-            {SCOPE_VISIBILITY_LABELS[scopeVisibility] ?? scopeVisibility}
+            {labelScopeVisibility(scopeVisibility)}
           </span>
           <span
             className="health-badge"
@@ -251,13 +249,13 @@ export default function DetailDrawer({
         )}
         {scope.is_shared && (
           <div className="drawer-description" style={{ marginTop: '4px' }}>
-            <strong>Linked Projects:</strong>{' '}
+            <strong>{labelScopeField('linked_project_ids')}:</strong>{' '}
             {(scope.shared?.linked_project_ids ?? []).join(', ') || 'none'}
           </div>
         )}
         {scope.override_scope && (
           <div className="drawer-description" style={{ marginTop: '4px' }}>
-            <strong>Overrides:</strong> {scope.override_scope.shared_source_id}
+            <strong>{labelScopeField('shared_source_id')}:</strong> {scope.override_scope.shared_source_id}
             {scope.override_scope.override_reason ? ` · ${scope.override_scope.override_reason}` : ''}
             {scope.override_scope.effective_from ? ` · effective ${scope.override_scope.effective_from}` : ''}
           </div>
@@ -380,8 +378,39 @@ export default function DetailDrawer({
         <div className="drawer-description">{n.description}</div>
       </div>
       <div className="drawer-section">
+        <div className="drawer-section-title">Naming</div>
+        <div className="drawer-description">
+          <strong>Name source:</strong> {n.naming?.source === 'manual' ? 'Manual' : 'Generated'}
+        </div>
+        {n.naming?.origin_key && (
+          <div className="drawer-description" style={{ marginTop: '4px' }}>
+            <strong>Origin key:</strong> <span style={{ fontFamily: 'var(--font-mono)' }}>{n.naming.origin_key}</span>
+          </div>
+        )}
+        {n.naming?.generated_name && n.naming.generated_name !== n.name && (
+          <div style={{ marginTop: 'var(--space-2)' }}>
+            <div className="drawer-description">
+              <strong>Latest suggestion:</strong> {n.naming.generated_name}
+            </div>
+            {n.naming.source === 'manual' && (
+              <button
+                className="btn btn-outline"
+                style={{ fontSize: '0.625rem', padding: '2px 8px', marginTop: 'var(--space-2)' }}
+                onClick={() => void handleUseSuggestedName(n)}
+                disabled={applyingSuggestedName}
+              >
+                {applyingSuggestedName ? 'Applying…' : 'Use suggested name'}
+              </button>
+            )}
+          </div>
+        )}
+        <div className="drawer-description" style={{ marginTop: '4px' }}>
+          Manual names are preserved across regeneration.
+        </div>
+      </div>
+      <div className="drawer-section">
         <div className="drawer-section-title">Component Type</div>
-        <div className="drawer-description" style={{ textTransform: 'capitalize' }}>{n.component_type}</div>
+        <div className="drawer-description">{labelComponentType(n.component_type)}</div>
       </div>
       {n.provides.length > 0 && (
         <div className="drawer-section">
@@ -488,16 +517,16 @@ export default function DetailDrawer({
                   </span>
                 )}
                 <span className="status-badge">
-                  {SCOPE_CLASS_LABELS[effectiveNodeScope.scope_class] ?? effectiveNodeScope.scope_class}
+                  {labelScopeClass(effectiveNodeScope.scope_class)}
                 </span>
                 <span className="status-badge">
-                  {SCOPE_VISIBILITY_LABELS[
+                  {labelScopeVisibility(
                     (effectiveNodeScope.scope_class === 'unscoped')
                       ? 'unscoped'
                       : effectiveNodeScope.is_shared
                         ? 'shared'
                         : 'project_local'
-                  ]}
+                  )}
                 </span>
               </div>
             )}
@@ -570,7 +599,7 @@ export default function DetailDrawer({
                     >
                       <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.625rem', color: 'var(--color-text-faint)' }}>←</span>
                       <span className={`badge badge-${getNodeType(c.id)}`} style={{ fontSize: '0.5625rem' }}>
-                        {TYPE_LABELS[getNodeType(c.id)] ?? getNodeType(c.id)}
+                        {labelNodeType(getNodeType(c.id), 'short')}
                       </span>
                       <span style={{ color: 'var(--color-text)', fontWeight: 500 }}>{getNodeName(c.id)}</span>
                       <span style={{ color: 'var(--color-text-faint)', fontSize: '0.625rem' }}>{c.type}</span>
@@ -594,7 +623,7 @@ export default function DetailDrawer({
                     >
                       <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.625rem', color: 'var(--color-text-faint)' }}>→</span>
                       <span className={`badge badge-${getNodeType(c.id)}`} style={{ fontSize: '0.5625rem' }}>
-                        {TYPE_LABELS[getNodeType(c.id)] ?? getNodeType(c.id)}
+                        {labelNodeType(getNodeType(c.id), 'short')}
                       </span>
                       <span style={{ color: 'var(--color-text)', fontWeight: 500 }}>{getNodeName(c.id)}</span>
                       <span style={{ color: 'var(--color-text-faint)', fontSize: '0.625rem' }}>{c.type}</span>

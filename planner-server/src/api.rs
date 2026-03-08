@@ -18,6 +18,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::auth::{auth_middleware, Claims};
+use crate::project::Project;
 use crate::session::Session;
 use crate::ws;
 use crate::ws_socratic;
@@ -69,6 +70,12 @@ pub struct CreateSessionResponse {
     pub session: Session,
 }
 
+#[derive(Debug, Default, Deserialize, Serialize)]
+pub struct CreateSessionRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_ref: Option<String>,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ListSessionsResponse {
     pub sessions: Vec<crate::session::SessionSummary>,
@@ -83,6 +90,58 @@ pub struct ListSessionsQuery {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GetSessionResponse {
     pub session: Session,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ProjectResponse {
+    pub project: Project,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ListProjectsResponse {
+    pub projects: Vec<Project>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct CreateProjectRequest {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slug: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub team_label: Option<String>,
+    #[serde(default)]
+    pub legacy_scope_keys: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct UpdateProjectRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slug: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub team_label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub legacy_scope_keys: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct CreateProjectSessionRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ProjectEventsResponse {
+    pub project_id: String,
+    pub events: Vec<planner_core::observability::PlannerEvent>,
+    pub count: usize,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -169,6 +228,9 @@ pub struct RunListResponse {
 pub struct StartSocraticRequest {
     /// Initial project description from the user.
     pub description: String,
+    /// Optional project reference (UUID, slug, or legacy alias).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_ref: Option<String>,
 }
 
 /// Response from starting a Socratic interview.
@@ -254,6 +316,15 @@ pub struct NodesQuery {
 
 fn default_true() -> bool {
     true
+}
+
+fn canonicalize_nodes_query_project_ref(query: &mut NodesQuery, state: &AppState) {
+    let Some(project_ref) = query.project_id.clone() else {
+        return;
+    };
+    if let Some(project) = state.projects.resolve_ref(&project_ref) {
+        query.project_id = Some(project.id.to_string());
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -361,6 +432,12 @@ pub struct RejectProposalRequest {
     pub reason: Option<String>,
 }
 
+#[derive(Debug, Default, Deserialize)]
+pub struct AcceptProposalRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub node_patch: Option<serde_json::Value>,
+}
+
 // ---------------------------------------------------------------------------
 // Admin response types
 // ---------------------------------------------------------------------------
@@ -423,6 +500,16 @@ pub fn routes(state: Arc<AppState>) -> Router {
 
     let protected = Router::new()
         .route("/models", get(models))
+        .route("/projects", get(list_projects).post(create_project))
+        .route(
+            "/projects/{projectRef}",
+            get(get_project).patch(update_project),
+        )
+        .route(
+            "/projects/{projectRef}/sessions",
+            get(list_project_sessions).post(create_project_session),
+        )
+        .route("/projects/{projectRef}/events", get(get_project_events))
         .route("/sessions", get(list_sessions).post(create_session))
         .route("/sessions/{id}", get(get_session).patch(update_session))
         .route("/sessions/{id}/message", post(send_message))
@@ -486,6 +573,105 @@ pub fn routes(state: Arc<AppState>) -> Router {
 // ---------------------------------------------------------------------------
 // Handlers
 // ---------------------------------------------------------------------------
+
+fn project_visible_to_user(project: &Project, claims: &Claims) -> bool {
+    project.owner_user_id == claims.sub
+        || project.owner_user_id == crate::project::MIGRATION_OWNER_USER_ID
+}
+
+fn resolve_project_for_user(
+    state: &Arc<AppState>,
+    claims: &Claims,
+    project_ref: &str,
+) -> Result<Project, (StatusCode, Json<ErrorResponse>)> {
+    let project = state.projects.resolve_ref(project_ref).ok_or_else(|| {
+        (
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: format!("Project not found: {}", project_ref),
+                code: Some("PROJECT_NOT_FOUND".into()),
+            }),
+        )
+    })?;
+
+    if !project_visible_to_user(&project, claims) {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(ErrorResponse {
+                error: "Access denied".into(),
+                code: None,
+            }),
+        ));
+    }
+
+    Ok(project)
+}
+
+fn ensure_session_project_assignment(
+    state: &Arc<AppState>,
+    session_id: Uuid,
+    fallback_description: &str,
+) -> Result<Project, String> {
+    let session = state
+        .sessions
+        .get(session_id)
+        .ok_or_else(|| format!("Session not found: {}", session_id))?;
+
+    if let Some(project_id) = session.project_id {
+        if let Some(project) = state.projects.get(project_id) {
+            if session.project_slug.as_deref() != Some(project.slug.as_str())
+                || session.project_name.as_deref() != Some(project.name.as_str())
+            {
+                state.sessions.update(session_id, |draft| {
+                    draft.project_slug = Some(project.slug.clone());
+                    draft.project_name = Some(project.name.clone());
+                });
+            }
+            return Ok(project);
+        }
+    }
+
+    let description = session
+        .project_description
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or(fallback_description)
+        .trim()
+        .to_string();
+
+    let suggested_name = if description.is_empty() {
+        session
+            .project_name
+            .clone()
+            .unwrap_or_else(|| crate::project::derive_project_name(&session.display_title()))
+    } else {
+        crate::project::derive_project_name(&description)
+    };
+
+    let project = state.projects.create(
+        &session.user_id,
+        &suggested_name,
+        if description.is_empty() {
+            None
+        } else {
+            Some(description.clone())
+        },
+        None,
+        Vec::new(),
+        Some("session_seed".into()),
+    );
+
+    state.sessions.update(session_id, |draft| {
+        draft.project_id = Some(project.id);
+        draft.project_slug = Some(project.slug.clone());
+        draft.project_name = Some(project.name.clone());
+        if draft.cxdb_project_id.is_none() {
+            draft.cxdb_project_id = Some(project.id);
+        }
+    });
+
+    Ok(project)
+}
 
 async fn health(State(state): State<Arc<AppState>>) -> Json<HealthResponse> {
     let providers: Vec<String> = state
@@ -689,6 +875,192 @@ async fn models() -> Json<ModelsResponse> {
     Json(ModelsResponse { models })
 }
 
+async fn list_projects(
+    State(state): State<Arc<AppState>>,
+    claims: Claims,
+) -> Json<ListProjectsResponse> {
+    let mut projects = state.projects.list_for_user(&claims.sub);
+    projects.sort_by(|left, right| {
+        right
+            .updated_at
+            .cmp(&left.updated_at)
+            .then_with(|| left.name.cmp(&right.name))
+    });
+    Json(ListProjectsResponse { projects })
+}
+
+async fn create_project(
+    State(state): State<Arc<AppState>>,
+    claims: Claims,
+    Json(req): Json<CreateProjectRequest>,
+) -> Result<(StatusCode, Json<ProjectResponse>), (StatusCode, Json<ErrorResponse>)> {
+    if req.name.trim().is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "Project name cannot be empty".into(),
+                code: Some("INVALID_PROJECT_NAME".into()),
+            }),
+        ));
+    }
+
+    let mut project = state.projects.create(
+        &claims.sub,
+        &req.name,
+        req.description.clone(),
+        req.team_label.clone(),
+        req.legacy_scope_keys.clone(),
+        None,
+    );
+
+    if let Some(slug) = req.slug {
+        if let Some(updated) = state.projects.update(project.id, |draft| {
+            draft.slug = slug;
+        }) {
+            project = updated;
+        }
+    }
+
+    Ok((StatusCode::CREATED, Json(ProjectResponse { project })))
+}
+
+async fn get_project(
+    State(state): State<Arc<AppState>>,
+    claims: Claims,
+    Path(project_ref): Path<String>,
+) -> Result<Json<ProjectResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let project = resolve_project_for_user(&state, &claims, &project_ref)?;
+    Ok(Json(ProjectResponse { project }))
+}
+
+async fn update_project(
+    State(state): State<Arc<AppState>>,
+    claims: Claims,
+    Path(project_ref): Path<String>,
+    Json(req): Json<UpdateProjectRequest>,
+) -> Result<Json<ProjectResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let project = resolve_project_for_user(&state, &claims, &project_ref)?;
+
+    if req.name.is_none()
+        && req.slug.is_none()
+        && req.description.is_none()
+        && req.team_label.is_none()
+        && req.legacy_scope_keys.is_none()
+    {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "No project changes were requested".into(),
+                code: Some("EMPTY_PROJECT_UPDATE".into()),
+            }),
+        ));
+    }
+
+    let updated = state.projects.update(project.id, |draft| {
+        if let Some(name) = req.name.as_ref() {
+            draft.name = name.clone();
+        }
+        if let Some(slug) = req.slug.as_ref() {
+            draft.slug = slug.clone();
+        }
+        if let Some(description) = req.description.as_ref() {
+            draft.description = Some(description.clone());
+        }
+        if let Some(team_label) = req.team_label.as_ref() {
+            draft.team_label = Some(team_label.clone());
+        }
+        if let Some(legacy_scope_keys) = req.legacy_scope_keys.as_ref() {
+            draft.legacy_scope_keys = legacy_scope_keys.clone();
+        }
+    });
+
+    match updated {
+        Some(project) => Ok(Json(ProjectResponse { project })),
+        None => Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: format!("Project not found: {}", project_ref),
+                code: Some("PROJECT_NOT_FOUND".into()),
+            }),
+        )),
+    }
+}
+
+async fn list_project_sessions(
+    State(state): State<Arc<AppState>>,
+    claims: Claims,
+    Path(project_ref): Path<String>,
+    Query(query): Query<ListSessionsQuery>,
+) -> Result<Json<ListSessionsResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let project = resolve_project_for_user(&state, &claims, &project_ref)?;
+    let sessions = state.sessions.list_summaries_for_user_project(
+        &claims.sub,
+        project.id,
+        query.include_archived,
+    );
+    Ok(Json(ListSessionsResponse { sessions }))
+}
+
+async fn create_project_session(
+    State(state): State<Arc<AppState>>,
+    claims: Claims,
+    Path(project_ref): Path<String>,
+    req: Option<Json<CreateProjectSessionRequest>>,
+) -> Result<(StatusCode, Json<CreateSessionResponse>), (StatusCode, Json<ErrorResponse>)> {
+    let req = req
+        .map(|Json(body)| body)
+        .unwrap_or(CreateProjectSessionRequest {
+            title: None,
+            description: None,
+        });
+    let project = resolve_project_for_user(&state, &claims, &project_ref)?;
+    let session = state.sessions.create(&claims.sub);
+    let updated = state.sessions.update(session.id, |draft| {
+        draft.project_id = Some(project.id);
+        draft.project_slug = Some(project.slug.clone());
+        draft.project_name = Some(project.name.clone());
+        draft.cxdb_project_id = Some(project.id);
+        if let Some(description) = req.description.as_deref() {
+            if !description.trim().is_empty() {
+                draft.project_description = Some(description.trim().to_string());
+                draft.ensure_title_from_description();
+            }
+        }
+        if let Some(title) = req.title.as_deref() {
+            if !title.trim().is_empty() {
+                draft.set_title(Some(title.trim().to_string()));
+            }
+        }
+    });
+
+    let session = updated.unwrap_or(session);
+    Ok((StatusCode::CREATED, Json(CreateSessionResponse { session })))
+}
+
+async fn get_project_events(
+    State(state): State<Arc<AppState>>,
+    claims: Claims,
+    Path(project_ref): Path<String>,
+) -> Result<Json<ProjectEventsResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let project = resolve_project_for_user(&state, &claims, &project_ref)?;
+    let sessions = state
+        .sessions
+        .list_for_user_project(&claims.sub, project.id);
+
+    let mut events = sessions
+        .into_iter()
+        .flat_map(|session| session.events)
+        .collect::<Vec<_>>();
+    events.sort_by(|left, right| right.timestamp.cmp(&left.timestamp));
+    let count = events.len();
+
+    Ok(Json(ProjectEventsResponse {
+        project_id: project.id.to_string(),
+        events,
+        count,
+    }))
+}
+
 async fn list_sessions(
     State(state): State<Arc<AppState>>,
     claims: Claims,
@@ -703,11 +1075,29 @@ async fn list_sessions(
 async fn create_session(
     State(state): State<Arc<AppState>>,
     claims: Claims,
-) -> (StatusCode, Json<CreateSessionResponse>) {
+    req: Option<Json<CreateSessionRequest>>,
+) -> Result<(StatusCode, Json<CreateSessionResponse>), (StatusCode, Json<ErrorResponse>)> {
+    let requested_project_ref = req.and_then(|Json(body)| body.project_ref);
+    let resolved_project = requested_project_ref
+        .as_deref()
+        .map(|project_ref| resolve_project_for_user(&state, &claims, project_ref))
+        .transpose()?;
+
     let session = state.sessions.create(&claims.sub);
+
+    if let Some(project) = resolved_project {
+        let _ = state.sessions.update(session.id, |draft| {
+            draft.project_id = Some(project.id);
+            draft.project_slug = Some(project.slug.clone());
+            draft.project_name = Some(project.name.clone());
+            draft.cxdb_project_id = Some(project.id);
+        });
+    }
+
+    let session = state.sessions.get(session.id).unwrap_or(session);
     tracing::info!("Created session: {} for user: {}", session.id, claims.sub);
 
-    (StatusCode::CREATED, Json(CreateSessionResponse { session }))
+    Ok((StatusCode::CREATED, Json(CreateSessionResponse { session })))
 }
 
 async fn get_session(
@@ -1129,12 +1519,22 @@ async fn send_message(
     });
 
     match result {
-        Some(session) => {
+        Some(mut session) => {
             // Touch to extend expiry after a real user interaction.
             state.sessions.touch(id);
 
             // Spawn pipeline only if this request transitioned it to running.
             if should_spawn_pipeline {
+                if let Err(error) = ensure_session_project_assignment(&state, id, &content) {
+                    tracing::warn!(
+                        "Session {}: failed to assign project before pipeline start: {}",
+                        id,
+                        error
+                    );
+                } else if let Some(refreshed) = state.sessions.get(id) {
+                    session = refreshed;
+                }
+
                 let state_clone = state.clone();
                 let session_id = id;
                 let description = content.clone();
@@ -1207,11 +1607,32 @@ pub async fn run_pipeline_for_session(state: Arc<AppState>, session_id: Uuid, de
         }
     };
 
-    let project_id = Uuid::new_v4();
+    let project = match ensure_session_project_assignment(&state, session_id, &description) {
+        Ok(project) => project,
+        Err(error) => {
+            state.sessions.update(session_id, |s| {
+                s.add_message("planner", &format!("Project assignment failed: {}", error));
+                if let Some(stage) = s.stages.iter_mut().find(|stage| stage.status == "running") {
+                    stage.status = "failed".into();
+                }
+                s.pipeline_running = false;
+                s.intake_phase = "error".into();
+                s.error_message = Some(format!("Project assignment failed: {}", error));
+            });
+            return;
+        }
+    };
+    let project_id = project.id;
+    let run_id = Uuid::new_v4();
 
-    // Store the project_id in the session so list_turns/list_runs can query it.
     state.sessions.update(session_id, |s| {
+        s.project_id = Some(project_id);
+        s.project_slug = Some(project.slug.clone());
+        s.project_name = Some(project.name.clone());
         s.cxdb_project_id = Some(project_id);
+        if !s.run_ids.contains(&run_id) {
+            s.run_ids.push(run_id);
+        }
     });
 
     // Build PipelineConfig with durable storage if available.
@@ -1219,14 +1640,14 @@ pub async fn run_pipeline_for_session(state: Arc<AppState>, session_id: Uuid, de
     // across the async pipeline call.
     let cxdb_ref = state.cxdb.as_ref();
 
+    if let Some(engine) = cxdb_ref {
+        if let Err(e) = engine.register_run(project_id, run_id) {
+            tracing::warn!("CXDB: failed to register run: {}", e);
+        }
+    }
+
     match cxdb_ref {
         Some(engine) => {
-            // Register this run in CXDB.
-            let run_id = Uuid::new_v4();
-            if let Err(e) = engine.register_run(project_id, run_id) {
-                tracing::warn!("CXDB: failed to register run: {}", e);
-            }
-
             let config = planner_core::pipeline::PipelineConfig {
                 router: router.as_ref(),
                 store: Some(engine),
@@ -1234,10 +1655,11 @@ pub async fn run_pipeline_for_session(state: Arc<AppState>, session_id: Uuid, de
                 blueprints: Some(&state.blueprints),
             };
 
-            match planner_core::pipeline::run_full_pipeline(
+            match planner_core::pipeline::run_full_pipeline_with_run_id(
                 &config,
                 &worker,
                 project_id,
+                run_id,
                 &description,
             )
             .await
@@ -1288,10 +1710,11 @@ pub async fn run_pipeline_for_session(state: Arc<AppState>, session_id: Uuid, de
                 blueprints: Some(&state.blueprints),
             };
 
-            match planner_core::pipeline::run_full_pipeline(
+            match planner_core::pipeline::run_full_pipeline_with_run_id(
                 &config,
                 &worker,
                 project_id,
+                run_id,
                 &description,
             )
             .await
@@ -1342,7 +1765,7 @@ pub async fn run_pipeline_for_session(state: Arc<AppState>, session_id: Uuid, de
 
 /// List all Turns for a session (metadata only).
 ///
-/// Queries the durable CXDB engine using the session's stored project_id.
+/// Queries the durable CXDB engine using the session's run_ids index.
 /// Returns an empty list if no CXDB is configured or no pipeline has run.
 async fn list_turns(
     State(state): State<Arc<AppState>>,
@@ -1372,20 +1795,26 @@ async fn list_turns(
         }
     };
 
-    // Query CXDB for turns belonging to this session's project.
-    let turns = match (&state.cxdb, session.cxdb_project_id) {
-        (Some(engine), Some(project_id)) => engine
-            .list_turn_metadata_for_project(project_id)
-            .into_iter()
-            .map(|m| TurnResponse {
-                turn_id: m.turn_id,
-                type_id: m.type_id,
-                timestamp: m.timestamp,
-                produced_by: m.produced_by,
-            })
-            .collect::<Vec<_>>(),
-        _ => Vec::new(),
-    };
+    // Query CXDB for turns belonging to this session's run IDs.
+    let turns =
+        match &state.cxdb {
+            Some(engine) => {
+                let mut entries = Vec::new();
+                for run_id in &session.run_ids {
+                    entries.extend(engine.list_turn_metadata_for_run(*run_id).into_iter().map(
+                        |m| TurnResponse {
+                            turn_id: m.turn_id,
+                            type_id: m.type_id,
+                            timestamp: m.timestamp,
+                            produced_by: m.produced_by,
+                        },
+                    ));
+                }
+                entries.sort_by(|left, right| right.timestamp.cmp(&left.timestamp));
+                entries
+            }
+            None => Vec::new(),
+        };
 
     let count = turns.len();
     Ok(Json(ListTurnsResponse { turns, count }))
@@ -1393,8 +1822,8 @@ async fn list_turns(
 
 /// List all pipeline run IDs for a session.
 ///
-/// Queries the durable CXDB engine using the session's stored project_id.
-/// Returns an empty list if no CXDB is configured or no pipeline has run.
+/// Returns the session-owned run index. This keeps history session-local
+/// even when multiple sessions share a canonical project UUID.
 async fn list_runs(
     State(state): State<Arc<AppState>>,
     claims: Claims,
@@ -1423,15 +1852,11 @@ async fn list_runs(
         }
     };
 
-    // Query CXDB for runs belonging to this session's project.
-    let runs = match (&state.cxdb, session.cxdb_project_id) {
-        (Some(engine), Some(project_id)) => engine
-            .list_runs(project_id)
-            .into_iter()
-            .map(|r| r.to_string())
-            .collect::<Vec<_>>(),
-        _ => Vec::new(),
-    };
+    let runs = session
+        .run_ids
+        .iter()
+        .map(Uuid::to_string)
+        .collect::<Vec<_>>();
 
     Ok(Json(RunListResponse { runs }))
 }
@@ -1570,8 +1995,8 @@ async fn start_socratic(
     Json(req): Json<StartSocraticRequest>,
 ) -> Result<Json<StartSocraticResponse>, (StatusCode, Json<ErrorResponse>)> {
     // Verify ownership (read-only).
-    match state.sessions.get_if_owned(id, &claims.sub) {
-        Ok(_) => {}
+    let session = match state.sessions.get_if_owned(id, &claims.sub) {
+        Ok(session) => session,
         Err(Some(())) => {
             return Err((
                 StatusCode::FORBIDDEN,
@@ -1590,7 +2015,34 @@ async fn start_socratic(
                 }),
             ));
         }
-    }
+    };
+
+    let project = if let Some(project_ref) = req.project_ref.as_deref() {
+        let project = resolve_project_for_user(&state, &claims, project_ref)?;
+        if session.project_id != Some(project.id)
+            && (!session.run_ids.is_empty() || session.pipeline_running)
+        {
+            return Err((
+                StatusCode::CONFLICT,
+                Json(ErrorResponse {
+                    error: "Project reassignment is only allowed before pipeline execution starts"
+                        .into(),
+                    code: Some("PROJECT_REASSIGNMENT_BLOCKED".into()),
+                }),
+            ));
+        }
+        project
+    } else {
+        ensure_session_project_assignment(&state, id, &req.description).map_err(|error| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error,
+                    code: Some("PROJECT_ASSIGNMENT_FAILED".into()),
+                }),
+            )
+        })?
+    };
 
     // Store the initial description in the session for reference.
     if let Some(runtime) = state.socratic_runtimes.remove(id) {
@@ -1604,6 +2056,12 @@ async fn start_socratic(
         s.intake_phase = "interviewing".into();
         s.interview_live_attached = false;
         s.interview_runtime_active = false;
+        s.project_id = Some(project.id);
+        s.project_slug = Some(project.slug.clone());
+        s.project_name = Some(project.name.clone());
+        if s.cxdb_project_id.is_none() {
+            s.cxdb_project_id = Some(project.id);
+        }
         s.ensure_socratic_run_id();
         s.checkpoint = None;
         s.has_checkpoint = false;
@@ -1828,6 +2286,123 @@ fn node_scope_mut(
     }
 }
 
+fn normalize_ws(value: &str) -> String {
+    value.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn patch_declares_component_name_source(patch: &serde_json::Value) -> bool {
+    patch
+        .get("naming")
+        .and_then(|naming| naming.get("source"))
+        .is_some()
+}
+
+fn normalize_component_naming(
+    previous: Option<&planner_schemas::artifacts::blueprint::BlueprintNode>,
+    patch: &serde_json::Value,
+    node: &mut planner_schemas::artifacts::blueprint::BlueprintNode,
+) {
+    use planner_schemas::artifacts::blueprint::{
+        BlueprintNode, ComponentNameSource, ComponentNaming, ComponentNamingStrategy,
+    };
+
+    let Some(next_component) = (match node {
+        BlueprintNode::Component(component) => Some(component),
+        _ => None,
+    }) else {
+        return;
+    };
+
+    let previous_component = previous.and_then(|existing| match existing {
+        BlueprintNode::Component(component) => Some(component),
+        _ => None,
+    });
+
+    let previous_name = previous_component
+        .map(|component| normalize_ws(&component.name))
+        .unwrap_or_default();
+    let next_name = normalize_ws(&next_component.name);
+    let name_changed = previous_component
+        .map(|_| !next_name.is_empty() && previous_name != next_name)
+        .unwrap_or(false);
+
+    if next_component.naming.is_none() {
+        let origin_key = previous_component
+            .and_then(|component| {
+                component
+                    .naming
+                    .as_ref()
+                    .map(|naming| naming.origin_key.clone())
+            })
+            .unwrap_or_else(|| format!("manual:{}", next_component.id));
+        let generated_name = previous_component
+            .and_then(|component| {
+                component
+                    .naming
+                    .as_ref()
+                    .map(|naming| naming.generated_name.clone())
+            })
+            .unwrap_or_else(|| next_component.name.clone());
+        let strategy = previous_component
+            .and_then(|component| component.naming.as_ref().map(|naming| naming.strategy.clone()))
+            .unwrap_or(ComponentNamingStrategy::ManualCreate);
+        let source = previous_component
+            .and_then(|component| component.naming.as_ref().map(|naming| naming.source.clone()))
+            .unwrap_or(ComponentNameSource::Manual);
+
+        next_component.naming = Some(ComponentNaming {
+            origin_key,
+            source,
+            strategy,
+            generated_name,
+            naming_version: 1,
+            last_generated_at: chrono::Utc::now().to_rfc3339(),
+        });
+    }
+
+    if let Some(naming) = next_component.naming.as_mut() {
+        if naming.origin_key.trim().is_empty() {
+            naming.origin_key = previous_component
+                .and_then(|component| {
+                    component
+                        .naming
+                        .as_ref()
+                        .map(|previous_naming| previous_naming.origin_key.clone())
+                })
+                .unwrap_or_else(|| format!("manual:{}", next_component.id));
+        }
+
+        if naming.generated_name.trim().is_empty() {
+            naming.generated_name = previous_component
+                .and_then(|component| {
+                    component
+                        .naming
+                        .as_ref()
+                        .map(|previous_naming| previous_naming.generated_name.clone())
+                })
+                .unwrap_or_else(|| next_component.name.clone());
+        }
+
+        if naming.naming_version == 0 {
+            naming.naming_version = 1;
+        }
+
+        if name_changed && !patch_declares_component_name_source(patch) {
+            naming.source = ComponentNameSource::Manual;
+            if let Some(previous_generated) = previous_component.and_then(|component| {
+                component
+                    .naming
+                    .as_ref()
+                    .map(|previous_naming| previous_naming.generated_name.clone())
+            }) {
+                naming.generated_name = previous_generated;
+            }
+        }
+
+        naming.last_generated_at = chrono::Utc::now().to_rfc3339();
+    }
+}
+
 fn normalize_blueprint_node_metadata(
     node: &mut planner_schemas::artifacts::blueprint::BlueprintNode,
 ) {
@@ -1980,8 +2555,9 @@ fn validate_blueprint_node_scope(
 async fn get_blueprint(
     State(state): State<Arc<AppState>>,
     _claims: Claims,
-    Query(query): Query<NodesQuery>,
+    Query(mut query): Query<NodesQuery>,
 ) -> Json<BlueprintResponse> {
+    canonicalize_nodes_query_project_ref(&mut query, &state);
     let bp = state.blueprints.snapshot();
     let nodes = filter_node_summaries(bp.list_summaries(), &query);
     let included_node_ids: std::collections::HashSet<&str> =
@@ -2019,8 +2595,9 @@ async fn get_blueprint(
 async fn list_blueprint_nodes(
     State(state): State<Arc<AppState>>,
     _claims: Claims,
-    Query(query): Query<NodesQuery>,
+    Query(mut query): Query<NodesQuery>,
 ) -> Json<NodeListResponse> {
+    canonicalize_nodes_query_project_ref(&mut query, &state);
     let summaries = filter_node_summaries(state.blueprints.list_summaries(), &query);
     let count = summaries.len();
     Json(NodeListResponse {
@@ -2035,6 +2612,11 @@ async fn create_blueprint_node(
     _claims: Claims,
     Json(mut node): Json<planner_schemas::artifacts::blueprint::BlueprintNode>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, Json<ErrorResponse>)> {
+    normalize_component_naming(
+        None,
+        &serde_json::Value::Object(serde_json::Map::new()),
+        &mut node,
+    );
     normalize_blueprint_node_metadata(&mut node);
     validate_blueprint_node_scope(&node).map_err(|message| {
         (
@@ -2116,6 +2698,7 @@ async fn update_blueprint_node(
         )
     })?;
 
+    let patch_for_component_naming = patch.clone();
     apply_json_merge_patch(&mut merged, patch);
 
     let mut node: planner_schemas::artifacts::blueprint::BlueprintNode =
@@ -2143,6 +2726,11 @@ async fn update_blueprint_node(
         ));
     }
 
+    normalize_component_naming(
+        Some(&existing_node),
+        &patch_for_component_naming,
+        &mut node,
+    );
     normalize_blueprint_node_metadata(&mut node);
 
     validate_blueprint_node_scope(&node).map_err(|message| {
@@ -2744,7 +3332,9 @@ async fn accept_proposal(
     State(state): State<Arc<AppState>>,
     _claims: Claims,
     Path(proposal_id): Path<String>,
+    req: Option<Json<AcceptProposalRequest>>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
+    let request = req.map(|Json(value)| value).unwrap_or_default();
     let Some(proposal) = state.proposals.mark_accepted(&proposal_id).map_err(|err| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -2771,11 +3361,76 @@ async fn accept_proposal(
         })));
     }
 
-    state.blueprints.upsert_node(proposal.node.clone());
+    let mut final_node = proposal.node.clone();
+
+    if let Some(node_patch) = request.node_patch {
+        let mut merged = serde_json::to_value(&proposal.node).map_err(|err| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("Failed to serialize proposal node: {}", err),
+                    code: Some("SERIALIZE_FAILED".into()),
+                }),
+            )
+        })?;
+
+        apply_json_merge_patch(&mut merged, node_patch.clone());
+
+        final_node = serde_json::from_value(merged).map_err(|err| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: format!("Invalid proposal node_patch payload: {}", err),
+                    code: Some("INVALID_NODE_PATCH".into()),
+                }),
+            )
+        })?;
+
+        if final_node.id().0 != proposal.node.id().0 {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: "node_patch cannot change node id".into(),
+                    code: Some("NODE_ID_MISMATCH".into()),
+                }),
+            ));
+        }
+
+        if final_node.type_name() != proposal.node.type_name() {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: "node_patch cannot change node_type".into(),
+                    code: Some("NODE_TYPE_MISMATCH".into()),
+                }),
+            ));
+        }
+
+        normalize_component_naming(Some(&proposal.node), &node_patch, &mut final_node);
+    } else {
+        normalize_component_naming(
+            Some(&proposal.node),
+            &serde_json::Value::Object(serde_json::Map::new()),
+            &mut final_node,
+        );
+    }
+
+    normalize_blueprint_node_metadata(&mut final_node);
+    validate_blueprint_node_scope(&final_node).map_err(|message| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: message,
+                code: Some("INVALID_SCOPE".into()),
+            }),
+        )
+    })?;
+
+    state.blueprints.upsert_node(final_node.clone());
     let _ = state.proposals.mark_merged(&proposal_id);
 
     Ok(Json(serde_json::json!({
-        "node_id": proposal.node.id().0,
+        "node_id": final_node.id().0,
         "message": "Proposal accepted and merged into blueprint"
     })))
 }
@@ -2833,6 +3488,7 @@ mod tests {
             sessions: SessionStore::new(),
             blueprints: planner_core::blueprint::BlueprintStore::new(),
             proposals: planner_core::discovery::ProposalStore::new(),
+            projects: crate::project::ProjectStore::new(),
             auth_config: None, // dev mode for tests
             event_store: None,
             cxdb: None, // no durable storage in unit tests
@@ -2872,6 +3528,7 @@ mod tests {
             sessions: SessionStore::new(),
             blueprints: planner_core::blueprint::BlueprintStore::new(),
             proposals: planner_core::discovery::ProposalStore::new(),
+            projects: crate::project::ProjectStore::new(),
             auth_config: Some(AuthConfig {
                 domain: "test.auth0.com".into(),
                 audience: "test".into(),
@@ -2914,6 +3571,78 @@ mod tests {
             .unwrap();
         let models: ModelsResponse = serde_json::from_slice(&body).unwrap();
         assert!(models.models.len() >= 6);
+    }
+
+    #[tokio::test]
+    async fn test_create_and_get_project_by_slug() {
+        let state = test_state();
+        let app = routes(state.clone());
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/projects")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "name": "Task Tracker",
+                    "description": "Planner project container"
+                })
+                .to_string(),
+            ))
+            .unwrap();
+
+        let resp = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::CREATED);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let created: ProjectResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(created.project.name, "Task Tracker");
+        assert_eq!(created.project.owner_user_id, "dev|local");
+
+        let req = Request::builder()
+            .uri(format!("/projects/{}", created.project.slug))
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let fetched: ProjectResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(fetched.project.id, created.project.id);
+    }
+
+    #[tokio::test]
+    async fn test_create_project_session_assigns_project_context() {
+        let state = test_state();
+        let project =
+            state
+                .projects
+                .create("dev|local", "Ops Console", None, None, Vec::new(), None);
+        let app = routes(state);
+
+        let req = Request::builder()
+            .method("POST")
+            .uri(format!("/projects/{}/sessions", project.slug))
+            .header("content-type", "application/json")
+            .body(Body::from("{}"))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::CREATED);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let created: CreateSessionResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(created.session.project_id, Some(project.id));
+        assert_eq!(
+            created.session.project_slug.as_deref(),
+            Some(project.slug.as_str())
+        );
+        assert_eq!(
+            created.session.project_name.as_deref(),
+            Some(project.name.as_str())
+        );
     }
 
     #[tokio::test]
@@ -3268,6 +3997,7 @@ mod tests {
             sessions: SessionStore::new(),
             blueprints: planner_core::blueprint::BlueprintStore::new(),
             proposals: planner_core::discovery::ProposalStore::new(),
+            projects: crate::project::ProjectStore::new(),
             auth_config: Some(AuthConfig {
                 domain: "test.auth0.com".into(),
                 audience: "test".into(),
@@ -3575,6 +4305,30 @@ mod tests {
         })
     }
 
+    fn sample_component_json() -> serde_json::Value {
+        serde_json::json!({
+            "node_type": "component",
+            "id": "comp-auth-a1b2c3d4",
+            "name": "Authentication Service",
+            "component_type": "service",
+            "naming": {
+                "origin_key": "spec:proj:root:auth",
+                "source": "generated",
+                "strategy": "spec_group",
+                "generated_name": "Authentication Service",
+                "naming_version": 1,
+                "last_generated_at": "2026-03-01T00:00:00Z"
+            },
+            "description": "Handles sign-in and token issuance.",
+            "provides": [],
+            "consumes": [],
+            "status": "planned",
+            "tags": ["spec", "root"],
+            "created_at": "2026-03-01T00:00:00Z",
+            "updated_at": "2026-03-01T00:00:00Z"
+        })
+    }
+
     fn temp_scan_root(prefix: &str) -> PathBuf {
         let path =
             std::env::temp_dir().join(format!("planner-api-{}-{}", prefix, uuid::Uuid::new_v4()));
@@ -3843,6 +4597,66 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_create_blueprint_node_legacy_archive_tag_migrates_to_lifecycle() {
+        let state = test_state();
+        let app = routes(state);
+
+        let mut legacy = sample_decision_json();
+        legacy["id"] = serde_json::json!("dec-legacy-archive-a1b2c3d4");
+        legacy["tags"] = serde_json::json!(["storage", "archived"]);
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/blueprint/nodes")
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_string(&legacy).unwrap()))
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::CREATED);
+
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let node: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(node["scope"]["lifecycle"], "archived");
+        assert_eq!(node["tags"], serde_json::json!(["storage"]));
+    }
+
+    #[tokio::test]
+    async fn test_create_blueprint_node_invalid_override_scope_rejected() {
+        let state = test_state();
+        let app = routes(state);
+
+        let mut invalid = sample_decision_json();
+        invalid["id"] = serde_json::json!("dec-invalid-override-a1b2c3d4");
+        invalid["scope"] = serde_json::json!({
+            "scope_class": "global",
+            "secondary": {},
+            "is_shared": false,
+            "override_scope": {
+                "shared_source_id": "shared-guidance"
+            }
+        });
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/blueprint/nodes")
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_string(&invalid).unwrap()))
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let err: ErrorResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(err.code.as_deref(), Some("INVALID_SCOPE"));
+        assert!(err.error.contains("override_scope"));
+    }
+
+    #[tokio::test]
     async fn test_update_blueprint_node() {
         let state = test_state();
 
@@ -3889,6 +4703,44 @@ mod tests {
 
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_update_component_name_marks_manual_naming_source() {
+        let state = test_state();
+        let node: planner_schemas::artifacts::blueprint::BlueprintNode =
+            serde_json::from_value(sample_component_json()).unwrap();
+        state.blueprints.upsert_node(node);
+
+        let app = routes(state.clone());
+        let req = Request::builder()
+            .method("PATCH")
+            .uri("/blueprint/nodes/comp-auth-a1b2c3d4")
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"name":"Identity Service"}"#))
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let updated = state
+            .blueprints
+            .get_node("comp-auth-a1b2c3d4")
+            .expect("component should exist");
+
+        match updated {
+            planner_schemas::artifacts::blueprint::BlueprintNode::Component(component) => {
+                assert_eq!(component.name, "Identity Service");
+                let naming = component.naming.expect("naming metadata should exist");
+                assert_eq!(
+                    naming.source,
+                    planner_schemas::artifacts::blueprint::ComponentNameSource::Manual
+                );
+                assert_eq!(naming.origin_key, "spec:proj:root:auth");
+                assert_eq!(naming.generated_name, "Authentication Service");
+            }
+            other => panic!("expected component node, got {:?}", other.type_name()),
+        }
     }
 
     #[tokio::test]
@@ -4552,6 +5404,65 @@ mod tests {
         assert!(state.blueprints.get_node("tech-rust-b2c3d4e5").is_some());
         assert_eq!(
             state.proposals.get("proposal-1").unwrap().status,
+            planner_core::discovery::ProposalStatus::Merged
+        );
+    }
+
+    #[tokio::test]
+    async fn test_accept_component_proposal_with_manual_name_override() {
+        let state = test_state();
+        let proposal = planner_core::discovery::ProposedNode {
+            id: "proposal-component-1".into(),
+            node: serde_json::from_value(sample_component_json()).unwrap(),
+            source: planner_core::discovery::DiscoverySource::DirectoryScan,
+            reason: "Component inferred from project tree".into(),
+            status: planner_core::discovery::ProposalStatus::Pending,
+            proposed_at: "2026-03-06T00:00:00Z".into(),
+            reviewed_at: None,
+            confidence: 0.85,
+            source_artifact: Some("src/auth".into()),
+            review_note: None,
+        };
+        state.proposals.insert_many(vec![proposal]).unwrap();
+
+        let app = routes(state.clone());
+        let req = Request::builder()
+            .method("POST")
+            .uri("/blueprint/discovery/proposals/proposal-component-1/accept")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                r#"{"node_patch":{"name":"Identity Service"}}"#,
+            ))
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let node = state
+            .blueprints
+            .get_node("comp-auth-a1b2c3d4")
+            .expect("accepted component should exist");
+
+        match node {
+            planner_schemas::artifacts::blueprint::BlueprintNode::Component(component) => {
+                assert_eq!(component.name, "Identity Service");
+                let naming = component.naming.expect("naming metadata should exist");
+                assert_eq!(
+                    naming.source,
+                    planner_schemas::artifacts::blueprint::ComponentNameSource::Manual
+                );
+                assert_eq!(naming.origin_key, "spec:proj:root:auth");
+                assert_eq!(naming.generated_name, "Authentication Service");
+            }
+            other => panic!("expected component node, got {:?}", other.type_name()),
+        }
+
+        assert_eq!(
+            state
+                .proposals
+                .get("proposal-component-1")
+                .expect("proposal should exist")
+                .status,
             planner_core::discovery::ProposalStatus::Merged
         );
     }

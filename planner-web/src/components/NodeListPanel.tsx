@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { NodeSummary, EdgePayload, NodeType } from '../types/blueprint.ts';
+import { labelNodeType, labelScopeClass, labelScopeVisibility } from '../lib/taxonomy.ts';
 
 // ─── Props ──────────────────────────────────────────────────────────────────
 
@@ -24,28 +25,6 @@ interface ColumnDef {
 }
 
 // ─── Defaults ───────────────────────────────────────────────────────────────
-
-const TYPE_LABELS: Record<string, string> = {
-  decision: 'Decision',
-  technology: 'Technology',
-  component: 'Component',
-  constraint: 'Constraint',
-  pattern: 'Pattern',
-  quality_requirement: 'Quality Req.',
-};
-
-const SCOPE_CLASS_LABELS: Record<string, string> = {
-  global: 'Global',
-  project: 'Project',
-  project_contextual: 'Project Contextual',
-  unscoped: 'Unscoped',
-};
-
-const SCOPE_VISIBILITY_LABELS: Record<string, string> = {
-  shared: 'Shared',
-  project_local: 'Project Local',
-  unscoped: 'Unscoped',
-};
 
 const STATUS_COLORS: Record<string, string> = {
   // Decision statuses
@@ -164,7 +143,7 @@ function defaultColumns(edges: EdgePayload[]): ColumnDef[] {
       label: 'Type',
       render: (n) => (
         <span className={`badge badge-${n.node_type}`} style={{ fontSize: '0.5625rem' }}>
-          {TYPE_LABELS[n.node_type] ?? n.node_type}
+          {labelNodeType(n.node_type, 'short')}
         </span>
       ),
       sortValue: (n) => n.node_type,
@@ -202,7 +181,7 @@ function defaultColumns(edges: EdgePayload[]): ColumnDef[] {
                 whiteSpace: 'nowrap',
               }}
             >
-              {SCOPE_CLASS_LABELS[scopeClass] ?? scopeClass}
+              {labelScopeClass(scopeClass)}
             </span>
             <span
               style={{
@@ -224,7 +203,7 @@ function defaultColumns(edges: EdgePayload[]): ColumnDef[] {
                 whiteSpace: 'nowrap',
               }}
             >
-              {SCOPE_VISIBILITY_LABELS[scopeVisibility] ?? scopeVisibility}
+              {labelScopeVisibility(scopeVisibility, 'short')}
             </span>
             {n.project_name && (
               <span style={{ fontSize: '0.5625rem', color: 'var(--color-text-faint)' }}>
@@ -412,7 +391,7 @@ export default function NodeListPanel({
         </div>
         <div className="node-list-stats">
           <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-faint)' }}>
-            {filtered.length} of {totalCount} {nodeType ? TYPE_LABELS[nodeType] : 'nodes'}
+            {filtered.length} of {totalCount} {nodeType ? labelNodeType(nodeType) : 'nodes'}
           </span>
           <span style={{ fontSize: '0.5625rem', color: 'var(--color-text-faint)', marginLeft: 'var(--space-3)' }}>
             Completeness: {avgCompleteness}%

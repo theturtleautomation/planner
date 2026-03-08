@@ -2635,13 +2635,66 @@ fn e2e_phase7_codex_prompt_assembly() {
 /// Phase 3: Multi-chunk intake triggers the multi-chunk heuristic.
 /// `build_multi_chunk_intake` produces a FullApp with 3 sacred anchors
 /// and 4 satisfaction seeds. The chunk_planner correctly identifies it
-/// as warranting multi-chunk decomposition. The actual LLM-driven
-/// decomposition requires a live LLM CLI, so we test the heuristic
-/// and the single-chunk fallback path separately.
+/// as warranting multi-chunk decomposition. Use a mock router here so
+/// the test stays deterministic and does not depend on live CLI auth.
 #[tokio::test]
 async fn e2e_phase3_chunk_planner_fullapp_multi_chunk() {
+    use async_trait::async_trait;
     use planner_core::llm::providers::LlmRouter;
+    use planner_core::llm::{CompletionRequest, CompletionResponse, LlmClient, LlmError};
     use planner_core::pipeline::steps::chunk_planner;
+
+    struct MockChunkPlannerClient;
+
+    #[async_trait]
+    impl LlmClient for MockChunkPlannerClient {
+        async fn complete(
+            &self,
+            request: CompletionRequest,
+        ) -> Result<CompletionResponse, LlmError> {
+            assert_eq!(request.model, "claude-opus-4-6");
+            let content = r#"{
+              "chunks": [
+                {
+                  "chunk_id": "root",
+                  "relevant_anchor_ids": ["SA-1", "SA-2", "SA-3"],
+                  "domain_context": "Cross-cutting architecture, shared contracts, and project-wide invariants.",
+                  "estimated_fr_count": 3
+                },
+                {
+                  "chunk_id": "auth",
+                  "relevant_anchor_ids": ["SA-1"],
+                  "domain_context": "Authentication, session management, and password handling.",
+                  "estimated_fr_count": 5
+                },
+                {
+                  "chunk_id": "catalog",
+                  "relevant_anchor_ids": ["SA-3"],
+                  "domain_context": "Product catalog and browsing flows.",
+                  "estimated_fr_count": 4
+                },
+                {
+                  "chunk_id": "payments",
+                  "relevant_anchor_ids": ["SA-2"],
+                  "domain_context": "Cart checkout, payment processing, and idempotency rules.",
+                  "estimated_fr_count": 6
+                }
+              ]
+            }"#;
+
+            Ok(CompletionResponse {
+                content: content.into(),
+                model: request.model,
+                input_tokens: 0,
+                output_tokens: 0,
+                estimated_cost_usd: 0.0,
+            })
+        }
+
+        fn provider_name(&self) -> &str {
+            "mock"
+        }
+    }
 
     let project_id = Uuid::new_v4();
     let intake = build_multi_chunk_intake(project_id);
@@ -2657,28 +2710,17 @@ async fn e2e_phase3_chunk_planner_fullapp_multi_chunk() {
     assert_eq!(intake.satisfaction_criteria_seeds.len(), 4);
     assert_eq!(intake.project_name, "E-Commerce API");
 
-    // When no LLM CLI is available, plan_chunks will attempt multi-chunk
-    // but the LLM call will fail. The important thing: it does NOT take
-    // the single-chunk short-circuit path (that would mean the heuristic
-    // failed to detect the complex project). We verify by checking that
-    // the error is an LLM error, NOT a success with single chunk.
-    let router = LlmRouter::from_env();
-    let result = chunk_planner::plan_chunks(&router, &intake, project_id).await;
+    let router = LlmRouter::with_mock(Box::new(MockChunkPlannerClient));
+    let plan = chunk_planner::plan_chunks(&router, &intake, project_id)
+        .await
+        .expect("multi-chunk intake should use mocked chunk planner response");
 
-    match result {
-        Ok(plan) if plan.is_multi_chunk => {
-            // If an LLM is available, we get a proper multi-chunk plan
-            assert!(plan.chunks.len() >= 2);
-            assert_eq!(plan.chunks[0].chunk_id, "root");
-        }
-        Ok(plan) if !plan.is_multi_chunk => {
-            panic!("FullApp with 3 domains should NOT produce a single-chunk plan — heuristic bug");
-        }
-        Err(_) => {
-            // Expected when no LLM CLI is installed: heuristic correctly
-            // identified multi-chunk, attempted LLM call, got LlmError.
-            // This is correct behavior.
-        }
-        _ => unreachable!(),
-    }
+    assert!(
+        plan.is_multi_chunk,
+        "FullApp with 3 domains should NOT produce a single-chunk plan"
+    );
+    assert_eq!(plan.chunks[0].chunk_id, "root");
+    assert_eq!(plan.chunks.len(), 4);
+    assert_eq!(plan.chunks[1].chunk_id, "auth");
+    assert_eq!(plan.chunks[3].chunk_id, "payments");
 }

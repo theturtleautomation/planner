@@ -178,7 +178,7 @@ describe('Dashboard workflow visibility', () => {
     expect(screen.getByText(/needs restart/i)).toBeInTheDocument();
     expect(screen.getByText(/2 warnings/i)).toBeInTheDocument();
     expect(
-      screen.getByText(/the live interview is detached; restart from the saved description to continue\./i),
+      screen.getByText(/the live interview is detached; restart from the saved brief to continue\./i),
     ).toBeInTheDocument();
   });
 

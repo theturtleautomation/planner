@@ -21,12 +21,21 @@ export interface SessionHeaderAction {
   tone?: SessionHeaderActionTone;
 }
 
+export interface SessionEventSummary {
+  total: number;
+  warnings: number;
+  errors: number;
+  unread: number;
+}
+
 export interface SessionStatusHeaderProps {
   currentStep: string | null;
   events: PlannerEvent[];
   isError: boolean;
   errorMessage?: string | null;
   actions?: SessionHeaderAction[];
+  eventSummary?: SessionEventSummary;
+  onOpenEvents?: () => void;
 }
 
 /** Number of LLM call completions — events from llm_router with step starting with "llm.call.complete" */
@@ -69,6 +78,8 @@ export default function SessionStatusHeader({
   isError,
   errorMessage,
   actions = [],
+  eventSummary,
+  onOpenEvents,
 }: SessionStatusHeaderProps) {
   // Track when the current step last changed so we can show elapsed time
   const stepStartRef = useRef<number>(Date.now());
@@ -94,6 +105,12 @@ export default function SessionStatusHeader({
 
   const dotColor = statusDotColor(events, isError);
   const llmCalls = countLlmCalls(events);
+  const derivedSummary = eventSummary ?? {
+    total: events.length,
+    warnings: events.filter((event) => event.level === 'warn').length,
+    errors: events.filter((event) => event.level === 'error').length,
+    unread: 0,
+  };
 
   return (
     <div
@@ -203,7 +220,7 @@ export default function SessionStatusHeader({
         )}
       </div>
 
-      {actions.length > 0 && (
+      {(actions.length > 0 || onOpenEvents) && (
         <div
           style={{
             display: 'flex',
@@ -213,6 +230,52 @@ export default function SessionStatusHeader({
             justifyContent: 'flex-end',
           }}
         >
+          {onOpenEvents && (
+            <button
+              type="button"
+              onClick={onOpenEvents}
+              style={{
+                background: 'transparent',
+                border: '1px solid var(--color-border)',
+                color: 'var(--color-text-muted)',
+                padding: '4px 10px',
+                borderRadius: '999px',
+                fontSize: '10px',
+                fontWeight: 700,
+                letterSpacing: '0.05em',
+                textTransform: 'uppercase',
+                fontFamily: 'inherit',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                whiteSpace: 'nowrap',
+              }}
+              title="Open Events tab"
+            >
+              <span>
+                {`Events ${derivedSummary.total}`}
+                {derivedSummary.errors > 0 ? ` · ${derivedSummary.errors} err` : ''}
+                {derivedSummary.warnings > 0 ? ` · ${derivedSummary.warnings} warn` : ''}
+              </span>
+              {derivedSummary.unread > 0 && (
+                <span
+                  style={{
+                    display: 'inline-flex',
+                    minWidth: '16px',
+                    justifyContent: 'center',
+                    padding: '0 4px',
+                    borderRadius: '999px',
+                    background: 'var(--color-primary-highlight)',
+                    color: 'var(--color-primary)',
+                    lineHeight: 1.4,
+                  }}
+                >
+                  {derivedSummary.unread}
+                </span>
+              )}
+            </button>
+          )}
           {actions.map((action) => {
             const tone = action.tone ?? 'default';
             const borderColor = tone === 'primary'

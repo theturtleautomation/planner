@@ -1,9 +1,12 @@
 import { lazy, Suspense } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useParams } from 'react-router-dom';
 import { AUTH0_ENABLED } from './config.ts';
 import Dashboard from './pages/Dashboard.tsx';
 import SessionPage from './pages/SessionPage.tsx';
 import AdminPage from './pages/AdminPage.tsx';
+import HomeHubPage from './pages/HomeHubPage.tsx';
+import ProjectsPage from './pages/ProjectsPage.tsx';
+import ProjectSessionsPage from './pages/ProjectSessionsPage.tsx';
 
 // Blueprint page is heavy (D3) — lazy-load it
 const BlueprintPage = lazy(() => import('./pages/BlueprintPage.tsx'));
@@ -54,7 +57,31 @@ function RootPage() {
       </Suspense>
     );
   }
-  return <Dashboard />;
+  return <HomeHubPage />;
+}
+
+function ProjectRootRedirect() {
+  const { projectSlug } = useParams<{ projectSlug: string }>();
+  if (!projectSlug) return <Navigate to="/projects" replace />;
+  return <Navigate to={`/projects/${encodeURIComponent(projectSlug)}/sessions`} replace />;
+}
+
+function ProjectKnowledgeRedirect() {
+  const { projectSlug } = useParams<{ projectSlug: string }>();
+  if (!projectSlug) return <Navigate to="/projects" replace />;
+  return <Navigate to={`/knowledge/projects/${encodeURIComponent(projectSlug)}`} replace />;
+}
+
+function ProjectBlueprintRedirect() {
+  const { projectSlug } = useParams<{ projectSlug: string }>();
+  if (!projectSlug) return <Navigate to="/projects" replace />;
+  return <Navigate to={`/blueprint?project_id=${encodeURIComponent(projectSlug)}`} replace />;
+}
+
+function ProjectEventsRedirect() {
+  const { projectSlug } = useParams<{ projectSlug: string }>();
+  if (!projectSlug) return <Navigate to="/projects" replace />;
+  return <Navigate to="/events" replace />;
 }
 
 // ─── App ──────────────────────────────────────────────────────────────────────
@@ -63,6 +90,62 @@ export default function App() {
     <Routes>
       <Route path="/" element={<RootPage />} />
       <Route path="/callback" element={<CallbackPage />} />
+      <Route
+        path="/sessions"
+        element={
+          <ProtectedRoute>
+            <Dashboard />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/projects"
+        element={
+          <ProtectedRoute>
+            <ProjectsPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/projects/:projectSlug"
+        element={
+          <ProtectedRoute>
+            <ProjectRootRedirect />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/projects/:projectSlug/sessions"
+        element={
+          <ProtectedRoute>
+            <ProjectSessionsPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/projects/:projectSlug/knowledge"
+        element={
+          <ProtectedRoute>
+            <ProjectKnowledgeRedirect />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/projects/:projectSlug/blueprint"
+        element={
+          <ProtectedRoute>
+            <ProjectBlueprintRedirect />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/projects/:projectSlug/events"
+        element={
+          <ProtectedRoute>
+            <ProjectEventsRedirect />
+          </ProtectedRoute>
+        }
+      />
       <Route
         path="/session/new"
         element={

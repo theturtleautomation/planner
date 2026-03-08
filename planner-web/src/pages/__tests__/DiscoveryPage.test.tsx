@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
@@ -9,6 +9,7 @@ const mockListProposedNodes = vi.fn();
 const mockRunDiscoveryScan = vi.fn();
 const mockAcceptProposal = vi.fn();
 const mockRejectProposal = vi.fn();
+const mockGetAccessToken = vi.fn().mockResolvedValue('mock-token');
 
 vi.mock('../../api/client.ts', () => ({
   createApiClient: vi.fn(() => ({
@@ -20,7 +21,7 @@ vi.mock('../../api/client.ts', () => ({
 }));
 
 vi.mock('../../auth/useAuthenticatedFetch.ts', () => ({
-  useGetAccessToken: vi.fn(() => vi.fn().mockResolvedValue('mock-token')),
+  useGetAccessToken: vi.fn(() => mockGetAccessToken),
 }));
 
 vi.mock('../../components/Layout.tsx', () => ({
@@ -80,6 +81,7 @@ function LocationSnapshot() {
 describe('DiscoveryPage Phase 4 contextual links', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockGetAccessToken.mockResolvedValue('mock-token');
     mockRunDiscoveryScan.mockResolvedValue({ results: [], total_proposed: 0 });
     mockAcceptProposal.mockResolvedValue({});
     mockRejectProposal.mockResolvedValue({});
@@ -147,5 +149,39 @@ describe('DiscoveryPage Phase 4 contextual links', () => {
     const action = await screen.findByRole('button', { name: /view related knowledge/i });
     expect(action).toBeDisabled();
     expect(action).toHaveAttribute('title', 'Scope unavailable for this proposal');
+  });
+
+  it('allows inline component rename before accept and sends manual node_patch', async () => {
+    const user = userEvent.setup();
+    mockAcceptProposal.mockResolvedValueOnce({ node_id: 'comp-task-widget', message: 'ok' });
+
+    render(
+      <MemoryRouter initialEntries={['/discovery']}>
+        <Routes>
+          <Route path="/discovery" element={<DiscoveryPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(mockListProposedNodes).toHaveBeenCalledTimes(1);
+    });
+
+    await user.click(await screen.findByText('Task Tracker Widget'));
+    const input = await screen.findByLabelText(/suggested component name/i);
+    expect(input).toHaveValue('Task Tracker Widget');
+    fireEvent.change(input, { target: { value: 'Identity Widget' } });
+    expect(input).toHaveValue('Identity Widget');
+
+    await user.click(await screen.findByRole('button', { name: /✓\s*accept/i }));
+
+    expect(mockAcceptProposal).toHaveBeenCalledWith('proposal-task-widget', {
+      node_patch: {
+        name: 'Identity Widget',
+        naming: {
+          source: 'manual',
+        },
+      },
+    });
   });
 });

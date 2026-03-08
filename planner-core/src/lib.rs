@@ -7,6 +7,7 @@
 //! wired into main.rs. They're used by tests and will be used in Phase 1+.
 
 pub mod blueprint;
+pub mod component_naming;
 pub mod cxdb;
 pub mod discovery;
 pub mod dtu;

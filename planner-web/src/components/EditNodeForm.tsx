@@ -21,6 +21,7 @@ import type {
   NodeScope,
   ScopeClass,
 } from '../types/blueprint.ts';
+import { labelComponentType, labelScopeClass, labelScopeField, labelSecondaryScopeField } from '../lib/taxonomy.ts';
 
 const DEFAULT_SCOPE: NodeScope = {
   scope_class: 'unscoped',
@@ -125,16 +126,16 @@ function ScopeEditor({
         Scope
       </div>
 
-      <label className="field-label">Scope Class</label>
+      <label className="field-label">{labelScopeField('scope_class')}</label>
       <select
         className="field-input"
         value={value.scope_class}
         onChange={e => setScopeClass(e.target.value as ScopeClass)}
       >
-        <option value="unscoped">Unscoped</option>
-        <option value="global">Global</option>
-        <option value="project">Project</option>
-        <option value="project_contextual">Project Contextual</option>
+        <option value="unscoped">{labelScopeClass('unscoped')}</option>
+        <option value="global">{labelScopeClass('global')}</option>
+        <option value="project">{labelScopeClass('project')}</option>
+        <option value="project_contextual">{labelScopeClass('project_contextual')}</option>
       </select>
 
       <label className="field-label" style={{ marginTop: 'var(--space-3)' }}>Lifecycle</label>
@@ -153,7 +154,7 @@ function ScopeEditor({
       {(value.scope_class === 'project' || value.scope_class === 'project_contextual') && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)', marginTop: 'var(--space-3)' }}>
           <div>
-            <label className="field-label">Project ID</label>
+            <label className="field-label">{labelScopeField('project_id')}</label>
             <input
               className="field-input"
               value={value.project?.project_id ?? ''}
@@ -167,7 +168,7 @@ function ScopeEditor({
             />
           </div>
           <div>
-            <label className="field-label">Project Name</label>
+            <label className="field-label">{labelScopeField('project_name')}</label>
             <input
               className="field-input"
               value={value.project?.project_name ?? ''}
@@ -186,7 +187,7 @@ function ScopeEditor({
       {value.scope_class === 'project_contextual' && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)', marginTop: 'var(--space-3)' }}>
           <div>
-            <label className="field-label">Feature</label>
+            <label className="field-label">{labelSecondaryScopeField('feature')}</label>
             <input
               className="field-input"
               value={value.secondary.feature ?? ''}
@@ -197,7 +198,7 @@ function ScopeEditor({
             />
           </div>
           <div>
-            <label className="field-label">Widget</label>
+            <label className="field-label">{labelSecondaryScopeField('widget')}</label>
             <input
               className="field-input"
               value={value.secondary.widget ?? ''}
@@ -208,7 +209,7 @@ function ScopeEditor({
             />
           </div>
           <div>
-            <label className="field-label">Artifact</label>
+            <label className="field-label">{labelSecondaryScopeField('artifact')}</label>
             <input
               className="field-input"
               value={value.secondary.artifact ?? ''}
@@ -219,7 +220,7 @@ function ScopeEditor({
             />
           </div>
           <div>
-            <label className="field-label">Component</label>
+            <label className="field-label">{labelSecondaryScopeField('component')}</label>
             <input
               className="field-input"
               value={value.secondary.component ?? ''}
@@ -247,12 +248,12 @@ function ScopeEditor({
             })
           }
         />
-        Shared knowledge
+        {labelScopeField('is_shared')}
       </label>
 
       {value.is_shared && (
         <>
-          <label className="field-label" style={{ marginTop: 'var(--space-3)' }}>Linked Project IDs</label>
+          <label className="field-label" style={{ marginTop: 'var(--space-3)' }}>{labelScopeField('linked_project_ids')}</label>
           <input
             className="field-input"
             value={linkedProjectIds}
@@ -284,7 +285,7 @@ function ScopeEditor({
                 })
               }
             />
-            Inherit to linked project views
+            {labelScopeField('inherit_to_linked_projects')}
           </label>
         </>
       )}
@@ -292,7 +293,7 @@ function ScopeEditor({
       {!value.is_shared && (
         <>
           <label className="field-label" style={{ marginTop: 'var(--space-3)' }}>
-            Overrides Shared Source ID
+            {labelScopeField('shared_source_id')}
           </label>
           <input
             className="field-input"
@@ -530,15 +531,80 @@ function EditComponent({ node, onChange }: { node: ComponentNode; onChange: (n: 
   const setField = <K extends keyof ComponentNode>(key: K, value: ComponentNode[K]) =>
     onChange({ ...node, [key]: value, updated_at: nowIso() });
 
+  const handleNameChange = (nextName: string) => {
+    const previousName = node.name;
+    const nameChanged = nextName.trim() !== '' && nextName !== previousName;
+    const baselineNaming = node.naming ?? {
+      origin_key: `manual:${node.id}`,
+      source: 'manual' as const,
+      strategy: 'manual_create' as const,
+      generated_name: previousName,
+      naming_version: 1,
+      last_generated_at: nowIso(),
+    };
+
+    const nextNaming = nameChanged
+      ? {
+          ...baselineNaming,
+          source: 'manual' as const,
+          generated_name: baselineNaming.generated_name || previousName,
+          naming_version: baselineNaming.naming_version || 1,
+          last_generated_at: nowIso(),
+        }
+      : baselineNaming;
+
+    onChange({
+      ...node,
+      name: nextName,
+      naming: nextNaming,
+      updated_at: nowIso(),
+    });
+  };
+
+  const canUseSuggestedName = Boolean(
+    node.naming?.generated_name
+    && node.naming.generated_name.trim()
+    && node.naming.generated_name !== node.name,
+  );
+
   return (
     <>
       <label className="field-label">Name</label>
-      <input className="field-input" value={node.name} onChange={e => setField('name', e.target.value)} />
+      <input className="field-input" value={node.name} onChange={e => handleNameChange(e.target.value)} />
+
+      <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', marginTop: '2px', marginBottom: 'var(--space-2)' }}>
+        Name source: <strong>{node.naming?.source === 'manual' ? 'Manual' : 'Generated'}</strong>. Manual names are preserved across regeneration.
+      </div>
+      {canUseSuggestedName && (
+        <div style={{ marginBottom: 'var(--space-3)' }}>
+          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-faint)', marginBottom: 'var(--space-1)' }}>
+            Latest generated suggestion: <strong>{node.naming?.generated_name}</strong>
+          </div>
+          <button
+            className="btn btn-outline"
+            style={{ fontSize: '0.625rem', padding: '2px 8px' }}
+            onClick={() =>
+              onChange({
+                ...node,
+                name: node.naming!.generated_name,
+                naming: {
+                  ...node.naming!,
+                  source: 'generated',
+                  last_generated_at: nowIso(),
+                },
+                updated_at: nowIso(),
+              })
+            }
+          >
+            Use suggested name
+          </button>
+        </div>
+      )}
 
       <label className="field-label">Component Type</label>
       <select className="field-input" value={node.component_type} onChange={e => setField('component_type', e.target.value as ComponentType)}>
         {(['module', 'service', 'library', 'store', 'interface', 'pipeline'] as const).map(t => (
-          <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>
+          <option key={t} value={t}>{labelComponentType(t)}</option>
         ))}
       </select>
 

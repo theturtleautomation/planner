@@ -405,6 +405,22 @@ impl DurableCxdbEngine {
             .collect()
     }
 
+    /// List all turn metadata for a single run ID.
+    pub fn list_turn_metadata_for_run(&self, run_id: Uuid) -> Vec<TurnMetadataView> {
+        let run_key = run_id.to_string();
+        let cache = self.turn_cache.read().unwrap();
+        cache
+            .values()
+            .filter(|record| record.run_id == run_key)
+            .map(|record| TurnMetadataView {
+                turn_id: record.turn_id.clone(),
+                type_id: record.type_id.clone(),
+                timestamp: record.created_at.clone(),
+                produced_by: record.produced_by.clone(),
+            })
+            .collect()
+    }
+
     fn count_files_recursive(dir: &Path) -> usize {
         if !dir.is_dir() {
             return 0;

@@ -535,6 +535,26 @@ impl BlueprintStore {
         self.blueprint.read().nodes.get(node_id).cloned()
     }
 
+    /// Find a component node by stable origin key.
+    pub fn find_component_by_origin_key(&self, origin_key: &str) -> Option<Component> {
+        let trimmed = origin_key.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+
+        self.blueprint.read().nodes.values().find_map(|node| match node {
+            BlueprintNode::Component(component)
+                if component
+                    .naming
+                    .as_ref()
+                    .is_some_and(|naming| naming.origin_key.eq_ignore_ascii_case(trimmed)) =>
+            {
+                Some(component.clone())
+            }
+            _ => None,
+        })
+    }
+
     /// List all node summaries.
     pub fn list_summaries(&self) -> Vec<NodeSummary> {
         self.blueprint.read().list_summaries()
@@ -1301,6 +1321,7 @@ mod tests {
             id: NodeId::from_raw("comp-cxdb"),
             name: "CXDB".into(),
             component_type: ComponentType::Store,
+            naming: None,
             description: "Conversation Experience Database".into(),
             provides: vec!["TurnStore".into()],
             consumes: vec![],
@@ -1316,6 +1337,7 @@ mod tests {
             id: NodeId::from_raw("comp-event-store"),
             name: "EventStore".into(),
             component_type: ComponentType::Store,
+            naming: None,
             description: "Event persistence".into(),
             provides: vec![],
             consumes: vec![],
@@ -1560,6 +1582,7 @@ mod tests {
             id: NodeId::from_raw("a"),
             name: "A".into(),
             component_type: ComponentType::Module,
+            naming: None,
             description: "".into(),
             provides: vec![],
             consumes: vec![],
@@ -1574,6 +1597,7 @@ mod tests {
             id: NodeId::from_raw("b"),
             name: "B".into(),
             component_type: ComponentType::Module,
+            naming: None,
             description: "".into(),
             provides: vec![],
             consumes: vec![],
@@ -1774,6 +1798,7 @@ mod tests {
             id: NodeId::from_raw("a"),
             name: "A".into(),
             component_type: ComponentType::Module,
+            naming: None,
             description: "".into(),
             provides: vec![],
             consumes: vec![],
@@ -1788,6 +1813,7 @@ mod tests {
             id: NodeId::from_raw("b"),
             name: "B".into(),
             component_type: ComponentType::Module,
+            naming: None,
             description: "".into(),
             provides: vec![],
             consumes: vec![],
@@ -1844,6 +1870,39 @@ mod tests {
         assert!(updated.is_some());
         let node = store.get_node("dec-test").unwrap();
         assert_eq!(node.name(), "Updated Title");
+    }
+
+    #[test]
+    fn store_find_component_by_origin_key() {
+        let store = BlueprintStore::new();
+        store.upsert_node(BlueprintNode::Component(Component {
+            id: NodeId::from_raw("comp-auth"),
+            name: "Authentication Service".into(),
+            component_type: ComponentType::Service,
+            naming: Some(ComponentNaming {
+                origin_key: "spec:proj:root:auth".into(),
+                source: ComponentNameSource::Generated,
+                strategy: ComponentNamingStrategy::SpecGroup,
+                generated_name: "Authentication Service".into(),
+                naming_version: 1,
+                last_generated_at: "2026-03-07T00:00:00Z".into(),
+            }),
+            description: "Handles authentication".into(),
+            provides: vec![],
+            consumes: vec![],
+            status: ComponentStatus::Planned,
+            tags: vec!["spec".into()],
+            documentation: None,
+            scope: NodeScope::default(),
+            created_at: "2026-03-07T00:00:00Z".into(),
+            updated_at: "2026-03-07T00:00:00Z".into(),
+        }));
+
+        let found = store
+            .find_component_by_origin_key("spec:proj:root:auth")
+            .expect("component should be found");
+        assert_eq!(found.id.as_str(), "comp-auth");
+        assert_eq!(found.name, "Authentication Service");
     }
 
     #[test]

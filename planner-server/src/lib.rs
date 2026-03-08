@@ -5,6 +5,7 @@
 
 pub mod api;
 pub mod auth;
+pub mod project;
 pub mod rate_limit;
 pub mod rbac;
 pub mod runtime;
@@ -13,6 +14,7 @@ pub mod ws;
 pub mod ws_socratic;
 
 use auth::AuthConfig;
+use project::ProjectStore;
 use session::SessionStore;
 
 /// Shared application state.
@@ -23,6 +25,8 @@ pub struct AppState {
     pub blueprints: planner_core::blueprint::BlueprintStore,
     /// Discovery proposal store.
     pub proposals: planner_core::discovery::ProposalStore,
+    /// Canonical persisted project store.
+    pub projects: ProjectStore,
     /// Auth0 JWT config. None = dev mode (auth bypassed).
     pub auth_config: Option<AuthConfig>,
     /// Filesystem-backed event store. None if persistence is unavailable.

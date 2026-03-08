@@ -11,6 +11,7 @@ import type {
   QualityRequirementNode,
   EdgePayload,
 } from '../types/blueprint.ts';
+import { labelNodeType } from '../lib/taxonomy.ts';
 
 interface NodeDetailPanelProps {
   nodeId: string | null;
@@ -137,7 +138,7 @@ export default function NodeDetailPanel({ nodeId, edges, api, onClose }: NodeDet
           <div className="drawer-title">{node ? nodeTitle(node) : 'Loading…'}</div>
           {node && (
             <div className="drawer-badges">
-              <span className={`badge badge-${node.node_type}`}>{node.node_type}</span>
+              <span className={`badge badge-${node.node_type}`}>{labelNodeType(node.node_type, 'short')}</span>
               <span className="status-badge">{edgeCount} edges</span>
             </div>
           )}

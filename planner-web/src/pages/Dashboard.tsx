@@ -96,7 +96,7 @@ function getSessionTitle(
 }
 
 function getDescriptionSnippet(description?: string | null): string {
-  if (!description?.trim()) return 'No project description saved yet.';
+  if (!description?.trim()) return 'No planning brief saved yet.';
   return description.length > 120 ? `${description.slice(0, 120)}…` : description;
 }
 
@@ -229,12 +229,12 @@ function getWorkflowSummary(session: SessionSummary): string {
 
   switch (session.intake_phase) {
     case 'waiting':
-      return 'Awaiting the initial project description.';
+      return 'Awaiting the initial planning brief.';
     case 'interviewing':
       if (session.can_resume_checkpoint) return 'Checkpoint is saved and ready to resume.';
       if (session.can_resume_live) return 'Live interview runtime is available for reattach.';
       if (session.interview_live_attached) return 'Interview is currently attached.';
-      if (session.can_restart_from_description) return 'Interview needs a fresh restart from the saved description.';
+      if (session.can_restart_from_description) return 'Interview needs a fresh restart from the saved brief.';
       return 'Interview is detached and waiting for intervention.';
     case 'pipeline_running':
       return 'Pipeline is actively processing this session.';
@@ -242,7 +242,7 @@ function getWorkflowSummary(session: SessionSummary): string {
       return 'Pipeline finished; outputs are ready for review.';
     case 'error':
       return session.can_retry_pipeline
-        ? 'Pipeline failed and can be retried from the saved description.'
+        ? 'Pipeline failed and can be retried from the saved brief.'
         : 'Pipeline failed; inspect the session for details.';
     default:
       return 'Workflow status is available in the session detail view.';
@@ -412,12 +412,13 @@ function SessionCard({
   const checkpointSaved = session.checkpoint_last_saved_at
     ? `Checkpoint ${formatRelativeTime(session.checkpoint_last_saved_at)}`
     : null;
+  const projectLabel = session.project_name?.trim() || session.project_slug?.trim() || null;
   const alertMessage = session.error_message
     ? session.error_message
     : session.resume_status === 'interview_resume_unknown'
       ? 'Resume path is unclear; inspect the session before continuing.'
       : session.resume_status === 'interview_restart_only'
-        ? 'The live interview is detached; restart from the saved description to continue.'
+        ? 'The live interview is detached; restart from the saved brief to continue.'
         : null;
 
   return (
@@ -505,10 +506,11 @@ function SessionCard({
         {workflowSummary}
       </div>
 
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-        <Badge label={stateBadge.label} tone={stateBadge.tone} />
-        <MetadataPill>{`${session.message_count} ${session.message_count === 1 ? 'message' : 'messages'}`}</MetadataPill>
-        <MetadataPill>{`${session.event_count} ${session.event_count === 1 ? 'event' : 'events'}`}</MetadataPill>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+          <Badge label={stateBadge.label} tone={stateBadge.tone} />
+          {projectLabel && <MetadataPill>{`Project: ${projectLabel}`}</MetadataPill>}
+          <MetadataPill>{`${session.message_count} ${session.message_count === 1 ? 'message' : 'messages'}`}</MetadataPill>
+          <MetadataPill>{`${session.event_count} ${session.event_count === 1 ? 'event' : 'events'}`}</MetadataPill>
         {classification && <MetadataPill>{classification}</MetadataPill>}
         {convergencePct && <MetadataPill>{convergencePct}</MetadataPill>}
         {checkpointSaved && <MetadataPill>{checkpointSaved}</MetadataPill>}
@@ -701,24 +703,6 @@ export default function Dashboard() {
               sessions
             </span>
             <a
-              href="/blueprint"
-              style={{
-                color: 'var(--color-primary)',
-                fontSize: '11px',
-                textDecoration: 'none',
-                opacity: 0.75,
-                transition: 'opacity 0.18s',
-                fontFamily: 'monospace',
-                padding: '2px 8px',
-                border: '1px solid rgba(0,212,255,0.25)',
-                borderRadius: '10px',
-              }}
-              onMouseEnter={(event) => { (event.currentTarget as HTMLAnchorElement).style.opacity = '1'; }}
-              onMouseLeave={(event) => { (event.currentTarget as HTMLAnchorElement).style.opacity = '0.75'; }}
-            >
-              blueprint →
-            </a>
-            <a
               href="/admin"
               style={{
                 color: 'var(--color-text-muted)',
@@ -753,7 +737,7 @@ export default function Dashboard() {
           </div>
 
           <button
-            onClick={() => void navigate('/session/new')}
+            onClick={() => void navigate('/projects')}
             style={{
               background: 'var(--color-primary)',
               border: 'none',
@@ -771,7 +755,7 @@ export default function Dashboard() {
             onMouseEnter={(event) => { (event.currentTarget as HTMLButtonElement).style.opacity = '0.85'; }}
             onMouseLeave={(event) => { (event.currentTarget as HTMLButtonElement).style.opacity = '1'; }}
           >
-            + new session
+            start from project
           </button>
         </div>
 
@@ -895,11 +879,11 @@ export default function Dashboard() {
             </span>
             <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>
               {showArchived
-                ? 'toggle archived sessions off or create a new session to continue'
-                : 'create a new session to start planning'}
+                ? 'toggle archived sessions off or open project sessions to continue'
+                : 'sessions are now project-scoped. open projects to start planning'}
             </span>
             <button
-              onClick={() => void navigate('/session/new')}
+              onClick={() => void navigate('/projects')}
               style={{
                 marginTop: '8px',
                 background: 'transparent',
@@ -919,7 +903,7 @@ export default function Dashboard() {
                 (event.currentTarget as HTMLButtonElement).style.background = 'transparent';
               }}
             >
-              start new session →
+              open projects →
             </button>
           </div>
         )}
@@ -956,7 +940,7 @@ export default function Dashboard() {
           }}
         >
           <span style={{ color: 'var(--color-primary)', fontWeight: 600 }}>TIP</span>
-          {' '}The dashboard now uses backend session summaries directly for capability state, activity timing, and intervention signals.
+          {' '}Sessions remain a global operational queue, while new planning work starts from projects.
         </div>
       </div>
     </Layout>

@@ -13,6 +13,7 @@ import ReconvergencePanel from '../components/ReconvergencePanel.tsx';
 import { createApiClient } from '../api/client.ts';
 import { useGetAccessToken } from '../auth/useAuthenticatedFetch.ts';
 import { buildKnowledgeDeepLink } from '../lib/knowledgeDeepLinks.ts';
+import { labelNodeType } from '../lib/taxonomy.ts';
 import type { BlueprintResponse, BlueprintNode, NodeType, NodeSummary, ImpactReport, EdgeType, ReconvergenceResult, ReconvergenceStep, ScopeClass } from '../types/blueprint.ts';
 
 // ─── View types ─────────────────────────────────────────────────────────────
@@ -28,7 +29,7 @@ const NODE_TYPES: { value: NodeType | null; label: string; icon: string }[] = [
   { value: 'component',          label: 'Components',    icon: '▪' },
   { value: 'constraint',         label: 'Constraints',   icon: '◇' },
   { value: 'pattern',            label: 'Patterns',      icon: '◉' },
-  { value: 'quality_requirement', label: 'Quality',      icon: '⛨' },
+  { value: 'quality_requirement', label: labelNodeType('quality_requirement', 'plural'), icon: '⛨' },
 ];
 
 // ─── Edge type labels ───────────────────────────────────────────────────────

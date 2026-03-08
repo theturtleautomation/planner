@@ -46,6 +46,7 @@ export default function DiscoveryPage() {
   const [scanResult, setScanResult] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [proposalNameOverrides, setProposalNameOverrides] = useState<Record<string, string>>({});
 
   // ─── Load proposals ────────────────────────────────────────────────────
 
@@ -85,14 +86,56 @@ export default function DiscoveryPage() {
     }
   }, [api, loadProposals]);
 
-  const handleAccept = useCallback(async (id: string) => {
+  const handleAccept = useCallback(async (proposal: ProposedNode) => {
+    const id = proposal.id;
     setActionLoading(id);
     try {
-      await api.acceptProposal(id);
-      setProposals(prev => prev.map(p => p.id === id ? { ...p, status: 'accepted' as const, reviewed_at: new Date().toISOString() } : p));
+      const suggested = proposal.node.node_type === 'component' ? proposal.node.name.trim() : '';
+      const override = proposalNameOverrides[id]?.trim() ?? '';
+      const shouldMarkManual = proposal.node.node_type === 'component' && override && override !== suggested;
+      await api.acceptProposal(
+        id,
+        shouldMarkManual
+          ? {
+              node_patch: {
+                name: override,
+                naming: {
+                  source: 'manual',
+                },
+              },
+            }
+          : undefined,
+      );
+
+      setProposals(prev => prev.map(p => {
+        if (p.id !== id) return p;
+        if (!shouldMarkManual || p.node.node_type !== 'component') {
+          return { ...p, status: 'accepted' as const, reviewed_at: new Date().toISOString() };
+        }
+        return {
+          ...p,
+          status: 'accepted' as const,
+          reviewed_at: new Date().toISOString(),
+          node: {
+            ...p.node,
+            name: override,
+            naming: {
+              ...(p.node.naming ?? {
+                origin_key: `manual:${p.node.id}`,
+                source: 'generated' as const,
+                strategy: 'manual_create' as const,
+                generated_name: suggested,
+                naming_version: 1,
+                last_generated_at: new Date().toISOString(),
+              }),
+              source: 'manual',
+            },
+          },
+        };
+      }));
     } catch { /* keep current state */ }
     finally { setActionLoading(null); }
-  }, [api]);
+  }, [api, proposalNameOverrides]);
 
   const handleReject = useCallback(async (id: string) => {
     setActionLoading(id);
@@ -255,6 +298,21 @@ export default function DiscoveryPage() {
         <div className="snapshot-list">
           {proposals.map(p => {
             const relatedKnowledgeLink = getRelatedKnowledgeLink(p);
+            const displayName = proposalNameOverrides[p.id]?.trim() || getNodeDisplayName(p);
+            const suggestedComponentName =
+              p.node.node_type === 'component'
+                ? p.node.name
+                : null;
+            const componentNameEdited =
+              Boolean(suggestedComponentName)
+              && Boolean(proposalNameOverrides[p.id]?.trim())
+              && proposalNameOverrides[p.id]!.trim() !== suggestedComponentName;
+            const acceptanceNameSource =
+              componentNameEdited
+                ? 'Manual'
+                : (p.node.node_type === 'component' && p.node.naming?.source === 'manual')
+                  ? 'Manual'
+                  : 'Generated';
             return (
               <div
                 key={p.id}
@@ -275,7 +333,7 @@ export default function DiscoveryPage() {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
                       <span style={{ fontWeight: 600, fontSize: 'var(--text-sm)' }}>
-                        {getNodeDisplayName(p)}
+                        {displayName}
                       </span>
                       <span className={`badge badge-${p.node.node_type}`} style={{ fontSize: '0.5625rem' }}>
                         {p.node.node_type}
@@ -346,6 +404,26 @@ export default function DiscoveryPage() {
                         <span style={{ fontFamily: 'var(--font-mono)' }}>{p.source_artifact}</span>
                       </div>
                     )}
+                    {p.node.node_type === 'component' && suggestedComponentName && (
+                      <div style={{ display: 'grid', gap: 'var(--space-2)', marginBottom: 'var(--space-3)' }}>
+                        <label style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>
+                          Suggested component name
+                          <input
+                            className="field-input"
+                            value={proposalNameOverrides[p.id] ?? suggestedComponentName}
+                            onChange={(event) => {
+                              const nextValue = event.target.value;
+                              setProposalNameOverrides((prev) => ({ ...prev, [p.id]: nextValue }));
+                            }}
+                            style={{ marginTop: '4px' }}
+                          />
+                        </label>
+                        <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-faint)' }}>
+                          Name source on accept: <strong>{acceptanceNameSource}</strong>
+                          {componentNameEdited ? ' (manual rename will be preserved across regeneration)' : ''}
+                        </div>
+                      </div>
+                    )}
                     <details>
                       <summary style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', cursor: 'pointer' }}>
                         Full node data
@@ -365,7 +443,7 @@ export default function DiscoveryPage() {
                         <button
                           className="btn btn-primary"
                           style={{ fontSize: 'var(--text-xs)', padding: 'var(--space-1) var(--space-3)' }}
-                          onClick={() => handleAccept(p.id)}
+                          onClick={() => handleAccept(p)}
                           disabled={actionLoading === p.id}
                         >
                           {actionLoading === p.id ? '…' : '✓ Accept'}

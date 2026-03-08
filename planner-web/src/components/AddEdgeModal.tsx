@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import type { EdgeType, NodeSummary } from '../types/blueprint.ts';
+import { labelNodeType } from '../lib/taxonomy.ts';
 
 // ─── Props ──────────────────────────────────────────────────────────────────
 
@@ -21,18 +22,9 @@ const EDGE_TYPES: { value: EdgeType; label: string; description: string }[] = [
   { value: 'uses',        label: 'Uses',          description: 'Component → Technology' },
   { value: 'constrains',  label: 'Constrains',    description: 'Constraint → Decision/Comp/Tech' },
   { value: 'implements',  label: 'Implements',     description: 'Component → Pattern' },
-  { value: 'satisfies',   label: 'Satisfies',      description: 'Decision/Pattern → QualityRequirement' },
+  { value: 'satisfies',   label: 'Satisfies',      description: 'Decision/Pattern → Quality Scenario' },
   { value: 'affects',     label: 'Affects',        description: 'Decision → Component/Technology' },
 ];
-
-const NODE_TYPE_LABELS: Record<string, string> = {
-  decision: 'DEC',
-  technology: 'TECH',
-  component: 'COMP',
-  constraint: 'CON',
-  pattern: 'PAT',
-  quality_requirement: 'QR',
-};
 
 // ─── Component ──────────────────────────────────────────────────────────────
 
@@ -109,7 +101,7 @@ export default function AddEdgeModal({ isOpen, nodes, defaultSourceId, onClose, 
           <option value="">Select source…</option>
           {sortedNodes.map(n => (
             <option key={n.id} value={n.id}>
-              [{NODE_TYPE_LABELS[n.node_type] ?? n.node_type}] {n.name}
+              [{labelNodeType(n.node_type, 'short')}] {n.name}
             </option>
           ))}
         </select>
@@ -128,7 +120,7 @@ export default function AddEdgeModal({ isOpen, nodes, defaultSourceId, onClose, 
           <option value="">Select target…</option>
           {sortedNodes.map(n => (
             <option key={n.id} value={n.id}>
-              [{NODE_TYPE_LABELS[n.node_type] ?? n.node_type}] {n.name}
+              [{labelNodeType(n.node_type, 'short')}] {n.name}
             </option>
           ))}
         </select>

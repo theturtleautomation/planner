@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import Layout from '../components/Layout.tsx';
 import ChatPanel from '../components/ChatPanel.tsx';
 import PipelineBar from '../components/PipelineBar.tsx';
@@ -7,13 +7,13 @@ import MessageInput from '../components/MessageInput.tsx';
 import ConvergenceBar from '../components/ConvergenceBar.tsx';
 import BeliefStatePanel from '../components/BeliefStatePanel.tsx';
 import SpeculativeDraftView from '../components/SpeculativeDraftView.tsx';
-import EventLogPanel from '../components/EventLogPanel.tsx';
+import SessionEventsTable from '../components/SessionEventsTable.tsx';
 import SessionStatusHeader from '../components/SessionStatusHeader.tsx';
 import type { SessionHeaderAction } from '../components/SessionStatusHeader.tsx';
 import { createApiClient } from '../api/client.ts';
 import { useGetAccessToken } from '../auth/useAuthenticatedFetch.ts';
 import { useSocraticWebSocket } from '../hooks/useSocraticWebSocket.ts';
-import type { InterviewCheckpoint, ResumeStatus, Session, SessionExportResponse } from '../types.ts';
+import type { InterviewCheckpoint, PlannerEvent, ResumeStatus, Session, SessionExportResponse } from '../types.ts';
 
 function getInterviewResumeNotice(status: ResumeStatus):
   | { tone: 'warning' | 'info'; text: string }
@@ -37,12 +37,12 @@ function getInterviewResumeNotice(status: ResumeStatus):
     case 'interview_restart_only':
       return {
         tone: 'warning',
-        text: 'Live interview resume is not supported yet. Restarting will begin from the saved description.',
+        text: 'Live interview resume is not supported yet. Restarting will begin from the saved brief.',
       };
     case 'interview_resume_unknown':
       return {
         tone: 'warning',
-        text: 'Interview resume state is unknown for this session. It may require restart from the saved description.',
+        text: 'Interview resume state is unknown for this session. It may require restart from the saved brief.',
       };
     default:
       return null;
@@ -125,13 +125,26 @@ function downloadExport(payload: SessionExportResponse): void {
   window.URL.revokeObjectURL(href);
 }
 
+function dedupePlannerEvents(events: PlannerEvent[]): PlannerEvent[] {
+  const seen = new Set<string>();
+  const deduped: PlannerEvent[] = [];
+  for (const event of events) {
+    if (seen.has(event.id)) continue;
+    seen.add(event.id);
+    deduped.push(event);
+  }
+  return deduped;
+}
+
 export default function SessionPage() {
   const { id: routeId } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const getToken = useGetAccessToken();
 
   const api = useMemo(() => createApiClient(getToken), [getToken]);
   const isExistingSessionRoute = Boolean(routeId && routeId !== 'new');
+  const projectRef = searchParams.get('project')?.trim() || undefined;
 
   // Core session state
   const [session, setSession] = useState<Session | null>(null);
@@ -149,9 +162,10 @@ export default function SessionPage() {
     'restart' | 'retry' | 'rename' | 'duplicate' | 'archive' | 'export' | null
   >(null);
 
-  // Right panel tab: 'belief' | 'draft'
-  type RightPanelTab = 'belief' | 'draft';
+  // Right panel tab: 'belief' | 'draft' | 'events'
+  type RightPanelTab = 'belief' | 'draft' | 'events';
   const [rightTab, setRightTab] = useState<RightPanelTab>('belief');
+  const [eventUnreadCount, setEventUnreadCount] = useState(0);
 
   // Helper to switch to draft tab
   const setShowDraft = (v: boolean) => setRightTab(v ? 'draft' : 'belief');
@@ -166,6 +180,36 @@ export default function SessionPage() {
     }
   }, [socratic.speculativeDraft]);
 
+  const eventCounts = useMemo(() => {
+    return socratic.events.reduce(
+      (acc, event) => {
+        if (event.level === 'error') acc.errors += 1;
+        if (event.level === 'warn') acc.warnings += 1;
+        return acc;
+      },
+      { total: socratic.events.length, errors: 0, warnings: 0 },
+    );
+  }, [socratic.events]);
+
+  const previousEventCountRef = useRef(0);
+  useEffect(() => {
+    const nextCount = socratic.events.length;
+    const delta = nextCount - previousEventCountRef.current;
+
+    if (rightTab === 'events') {
+      setEventUnreadCount(0);
+    } else if (delta > 0) {
+      setEventUnreadCount((previous) => previous + delta);
+    }
+
+    previousEventCountRef.current = nextCount;
+  }, [rightTab, socratic.events.length]);
+
+  useEffect(() => {
+    previousEventCountRef.current = 0;
+    setEventUnreadCount(0);
+  }, [sessionId]);
+
   // Track whether we've triggered attach for an existing session
   const autoAttachAttemptedRef = useRef<string | null>(null);
 
@@ -178,7 +222,7 @@ export default function SessionPage() {
       try {
         if (!routeId || routeId === 'new') {
           // Create a new session — don't auto-connect WS
-          const resp = await api.createSession();
+          const resp = await api.createSession(projectRef ? { projectRef } : undefined);
           if (cancelled) return;
           const s = resp.session ?? resp;
           setSession(s as Session);
@@ -205,7 +249,33 @@ export default function SessionPage() {
     void init();
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [routeId]);
+  }, [routeId, projectRef]);
+
+  useEffect(() => {
+    if (!sessionId) return;
+    let cancelled = false;
+
+    const hydrateEvents = async (): Promise<void> => {
+      try {
+        const response = await api.getSessionEvents(sessionId, { limit: 500 });
+        if (cancelled) return;
+        setSession((previous) => {
+          if (!previous || previous.id !== sessionId) return previous;
+          return {
+            ...previous,
+            events: dedupePlannerEvents(response.events ?? []),
+          };
+        });
+      } catch {
+        // Keep the lobby usable even if event hydration fails.
+      }
+    };
+
+    void hydrateEvents();
+    return () => {
+      cancelled = true;
+    };
+  }, [api, sessionId]);
 
   // Auto-attach WS for existing sessions that should resume in read-only mode.
   useEffect(() => {
@@ -351,14 +421,14 @@ export default function SessionPage() {
       const nextSession = resp.session;
       const savedDescription = nextSession.project_description?.trim();
       if (!savedDescription) {
-        throw new Error('Saved project description is unavailable for this session.');
+        throw new Error('Saved planning brief is unavailable for this session.');
       }
       applySessionSnapshot(nextSession);
       socratic.sendDescription(savedDescription);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error('[SessionPage] restartFromDescription error:', msg);
-      setWorkflowError('Failed to restart from the saved description. Please try again.');
+      setWorkflowError('Failed to restart from the saved brief. Please try again.');
     } finally {
       setWorkflowAction(null);
     }
@@ -399,6 +469,9 @@ export default function SessionPage() {
 
   const sessionActions = useMemo<SessionHeaderAction[]>(() => {
     const actions: SessionHeaderAction[] = [];
+    const projectBackPath = session?.project_slug
+      ? `/projects/${encodeURIComponent(session.project_slug)}/sessions`
+      : null;
 
     if (session && !socratic.isConnected && (session.can_resume_live || session.can_resume_checkpoint)) {
       actions.push({
@@ -469,8 +542,8 @@ export default function SessionPage() {
     if (sessionId) {
       actions.push({
         key: 'back',
-        label: 'Back to Dashboard',
-        onClick: () => { void navigate('/'); },
+        label: projectBackPath ? 'Back to Project' : 'Back to Sessions',
+        onClick: () => { void navigate(projectBackPath ?? '/sessions'); },
       });
     }
 
@@ -493,6 +566,11 @@ export default function SessionPage() {
 
   // ── Right panel content ──
   const rightPanelContent = (() => {
+    if (rightTab === 'events') {
+      return (
+        <SessionEventsTable events={socratic.events} />
+      );
+    }
     if (rightTab === 'draft' && socratic.speculativeDraft) {
       return (
         <SpeculativeDraftView
@@ -516,6 +594,10 @@ export default function SessionPage() {
   // ── Error state ──
   if (initError) {
     const is404 = initError.includes('404');
+    const fallbackPath = session?.project_slug
+      ? `/projects/${encodeURIComponent(session.project_slug)}/sessions`
+      : '/sessions';
+    const fallbackLabel = session?.project_slug ? 'project' : 'sessions';
     return (
       <Layout>
         <div style={{
@@ -532,7 +614,7 @@ export default function SessionPage() {
             {is404 ? 'Session not found.' : initError}
           </span>
           <button
-            onClick={() => void navigate('/')}
+            onClick={() => void navigate(fallbackPath)}
             style={{
               marginTop: '8px',
               background: 'transparent',
@@ -545,7 +627,7 @@ export default function SessionPage() {
               borderRadius: '2px',
             }}
           >
-            ← back to dashboard
+            {`← back to ${fallbackLabel}`}
           </button>
         </div>
       </Layout>
@@ -658,7 +740,7 @@ export default function SessionPage() {
                   color: 'var(--color-text)',
                   fontFamily: 'inherit',
                 }}>
-                  Describe your project
+                  Describe your planning brief
                 </h2>
                 <p style={{
                   margin: 0,
@@ -691,7 +773,7 @@ export default function SessionPage() {
                   disabled={isStarting}
                   placeholder="e.g. A multi-tenant SaaS dashboard for tracking equipment rentals, with role-based access for admins and field staff…"
                   rows={4}
-                  aria-label="Project description"
+                  aria-label="Planning brief"
                   style={{
                     width: '100%',
                     background: 'transparent',
@@ -890,7 +972,12 @@ export default function SessionPage() {
           }}>
             <span>Interview failed. Check server logs for details.</span>
             <button
-              onClick={() => void navigate('/')}
+              onClick={() => {
+                const target = session?.project_slug
+                  ? `/projects/${encodeURIComponent(session.project_slug)}/sessions`
+                  : '/sessions';
+                void navigate(target);
+              }}
               style={{
                 background: 'transparent',
                 border: '1px solid var(--color-error)',
@@ -966,6 +1053,16 @@ export default function SessionPage() {
             isError={isError}
             errorMessage={session?.error_message}
             actions={sessionActions}
+            eventSummary={{
+              total: eventCounts.total,
+              warnings: eventCounts.warnings,
+              errors: eventCounts.errors,
+              unread: eventUnreadCount,
+            }}
+            onOpenEvents={() => {
+              setRightTab('events');
+              setEventUnreadCount(0);
+            }}
           />
         )}
 
@@ -1014,7 +1111,7 @@ export default function SessionPage() {
             />
           </div>
 
-          {/* Right: tabbed panel — Belief State | Draft — with collapsible Events footer */}
+          {/* Right: tabbed panel — Belief State | Draft | Events */}
           <div className="pane-right" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             {/* Tab bar */}
             <div
@@ -1025,6 +1122,7 @@ export default function SessionPage() {
                 borderBottom: '1px solid var(--color-border)',
                 background: 'var(--color-surface)',
                 flexShrink: 0,
+                overflowX: 'auto',
               }}
             >
               {/* Belief State tab */}
@@ -1087,19 +1185,55 @@ export default function SessionPage() {
                   />
                 )}
               </button>
+
+              <button
+                onClick={() => {
+                  setRightTab('events');
+                  setEventUnreadCount(0);
+                }}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  borderBottom: rightTab === 'events' ? '2px solid var(--color-primary)' : '2px solid transparent',
+                  color: rightTab === 'events' ? 'var(--color-primary)' : 'var(--color-text-muted)',
+                  fontSize: '11px',
+                  fontWeight: rightTab === 'events' ? 700 : 400,
+                  fontFamily: 'inherit',
+                  padding: '7px 14px',
+                  cursor: 'pointer',
+                  letterSpacing: '0.03em',
+                  transition: 'color 0.15s, border-color 0.15s',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                Events
+                {eventUnreadCount > 0 && rightTab !== 'events' && (
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      minWidth: '16px',
+                      justifyContent: 'center',
+                      padding: '0 4px',
+                      borderRadius: '999px',
+                      background: 'var(--color-primary-highlight)',
+                      color: 'var(--color-primary)',
+                      fontSize: '10px',
+                      fontWeight: 700,
+                      lineHeight: 1.4,
+                    }}
+                  >
+                    {eventUnreadCount}
+                  </span>
+                )}
+              </button>
             </div>
 
-            {/* Panel content + collapsible events footer */}
-            <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-              {/* Main content area (belief state or draft) */}
-              <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-                {rightPanelContent}
-              </div>
-
-              {/* Collapsible Events footer — always present when events exist */}
-              {socratic.events.length > 0 && (
-                <EventLogPanel events={socratic.events} />
-              )}
+            {/* Panel content */}
+            <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+              {rightPanelContent}
             </div>
           </div>
         </div>

@@ -1,7 +1,7 @@
 import { useAuth0 } from '@auth0/auth0-react';
 import { Navigate } from 'react-router-dom';
 import LoginPage from '../pages/LoginPage.tsx';
-import Dashboard from '../pages/Dashboard.tsx';
+import HomeHubPage from '../pages/HomeHubPage.tsx';
 
 // ─── Auth0 callback handler ───────────────────────────────────────────────────
 export function CallbackPageAuth0() {
@@ -50,5 +50,5 @@ export function RootPageAuth0() {
     );
   }
 
-  return isAuthenticated ? <Dashboard /> : <LoginPage />;
+  return isAuthenticated ? <HomeHubPage /> : <LoginPage />;
 }

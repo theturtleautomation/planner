@@ -18,7 +18,7 @@ function LoginPageDev() {
   const navigate = useNavigate();
 
   const handleEnter = (): void => {
-    void navigate('/session/new');
+    void navigate('/');
   };
 
   return <LoginView onLogin={handleEnter} />;

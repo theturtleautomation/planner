@@ -375,7 +375,6 @@ fn parse_question_response(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
 
     fn make_empty_state() -> RequirementsBeliefState {
         let classification = DomainClassification {

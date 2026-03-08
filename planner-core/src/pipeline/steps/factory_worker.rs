@@ -790,14 +790,18 @@ impl SandboxProbe {
     /// fully operational.
     fn migrate_stale_cache() {
         if let Some(path) = Self::cache_path() {
-            if let Ok(content) = std::fs::read_to_string(&path) {
-                if content.contains("danger-full-access") || content.contains("workspace-write") {
-                    tracing::info!(
-                        "SandboxProbe: deleting stale cache (value was set by broken \
-                         probe that checked nonexistent sysfs path). Will re-probe."
-                    );
-                    let _ = std::fs::remove_file(&path);
-                }
+            Self::migrate_stale_cache_at(&path);
+        }
+    }
+
+    fn migrate_stale_cache_at(path: &std::path::Path) {
+        if let Ok(content) = std::fs::read_to_string(path) {
+            if content.contains("danger-full-access") || content.contains("workspace-write") {
+                tracing::info!(
+                    "SandboxProbe: deleting stale cache (value was set by broken \
+                     probe that checked nonexistent sysfs path). Will re-probe."
+                );
+                let _ = std::fs::remove_file(path);
             }
         }
     }
@@ -1744,6 +1748,16 @@ impl FactoryWorker for MockFactoryWorker {
 mod tests {
     use super::*;
 
+    fn sandbox_env_guard() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+        let guard = LOCK
+            .get_or_init(|| std::sync::Mutex::new(()))
+            .lock()
+            .unwrap();
+        std::env::remove_var("PLANNER_CODEX_SANDBOX");
+        guard
+    }
+
     #[test]
     fn worktree_manager_prepare_creates_structure() {
         let tmp = std::env::temp_dir().join("planner-test-worktree-mgr");
@@ -2278,6 +2292,7 @@ mod tests {
 
     #[test]
     fn sandbox_mode_default_is_bwrap() {
+        let _guard = sandbox_env_guard();
         // Clear env to test default
         std::env::remove_var("PLANNER_CODEX_SANDBOX");
         let mode = SandboxMode::from_env();
@@ -2287,6 +2302,7 @@ mod tests {
 
     #[test]
     fn sandbox_mode_from_env_full_auto() {
+        let _guard = sandbox_env_guard();
         std::env::set_var("PLANNER_CODEX_SANDBOX", "full-auto");
         assert_eq!(SandboxMode::from_env(), SandboxMode::FullAuto);
         std::env::remove_var("PLANNER_CODEX_SANDBOX");
@@ -2294,6 +2310,7 @@ mod tests {
 
     #[test]
     fn sandbox_mode_from_env_danger_maps_to_workspace_write() {
+        let _guard = sandbox_env_guard();
         // Legacy danger-full-access should map to WorkspaceWrite (safest fallback)
         std::env::set_var("PLANNER_CODEX_SANDBOX", "danger-full-access");
         assert_eq!(SandboxMode::from_env(), SandboxMode::WorkspaceWrite);
@@ -2302,6 +2319,7 @@ mod tests {
 
     #[test]
     fn sandbox_mode_from_env_workspace_write() {
+        let _guard = sandbox_env_guard();
         std::env::set_var("PLANNER_CODEX_SANDBOX", "workspace-write");
         assert_eq!(SandboxMode::from_env(), SandboxMode::WorkspaceWrite);
         std::env::remove_var("PLANNER_CODEX_SANDBOX");
@@ -2372,6 +2390,7 @@ mod tests {
 
     #[test]
     fn sandbox_mode_env_roundtrip() {
+        let _guard = sandbox_env_guard();
         // Setting env var then reading should preserve the mode
         for mode in [
             SandboxMode::Bwrap,
@@ -2448,6 +2467,7 @@ mod tests {
 
     #[test]
     fn sandbox_probe_invalidate_removes_file() {
+        let _guard = sandbox_env_guard();
         // This tests the actual invalidate_cache -> write_cache flow
         // by using the real SandboxProbe methods on the actual cache path.
         // First, write a cache entry.
@@ -2492,6 +2512,7 @@ mod tests {
 
     #[test]
     fn sandbox_mode_resolve_respects_env_override() {
+        let _guard = sandbox_env_guard();
         // When PLANNER_CODEX_SANDBOX is set, resolve() should return
         // that mode directly without probing.
         // Legacy danger-full-access maps to WorkspaceWrite.
@@ -2503,6 +2524,7 @@ mod tests {
 
     #[test]
     fn sandbox_mode_resolve_without_env_returns_valid_mode() {
+        let _guard = sandbox_env_guard();
         // Without env var, resolve() should run probe and return a valid mode.
         // We can't predict which mode (depends on bwrap + Landlock availability),
         // but it must be one of the three variants.
@@ -2600,42 +2622,45 @@ mod tests {
         // If cache contains danger-full-access OR workspace-write,
         // migrate_stale_cache should delete it. Both values were written
         // by the broken probe that checked a nonexistent sysfs path.
-        SandboxProbe::write_cache(SandboxMode::Bwrap);
-        if let Some(path) = SandboxProbe::cache_path() {
-            let ts = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs();
+        let tmp = std::env::temp_dir().join(format!(
+            "planner-test-probe-migrate-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let path = tmp.join("sandbox-probe");
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
 
-            // Test danger-full-access
-            let stale = format!("{}\ndanger-full-access", ts);
-            std::fs::write(&path, &stale).unwrap();
-            SandboxProbe::migrate_stale_cache();
-            assert!(
-                !path.exists(),
-                "danger-full-access cache should be deleted by migrate"
-            );
+        // Test danger-full-access
+        let stale = format!("{}\ndanger-full-access", ts);
+        std::fs::write(&path, &stale).unwrap();
+        SandboxProbe::migrate_stale_cache_at(&path);
+        assert!(
+            !path.exists(),
+            "danger-full-access cache should be deleted by migrate"
+        );
 
-            // Test workspace-write (also stale from broken probe)
-            let stale_ws = format!("{}\nworkspace-write", ts);
-            std::fs::write(&path, &stale_ws).unwrap();
-            SandboxProbe::migrate_stale_cache();
-            assert!(
-                !path.exists(),
-                "workspace-write cache should be deleted by migrate"
-            );
+        // Test workspace-write (also stale from broken probe)
+        let stale_ws = format!("{}\nworkspace-write", ts);
+        std::fs::write(&path, &stale_ws).unwrap();
+        SandboxProbe::migrate_stale_cache_at(&path);
+        assert!(
+            !path.exists(),
+            "workspace-write cache should be deleted by migrate"
+        );
 
-            // Test valid values are NOT deleted
-            SandboxProbe::write_cache(SandboxMode::FullAuto);
-            SandboxProbe::migrate_stale_cache();
-            if path.exists() {
-                let content = std::fs::read_to_string(&path).unwrap();
-                assert!(
-                    content.contains("full-auto"),
-                    "full-auto cache should survive migration"
-                );
-                let _ = std::fs::remove_file(&path);
-            }
-        }
+        // Test valid values are NOT deleted
+        let valid = format!("{}\nfull-auto", ts);
+        std::fs::write(&path, &valid).unwrap();
+        SandboxProbe::migrate_stale_cache_at(&path);
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            content.contains("full-auto"),
+            "full-auto cache should survive migration"
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }

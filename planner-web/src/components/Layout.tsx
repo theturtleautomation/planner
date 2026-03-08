@@ -40,21 +40,48 @@ function UserInfo() {
   return <UserInfoDev />;
 }
 
-// Sidebar navigation items
-const REGISTRY_ITEMS = [
-  { label: 'Sessions', path: '/', icon: 'clock' },
-  { label: 'Blueprint', path: '/blueprint', icon: 'globe' },
-  { label: 'Knowledge', path: '/knowledge', icon: 'book' },
-  { label: 'Events', path: '/events', icon: 'activity' },
-  { label: 'Discovery', path: '/discovery', icon: 'search' },
-  { label: 'Admin', path: '/admin', icon: 'terminal' },
+type NavSection = 'primary' | 'secondary' | 'utility';
+
+interface NavItem {
+  label: string;
+  path: string;
+  icon: string;
+  section: NavSection;
+}
+
+const NAV_ITEMS: NavItem[] = [
+  { label: 'Home', path: '/', icon: 'home', section: 'primary' },
+  { label: 'Projects', path: '/projects', icon: 'folder', section: 'primary' },
+  { label: 'Knowledge', path: '/knowledge', icon: 'book', section: 'primary' },
+  { label: 'Sessions', path: '/sessions', icon: 'clock', section: 'secondary' },
+  { label: 'Events', path: '/events', icon: 'activity', section: 'secondary' },
+  { label: 'Admin', path: '/admin', icon: 'terminal', section: 'secondary' },
+  { label: 'Discovery', path: '/discovery', icon: 'search', section: 'utility' },
+  { label: 'Blueprint', path: '/blueprint', icon: 'globe', section: 'utility' },
 ];
+
+function isActiveNavItem(pathname: string, item: NavItem): boolean {
+  if (item.path === '/') return pathname === '/';
+  if (item.path === '/projects') return pathname.startsWith('/projects');
+  if (item.path === '/sessions') {
+    return pathname === '/sessions'
+      || pathname === '/session/new'
+      || pathname.startsWith('/session/');
+  }
+  if (item.path === '/knowledge') return pathname.startsWith('/knowledge');
+  if (item.path === '/events') return pathname.startsWith('/events');
+  return pathname === item.path || pathname.startsWith(`${item.path}/`);
+}
 
 function SidebarIcon({ name }: { name: string }) {
   const stroke = 'currentColor';
   const props = { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke, strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
 
   switch (name) {
+    case 'home':
+      return <svg {...props}><path d="M3 10l9-7 9 7"/><path d="M9 21V12h6v9"/></svg>;
+    case 'folder':
+      return <svg {...props}><path d="M3 6h5l2 2h11v10a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>;
     case 'clock':
       return <svg {...props}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>;
     case 'globe':
@@ -97,6 +124,31 @@ function ThemeToggle() {
 
 export default function Layout({ children, sessionId, isConnected }: LayoutProps) {
   const location = useLocation();
+  const primaryItems = NAV_ITEMS.filter((item) => item.section === 'primary');
+  const secondaryItems = NAV_ITEMS.filter((item) => item.section === 'secondary');
+  const utilityItems = NAV_ITEMS.filter((item) => item.section === 'utility');
+
+  const renderSection = (label: string, items: NavItem[]) => (
+    <div className="sidebar-section">
+      <div className="sidebar-label">{label}</div>
+      {items.map((item) => {
+        const isActive = isActiveNavItem(location.pathname, item);
+        return (
+          <Link
+            key={item.path}
+            to={item.path}
+            className={`sidebar-item${isActive ? ' active' : ''}`}
+            style={{ textDecoration: 'none' }}
+          >
+            <span className="icon">
+              <SidebarIcon name={item.icon} />
+            </span>
+            {item.label}
+          </Link>
+        );
+      })}
+    </div>
+  );
 
   return (
     <div className="app-shell">
@@ -111,26 +163,9 @@ export default function Layout({ children, sessionId, isConnected }: LayoutProps
           <span className="sidebar-wordmark">Planner</span>
         </div>
 
-        <div className="sidebar-section">
-          <div className="sidebar-label">Navigation</div>
-          {REGISTRY_ITEMS.map(item => {
-            const isActive = location.pathname === item.path ||
-              (item.path === '/' && location.pathname.startsWith('/session'));
-            return (
-              <Link
-                key={item.path}
-                to={item.path}
-                className={`sidebar-item${isActive ? ' active' : ''}`}
-                style={{ textDecoration: 'none' }}
-              >
-                <span className="icon">
-                  <SidebarIcon name={item.icon} />
-                </span>
-                {item.label}
-              </Link>
-            );
-          })}
-        </div>
+        {renderSection('Primary', primaryItems)}
+        {renderSection('Secondary', secondaryItems)}
+        {renderSection('Utility', utilityItems)}
 
         <div className="sidebar-spacer" />
 

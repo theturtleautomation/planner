@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { describe, it, expect } from 'vitest';
 import ChatPanel from '../ChatPanel';
 import type { ChatMessage, MessageRole } from '../../types';
@@ -99,30 +99,14 @@ describe('ChatPanel', () => {
     expect(screen.getByText('system')).toBeInTheDocument();
   });
 
-  it('renders event messages collapsed by default', () => {
-    const eventContent = JSON.stringify({ message: 'LLM call started', source: 'llm_router', step: 'classify' });
-    const msgs = [makeMessage('1', 'event', eventContent)];
+  it('hides legacy event-role messages from the transcript', () => {
+    const msgs = [
+      makeMessage('1', 'event', 'legacy event row'),
+      makeMessage('2', 'planner', 'Planner response'),
+    ];
     render(<ChatPanel messages={msgs} />);
-    // Summary text should be visible
-    expect(screen.getByText('LLM call started')).toBeInTheDocument();
-    // Full JSON content should NOT be visible when collapsed
-    expect(screen.queryByText(eventContent)).not.toBeInTheDocument();
-  });
-
-  it('expands event message on click', () => {
-    const eventContent = JSON.stringify({ message: 'LLM call started', source: 'llm_router' });
-    const msgs = [makeMessage('1', 'event', eventContent)];
-    render(<ChatPanel messages={msgs} />);
-    // Click the summary to expand
-    fireEvent.click(screen.getByText('LLM call started'));
-    // Full content should now be visible
-    expect(screen.getByText(eventContent)).toBeInTheDocument();
-  });
-
-  it('shows first line as summary for non-JSON event content', () => {
-    const msgs = [makeMessage('1', 'event', 'Pipeline step completed\nExtra details here')];
-    render(<ChatPanel messages={msgs} />);
-    expect(screen.getByText('Pipeline step completed')).toBeInTheDocument();
+    expect(screen.queryByText('legacy event row')).not.toBeInTheDocument();
+    expect(screen.getByText('Planner response')).toBeInTheDocument();
   });
 
   it('role labels have text-transform uppercase style', () => {

@@ -23,6 +23,7 @@ use tower_http::cors::{Any, CorsLayer};
 
 use planner_server::api;
 use planner_server::auth::AuthConfig;
+use planner_server::project::{self, ProjectStore};
 use planner_server::rate_limit;
 use planner_server::session::SessionStore;
 use planner_server::AppState;
@@ -130,6 +131,38 @@ async fn main() {
             }
         };
 
+    // Initialize Project store — canonical persisted project ownership.
+    let project_store = match ProjectStore::open(std::path::Path::new(&data_dir)) {
+        Ok(store) => {
+            tracing::info!(
+                "Project persistence enabled: {}/projects/ ({} projects loaded)",
+                data_dir,
+                store.count(),
+            );
+            store
+        }
+        Err(e) => {
+            tracing::warn!(
+                "Project persistence unavailable ({}), falling back to in-memory only",
+                e
+            );
+            ProjectStore::new()
+        }
+    };
+
+    let backfill = project::phase0_backfill(&project_store, &session_store, &blueprint_store);
+    if backfill.projects_created > 0
+        || backfill.sessions_assigned > 0
+        || backfill.blueprint_nodes_normalized > 0
+    {
+        tracing::info!(
+            "Phase 00 backfill: projects_created={}, sessions_assigned={}, blueprint_nodes_normalized={}",
+            backfill.projects_created,
+            backfill.sessions_assigned,
+            backfill.blueprint_nodes_normalized
+        );
+    }
+
     // Initialize event persistence
     let event_store =
         match planner_core::observability::EventStore::new(std::path::Path::new(&data_dir)) {
@@ -180,6 +213,7 @@ async fn main() {
         sessions: session_store,
         blueprints: blueprint_store,
         proposals: proposal_store,
+        projects: project_store,
         auth_config,
         event_store,
         cxdb,
@@ -240,6 +274,10 @@ async fn main() {
                     Ok(true) => tracing::debug!("Blueprint flushed to disk"),
                     Ok(false) => {} // nothing dirty
                     Err(e) => tracing::warn!("Blueprint flush error: {}", e),
+                }
+                let (flushed, errors) = flush_state.projects.flush_dirty();
+                if errors > 0 {
+                    tracing::warn!("Project flush: {} written, {} errors", flushed, errors);
                 }
             }
         });
@@ -327,6 +365,8 @@ async fn main() {
             Ok(false) => tracing::info!("Blueprint clean — no flush needed"),
             Err(e) => tracing::warn!("Blueprint shutdown flush error: {}", e),
         }
+        let (flushed, errors) = shutdown_state.projects.flush_dirty();
+        tracing::info!("Project flush: {} written, {} errors", flushed, errors);
     };
 
     axum::serve(listener, app)

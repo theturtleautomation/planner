@@ -13,6 +13,7 @@ import type {
   ScopeClass,
   NodeScope,
 } from '../types/blueprint.ts';
+import { labelComponentType, labelScopeClass, labelScopeField, labelSecondaryScopeField } from '../lib/taxonomy.ts';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -41,7 +42,7 @@ const NODE_TYPE_OPTIONS: { value: NodeType; label: string }[] = [
   { value: 'component', label: 'Component' },
   { value: 'constraint', label: 'Constraint' },
   { value: 'pattern', label: 'Pattern' },
-  { value: 'quality_requirement', label: 'Quality Requirement' },
+  { value: 'quality_requirement', label: 'Quality Scenario' },
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -318,20 +319,32 @@ export default function CreateNodeModal({
           break;
 
         case 'component':
-          node = {
-            node_type: 'component',
-            id: generateId('component', name),
-            name: name.trim(),
-            component_type: componentType,
-            description: description.trim() || 'No description provided',
-            provides: [],
-            consumes: [],
-            status: componentStatus,
-            tags: parsedTags,
-            scope,
-            created_at: now,
-            updated_at: now,
-          };
+          {
+            const nodeId = generateId('component', name);
+            const trimmedName = name.trim();
+            node = {
+              node_type: 'component',
+              id: nodeId,
+              name: trimmedName,
+              component_type: componentType,
+              naming: {
+                origin_key: `manual:${nodeId}`,
+                source: 'manual',
+                strategy: 'manual_create',
+                generated_name: trimmedName,
+                naming_version: 1,
+                last_generated_at: now,
+              },
+              description: description.trim() || 'No description provided',
+              provides: [],
+              consumes: [],
+              status: componentStatus,
+              tags: parsedTags,
+              scope,
+              created_at: now,
+              updated_at: now,
+            };
+          }
           break;
 
         case 'constraint':
@@ -449,7 +462,7 @@ export default function CreateNodeModal({
             gap: 'var(--space-3)',
           }}>
             <label className="field-label">
-              Scope Class
+              {labelScopeField('scope_class')}
               <select
                 value={scopeClass}
                 onChange={e => {
@@ -458,17 +471,17 @@ export default function CreateNodeModal({
                 }}
                 className="field-input"
               >
-                <option value="unscoped">Unscoped</option>
-                <option value="global">Global</option>
-                <option value="project">Project</option>
-                <option value="project_contextual">Project Contextual</option>
+                <option value="unscoped">{labelScopeClass('unscoped')}</option>
+                <option value="global">{labelScopeClass('global')}</option>
+                <option value="project">{labelScopeClass('project')}</option>
+                <option value="project_contextual">{labelScopeClass('project_contextual')}</option>
               </select>
             </label>
 
             {(scopeClass === 'project' || scopeClass === 'project_contextual') && (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
                 <label className="field-label">
-                  Project ID
+                  {labelScopeField('project_id')}
                   <input
                     className="field-input"
                     value={projectId}
@@ -477,7 +490,7 @@ export default function CreateNodeModal({
                   />
                 </label>
                 <label className="field-label">
-                  Project Name
+                  {labelScopeField('project_name')}
                   <input
                     className="field-input"
                     value={projectName}
@@ -491,19 +504,19 @@ export default function CreateNodeModal({
             {scopeClass === 'project_contextual' && (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
                 <label className="field-label">
-                  Feature
+                  {labelSecondaryScopeField('feature')}
                   <input className="field-input" value={scopeFeature} onChange={e => setScopeFeature(e.target.value)} />
                 </label>
                 <label className="field-label">
-                  Widget
+                  {labelSecondaryScopeField('widget')}
                   <input className="field-input" value={scopeWidget} onChange={e => setScopeWidget(e.target.value)} />
                 </label>
                 <label className="field-label">
-                  Artifact
+                  {labelSecondaryScopeField('artifact')}
                   <input className="field-input" value={scopeArtifact} onChange={e => setScopeArtifact(e.target.value)} />
                 </label>
                 <label className="field-label">
-                  Component
+                  {labelSecondaryScopeField('component')}
                   <input className="field-input" value={scopeComponent} onChange={e => setScopeComponent(e.target.value)} />
                 </label>
               </div>
@@ -518,7 +531,7 @@ export default function CreateNodeModal({
                   setScopeSelectionAcknowledged(true);
                 }}
               />
-              Shared knowledge (inherited into linked project views)
+              {labelScopeField('is_shared')}
             </label>
 
             {requireExplicitScopeSelection && scopeClass === 'unscoped' && !scopeSelectionAcknowledged && (
@@ -530,7 +543,7 @@ export default function CreateNodeModal({
             {isShared && (
               <>
                 <label className="field-label">
-                  Linked Project IDs
+                  {labelScopeField('linked_project_ids')}
                   <input
                     className="field-input"
                     value={linkedProjectIds}
@@ -544,7 +557,7 @@ export default function CreateNodeModal({
                     checked={inheritToLinkedProjects}
                     onChange={e => setInheritToLinkedProjects(e.target.checked)}
                   />
-                  Inherit to linked project views
+                  {labelScopeField('inherit_to_linked_projects')}
                 </label>
               </>
             )}
@@ -655,12 +668,12 @@ export default function CreateNodeModal({
                     onChange={e => setComponentType(e.target.value as ComponentType)}
                     className="field-input"
                   >
-                    <option value="module">Module</option>
+                    <option value="module">{labelComponentType('module')}</option>
                     <option value="service">Service</option>
                     <option value="library">Library</option>
-                    <option value="store">Store</option>
-                    <option value="interface">Interface</option>
-                    <option value="pipeline">Pipeline</option>
+                    <option value="store">{labelComponentType('store')}</option>
+                    <option value="interface">{labelComponentType('interface')}</option>
+                    <option value="pipeline">{labelComponentType('pipeline')}</option>
                   </select>
                 </label>
                 <label className="field-label">
@@ -761,7 +774,7 @@ export default function CreateNodeModal({
             <>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
                 <label className="field-label">
-                  Attribute
+                  Quality Attribute
                   <select
                     value={attribute}
                     onChange={e => setAttribute(e.target.value as QualityAttribute)}

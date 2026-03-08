@@ -4,6 +4,7 @@ import type {
   HealthResponse,
   CreateSessionResponse,
   GetSessionResponse,
+  SessionEventsResponse,
   ListSessionsResponse,
   SendMessageResponse,
   SessionExportResponse,
@@ -12,6 +13,8 @@ import type {
   ListModelsResponse,
   AdminStatusResponse,
   AdminEventsResponse,
+  ProjectResponse,
+  ListProjectsResponse,
 } from '../types.ts';
 import type {
   BlueprintResponse,
@@ -110,15 +113,115 @@ export function createApiClient(getToken: GetTokenFn) {
       return apiFetch<HealthResponse>(getToken, '/health');
     },
 
-    createSession(): Promise<CreateSessionResponse> {
+    createSession(payload?: { projectRef?: string }): Promise<CreateSessionResponse> {
+      const body = payload?.projectRef
+        ? JSON.stringify({ project_ref: payload.projectRef })
+        : '{}';
       return apiFetch<CreateSessionResponse>(getToken, '/sessions', {
         method: 'POST',
-        body: '{}',
+        body,
       });
+    },
+
+    listProjects(): Promise<ListProjectsResponse> {
+      return apiFetch<ListProjectsResponse>(getToken, '/projects');
+    },
+
+    createProject(payload: {
+      name: string;
+      slug?: string;
+      description?: string;
+      teamLabel?: string;
+      legacyScopeKeys?: string[];
+    }): Promise<ProjectResponse> {
+      return apiFetch<ProjectResponse>(getToken, '/projects', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: payload.name,
+          slug: payload.slug,
+          description: payload.description,
+          team_label: payload.teamLabel,
+          legacy_scope_keys: payload.legacyScopeKeys ?? [],
+        }),
+      });
+    },
+
+    getProject(projectRef: string): Promise<ProjectResponse> {
+      return apiFetch<ProjectResponse>(getToken, `/projects/${encodeURIComponent(projectRef)}`);
+    },
+
+    updateProject(
+      projectRef: string,
+      patch: {
+        name?: string;
+        slug?: string;
+        description?: string;
+        teamLabel?: string;
+        legacyScopeKeys?: string[];
+      },
+    ): Promise<ProjectResponse> {
+      return apiFetch<ProjectResponse>(getToken, `/projects/${encodeURIComponent(projectRef)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          name: patch.name,
+          slug: patch.slug,
+          description: patch.description,
+          team_label: patch.teamLabel,
+          legacy_scope_keys: patch.legacyScopeKeys,
+        }),
+      });
+    },
+
+    listProjectSessions(
+      projectRef: string,
+      params?: { includeArchived?: boolean },
+    ): Promise<ListSessionsResponse> {
+      const qs = new URLSearchParams();
+      if (params?.includeArchived) qs.set('include_archived', 'true');
+      const query = qs.toString() ? `?${qs.toString()}` : '';
+      return apiFetch<ListSessionsResponse>(
+        getToken,
+        `/projects/${encodeURIComponent(projectRef)}/sessions${query}`,
+      );
+    },
+
+    createProjectSession(
+      projectRef: string,
+      body?: { title?: string; description?: string },
+    ): Promise<CreateSessionResponse> {
+      return apiFetch<CreateSessionResponse>(
+        getToken,
+        `/projects/${encodeURIComponent(projectRef)}/sessions`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            title: body?.title,
+            description: body?.description,
+          }),
+        },
+      );
     },
 
     getSession(id: string): Promise<GetSessionResponse> {
       return apiFetch<GetSessionResponse>(getToken, `/sessions/${id}`);
+    },
+
+    getSessionEvents(
+      id: string,
+      params?: {
+        level?: 'info' | 'warn' | 'error';
+        source?: 'socratic_engine' | 'llm_router' | 'pipeline' | 'factory' | 'system';
+        limit?: number;
+        offset?: number;
+      },
+    ): Promise<SessionEventsResponse> {
+      const qs = new URLSearchParams();
+      if (params?.level) qs.set('level', params.level);
+      if (params?.source) qs.set('source', params.source);
+      if (params?.limit !== undefined) qs.set('limit', String(params.limit));
+      if (params?.offset !== undefined) qs.set('offset', String(params.offset));
+      const query = qs.toString() ? `?${qs.toString()}` : '';
+      return apiFetch<SessionEventsResponse>(getToken, `/sessions/${id}/events${query}`);
     },
 
     listSessions(params?: { includeArchived?: boolean }): Promise<ListSessionsResponse> {
@@ -157,10 +260,10 @@ export function createApiClient(getToken: GetTokenFn) {
       return apiFetch<ListModelsResponse>(getToken, '/models');
     },
 
-    startSocratic(id: string, description: string): Promise<StartSocraticResponse> {
+    startSocratic(id: string, description: string, projectRef?: string): Promise<StartSocraticResponse> {
       return apiFetch<StartSocraticResponse>(getToken, `/sessions/${id}/socratic`, {
         method: 'POST',
-        body: JSON.stringify({ description }),
+        body: JSON.stringify({ description, project_ref: projectRef }),
       });
     },
 
@@ -408,9 +511,13 @@ export function createApiClient(getToken: GetTokenFn) {
     },
 
     /** POST /blueprint/discovery/proposals/:id/accept — Accept a proposed node into blueprint. */
-    acceptProposal(proposalId: string): Promise<{ node_id: string; message: string }> {
+    acceptProposal(
+      proposalId: string,
+      payload?: { node_patch?: Record<string, unknown> },
+    ): Promise<{ node_id: string; message: string }> {
       return apiFetch<{ node_id: string; message: string }>(getToken, `/blueprint/discovery/proposals/${encodeURIComponent(proposalId)}/accept`, {
         method: 'POST',
+        body: JSON.stringify(payload ?? {}),
       });
     },
 

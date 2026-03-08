@@ -1066,6 +1066,21 @@ pub async fn run_full_pipeline<S: TurnStore>(
     project_id: Uuid,
     user_description: &str,
 ) -> StepResult<Phase0FullOutput> {
+    let run_id = Uuid::new_v4();
+    run_full_pipeline_with_run_id(config, worker, project_id, run_id, user_description).await
+}
+
+/// Run the complete pipeline with a caller-provided run_id.
+///
+/// This is used by the server so session-to-run indexes and CXDB registration
+/// remain aligned with persisted Turn metadata.
+pub async fn run_full_pipeline_with_run_id<S: TurnStore>(
+    config: &PipelineConfig<'_, S>,
+    worker: &dyn factory_worker::FactoryWorker,
+    project_id: Uuid,
+    run_id: Uuid,
+    user_description: &str,
+) -> StepResult<Phase0FullOutput> {
     let router = config.router;
     tracing::info!("═══════════════════════════════════════════════");
     tracing::info!("  Planner v2 — Phase 7 Full Pipeline (Worker mode)");
@@ -1100,7 +1115,6 @@ pub async fn run_full_pipeline<S: TurnStore>(
     // (e.g., timeout producing 0/17 after a previous attempt scored 16/17).
     // This follows the Dark Factory's execution-based filtering principle:
     // keep the best surviving result, discard regressions.
-    let run_id = Uuid::new_v4();
     let mut budget = RunBudgetV1::new_phase0(project_id, run_id);
     let mut factory_output;
     let mut satisfaction;

@@ -171,6 +171,7 @@ export interface PlannerEvent {
 
 export interface Session {
   id: string;
+  user_id?: string;
   title?: string | null;
   archived: boolean;
   archived_at?: string | null;
@@ -190,6 +191,10 @@ export interface Session {
   socratic_run_id?: string | null;
   checkpoint?: InterviewCheckpoint | null;
   project_description?: string | null;
+  project_id?: string | null;
+  project_slug?: string | null;
+  project_name?: string | null;
+  run_ids?: string[];
   events?: PlannerEvent[];
   current_step?: string | null;
   error_message?: string | null;
@@ -208,6 +213,9 @@ export interface SessionSummary {
   intake_phase: IntakePhase;
   interview_live_attached: boolean;
   project_description?: string | null;
+  project_id?: string | null;
+  project_slug?: string | null;
+  project_name?: string | null;
   message_count: number;
   event_count: number;
   warning_count: number;
@@ -241,6 +249,12 @@ export interface GetSessionResponse {
   session: Session;
 }
 
+export interface SessionEventsResponse {
+  session_id: string;
+  events: PlannerEvent[];
+  count: number;
+}
+
 export interface SessionExportResponse {
   exported_at: string;
   session: Session;
@@ -248,6 +262,27 @@ export interface SessionExportResponse {
 
 export interface ListSessionsResponse {
   sessions: SessionSummary[];
+}
+
+export interface Project {
+  id: string;
+  slug: string;
+  name: string;
+  description?: string | null;
+  owner_user_id: string;
+  team_label?: string | null;
+  created_at: string;
+  updated_at: string;
+  archived_at?: string | null;
+  legacy_scope_keys: string[];
+}
+
+export interface ProjectResponse {
+  project: Project;
+}
+
+export interface ListProjectsResponse {
+  projects: Project[];
 }
 
 export interface SendMessageResponse {

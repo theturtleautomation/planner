@@ -165,29 +165,69 @@ mod tests {
 
     use planner_schemas::artifacts::blueprint::{
         AdoptionRing, BlueprintNode, Component, ComponentStatus, ComponentType, Decision,
-        DecisionStatus, NodeId, Technology, TechnologyCategory,
+        DecisionStatus, NodeId, NodeScope, NodeSummary, Technology, TechnologyCategory,
     };
+
+    fn test_scope() -> NodeScope {
+        NodeScope::default()
+    }
+
+    fn sample_decision_node() -> BlueprintNode {
+        BlueprintNode::Decision(Decision {
+            id: NodeId::from_raw("dec-alpha"),
+            title: "Alpha Decision".into(),
+            status: DecisionStatus::Accepted,
+            context: "Use alpha".into(),
+            options: Vec::new(),
+            consequences: Vec::new(),
+            assumptions: Vec::new(),
+            supersedes: None,
+            tags: vec!["core".into()],
+            documentation: None,
+            scope: test_scope(),
+            created_at: "2026-03-06T00:00:00Z".into(),
+            updated_at: "2026-03-06T00:00:00Z".into(),
+        })
+    }
+
+    fn sample_technology_node() -> BlueprintNode {
+        BlueprintNode::Technology(Technology {
+            id: NodeId::from_raw("tech-beta"),
+            name: "Beta Tech".into(),
+            version: Some("1.0".into()),
+            category: TechnologyCategory::Library,
+            ring: AdoptionRing::Adopt,
+            rationale: "Needed".into(),
+            license: None,
+            tags: vec!["infra".into()],
+            documentation: Some("# docs".into()),
+            scope: test_scope(),
+            created_at: "2026-03-06T00:00:00Z".into(),
+            updated_at: "2026-03-06T00:00:00Z".into(),
+        })
+    }
+
+    fn sample_component_node() -> BlueprintNode {
+        BlueprintNode::Component(Component {
+            id: NodeId::from_raw("comp-gamma"),
+            name: "Gamma".into(),
+            component_type: ComponentType::Module,
+            description: "Gamma component".into(),
+            provides: Vec::new(),
+            consumes: Vec::new(),
+            status: ComponentStatus::Planned,
+            tags: vec!["feature".into()],
+            documentation: None,
+            scope: test_scope(),
+            created_at: "2026-03-06T00:00:00Z".into(),
+            updated_at: "2026-03-06T00:00:00Z".into(),
+        })
+    }
 
     fn sample_nodes() -> Vec<NodeSummary> {
         vec![
-            NodeSummary {
-                id: NodeId::from_raw("dec-alpha"),
-                name: "Alpha Decision".into(),
-                node_type: "decision".into(),
-                status: "Accepted".into(),
-                tags: vec!["core".into()],
-                has_documentation: false,
-                updated_at: "2026-03-06T00:00:00Z".into(),
-            },
-            NodeSummary {
-                id: NodeId::from_raw("tech-beta"),
-                name: "Beta Tech".into(),
-                node_type: "technology".into(),
-                status: "Adopt".into(),
-                tags: vec!["infra".into()],
-                has_documentation: true,
-                updated_at: "2026-03-06T00:00:00Z".into(),
-            },
+            NodeSummary::from(&sample_decision_node()),
+            NodeSummary::from(&sample_technology_node()),
         ]
     }
 
@@ -256,46 +296,9 @@ mod tests {
     #[test]
     fn load_blueprint_populates_state() {
         let store = BlueprintStore::new();
-        store.upsert_node(BlueprintNode::Decision(Decision {
-            id: NodeId::from_raw("dec-alpha"),
-            title: "Alpha Decision".into(),
-            status: DecisionStatus::Accepted,
-            context: "Use alpha".into(),
-            options: Vec::new(),
-            consequences: Vec::new(),
-            assumptions: Vec::new(),
-            supersedes: None,
-            tags: vec!["core".into()],
-            documentation: None,
-            created_at: "2026-03-06T00:00:00Z".into(),
-            updated_at: "2026-03-06T00:00:00Z".into(),
-        }));
-        store.upsert_node(BlueprintNode::Technology(Technology {
-            id: NodeId::from_raw("tech-beta"),
-            name: "Beta Tech".into(),
-            version: Some("1.0".into()),
-            category: TechnologyCategory::Library,
-            ring: AdoptionRing::Adopt,
-            rationale: "Needed".into(),
-            license: None,
-            tags: vec!["infra".into()],
-            documentation: Some("# docs".into()),
-            created_at: "2026-03-06T00:00:00Z".into(),
-            updated_at: "2026-03-06T00:00:00Z".into(),
-        }));
-        store.upsert_node(BlueprintNode::Component(Component {
-            id: NodeId::from_raw("comp-gamma"),
-            name: "Gamma".into(),
-            component_type: ComponentType::Module,
-            description: "Gamma component".into(),
-            provides: Vec::new(),
-            consumes: Vec::new(),
-            status: ComponentStatus::Planned,
-            tags: vec!["feature".into()],
-            documentation: None,
-            created_at: "2026-03-06T00:00:00Z".into(),
-            updated_at: "2026-03-06T00:00:00Z".into(),
-        }));
+        store.upsert_node(sample_decision_node());
+        store.upsert_node(sample_technology_node());
+        store.upsert_node(sample_component_node());
 
         let mut state = BlueprintTableState::default();
         state.load_blueprint(&store);

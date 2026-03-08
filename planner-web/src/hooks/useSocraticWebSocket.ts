@@ -77,6 +77,17 @@ function buildInitialSessionSignature(
   ].join('::');
 }
 
+function dedupeEventsById(events: PlannerEvent[]): PlannerEvent[] {
+  const seen = new Set<string>();
+  const deduped: PlannerEvent[] = [];
+  for (const event of events) {
+    if (seen.has(event.id)) continue;
+    seen.add(event.id);
+    deduped.push(event);
+  }
+  return deduped;
+}
+
 type GetTokenFn = () => Promise<string>;
 
 /** The current question being posed to the user, if any. */
@@ -319,13 +330,19 @@ export function useSocraticWebSocket({
       }
 
       case 'message': {
+        if (msg.role === 'event') {
+          // Legacy compatibility: hide operational event-role messages from chat.
+          break;
+        }
         const cm: ChatMessage = {
           id: msg.id ?? uuidv4(),
           role: msg.role,
           content: msg.content,
           timestamp: msg.timestamp ?? new Date().toISOString(),
         };
-        setMessages((prev) => [...prev, cm]);
+        setMessages((prev) => (
+          prev.some(existing => existing.id === cm.id) ? prev : [...prev, cm]
+        ));
         break;
       }
 
@@ -363,7 +380,9 @@ export function useSocraticWebSocket({
           duration_ms: msg.duration_ms,
           metadata: msg.metadata ?? {},
         };
-        setEvents((prev) => [...prev, event]);
+        setEvents((prev) => (
+          prev.some(existing => existing.id === event.id) ? prev : [event, ...prev]
+        ));
         if (msg.step) {
           setCurrentStep(msg.step);
         }
@@ -531,11 +550,11 @@ export function useSocraticWebSocket({
     );
 
     setIntakePhase(initialSession.intake_phase ?? 'waiting');
-    setMessages(initialSession.messages ?? []);
+    setMessages((initialSession.messages ?? []).filter((message) => message.role !== 'event'));
     setClassification(initialSession.classification ?? checkpoint?.classification ?? null);
     setBeliefState(initialSession.belief_state ?? checkpointBeliefState);
     setStages(initialSession.stages?.length ? initialSession.stages : buildInitialStages());
-    setEvents(initialSession.events ?? []);
+    setEvents(dedupeEventsById(initialSession.events ?? []));
     setCurrentStep(initialSession.current_step ?? null);
     setConvergencePct((initialSession.belief_state ?? checkpointBeliefState)?.convergence_pct ?? 0);
     setCurrentQuestion(hydratedQuestion);

@@ -28,6 +28,8 @@ export type AdoptionRing = 'adopt' | 'trial' | 'assess' | 'hold';
 export type TechnologyCategory = 'language' | 'framework' | 'library' | 'runtime' | 'tool' | 'platform' | 'protocol';
 export type ComponentType = 'module' | 'service' | 'library' | 'store' | 'interface' | 'pipeline';
 export type ComponentStatus = 'planned' | 'in_progress' | 'shipped' | 'deprecated';
+export type ComponentNameSource = 'generated' | 'manual';
+export type ComponentNamingStrategy = 'spec_group' | 'directory_scan' | 'factory_output' | 'manual_create' | 'backfill';
 export type ConstraintType = 'technical' | 'organizational' | 'philosophical' | 'regulatory';
 export type QualityAttribute = 'performance' | 'reliability' | 'security' | 'usability' | 'maintainability';
 export type QualityPriority = 'critical' | 'high' | 'medium' | 'low';
@@ -185,6 +187,14 @@ export interface ComponentNode {
   id: string;
   name: string;
   component_type: ComponentType;
+  naming?: {
+    origin_key: string;
+    source: ComponentNameSource;
+    strategy: ComponentNamingStrategy;
+    generated_name: string;
+    naming_version: number;
+    last_generated_at: string;
+  };
   description: string;
   provides: string[];
   consumes: string[];

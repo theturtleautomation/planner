@@ -9,6 +9,7 @@ use uuid::Uuid;
 use planner_schemas::artifacts::blueprint::*;
 
 use crate::blueprint::BlueprintStore;
+use crate::component_naming::{generate_directory_name, DirectoryNamingInput};
 
 fn now_iso() -> String {
     chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
@@ -262,26 +263,34 @@ pub fn scan_cargo_toml(project_root: &Path, blueprints: &BlueprintStore) -> Scan
 
 pub fn scan_directory_structure(project_root: &Path, blueprints: &BlueprintStore) -> ScanOutput {
     let mut output = ScanOutput::default();
-    let existing_names = existing_node_names(blueprints, "component");
-    let mut seen = HashSet::new();
+    let existing_origins = existing_component_origin_keys(blueprints);
+    let mut seen_origins = HashSet::new();
+    let project_name_hint = project_root
+        .file_name()
+        .and_then(|value| value.to_str())
+        .filter(|value| !value.trim().is_empty());
 
     for path in directory_candidates(project_root) {
         let relative = relative_display(project_root, &path);
-        let key = relative.to_lowercase();
-        let component_name = humanize_name(
-            path.file_name()
-                .and_then(|name| name.to_str())
-                .unwrap_or("component"),
-        );
-        if !seen.insert(key) || existing_names.contains(&component_name.to_lowercase()) {
+        let component_type = infer_component_type(&relative);
+        let naming_ts = now_iso();
+        let generated = generate_directory_name(DirectoryNamingInput {
+            relative_path: &relative,
+            project_name: project_name_hint,
+            component_type: component_type.clone(),
+            timestamp: &naming_ts,
+        });
+        let origin_key = generated.naming.origin_key.to_ascii_lowercase();
+        if !seen_origins.insert(origin_key.clone()) || existing_origins.contains(&origin_key) {
             output.skipped_count += 1;
             continue;
         }
 
         let node = BlueprintNode::Component(Component {
             id: NodeId::with_prefix("COMP", &relative.replace(['/', '\\'], "-")),
-            name: component_name.clone(),
-            component_type: infer_component_type(&relative),
+            name: generated.name.clone(),
+            component_type,
+            naming: Some(generated.naming),
             description: format!("Discovered from directory structure at {}", relative),
             provides: Vec::new(),
             consumes: Vec::new(),
@@ -311,10 +320,19 @@ pub fn scan_directory_structure(project_root: &Path, blueprints: &BlueprintStore
 }
 
 fn proposal_fingerprint(proposal: &ProposedNode) -> String {
+    let identity = match &proposal.node {
+        BlueprintNode::Component(component) => component
+            .naming
+            .as_ref()
+            .map(|naming| format!("origin:{}", naming.origin_key.to_ascii_lowercase()))
+            .unwrap_or_else(|| format!("name:{}", proposal.node.name().to_lowercase())),
+        _ => format!("name:{}", proposal.node.name().to_lowercase()),
+    };
+
     format!(
         "{}:{}:{}:{}",
         proposal.node.type_name(),
-        proposal.node.name().to_lowercase(),
+        identity,
         proposal.source_artifact.as_deref().unwrap_or(""),
         match proposal.source {
             DiscoverySource::CargoToml => "cargo_toml",
@@ -330,6 +348,21 @@ fn existing_node_names(blueprints: &BlueprintStore, node_type: &str) -> HashSet<
         .list_by_type(node_type)
         .into_iter()
         .map(|node| node.name.to_lowercase())
+        .collect()
+}
+
+fn existing_component_origin_keys(blueprints: &BlueprintStore) -> HashSet<String> {
+    blueprints
+        .snapshot()
+        .nodes
+        .values()
+        .filter_map(|node| match node {
+            BlueprintNode::Component(component) => component
+                .naming
+                .as_ref()
+                .map(|naming| naming.origin_key.to_ascii_lowercase()),
+            _ => None,
+        })
         .collect()
 }
 
@@ -563,21 +596,6 @@ fn infer_component_type(path: &str) -> ComponentType {
     }
 }
 
-fn humanize_name(value: &str) -> String {
-    value
-        .split(['-', '_', '/'])
-        .filter(|segment| !segment.is_empty())
-        .map(|segment| {
-            let mut chars = segment.chars();
-            match chars.next() {
-                Some(first) => format!("{}{}", first.to_uppercase(), chars.as_str()),
-                None => String::new(),
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -631,10 +649,25 @@ mod tests {
             .iter()
             .map(|proposal| proposal.node.name().to_string())
             .collect();
+        let origin_keys: HashSet<String> = output
+            .proposals
+            .iter()
+            .filter_map(|proposal| match &proposal.node {
+                BlueprintNode::Component(component) => {
+                    component.naming.as_ref().map(|n| n.origin_key.clone())
+                }
+                _ => None,
+            })
+            .collect();
 
-        assert!(names.contains("Api"));
-        assert!(names.contains("Core"));
-        assert!(names.contains("Web"));
+        assert!(
+            names.iter().all(|name| name != "Api" && name != "Core" && name != "Web"),
+            "Directory scan should avoid weak placeholder names: {:?}",
+            names
+        );
+        assert!(origin_keys.contains("path:api"));
+        assert!(origin_keys.contains("path:core"));
+        assert!(origin_keys.contains("path:src/web"));
 
         let _ = std::fs::remove_dir_all(dir);
     }
@@ -680,5 +713,56 @@ mod tests {
         assert_eq!(rejected[0].id, proposal.id);
 
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn proposal_store_dedupes_component_proposals_by_origin_key() {
+        let store = ProposalStore::new();
+        let ts = now_iso();
+        let first = ProposedNode {
+            id: Uuid::new_v4().to_string(),
+            node: BlueprintNode::Component(Component {
+                id: NodeId::with_prefix("COMP", "auth"),
+                name: "Authentication Service".into(),
+                component_type: ComponentType::Service,
+                naming: Some(ComponentNaming {
+                    origin_key: "path:src/auth".into(),
+                    source: ComponentNameSource::Generated,
+                    strategy: ComponentNamingStrategy::DirectoryScan,
+                    generated_name: "Authentication Service".into(),
+                    naming_version: 1,
+                    last_generated_at: ts.clone(),
+                }),
+                description: "First proposal".into(),
+                provides: vec![],
+                consumes: vec![],
+                status: ComponentStatus::Planned,
+                tags: vec!["discovery".into()],
+                documentation: None,
+                scope: NodeScope::default(),
+                created_at: ts.clone(),
+                updated_at: ts.clone(),
+            }),
+            source: DiscoverySource::DirectoryScan,
+            reason: "Detected from src/auth".into(),
+            status: ProposalStatus::Pending,
+            proposed_at: ts.clone(),
+            reviewed_at: None,
+            confidence: 0.8,
+            source_artifact: Some("src/auth".into()),
+            review_note: None,
+        };
+        let mut second = first.clone();
+        second.id = Uuid::new_v4().to_string();
+        if let BlueprintNode::Component(component) = &mut second.node {
+            component.name = "Identity Service".into();
+            if let Some(naming) = component.naming.as_mut() {
+                naming.generated_name = "Identity Service".into();
+            }
+        }
+
+        let (inserted, skipped) = store.insert_many(vec![first, second]).unwrap();
+        assert_eq!(inserted, 1);
+        assert_eq!(skipped, 1);
     }
 }

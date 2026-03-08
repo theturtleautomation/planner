@@ -54,6 +54,8 @@ use crate::AppState;
 pub struct WsSocraticIO {
     /// Send events to the WebSocket client.
     event_tx: mpsc::UnboundedSender<ServerMessage>,
+    /// Forward raw Socratic events for checkpoint projection.
+    checkpoint_tx: mpsc::UnboundedSender<SocraticEvent>,
     /// Receive user input forwarded from the WebSocket client.
     input_rx: Arc<Mutex<mpsc::UnboundedReceiver<String>>>,
     /// Optional observability event sink.
@@ -65,12 +67,14 @@ pub struct WsSocraticIO {
 impl WsSocraticIO {
     pub fn new(
         event_tx: mpsc::UnboundedSender<ServerMessage>,
+        checkpoint_tx: mpsc::UnboundedSender<SocraticEvent>,
         input_rx: Arc<Mutex<mpsc::UnboundedReceiver<String>>>,
         event_sink: Option<Arc<dyn EventSink>>,
         session_id: Uuid,
     ) -> Self {
         Self {
             event_tx,
+            checkpoint_tx,
             input_rx,
             event_sink,
             session_id,
@@ -283,20 +287,11 @@ impl planner_core::pipeline::steps::socratic::SocraticIO for WsSocraticIO {
                 explanation: contradiction.explanation.clone(),
             });
         }
-
-        // Also forward the raw event as a ChatMessage so the chat log shows it.
-        match serde_json::to_string(event) {
-            Ok(json) => {
-                let _ = self.event_tx.send(ServerMessage::ChatMessage {
-                    id: Uuid::new_v4().to_string(),
-                    role: "event".into(),
-                    content: json,
-                    timestamp: chrono::Utc::now().to_rfc3339(),
-                });
-            }
-            Err(e) => {
-                tracing::warn!("Failed to serialize SocraticEvent: {}", e);
-            }
+        if let Err(e) = self.checkpoint_tx.send(event.clone()) {
+            tracing::warn!(
+                "Failed to forward SocraticEvent for checkpoint projection: {}",
+                e
+            );
         }
     }
 }
@@ -432,20 +427,6 @@ fn apply_checkpoint_from_event(state: &Arc<AppState>, session_id: Uuid, event: &
     });
 }
 
-fn apply_checkpoint_from_server_message(
-    state: &Arc<AppState>,
-    session_id: Uuid,
-    server_msg: &ServerMessage,
-) {
-    if let ServerMessage::ChatMessage { role, content, .. } = server_msg {
-        if role == "event" {
-            if let Ok(event) = serde_json::from_str::<SocraticEvent>(content) {
-                apply_checkpoint_from_event(state, session_id, &event);
-            }
-        }
-    }
-}
-
 fn build_checkpoint_resume_state(
     session: &crate::session::Session,
 ) -> Option<CheckpointResumeState> {
@@ -496,11 +477,13 @@ async fn run_interview_runtime(
     start_mode: InterviewStartMode,
 ) {
     let (event_tx, mut event_rx) = mpsc::unbounded_channel::<ServerMessage>();
+    let (checkpoint_tx, mut checkpoint_rx) = mpsc::unbounded_channel::<SocraticEvent>();
     let (event_sink, mut planner_event_rx) = planner_core::observability::ChannelEventSink::new();
     let event_sink: Arc<dyn planner_core::observability::EventSink> = Arc::new(event_sink);
 
     let io = Arc::new(WsSocraticIO::new(
         event_tx,
+        checkpoint_tx,
         input_rx,
         Some(event_sink.clone()),
         session_id,
@@ -715,7 +698,6 @@ async fn run_interview_runtime(
             msg = event_rx.recv() => {
                 match msg {
                     Some(server_msg) => {
-                        apply_checkpoint_from_server_message(&state, session_id, &server_msg);
                         runtime.publish(server_msg);
                     }
                     None => {
@@ -751,6 +733,11 @@ async fn run_interview_runtime(
                         duration_ms: evt.duration_ms,
                         metadata: evt.metadata.clone(),
                     });
+                }
+            }
+            checkpoint_evt = checkpoint_rx.recv() => {
+                if let Some(evt) = checkpoint_evt {
+                    apply_checkpoint_from_event(&state, session_id, &evt);
                 }
             }
             result = &mut engine_handle => {
@@ -1111,6 +1098,7 @@ async fn handle_resume_ws(mut socket: WebSocket, state: Arc<AppState>, session_i
 
     // Frontend hydrates snapshot via REST first; only stream updates from now on.
     let mut last_msg_count = initial.messages.len();
+    let mut last_event_count = initial.events.len();
     let mut last_sent_stages: Vec<(String, String)> = initial
         .stages
         .iter()
@@ -1142,6 +1130,27 @@ async fn handle_resume_ws(mut socket: WebSocket, state: Arc<AppState>, session_i
                     }
                 }
                 last_msg_count = current_count;
+
+                // Forward any new planner events since attach.
+                let current_event_count = session.events.len();
+                for evt in session.events.iter().skip(last_event_count) {
+                    let server_msg = ServerMessage::PlannerEvent {
+                        id: evt.id.to_string(),
+                        timestamp: evt.timestamp.to_rfc3339(),
+                        level: format!("{}", evt.level),
+                        source: format!("{}", evt.source),
+                        step: evt.step.clone(),
+                        message: evt.message.clone(),
+                        duration_ms: evt.duration_ms,
+                        metadata: evt.metadata.clone(),
+                    };
+                    if let Ok(json) = serde_json::to_string(&server_msg) {
+                        if socket.send(Message::Text(json.into())).await.is_err() {
+                            return;
+                        }
+                    }
+                }
+                last_event_count = current_event_count;
 
                 // Forward stage updates only when changed since attach.
                 let current_stages: Vec<(String, String)> = session
@@ -1243,15 +1252,18 @@ mod tests {
             started_at: std::time::Instant::now(),
             blueprints: planner_core::blueprint::BlueprintStore::new(),
             proposals: planner_core::discovery::ProposalStore::new(),
+            projects: crate::project::ProjectStore::new(),
         })
     }
 
     #[tokio::test]
     async fn ws_socratic_io_send_classification() {
         let (event_tx, mut event_rx) = mpsc::unbounded_channel::<ServerMessage>();
+        let (checkpoint_tx, _checkpoint_rx) = mpsc::unbounded_channel::<SocraticEvent>();
         let (_input_tx, input_rx) = mpsc::unbounded_channel::<String>();
         let io = WsSocraticIO::new(
             event_tx,
+            checkpoint_tx,
             Arc::new(Mutex::new(input_rx)),
             None,
             Uuid::new_v4(),
@@ -1285,9 +1297,11 @@ mod tests {
     #[tokio::test]
     async fn ws_socratic_io_send_message() {
         let (event_tx, mut event_rx) = mpsc::unbounded_channel::<ServerMessage>();
+        let (checkpoint_tx, _checkpoint_rx) = mpsc::unbounded_channel::<SocraticEvent>();
         let (_input_tx, input_rx) = mpsc::unbounded_channel::<String>();
         let io = WsSocraticIO::new(
             event_tx,
+            checkpoint_tx,
             Arc::new(Mutex::new(input_rx)),
             None,
             Uuid::new_v4(),
@@ -1309,9 +1323,11 @@ mod tests {
     #[tokio::test]
     async fn ws_socratic_io_receive_input() {
         let (event_tx, _event_rx) = mpsc::unbounded_channel::<ServerMessage>();
+        let (checkpoint_tx, _checkpoint_rx) = mpsc::unbounded_channel::<SocraticEvent>();
         let (input_tx, input_rx) = mpsc::unbounded_channel::<String>();
         let io = WsSocraticIO::new(
             event_tx,
+            checkpoint_tx,
             Arc::new(Mutex::new(input_rx)),
             None,
             Uuid::new_v4(),
@@ -1327,9 +1343,11 @@ mod tests {
     #[tokio::test]
     async fn ws_socratic_io_receive_input_returns_none_when_closed() {
         let (event_tx, _event_rx) = mpsc::unbounded_channel::<ServerMessage>();
+        let (checkpoint_tx, _checkpoint_rx) = mpsc::unbounded_channel::<SocraticEvent>();
         let (input_tx, input_rx) = mpsc::unbounded_channel::<String>();
         let io = WsSocraticIO::new(
             event_tx,
+            checkpoint_tx,
             Arc::new(Mutex::new(input_rx)),
             None,
             Uuid::new_v4(),
@@ -1346,9 +1364,11 @@ mod tests {
     #[tokio::test]
     async fn ws_socratic_io_send_event_contradiction() {
         let (event_tx, mut event_rx) = mpsc::unbounded_channel::<ServerMessage>();
+        let (checkpoint_tx, mut checkpoint_rx) = mpsc::unbounded_channel::<SocraticEvent>();
         let (_input_tx, input_rx) = mpsc::unbounded_channel::<String>();
         let io = WsSocraticIO::new(
             event_tx,
+            checkpoint_tx,
             Arc::new(Mutex::new(input_rx)),
             None,
             Uuid::new_v4(),
@@ -1384,14 +1404,19 @@ mod tests {
             other => panic!("expected ContradictionDetected, got {:?}", other),
         }
 
-        // Second message should be the generic ChatMessage with role "event"
-        let msg2 = event_rx.try_recv().unwrap();
-        match msg2 {
-            ServerMessage::ChatMessage { role, .. } => {
-                assert_eq!(role, "event");
+        // Raw Socratic events are now forwarded through the checkpoint channel
+        // rather than being serialized into chat messages.
+        let projected = checkpoint_rx.try_recv().unwrap();
+        match projected {
+            SocraticEvent::ContradictionDetected { contradiction } => {
+                assert_eq!(contradiction.dimension_a, Dimension::DataModel);
+                assert_eq!(contradiction.dimension_b, Dimension::Integrations);
             }
-            other => panic!("expected ChatMessage with event role, got {:?}", other),
+            other => panic!("expected ContradictionDetected checkpoint event, got {:?}", other),
         }
+
+        // No extra chat message should be emitted for operational events.
+        assert!(event_rx.try_recv().is_err());
     }
 
     #[test]

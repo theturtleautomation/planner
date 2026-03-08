@@ -81,7 +81,7 @@ export default function MessageInput({
   // Phase-aware placeholder
   let placeholder = 'Send a message… (Enter to send, Shift+Enter for newline)';
   if (intakePhase === 'waiting') {
-    placeholder = 'Describe your project above to begin…';
+    placeholder = 'Describe your planning brief above to begin…';
   } else if (intakePhase === 'interviewing') {
     placeholder = currentQuestion?.targetDimension
       ? `Answer about ${currentQuestion.targetDimension}…`

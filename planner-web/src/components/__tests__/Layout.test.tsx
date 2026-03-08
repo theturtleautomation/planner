@@ -30,8 +30,10 @@ describe('Layout', () => {
 
   it('renders sidebar navigation links', () => {
     renderLayout({});
+    expect(screen.getByText('Home')).toBeInTheDocument();
+    expect(screen.getByText('Projects')).toBeInTheDocument();
     expect(screen.getByText('Sessions')).toBeInTheDocument();
-    expect(screen.getByText('Blueprint')).toBeInTheDocument();
+    expect(screen.getByText('Knowledge')).toBeInTheDocument();
     expect(screen.getByText('Admin')).toBeInTheDocument();
   });
 
@@ -42,9 +44,9 @@ describe('Layout', () => {
   });
 
   it('highlights active nav item based on current route', () => {
-    renderLayout({}, '/blueprint');
-    const blueprintLink = screen.getByText('Blueprint').closest('a');
-    expect(blueprintLink?.className).toContain('active');
+    renderLayout({}, '/projects/acme/sessions');
+    const projectsLink = screen.getByText('Projects').closest('a');
+    expect(projectsLink?.className).toContain('active');
   });
 
   it('highlights Sessions for session sub-routes', () => {

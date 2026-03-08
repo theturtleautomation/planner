@@ -1,14 +1,6 @@
 import { useState, useMemo } from 'react';
 import type { NodeSummary, EdgePayload, NodeType } from '../types/blueprint.ts';
-
-const TYPE_LABELS: Record<string, string> = {
-  decision: 'Decision',
-  technology: 'Technology',
-  component: 'Component',
-  constraint: 'Constraint',
-  pattern: 'Pattern',
-  quality_requirement: 'Quality',
-};
+import { labelNodeType } from '../lib/taxonomy.ts';
 
 const ALL_TYPES: (NodeType | 'all')[] = ['all', 'decision', 'technology', 'component', 'constraint', 'pattern', 'quality_requirement'];
 
@@ -76,7 +68,7 @@ export default function TableView({ nodes, edges, filterType, onSelectNode }: Ta
               className={`filter-chip${isActive ? ' active' : ''}`}
               onClick={() => setLocalFilter(t === 'all' ? 'all' : t as NodeType)}
             >
-              {t === 'all' ? 'All' : TYPE_LABELS[t] ?? t}
+              {t === 'all' ? 'All' : labelNodeType(t, 'short')}
             </button>
           );
         })}
@@ -123,7 +115,7 @@ export default function TableView({ nodes, edges, filterType, onSelectNode }: Ta
               onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelectNode(n.id); } }}
             >
               <td style={{ fontWeight: 500, color: 'var(--color-text)' }}>{n.name}</td>
-              <td><span className={`badge badge-${n.node_type}`}>{TYPE_LABELS[n.node_type] ?? n.node_type}</span></td>
+              <td><span className={`badge badge-${n.node_type}`}>{labelNodeType(n.node_type, 'short')}</span></td>
               <td><span className={`status-badge status-${(n.status ?? '').toLowerCase().replace(/\s+/g, '-')}`}>{n.status ?? ''}</span></td>
               <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.6875rem', color: 'var(--color-text-faint)' }}>{n.id}</td>
               <td style={{ fontVariantNumeric: 'tabular-nums', color: 'var(--color-text-faint)' }}>{getConnections(n.id)}</td>

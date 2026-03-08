@@ -212,6 +212,36 @@ pub enum ComponentType {
     Pipeline,
 }
 
+/// Component display-name ownership.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ComponentNameSource {
+    Generated,
+    Manual,
+}
+
+/// Strategy that produced the latest generated component name.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ComponentNamingStrategy {
+    SpecGroup,
+    DirectoryScan,
+    FactoryOutput,
+    ManualCreate,
+    Backfill,
+}
+
+/// Naming provenance attached to component nodes.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ComponentNaming {
+    pub origin_key: String,
+    pub source: ComponentNameSource,
+    pub strategy: ComponentNamingStrategy,
+    pub generated_name: String,
+    pub naming_version: u16,
+    pub last_generated_at: String,
+}
+
 /// Component lifecycle status.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -469,6 +499,8 @@ pub struct Component {
     pub id: NodeId,
     pub name: String,
     pub component_type: ComponentType,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub naming: Option<ComponentNaming>,
     pub description: String,
     /// APIs/interfaces this component exposes.
     #[serde(default)]
@@ -1135,6 +1167,14 @@ mod tests {
             id: NodeId::from_raw("comp-cxdb-c1d2e3f4"),
             name: "CXDB".into(),
             component_type: ComponentType::Store,
+            naming: Some(ComponentNaming {
+                origin_key: "path:src/cxdb".into(),
+                source: ComponentNameSource::Generated,
+                strategy: ComponentNamingStrategy::DirectoryScan,
+                generated_name: "Conversation Data Store".into(),
+                naming_version: 1,
+                last_generated_at: "2026-03-01T00:00:00Z".into(),
+            }),
             description: "Conversation Experience Database".into(),
             provides: vec!["TurnStore API".into()],
             consumes: vec!["MessagePack serialization".into()],
@@ -1151,6 +1191,17 @@ mod tests {
         let decoded: BlueprintNode = rmp_serde::from_slice(&bytes).unwrap();
         assert_eq!(decoded.name(), "CXDB");
         assert_eq!(decoded.type_name(), "component");
+        if let BlueprintNode::Component(component) = decoded {
+            assert_eq!(
+                component
+                    .naming
+                    .as_ref()
+                    .map(|n| n.origin_key.as_str()),
+                Some("path:src/cxdb")
+            );
+        } else {
+            panic!("expected component node");
+        }
     }
 
     #[test]

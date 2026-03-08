@@ -56,6 +56,7 @@ fn test_state_with_router_and_lease(router: LlmRouter, lease: Duration) -> Arc<A
         started_at: std::time::Instant::now(),
         blueprints: planner_core::blueprint::BlueprintStore::new(),
         proposals: planner_core::discovery::ProposalStore::new(),
+        projects: planner_server::project::ProjectStore::new(),
     })
 }
 

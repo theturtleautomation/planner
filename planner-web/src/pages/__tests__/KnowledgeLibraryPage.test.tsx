@@ -9,6 +9,9 @@ const mockGetBlueprint = vi.fn();
 const mockGetBlueprintNode = vi.fn();
 const mockListBlueprintEvents = vi.fn();
 const mockRecordBlueprintExport = vi.fn();
+const mockUpdateBlueprintNode = vi.fn();
+const mockCreateBlueprintNode = vi.fn();
+const mockGetAccessToken = vi.fn().mockResolvedValue('mock-token');
 
 vi.mock('../../api/client.ts', () => ({
   createApiClient: vi.fn(() => ({
@@ -16,14 +19,14 @@ vi.mock('../../api/client.ts', () => ({
     getBlueprintNode: mockGetBlueprintNode,
     listBlueprintEvents: mockListBlueprintEvents,
     recordBlueprintExport: mockRecordBlueprintExport,
-    updateBlueprintNode: vi.fn(),
-    createBlueprintNode: vi.fn(),
+    updateBlueprintNode: mockUpdateBlueprintNode,
+    createBlueprintNode: mockCreateBlueprintNode,
     deleteBlueprintNode: vi.fn(),
   })),
 }));
 
 vi.mock('../../auth/useAuthenticatedFetch.ts', () => ({
-  useGetAccessToken: vi.fn(() => vi.fn().mockResolvedValue('mock-token')),
+  useGetAccessToken: vi.fn(() => mockGetAccessToken),
 }));
 
 vi.mock('../../components/Layout.tsx', () => ({
@@ -147,6 +150,47 @@ function makeBlueprint(): BlueprintResponse {
   };
 }
 
+function makeArchivedBlueprint(): BlueprintResponse {
+  const blueprint = makeBlueprint();
+  return {
+    ...blueprint,
+    nodes: blueprint.nodes.map(node => (
+      node.id === 'alpha-local'
+        ? { ...node, lifecycle: 'archived' as const }
+        : node
+    )),
+  };
+}
+
+function makeBlueprintWithUnscopedRecord(): BlueprintResponse {
+  const blueprint = makeBlueprint();
+  return {
+    ...blueprint,
+    nodes: [
+      ...blueprint.nodes,
+      makeNode({
+        id: 'legacy-unscoped',
+        name: 'Legacy Pattern',
+        node_type: 'pattern',
+        scope_class: 'unscoped',
+        scope_visibility: 'unscoped',
+        lifecycle: 'active',
+        project_id: undefined,
+        project_name: undefined,
+        secondary_scope: {},
+        linked_project_ids: [],
+        tags: ['legacy'],
+        updated_at: '2026-03-03T12:00:00Z',
+      }),
+    ],
+    counts: {
+      ...blueprint.counts,
+      pattern: (blueprint.counts.pattern ?? 0) + 1,
+    },
+    total_nodes: blueprint.total_nodes + 1,
+  };
+}
+
 function makeBlueprintNode(overrides: Partial<BlueprintNode> = {}): BlueprintNode {
   return {
     node_type: 'decision',
@@ -175,8 +219,8 @@ function makeBlueprintNode(overrides: Partial<BlueprintNode> = {}): BlueprintNod
   };
 }
 
-function makeProjectEvents(): BlueprintEventPayload[] {
-  return [
+function makeProjectEvents(includeExport = false): BlueprintEventPayload[] {
+  const events: BlueprintEventPayload[] = [
     {
       event_type: 'node_updated',
       summary: "Updated decision 'alpha-local'",
@@ -188,6 +232,24 @@ function makeProjectEvents(): BlueprintEventPayload[] {
       },
     },
   ];
+
+  if (includeExport) {
+    events.unshift({
+      event_type: 'export_recorded',
+      summary: 'Recorded scoped view export',
+      timestamp: '2026-03-07T11:00:00Z',
+      data: {
+        kind: 'scoped_view',
+        export_id: 'exp-knowledge',
+        project_id: 'proj-alpha',
+        project_name: 'Alpha Project',
+        node_count: 3,
+        edge_count: 1,
+      },
+    });
+  }
+
+  return events;
 }
 
 function renderPage(route: string) {
@@ -205,9 +267,12 @@ function renderPage(route: string) {
 describe('KnowledgeLibraryPage phase 2 routing', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockGetAccessToken.mockResolvedValue('mock-token');
     window.localStorage.clear();
     mockGetBlueprint.mockResolvedValue(makeBlueprint());
     mockGetBlueprintNode.mockResolvedValue(makeBlueprintNode());
+    mockUpdateBlueprintNode.mockResolvedValue(makeBlueprintNode());
+    mockCreateBlueprintNode.mockResolvedValue({ id: 'created-node', message: 'ok' });
     mockListBlueprintEvents.mockResolvedValue({ events: makeProjectEvents(), total: 1 });
     mockRecordBlueprintExport.mockResolvedValue({
       export_id: 'exp-test',
@@ -322,8 +387,17 @@ describe('KnowledgeLibraryPage phase 2 routing', () => {
     });
 
     expect(screen.getByText(/project: alpha project/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /clear filters/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /clear all/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /more filters/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /reset to project scope/i })).toBeInTheDocument();
+    const primaryFilterLabels = screen.getAllByRole('combobox').map(input => input.getAttribute('aria-label'));
+    expect(primaryFilterLabels).toEqual([
+      'Type',
+      'Feature Area',
+      'Surface',
+      'Artifact',
+      'Related Component',
+    ]);
     expect(screen.getByRole('button', { name: /archive selected knowledge/i })).toBeDisabled();
     expect(screen.getByRole('button', { name: /^overview$/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^inventory$/i })).toBeInTheDocument();
@@ -346,6 +420,71 @@ describe('KnowledgeLibraryPage phase 2 routing', () => {
     expect(screen.getByText(/project event history/i)).toBeInTheDocument();
     expect(screen.getByText(/review queue/i)).toBeInTheDocument();
     expect(screen.getByText(/recent node changes/i)).toBeInTheDocument();
+  });
+
+  it('shows durable export history entries sourced from project events', async () => {
+    const user = userEvent.setup();
+    mockListBlueprintEvents.mockResolvedValueOnce({ events: makeProjectEvents(true), total: 2 });
+
+    renderPage('/knowledge/projects/proj-alpha');
+
+    await waitFor(() => {
+      expect(screen.getByText(/project: alpha project/i)).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: /activity/i }));
+
+    expect(screen.getByText(/durable export history/i)).toBeInTheDocument();
+    expect(screen.getByText(/exported scoped view \(3 records\)/i)).toBeInTheDocument();
+  });
+
+  it('archives selected knowledge via the lifecycle field', async () => {
+    const user = userEvent.setup();
+    renderPage('/knowledge/projects/proj-alpha');
+
+    await waitFor(() => {
+      expect(screen.getByText(/project: alpha project/i)).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: /select alpha decision/i }));
+    await user.click(screen.getByRole('button', { name: /archive selected knowledge/i }));
+
+    await waitFor(() => {
+      expect(mockUpdateBlueprintNode).toHaveBeenCalledWith(
+        'alpha-local',
+        expect.objectContaining({
+          scope: expect.objectContaining({ lifecycle: 'archived' }),
+        }),
+      );
+    });
+  });
+
+  it('restores archived knowledge via the lifecycle field', async () => {
+    const user = userEvent.setup();
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    mockGetBlueprint.mockResolvedValue(makeArchivedBlueprint());
+
+    renderPage('/knowledge/projects/proj-alpha');
+
+    await waitFor(() => {
+      expect(screen.getByText(/project: alpha project/i)).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: /more filters/i }));
+    await user.selectOptions(screen.getByRole('combobox', { name: /lifecycle/i }), 'archived');
+    await user.click(screen.getByRole('button', { name: /select alpha decision/i }));
+    await user.click(screen.getByRole('button', { name: /restore archived knowledge/i }));
+
+    await waitFor(() => {
+      expect(mockUpdateBlueprintNode).toHaveBeenCalledWith(
+        'alpha-local',
+        expect.objectContaining({
+          scope: expect.objectContaining({ lifecycle: 'active' }),
+        }),
+      );
+    });
+
+    confirmSpy.mockRestore();
   });
 
   it('exports a single selected record from project scope', async () => {
@@ -376,10 +515,10 @@ describe('KnowledgeLibraryPage phase 2 routing', () => {
       expect(screen.getByText(/project: alpha project/i)).toBeInTheDocument();
     });
 
-    expect(screen.getByText(/feature: tasking/i)).toBeInTheDocument();
-    expect(screen.getByText(/widget: tracker/i)).toBeInTheDocument();
+    expect(screen.getByText(/feature area: tasking/i)).toBeInTheDocument();
+    expect(screen.getByText(/surface: tracker/i)).toBeInTheDocument();
     expect(screen.getByText(/artifact: task-service/i)).toBeInTheDocument();
-    expect(screen.getByText(/component: task-widget/i)).toBeInTheDocument();
+    expect(screen.getByText(/related component: task-widget/i)).toBeInTheDocument();
     expect(screen.getByTestId('node-list-panel')).toBeInTheDocument();
   });
 
@@ -394,7 +533,7 @@ describe('KnowledgeLibraryPage phase 2 routing', () => {
     expect(link).toHaveAttribute('href', '/blueprint');
   });
 
-  it('persists scoped chips inside the same project context', async () => {
+  it('persists scoped filters inside the same project context', async () => {
     const user = userEvent.setup();
     const { unmount } = render(
       <MemoryRouter initialEntries={['/knowledge/projects/proj-alpha']}>
@@ -408,8 +547,9 @@ describe('KnowledgeLibraryPage phase 2 routing', () => {
       expect(screen.getByText(/project: alpha project/i)).toBeInTheDocument();
     });
 
-    await user.click(screen.getByRole('button', { name: /with docs/i }));
-    expect(screen.getByRole('button', { name: /with docs/i })).toHaveAttribute('aria-pressed', 'true');
+    await user.click(screen.getByRole('button', { name: /more filters/i }));
+    await user.selectOptions(screen.getByRole('combobox', { name: /docs/i }), 'with_docs');
+    expect(screen.getByRole('combobox', { name: /docs/i })).toHaveValue('with_docs');
     unmount();
 
     render(
@@ -421,7 +561,37 @@ describe('KnowledgeLibraryPage phase 2 routing', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /with docs/i })).toHaveAttribute('aria-pressed', 'true');
+      expect(screen.getByText(/project: alpha project/i)).toBeInTheDocument();
+    });
+    await user.click(screen.getByRole('button', { name: /more filters/i }));
+    expect(screen.getByRole('combobox', { name: /docs/i })).toHaveValue('with_docs');
+  });
+
+  it('resolves unscoped records from the quality review workflow', async () => {
+    const user = userEvent.setup();
+    mockGetBlueprint.mockResolvedValue(makeBlueprintWithUnscopedRecord());
+
+    renderPage('/knowledge/projects/proj-alpha');
+
+    await waitFor(() => {
+      expect(screen.getByText(/project: alpha project/i)).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: /^quality$/i }));
+    await user.click(screen.getByRole('button', { name: /assign to project/i }));
+
+    await waitFor(() => {
+      expect(mockUpdateBlueprintNode).toHaveBeenCalledWith(
+        'legacy-unscoped',
+        expect.objectContaining({
+          scope: expect.objectContaining({
+            scope_class: 'project',
+            project: expect.objectContaining({
+              project_id: 'proj-alpha',
+            }),
+          }),
+        }),
+      );
     });
   });
 });

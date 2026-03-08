@@ -1,0 +1,380 @@
+[
+  {
+    "route": {
+      "name": "root",
+      "url": "http://localhost:5173/"
+    },
+    "title": "Planner v2 — Socratic Lobby",
+    "headings": [],
+    "buttons": [
+      "show archived",
+      "+ new session",
+      "Rename",
+      "Duplicate",
+      "Archive"
+    ],
+    "links": [
+      {
+        "text": "Sessions",
+        "href": "/"
+      },
+      {
+        "text": "Blueprint",
+        "href": "/blueprint"
+      },
+      {
+        "text": "Knowledge",
+        "href": "/knowledge"
+      },
+      {
+        "text": "Events",
+        "href": "/events"
+      },
+      {
+        "text": "Discovery",
+        "href": "/discovery"
+      },
+      {
+        "text": "Admin",
+        "href": "/admin"
+      },
+      {
+        "text": "blueprint →",
+        "href": "/blueprint"
+      },
+      {
+        "text": "admin →",
+        "href": "/admin"
+      }
+    ],
+    "labels": [],
+    "bodyText": "PLANNER NAVIGATION Sessions Blueprint Knowledge Events Discovery Admin D dev sessions blueprint → admin → show archived + NEW SESSION ACTIONABLE 1 ATTENTION NEEDED 0 SORT ORDER Attention and resumability first, then recent activity. Session f633443d f633443d… Last activity 2m ago · Mar 7, 22:26 WAITING START INTERVIEW No project description saved yet. Awaiting the initial project description. READY TO START 1 message 0 events RENAME DUPLICATE ARCHIVE TIP The dashboard now uses backend session summaries directly for capability state, activity timing, and intervention signals."
+  },
+  {
+    "route": {
+      "name": "knowledge-home",
+      "url": "http://localhost:5173/knowledge"
+    },
+    "title": "Planner v2 — Socratic Lobby",
+    "headings": [
+      "Knowledge Library",
+      "All Knowledge",
+      "afc2fb66-0a2b-440e-9b2c-02b4ddc47665",
+      "Personal Task Tracker"
+    ],
+    "buttons": [
+      "★",
+      "★"
+    ],
+    "links": [
+      {
+        "text": "Sessions",
+        "href": "/"
+      },
+      {
+        "text": "Blueprint",
+        "href": "/blueprint"
+      },
+      {
+        "text": "Knowledge",
+        "href": "/knowledge"
+      },
+      {
+        "text": "Events",
+        "href": "/events"
+      },
+      {
+        "text": "Discovery",
+        "href": "/discovery"
+      },
+      {
+        "text": "Admin",
+        "href": "/admin"
+      },
+      {
+        "text": "Open All Knowledge",
+        "href": "/knowledge/all"
+      },
+      {
+        "text": "Open All Knowledge",
+        "href": "/knowledge/all"
+      },
+      {
+        "text": "Open Project View",
+        "href": "/knowledge/projects/afc2fb66-0a2b-440e-9b2c-02b4ddc47665"
+      },
+      {
+        "text": "Open Project View",
+        "href": "/knowledge/projects/proj-personal-task-tracker"
+      }
+    ],
+    "labels": [
+      "Favorites only"
+    ],
+    "bodyText": "PLANNER NAVIGATION Sessions Blueprint Knowledge Events Discovery Admin D dev Knowledge Library Choose a software project first, then drill into scoped knowledge. Open All Knowledge 2 PROJECTS 81 KNOWLEDGE 0 STALE 0 SHARED 56 UNSCOPED Sort: Health Sort: Last activity Sort: Knowledge count Sort: Stale count Sort: Name Favorites only All Knowledge Cross-project browsing for architecture-wide audits and discovery. Nodes: 81 Edges: 0 Types: 4 Open All Knowledge afc2fb66-0a2b-440e-9b2c-02b4ddc47665 afc2fb66-0a2b-440e-9b2c-02b4ddc47665 ★ Focuses on root and spec; Health is moderate with mostly current documentation and room to improve docs coverage. Knowledge: 24 Local: 24 Shared: 0 Stale: 0 Last activity: Mar 7, 2026 Updated 20h ago Needs Attention · 55% Decisions: 0 Technologies: 0 Components: 7 Constraints: 6 Patterns: 0 Quality: 11 Open Project View Personal Task Tracker proj-personal-task-tracker ★ Focuses on intake and scope; Health is weak with mostly current documentation and room to improve docs coverage. Knowledge: 1 Local: 1 Shared: 0 Stale: 0 Last activity: Mar 7, 2026 Updated 20h ago At Risk · 45% Decisions: 1 Technologies: 0 Components: 0 Constraints: 0 Patterns: 0 Quality: 0 Open Project View"
+  },
+  {
+    "route": {
+      "name": "knowledge-all",
+      "url": "http://localhost:5173/knowledge/all"
+    },
+    "title": "Planner v2 — Socratic Lobby",
+    "headings": [
+      "Knowledge Library"
+    ],
+    "buttons": [
+      "Create knowledge",
+      "Clear filters",
+      "All Types81",
+      "Decisions3",
+      "Technologies0",
+      "Components21",
+      "Constraints22",
+      "Patterns0",
+      "Quality35",
+      "All Scope81",
+      "Project25",
+      "Project Contextual0",
+      "Global0",
+      "Unscoped56",
+      "Visible: All81",
+      "Project only25",
+      "Inherited shared0",
+      "Unscoped only56",
+      "All Features81",
+      "All Widgets81",
+      "All Artifacts81",
+      "All Components81",
+      "All Tags81",
+      "root73",
+      "spec38",
+      "definition-of-done19",
+      "satisfaction16",
+      "ar-review5",
+      "blocking5",
+      "intake3",
+      "scope3",
+      "All Owners81",
+      "Any Status81",
+      "Technical22",
+      "Medium21",
+      "Planned21",
+      "Critical9",
+      "High5",
+      "Accepted3",
+      "Stale: Any81"
+    ],
+    "links": [
+      {
+        "text": "Sessions",
+        "href": "/"
+      },
+      {
+        "text": "Blueprint",
+        "href": "/blueprint"
+      },
+      {
+        "text": "Knowledge",
+        "href": "/knowledge"
+      },
+      {
+        "text": "Events",
+        "href": "/events"
+      },
+      {
+        "text": "Discovery",
+        "href": "/discovery"
+      },
+      {
+        "text": "Admin",
+        "href": "/admin"
+      },
+      {
+        "text": "Back to project chooser",
+        "href": "/knowledge"
+      }
+    ],
+    "labels": [],
+    "bodyText": "PLANNER NAVIGATION Sessions Blueprint Knowledge Events Discovery Admin D dev Knowledge Library Global cross-project view for intentional broad exploration. Back to project chooser 81 NODES 0 EDGES 0 STALE 0 SHARED 56 UNSCOPED Global: All Projects 81 visible 0 selected Create knowledge Clear filters Global view active ACTIVE FILTERS Active only KNOWLEDGE TYPE All Types 81 Decisions 3 Technologies 0 Components 21 Constraints 22 Patterns 0 Quality 35 SCOPE CLASS All Scope 81 Project 25 Project Contextual 0 Global 0 Unscoped 56 VISIBILITY Visible: All 81 Project only 25 Inherited shared 0 Unscoped only 56 FEATURE All Features 81 WIDGET All Widgets 81 ARTIFACT All Artifacts 81 COMPONENT All Components 81 TAG All Tags 81 root 73 spec 38 definition-of-done 19 satisfaction 16 ar-review 5 blocking 5 intake 3 scope 3 OWNER All Owners 81 STATUS Any Status 81 Technical 22 Medium 21 Planned 21 Critical 9 High 5 Accepted 3 STALE Stale: Any 81 Stale only 81 Fresh only 81 ORPHAN Orphan: Any 81 Orphan only 81 Connected only 81 DOCUMENTATION Docs: Any 81 With docs 81 Without docs 81 LIFECYCLE Lifecycle: Any 81 Active only 81 Archived only 0 UPDATED DATE Updated: Any 81 Last 7 days 81 Last 30 days 81 Last 90 days 81 Older than 90 days 81 Archive selected knowledge Restore archived knowledge Export selected record Export current scoped view Duplicate / branch scoped subset 81 of 81 nodes Completeness: 75% NAME↑ TYPE↕ STATUS↕ SCOPE↕ EDGES↕ TAGS UPDATED↕ SCORE 1 Module ORPHAN COMPONENT Planned Unscoped Unscoped 0 spec root Mar 6 71% 1 Module ORPHAN COMPONENT Planned Unscoped Unscoped 0 spec root Mar 6 71% 1 Module ORPHAN COMPONENT Planned Project Project Local 0 spec root Mar 7 71% 2 Module ORPHAN COMPONENT Planned Unscoped Unscoped 0 spec root Mar 6 71% 2 Module ORPHAN COMPONENT Planned Unscoped Unscoped 0 spec root Mar 6 71% 2 Module ORPHAN COMPONENT Planned Project Project Local 0 spec root Mar 7 71% 3 Module ORPHAN COMPONENT Planned Project Project Local 0 spec root Mar 7 71% 3 Modul"
+  },
+  {
+    "route": {
+      "name": "blueprint",
+      "url": "http://localhost:5173/blueprint"
+    },
+    "title": "Planner v2 — Socratic Lobby",
+    "headings": [],
+    "buttons": [
+      "Graph",
+      "Table",
+      "Radar",
+      "Tree",
+      "New Node",
+      "Add Edge",
+      "Impact",
+      "View related knowledge",
+      "◎All Nodes81",
+      "◆Decisions3",
+      "⬡Technologies0",
+      "▪Components21",
+      "◇Constraints22",
+      "◉Patterns0",
+      "⛨Quality35",
+      "Edit",
+      "Delete",
+      "Impact Preview",
+      "Cancel",
+      "Apply & Reconverge"
+    ],
+    "links": [
+      {
+        "text": "Sessions",
+        "href": "/"
+      },
+      {
+        "text": "Blueprint",
+        "href": "/blueprint"
+      },
+      {
+        "text": "Knowledge",
+        "href": "/knowledge"
+      },
+      {
+        "text": "Events",
+        "href": "/events"
+      },
+      {
+        "text": "Discovery",
+        "href": "/discovery"
+      },
+      {
+        "text": "Admin",
+        "href": "/admin"
+      }
+    ],
+    "labels": [],
+    "bodyText": "PLANNER NAVIGATION Sessions Blueprint Knowledge Events Discovery Admin D dev Blueprint 81 nodes · 0 edges Graph Table Radar Tree New Node Add Edge Impact View related knowledge NODE TYPES ◎ All Nodes 81 ◆ Decisions 3 ⬡ Technologies 0 ▪ Components 21 ◇ Constraints 22 ◉ Patterns 0 ⛨ Quality 35 EDGE TYPES depends on decided by supersedes constrains uses implements satisfies affects QUAL Task list persists identically across page reloads via localStorage CON No external state management library; React state + useEffect suffices at this s… QUAL User can delete a task and it is removed from both the UI and localStorage COMP 2 Module CON Tailwind CSS for all styling — no additional CSS frameworks CON Single-file React component (one .tsx file plus one optional CSS/Tailwind config… COMP 6 Module QUAL User can mark a task as complete or incomplete and the status change persists after reload COMP 3 Module CON Tailwind CSS for all styling — no additional CSS frameworks QUAL Toggling a task from done back to not-done preserves the task name and list position DEC Project scope: Personal Task Tracker CON Virtualized list (e.g., react-window or manual windowing) for rendering large ta… CON Vite as build tool CON localStorage as the sole persistence layer — no network calls CON Tailwind CSS for all styling—no additional CSS frameworks QUAL Completed tasks are visually distinct from incomplete tasks (strikethrough, opacity, or similar) QUAL Incomplete tasks appear before completed tasks for easy review of remaining work CON `dueDate?: string` and `createdAt: string` are underspecified (format, timezone,… DEC Project scope: Personal Task Tracker QUAL Task creation form and task list are both visible simultaneously without navigation or tab switching COMP 6 Module QUAL Typing a task name and submitting adds a new not-done task that appears in the list without page reload QUAL Reloading the browser page restores the exact task list that was present before reload QUAL Submitting a task "
+  },
+  {
+    "route": {
+      "name": "session",
+      "url": "http://localhost:5173/session/f633443d-6254-4ed8-a5d3-d7bf517978ab"
+    },
+    "title": "Planner v2 — Socratic Lobby",
+    "headings": [
+      "Describe your project"
+    ],
+    "buttons": [
+      "Rename",
+      "Duplicate",
+      "Archive",
+      "Export",
+      "Back to Dashboard",
+      "Start Interview →",
+      "send"
+    ],
+    "links": [
+      {
+        "text": "Sessions",
+        "href": "/"
+      },
+      {
+        "text": "Blueprint",
+        "href": "/blueprint"
+      },
+      {
+        "text": "Knowledge",
+        "href": "/knowledge"
+      },
+      {
+        "text": "Events",
+        "href": "/events"
+      },
+      {
+        "text": "Discovery",
+        "href": "/discovery"
+      },
+      {
+        "text": "Admin",
+        "href": "/admin"
+      }
+    ],
+    "labels": [],
+    "bodyText": "PLANNER NAVIGATION Sessions Blueprint Knowledge Events Discovery Admin disconnected D dev idle RENAME DUPLICATE ARCHIVE EXPORT BACK TO DASHBOARD 0LLM calls PLANNER V2 Describe your project Give a brief overview — what you want to build, who it's for, and any important constraints. We'll ask focused questions to fill in the details. 0 chars Enter to submit Start Interview → send"
+  },
+  {
+    "route": {
+      "name": "events",
+      "url": "http://localhost:5173/events"
+    },
+    "title": "Planner v2 — Socratic Lobby",
+    "headings": [
+      "Event Timeline"
+    ],
+    "buttons": [
+      "Refresh",
+      "Events",
+      "Snapshots",
+      "All Events",
+      "Created",
+      "Updated",
+      "Deleted",
+      "Edge Created",
+      "Edges Deleted",
+      "Exports",
+      "View related knowledge",
+      "View related knowledge",
+      "View related knowledge",
+      "View related knowledge",
+      "View related knowledge",
+      "View related knowledge",
+      "View related knowledge",
+      "View related knowledge",
+      "View related knowledge",
+      "View related knowledge",
+      "View related knowledge",
+      "View related knowledge",
+      "View related knowledge",
+      "View related knowledge",
+      "View related knowledge",
+      "View related knowledge",
+      "View related knowledge",
+      "View related knowledge",
+      "View related knowledge",
+      "View related knowledge",
+      "View related knowledge",
+      "View related knowledge",
+      "View related knowledge",
+      "View related knowledge",
+      "View related knowledge"
+    ],
+    "links": [
+      {
+        "text": "Sessions",
+        "href": "/"
+      },
+      {
+        "text": "Blueprint",
+        "href": "/blueprint"
+      },
+      {
+        "text": "Knowledge",
+        "href": "/knowledge"
+      },
+      {
+        "text": "Events",
+        "href": "/events"
+      },
+      {
+        "text": "Discovery",
+        "href": "/discovery"
+      },
+      {
+        "text": "Admin",
+        "href": "/admin"
+      }
+    ],
+    "labels": [],
+    "bodyText": "PLANNER NAVIGATION Sessions Blueprint Knowledge Events Discovery Admin D dev Event Timeline All changes across the blueprint — 81 events Refresh Events Snapshots All Events Created Updated Deleted Edge Created Edges Deleted Exports Last 50 Last 100 Last 250 Last 500 NODE CREATED 20h ago Created constraint 'The DoD item 'produces no perceivable jank (60 fps target)' relies on subjective…' Details NODE CREATED 20h ago Created constraint 'Persistence is required, but storage contract details are missing: localStorage …' Details NODE CREATED 20h ago Created constraint 'Virtualization approach is ambiguous given `FR-7` (“description may be shown o…' Details NODE CREATED 20h ago Created constraint '“Equally prominent” / “neither section visually subordinate” is subjecti…' Details NODE CREATED 20h ago Created constraint '`dueDate?: string` and `createdAt: string` are underspecified (format, timezone,…' Details NODE CREATED 20h ago Created quality_requirement 'Task creation form and task list are both visible simultaneously without navigation or tab switching' View related knowledge Details NODE CREATED 20h ago Created quality_requirement 'Closing and reopening the browser tab preserves all previously created tasks with correct data' View related knowledge Details NODE CREATED 20h ago Created quality_requirement 'Creating 200 tasks and scrolling through the list produces no perceivable jank (60 fps target)' View related knowledge Details NODE CREATED 20h ago Created quality_requirement 'Toggling a task's completion status updates the UI immediately and persists after page reload' View related knowledge Details NODE CREATED 20h ago Created quality_requirement 'Submitting with an empty title shows an inline error message next to the title field and does not create a task' View related knowledge Details NODE CREATED 20h ago Created quality_requirement 'Typing a title and submitting adds a new incomplete task that appears in the task list without a page reload' View related kno"
+  }
+]

@@ -20,35 +20,22 @@ use chrono::Utc;
 use planner_schemas::{artifacts::blueprint::*, ArReportV1, FactoryOutputV1, IntakeV1, NLSpecV1};
 
 use crate::blueprint::BlueprintStore;
+use crate::component_naming::{
+    generate_factory_name, generate_spec_name, merge_generated_component, FactoryNamingInput,
+    SpecGroupNamingInput,
+};
 
 /// Timestamp helper — ISO 8601 UTC.
 fn now() -> String {
     Utc::now().to_rfc3339()
 }
 
-fn slugify(input: &str) -> String {
-    input
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() {
-                c.to_ascii_lowercase()
-            } else {
-                '-'
-            }
-        })
-        .collect::<String>()
-        .split('-')
-        .filter(|part| !part.is_empty())
-        .collect::<Vec<_>>()
-        .join("-")
-}
-
-fn project_scope_from_name(project_name: &str) -> NodeScope {
+fn project_scope_from_intake(intake: &IntakeV1) -> NodeScope {
     NodeScope {
         scope_class: ScopeClass::Project,
         project: Some(ProjectScope {
-            project_id: format!("proj-{}", slugify(project_name)),
-            project_name: Some(project_name.to_string()),
+            project_id: intake.project_id.to_string(),
+            project_name: Some(intake.project_name.clone()),
         }),
         secondary: SecondaryScopeRefs::default(),
         is_shared: false,
@@ -91,7 +78,7 @@ fn scope_for_spec(spec: &NLSpecV1) -> NodeScope {
 /// - Constraint nodes from the intake's key constraints (if present)
 pub fn emit_from_intake(store: &BlueprintStore, intake: &IntakeV1) {
     let ts = now();
-    let scope = project_scope_from_name(&intake.project_name);
+    let scope = project_scope_from_intake(intake);
 
     // Decision: project scope
     let scope_decision = Decision {
@@ -234,29 +221,57 @@ pub fn emit_from_spec(store: &BlueprintStore, spec: &NLSpecV1) {
             .push(req.statement.clone());
     }
 
+    let project_id = spec.project_id.to_string();
     for (group_name, statements) in &component_groups {
-        let component = Component {
-            id: NodeId::with_prefix("COMP", group_name),
-            name: humanize_group_name(group_name),
+        let generated = generate_spec_name(SpecGroupNamingInput {
+            project_id: &project_id,
+            project_name: None,
+            chunk_tag: &chunk_tag,
+            group_token: group_name,
+            statements,
             component_type: ComponentType::Module,
-            description: format!(
-                "{} functional requirements: {}",
-                statements.len(),
-                statements
-                    .iter()
-                    .take(3)
-                    .map(|s| truncate(s, 60))
-                    .collect::<Vec<_>>()
-                    .join("; ")
-            ),
-            provides: statements.iter().take(5).map(|s| truncate(s, 80)).collect(),
-            consumes: vec![],
-            status: ComponentStatus::Planned,
-            tags: vec!["spec".into(), chunk_tag.clone()],
-            documentation: None,
-            scope: node_scope.clone(),
-            created_at: ts.clone(),
-            updated_at: ts.clone(),
+            timestamp: &ts,
+        });
+
+        let description = format!(
+            "{} functional requirements: {}",
+            statements.len(),
+            statements
+                .iter()
+                .take(3)
+                .map(|s| truncate(s, 60))
+                .collect::<Vec<_>>()
+                .join("; ")
+        );
+        let provides: Vec<String> = statements.iter().take(5).map(|s| truncate(s, 80)).collect();
+
+        let component = if let Some(existing) = store.find_component_by_origin_key(&generated.naming.origin_key) {
+            let mut merged = merge_generated_component(&existing, &generated);
+            merged.component_type = ComponentType::Module;
+            merged.description = description;
+            merged.provides = provides;
+            merged.consumes = Vec::new();
+            merged.tags = merge_component_tags(&existing.tags, &["spec", &chunk_tag]);
+            merged.documentation = existing.documentation.clone();
+            merged.scope = node_scope.clone();
+            merged.status = existing.status.clone();
+            merged
+        } else {
+            Component {
+                id: NodeId::with_prefix("COMP", group_name),
+                name: generated.name.clone(),
+                component_type: ComponentType::Module,
+                naming: Some(generated.naming.clone()),
+                description,
+                provides,
+                consumes: vec![],
+                status: ComponentStatus::Planned,
+                tags: vec!["spec".into(), chunk_tag.clone()],
+                documentation: None,
+                scope: node_scope.clone(),
+                created_at: ts.clone(),
+                updated_at: ts.clone(),
+            }
         };
         store.upsert_node(BlueprintNode::Component(component));
     }
@@ -387,27 +402,54 @@ pub fn emit_from_factory(store: &BlueprintStore, output: &FactoryOutputV1) {
     };
     store.upsert_node(BlueprintNode::Pattern(pattern));
 
-    // Component: the generated output directory
-    let output_component = Component {
-        id: NodeId::with_prefix("COMP", "factory-output"),
-        name: "Factory Output".into(),
-        component_type: ComponentType::Module,
-        description: format!(
+    // Component: generated output workspace (project-specific instead of generic "Factory Output")
+    let generated_name = generate_factory_name(FactoryNamingInput {
+        output_path: &output.output_path,
+        project_name: None,
+        timestamp: &ts,
+    });
+    let output_component = if let Some(existing) =
+        store.find_component_by_origin_key(&generated_name.naming.origin_key)
+    {
+        let mut merged = merge_generated_component(&existing, &generated_name);
+        merged.component_type = ComponentType::Module;
+        merged.description = format!(
             "Generated code output at {}. Build status: {:?}.",
             output.output_path, output.build_status,
-        ),
-        provides: vec!["Generated source code".into()],
-        consumes: vec!["NLSpec".into(), "GraphDot".into(), "AGENTS.md".into()],
-        status: match output.build_status {
+        );
+        merged.provides = vec!["Generated source code".into()];
+        merged.consumes = vec!["NLSpec".into(), "GraphDot".into(), "AGENTS.md".into()];
+        merged.status = match output.build_status {
             planner_schemas::BuildStatus::Success => ComponentStatus::Shipped,
             planner_schemas::BuildStatus::PartialSuccess => ComponentStatus::InProgress,
             _ => ComponentStatus::Planned,
-        },
-        tags: vec!["factory".into()],
-        documentation: None,
-        scope: NodeScope::default(),
-        created_at: ts.clone(),
-        updated_at: ts.clone(),
+        };
+        merged.tags = merge_component_tags(&existing.tags, &["factory"]);
+        merged.scope = NodeScope::default();
+        merged
+    } else {
+        Component {
+            id: NodeId::with_prefix("COMP", "factory-output"),
+            name: generated_name.name.clone(),
+            component_type: ComponentType::Module,
+            naming: Some(generated_name.naming.clone()),
+            description: format!(
+                "Generated code output at {}. Build status: {:?}.",
+                output.output_path, output.build_status,
+            ),
+            provides: vec!["Generated source code".into()],
+            consumes: vec!["NLSpec".into(), "GraphDot".into(), "AGENTS.md".into()],
+            status: match output.build_status {
+                planner_schemas::BuildStatus::Success => ComponentStatus::Shipped,
+                planner_schemas::BuildStatus::PartialSuccess => ComponentStatus::InProgress,
+                _ => ComponentStatus::Planned,
+            },
+            tags: vec!["factory".into()],
+            documentation: None,
+            scope: NodeScope::default(),
+            created_at: ts.clone(),
+            updated_at: ts.clone(),
+        }
     };
     store.upsert_node(BlueprintNode::Component(output_component));
 
@@ -495,29 +537,14 @@ fn extract_requirement_group(req_id: &str) -> String {
     }
 }
 
-/// Convert a group name like "auth" → "Authentication Module".
-fn humanize_group_name(group: &str) -> String {
-    match group.to_lowercase().as_str() {
-        "auth" => "Authentication Module".into(),
-        "api" => "API Layer".into(),
-        "ui" => "User Interface".into(),
-        "db" | "data" | "store" => "Data Store".into(),
-        "pay" | "payment" | "billing" => "Payment System".into(),
-        "notify" | "notification" => "Notification System".into(),
-        "search" => "Search Engine".into(),
-        "admin" => "Admin Panel".into(),
-        "config" | "settings" => "Configuration".into(),
-        "test" | "testing" => "Test Infrastructure".into(),
-        "deploy" | "ci" | "cd" => "Deployment Pipeline".into(),
-        _ => {
-            // Title-case the group name
-            let mut chars = group.chars();
-            match chars.next() {
-                Some(c) => format!("{}{} Module", c.to_uppercase(), chars.as_str()),
-                None => "Unknown Module".into(),
-            }
+fn merge_component_tags(existing: &[String], required: &[&str]) -> Vec<String> {
+    let mut merged = existing.to_vec();
+    for tag in required {
+        if !merged.iter().any(|existing_tag| existing_tag == tag) {
+            merged.push((*tag).to_string());
         }
     }
+    merged
 }
 
 // ---------------------------------------------------------------------------
@@ -589,16 +616,12 @@ mod tests {
     }
 
     #[test]
-    fn humanize_known_groups() {
-        assert_eq!(humanize_group_name("auth"), "Authentication Module");
-        assert_eq!(humanize_group_name("api"), "API Layer");
-        assert_eq!(humanize_group_name("ui"), "User Interface");
-    }
-
-    #[test]
-    fn humanize_unknown_group() {
-        let result = humanize_group_name("payments");
-        assert_eq!(result, "Payments Module");
+    fn merge_component_tags_adds_required_without_duplicates() {
+        let merged = merge_component_tags(
+            &["spec".into(), "core".into()],
+            &["spec", "root", "core"],
+        );
+        assert_eq!(merged, vec!["spec", "core", "root"]);
     }
 
     #[test]
@@ -739,12 +762,116 @@ mod tests {
             components.len() >= 2,
             "Should have at least 2 component groups (auth + api)"
         );
+        for component in &components {
+            assert!(
+                !component.name.ends_with(" Module"),
+                "Component name should not end with 'Module': {}",
+                component.name
+            );
+            assert_ne!(component.name, "Api");
+            assert_ne!(component.name, "Core");
+            assert_ne!(component.name, "Web");
+            assert_ne!(component.name, "Factory Output");
+        }
 
         // Verify we got quality requirements
         let qrs = store.list_by_type("quality_requirement");
         assert!(
             qrs.len() >= 1,
             "Should have at least 1 QR from satisfaction criteria"
+        );
+    }
+
+    #[test]
+    fn emit_from_spec_rerun_uses_origin_key_and_preserves_manual_component_names() {
+        use planner_schemas::*;
+
+        let store = BlueprintStore::new();
+        let spec = NLSpecV1 {
+            project_id: uuid::Uuid::new_v4(),
+            version: "1.0".into(),
+            chunk: ChunkType::Root,
+            status: NLSpecStatus::Draft,
+            line_count: 20,
+            created_from: "test".into(),
+            intent_summary: Some("Build a secure API".into()),
+            sacred_anchors: None,
+            requirements: vec![
+                Requirement {
+                    id: "FR-AUTH-001".into(),
+                    statement: "Users can sign in with OAuth".into(),
+                    priority: Priority::Must,
+                    traces_to: vec![],
+                },
+                Requirement {
+                    id: "FR-API-001".into(),
+                    statement: "Expose authenticated REST endpoints".into(),
+                    priority: Priority::Must,
+                    traces_to: vec![],
+                },
+            ],
+            architectural_constraints: vec![],
+            phase1_contracts: None,
+            external_dependencies: vec![],
+            definition_of_done: vec![],
+            satisfaction_criteria: vec![],
+            open_questions: vec![],
+            out_of_scope: vec![],
+            amendment_log: vec![],
+        };
+
+        emit_from_spec(&store, &spec);
+        let initial_components = store
+            .snapshot()
+            .nodes
+            .values()
+            .filter_map(|node| match node {
+                BlueprintNode::Component(component) => Some(component.clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(initial_components.len(), 2);
+
+        let auth_component = initial_components
+            .iter()
+            .find(|component| {
+                component
+                    .naming
+                    .as_ref()
+                    .is_some_and(|naming| naming.origin_key.ends_with(":auth"))
+            })
+            .expect("auth component should exist");
+
+        let auth_id = auth_component.id.as_str().to_string();
+        store.update_node(&auth_id, |node| {
+            if let BlueprintNode::Component(component) = node {
+                component.name = "Identity Service".into();
+                if let Some(naming) = component.naming.as_mut() {
+                    naming.source = ComponentNameSource::Manual;
+                }
+            }
+        });
+
+        emit_from_spec(&store, &spec);
+        let components_after = store
+            .snapshot()
+            .nodes
+            .values()
+            .filter_map(|node| match node {
+                BlueprintNode::Component(component) => Some(component.clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(components_after.len(), 2);
+
+        let updated_auth = components_after
+            .into_iter()
+            .find(|component| component.id.as_str() == auth_id)
+            .expect("manual component should still exist after rerun");
+        assert_eq!(updated_auth.name, "Identity Service");
+        assert_eq!(
+            updated_auth.naming.map(|naming| naming.source),
+            Some(ComponentNameSource::Manual)
         );
     }
 }

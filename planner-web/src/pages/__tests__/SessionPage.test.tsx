@@ -9,6 +9,7 @@ import { useSocraticWebSocket } from '../../hooks/useSocraticWebSocket';
 const mockCreateSession = vi.fn();
 const mockGetSession = vi.fn();
 const mockStartSocratic = vi.fn();
+const mockGetSessionEvents = vi.fn();
 const mockRestartFromDescription = vi.fn();
 const mockRetryPipeline = vi.fn();
 const mockUpdateSession = vi.fn();
@@ -16,11 +17,13 @@ const mockDuplicateSession = vi.fn();
 const mockExportSession = vi.fn();
 const mockAttach = vi.fn();
 const mockSendDescription = vi.fn();
+const mockGetAccessToken = vi.fn().mockResolvedValue('mock-token');
 
 vi.mock('../../api/client.ts', () => ({
   createApiClient: vi.fn(() => ({
     createSession: mockCreateSession,
     getSession: mockGetSession,
+    getSessionEvents: mockGetSessionEvents,
     startSocratic: mockStartSocratic,
     restartFromDescription: mockRestartFromDescription,
     retryPipeline: mockRetryPipeline,
@@ -31,7 +34,7 @@ vi.mock('../../api/client.ts', () => ({
 }));
 
 vi.mock('../../auth/useAuthenticatedFetch.ts', () => ({
-  useGetAccessToken: vi.fn(() => vi.fn().mockResolvedValue('mock-token')),
+  useGetAccessToken: vi.fn(() => mockGetAccessToken),
 }));
 
 vi.mock('../../hooks/useSocraticWebSocket.ts', () => ({
@@ -95,6 +98,7 @@ function renderSessionPage(path = '/session/abc') {
 describe('SessionPage resume behavior', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockGetAccessToken.mockResolvedValue('mock-token');
     vi.spyOn(window, 'prompt').mockReturnValue(null);
     vi.spyOn(window, 'confirm').mockReturnValue(true);
     vi.spyOn(window.URL, 'createObjectURL').mockReturnValue('blob:session-export');
@@ -124,6 +128,7 @@ describe('SessionPage resume behavior', () => {
       sendDraftReaction: vi.fn(),
       sendDimensionEdit: vi.fn(),
     });
+    mockGetSessionEvents.mockResolvedValue({ session_id: 'abc', events: [], count: 0 });
   });
 
   it('attaches for existing pipeline_running sessions without restarting', async () => {
@@ -289,7 +294,7 @@ describe('SessionPage resume behavior', () => {
 
     expect(screen.getByRole('button', { name: /restart from description/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /retry pipeline/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /back to dashboard/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /back to sessions/i })).toBeInTheDocument();
   });
 
   it('restarts from the saved description via the explicit workflow endpoint', async () => {
@@ -476,5 +481,110 @@ describe('SessionPage resume behavior', () => {
     expect(appendSpy).toHaveBeenCalled();
     expect(clickSpy).toHaveBeenCalled();
     expect(removeSpy).toHaveBeenCalled();
+  });
+
+  it('renders Events as a first-class right-pane tab and opens it from the header action', async () => {
+    const user = userEvent.setup();
+    const session = makeSession({
+      intake_phase: 'pipeline_running',
+      pipeline_running: true,
+      can_resume_live: true,
+      resume_status: 'live_attach_available',
+    });
+    mockGetSession.mockResolvedValue({ session });
+    vi.mocked(useSocraticWebSocket).mockReturnValue({
+      isConnected: true,
+      reconnectFailed: false,
+      intakePhase: 'pipeline_running',
+      messages: [
+        { id: 'planner-1', role: 'planner', content: 'Working…', timestamp: new Date().toISOString() },
+      ],
+      classification: null,
+      beliefState: null,
+      convergencePct: 0.8,
+      currentQuestion: null,
+      speculativeDraft: null,
+      confirmedSections: new Set(),
+      contradictions: [],
+      stages: [],
+      pipelineComplete: false,
+      pipelineSummary: null,
+      events: [
+        {
+          id: 'evt-1',
+          timestamp: new Date().toISOString(),
+          level: 'warn',
+          source: 'pipeline',
+          message: 'Pipeline waiting for retry',
+          metadata: {},
+        },
+      ],
+      currentStep: 'pipeline.wait',
+      attach: mockAttach,
+      sendDescription: mockSendDescription,
+      sendResponse: vi.fn(),
+      skipQuestion: vi.fn(),
+      sendDone: vi.fn(),
+      sendDraftReaction: vi.fn(),
+      sendDimensionEdit: vi.fn(),
+    });
+
+    renderSessionPage('/session/abc');
+
+    await waitFor(() => {
+      expect(mockGetSession).toHaveBeenCalledWith('abc');
+    });
+
+    expect(screen.getByRole('button', { name: /belief state/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^draft/i })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /events/i }).length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole('button', { name: /events 1/i }));
+    expect(screen.getByText(/pipeline waiting for retry/i)).toBeInTheDocument();
+  });
+
+  it('keeps legacy event-role chat messages out of the conversation pane', async () => {
+    const session = makeSession({
+      intake_phase: 'pipeline_running',
+      pipeline_running: true,
+    });
+    mockGetSession.mockResolvedValue({ session });
+    vi.mocked(useSocraticWebSocket).mockReturnValue({
+      isConnected: true,
+      reconnectFailed: false,
+      intakePhase: 'pipeline_running',
+      messages: [
+        { id: 'legacy-event', role: 'event', content: 'legacy event payload', timestamp: new Date().toISOString() },
+        { id: 'planner-1', role: 'planner', content: 'Planner visible message', timestamp: new Date().toISOString() },
+      ],
+      classification: null,
+      beliefState: null,
+      convergencePct: 0.8,
+      currentQuestion: null,
+      speculativeDraft: null,
+      confirmedSections: new Set(),
+      contradictions: [],
+      stages: [],
+      pipelineComplete: false,
+      pipelineSummary: null,
+      events: [],
+      currentStep: 'pipeline.wait',
+      attach: mockAttach,
+      sendDescription: mockSendDescription,
+      sendResponse: vi.fn(),
+      skipQuestion: vi.fn(),
+      sendDone: vi.fn(),
+      sendDraftReaction: vi.fn(),
+      sendDimensionEdit: vi.fn(),
+    });
+
+    renderSessionPage('/session/abc');
+
+    await waitFor(() => {
+      expect(mockGetSession).toHaveBeenCalledWith('abc');
+    });
+
+    expect(screen.queryByText('legacy event payload')).not.toBeInTheDocument();
+    expect(screen.getByText('Planner visible message')).toBeInTheDocument();
   });
 });
