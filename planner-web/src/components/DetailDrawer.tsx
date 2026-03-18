@@ -311,12 +311,12 @@ export default function DetailDrawer({
             </div>
             {scope.override_scope.override_reason && (
               <div>
-                <strong>{labelScopeField('override_reason')}:</strong> {scope.override_scope.override_reason}
+                <strong>Override reason:</strong> {scope.override_scope.override_reason}
               </div>
             )}
             {scope.override_scope.effective_from && (
               <div>
-                <strong>{labelScopeField('effective_from')}:</strong> {scope.override_scope.effective_from}
+                <strong>Effective from:</strong> {scope.override_scope.effective_from}
               </div>
             )}
             <div>

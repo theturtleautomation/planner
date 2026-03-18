@@ -12,6 +12,7 @@ import { uuidv4 } from '../lib/uuid.ts';
 import { parseKnowledgeDeepLink } from '../lib/knowledgeDeepLinks.ts';
 import { labelNodeType, labelScopeClass, labelScopeVisibility, labelSecondaryScopeField } from '../lib/taxonomy.ts';
 import type {
+  BlueprintEventPayload,
   BlueprintExportHistoryEntry,
   BlueprintNode,
   BlueprintResponse,
@@ -2425,7 +2426,7 @@ export default function KnowledgeLibraryPage() {
         node,
         projectSummaries,
         projectId,
-        scopedProjectName,
+        scopedProjectName ?? undefined,
         scopeReviewContextualSummary,
       ),
     ] as const);
