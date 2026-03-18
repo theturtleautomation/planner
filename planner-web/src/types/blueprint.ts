@@ -6,6 +6,7 @@
 // If you edit types here, update the Rust side too (or vice versa).
 
 export type NodeType =
+  | 'project'
   | 'decision'
   | 'technology'
   | 'component'
@@ -14,6 +15,7 @@ export type NodeType =
   | 'quality_requirement';
 
 export type EdgeType =
+  | 'contains'
   | 'decided_by'
   | 'supersedes'
   | 'depends_on'
@@ -63,6 +65,13 @@ export interface OverrideScope {
   effective_from?: string;
 }
 
+export interface ScopeReview {
+  deferred_reason: string;
+  owner: string;
+  due_at: string;
+  deferred_at?: string;
+}
+
 export interface NodeScope {
   scope_class: ScopeClass;
   project?: ProjectScope;
@@ -71,6 +80,7 @@ export interface NodeScope {
   shared?: SharedScope;
   lifecycle: NodeLifecycle;
   override_scope?: OverrideScope;
+  scope_review?: ScopeReview;
 }
 
 // ─── Node summary (used in list endpoints) ─────────────────────────────────
@@ -91,6 +101,9 @@ export interface NodeSummary {
   override_source_id?: string;
   override_reason?: string;
   override_effective_from?: string;
+  scope_review_deferred_reason?: string;
+  scope_review_owner?: string;
+  scope_review_due_at?: string;
   tags: string[];
   has_documentation: boolean;
   updated_at: string;
@@ -144,6 +157,19 @@ export interface Consequence {
 export interface Assumption {
   description: string;
   confidence: string;  // "high" | "medium" | "low"
+}
+
+// Matches Rust: Decision { id, title, status, context, options, consequences, assumptions, supersedes?, tags, created_at, updated_at }
+export interface ProjectNode {
+  node_type: 'project';
+  id: string;
+  name: string;
+  description: string;
+  tags: string[];
+  documentation?: string;
+  scope: NodeScope;
+  created_at: string;
+  updated_at: string;
 }
 
 // Matches Rust: Decision { id, title, status, context, options, consequences, assumptions, supersedes?, tags, created_at, updated_at }
@@ -240,6 +266,7 @@ export interface QualityRequirementNode {
   node_type: 'quality_requirement';
   id: string;
   attribute: QualityAttribute;
+  label?: string;
   scenario: string;
   priority: QualityPriority;
   tags: string[];
@@ -250,6 +277,7 @@ export interface QualityRequirementNode {
 }
 
 export type BlueprintNode =
+  | ProjectNode
   | DecisionNode
   | TechnologyNode
   | ComponentNode
@@ -296,6 +324,28 @@ export interface BlueprintEventPayload {
 
 export interface BlueprintEventsResponse {
   events: BlueprintEventPayload[];
+  total: number;
+}
+
+export interface BlueprintExportHistoryEntry {
+  export_id: string;
+  kind: BlueprintExportKind;
+  actor?: string;
+  node_id?: string;
+  node_count: number;
+  edge_count: number;
+  project_id?: string;
+  project_name?: string;
+  scope_snapshot?: Record<string, unknown>;
+  scope_snapshot_redacted?: boolean;
+  scope_snapshot_redacted_fields?: string[];
+  retention_expires_at?: string;
+  summary: string;
+  timestamp: string;
+}
+
+export interface BlueprintExportHistoryResponse {
+  entries: BlueprintExportHistoryEntry[];
   total: number;
 }
 
@@ -357,7 +407,7 @@ export interface GraphLink {
 
 // ─── Discovery / Proposed Nodes ───────────────────────────────────────────────
 
-export type DiscoverySource = 'cargo_toml' | 'directory_scan' | 'pipeline_run' | 'manual';
+export type DiscoverySource = 'cargo_toml' | 'directory_scan' | 'pipeline_run' | 'manual' | 'code_graph_context';
 
 export type ProposalStatus = 'pending' | 'accepted' | 'rejected' | 'merged';
 
@@ -381,9 +431,38 @@ export interface ProposedNode {
   source_artifact?: string;
 }
 
+export interface ProposedEdge {
+  id: string;
+  edge: EdgePayload;
+  source: DiscoverySource;
+  reason: string;
+  status: ProposalStatus;
+  proposed_at: string;
+  reviewed_at?: string;
+  confidence: number;
+  source_artifact?: string;
+}
+
+export interface ProposalNodeRef {
+  node_id?: string;
+  component_origin_key?: string;
+  technology_name?: string;
+  project_id?: string;
+}
+
+export interface ImportedEdgeProposal {
+  edge_type: EdgeType;
+  source: ProposalNodeRef;
+  target: ProposalNodeRef;
+  reason: string;
+  confidence: number;
+  metadata?: string;
+  source_artifact?: string;
+}
+
 export interface DiscoveryScanRequest {
   /** Which scanners to run */
-  scanners: ('cargo_toml' | 'directory_structure' | 'all')[];
+  scanners: ('cargo_toml' | 'directory_structure' | 'code_graph_context' | 'all')[];
   /** Root path to scan (relative to project) */
   root_path?: string;
 }
@@ -392,6 +471,8 @@ export interface DiscoveryScanResult {
   scanner: string;
   proposed_count: number;
   skipped_count: number;
+  proposed_edge_count: number;
+  skipped_edge_count: number;
   errors: string[];
   duration_ms: number;
 }
@@ -399,9 +480,21 @@ export interface DiscoveryScanResult {
 export interface DiscoveryRunResponse {
   results: DiscoveryScanResult[];
   total_proposed: number;
+  total_edge_proposed: number;
 }
 
 export interface ProposedNodesResponse {
   proposals: ProposedNode[];
   total: number;
+}
+
+export interface ProposedEdgesResponse {
+  proposals: ProposedEdge[];
+  total: number;
+}
+
+export interface EdgeImportResult {
+  inserted: number;
+  skipped: number;
+  errors: string[];
 }

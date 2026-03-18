@@ -1,7 +1,19 @@
 import { useEffect, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import rehypeSanitize from 'rehype-sanitize';
-import type { BlueprintNode, EdgePayload, DecisionNode, TechnologyNode, ComponentNode, ConstraintNode, PatternNode, QualityRequirementNode, BlueprintEventPayload, NodeScope } from '../types/blueprint.ts';
+import type {
+  BlueprintNode,
+  EdgePayload,
+  DecisionNode,
+  TechnologyNode,
+  ComponentNode,
+  ConstraintNode,
+  PatternNode,
+  QualityRequirementNode,
+  BlueprintEventPayload,
+  NodeScope,
+  NodeSummary,
+} from '../types/blueprint.ts';
 import type { ApiClient } from '../api/client.ts';
 import { useState, useCallback } from 'react';
 import EditNodeForm from './EditNodeForm.tsx';
@@ -16,11 +28,21 @@ const DEFAULT_SCOPE: NodeScope = {
   lifecycle: 'active',
 };
 
+const drawerActionButtonStyle: React.CSSProperties = {
+  border: '1px solid rgba(148, 163, 184, 0.35)',
+  background: 'rgba(15, 23, 42, 0.04)',
+  borderRadius: '999px',
+  padding: '0.25rem 0.65rem',
+  fontSize: 'var(--text-xs)',
+  cursor: 'pointer',
+};
+
 // ─── Props ──────────────────────────────────────────────────────────────────
 
 interface DetailDrawerProps {
   nodeId: string | null;
-  allNodes: { id: string; name: string; node_type: string }[];
+  allNodes: (Pick<NodeSummary, 'id' | 'name' | 'node_type'>
+    & Partial<Pick<NodeSummary, 'override_source_id' | 'project_id' | 'project_name' | 'scope_visibility'>>)[];
   edges: EdgePayload[];
   api: ApiClient;
   onClose: () => void;
@@ -53,6 +75,10 @@ export default function DetailDrawer({
   const [eventsLoading, setEventsLoading] = useState(false);
 
   const isOpen = nodeId !== null;
+  const nodeIndex = useMemo(
+    () => new Map(allNodes.map(entry => [entry.id, entry])),
+    [allNodes],
+  );
 
   // Reset edit mode and tab when node changes
   useEffect(() => {
@@ -109,14 +135,31 @@ export default function DetailDrawer({
 
   // Get node display name
   const getNodeName = (id: string) => {
-    const n = allNodes.find(n => n.id === id);
+    const n = nodeIndex.get(id);
     return n?.name ?? id;
   };
 
   const getNodeType = (id: string) => {
-    const n = allNodes.find(n => n.id === id);
+    const n = nodeIndex.get(id);
     return n?.node_type ?? 'unknown';
   };
+
+  const overrideSourceEntry = useMemo(() => {
+    const sourceId = node?.scope.override_scope?.shared_source_id?.trim();
+    if (!sourceId) return null;
+    return nodeIndex.get(sourceId) ?? null;
+  }, [node, nodeIndex]);
+
+  const inboundOverrides = useMemo(() => {
+    if (!nodeId) return [];
+    return allNodes
+      .filter(entry => entry.override_source_id?.trim() === nodeId)
+      .sort((left, right) => {
+        const leftLabel = left.project_name ?? left.project_id ?? left.name;
+        const rightLabel = right.project_name ?? right.project_id ?? right.name;
+        return leftLabel.localeCompare(rightLabel);
+      });
+  }, [allNodes, nodeId]);
 
   // Derive display name from the typed union
   const nodeName = (() => {
@@ -127,7 +170,7 @@ export default function DetailDrawer({
       case 'component': return (node as ComponentNode).name;
       case 'constraint': return (node as ConstraintNode).title;
       case 'pattern': return (node as PatternNode).name;
-      case 'quality_requirement': return (node as QualityRequirementNode).scenario;
+      case 'quality_requirement': return (node as QualityRequirementNode).label ?? (node as QualityRequirementNode).scenario;
       default: return nodeId ?? '';
     }
   })();
@@ -254,10 +297,61 @@ export default function DetailDrawer({
           </div>
         )}
         {scope.override_scope && (
-          <div className="drawer-description" style={{ marginTop: '4px' }}>
-            <strong>{labelScopeField('shared_source_id')}:</strong> {scope.override_scope.shared_source_id}
-            {scope.override_scope.override_reason ? ` · ${scope.override_scope.override_reason}` : ''}
-            {scope.override_scope.effective_from ? ` · effective ${scope.override_scope.effective_from}` : ''}
+          <div className="drawer-description" style={{ marginTop: '8px', display: 'grid', gap: '6px' }}>
+            <div>
+              <strong>{labelScopeField('shared_source_id')}:</strong>{' '}
+              {overrideSourceEntry
+                ? `${overrideSourceEntry.name} (${scope.override_scope.shared_source_id})`
+                : scope.override_scope.shared_source_id}
+            </div>
+            <div>
+              <strong>Precedence:</strong>{' '}
+              This project-local record is the effective version in {scope.project?.project_name ?? scope.project?.project_id ?? 'this project'}.
+              The shared source remains effective outside this project scope.
+            </div>
+            {scope.override_scope.override_reason && (
+              <div>
+                <strong>{labelScopeField('override_reason')}:</strong> {scope.override_scope.override_reason}
+              </div>
+            )}
+            {scope.override_scope.effective_from && (
+              <div>
+                <strong>{labelScopeField('effective_from')}:</strong> {scope.override_scope.effective_from}
+              </div>
+            )}
+            <div>
+              <button
+                type="button"
+                style={drawerActionButtonStyle}
+                onClick={() => onNavigateNode(scope.override_scope!.shared_source_id)}
+              >
+                View shared source
+              </button>
+            </div>
+          </div>
+        )}
+        {scope.is_shared && inboundOverrides.length > 0 && (
+          <div className="drawer-description" style={{ marginTop: '8px', display: 'grid', gap: '6px' }}>
+            <div>
+              <strong>Local overrides:</strong>
+            </div>
+            <div>
+              <strong>Precedence:</strong>{' '}
+              Project-local overrides supersede this shared record inside their project views. This shared record remains the default everywhere else.
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+              {inboundOverrides.map(entry => (
+                <button
+                  key={entry.id}
+                  type="button"
+                  style={drawerActionButtonStyle}
+                  onClick={() => onNavigateNode(entry.id)}
+                >
+                  Open {entry.name}
+                  {entry.project_name || entry.project_id ? ` (${entry.project_name ?? entry.project_id})` : ''}
+                </button>
+              ))}
+            </div>
           </div>
         )}
       </div>
@@ -467,6 +561,12 @@ export default function DetailDrawer({
 
   const renderQualityDetails = (n: QualityRequirementNode) => (
     <>
+      {n.label && (
+        <div className="drawer-section">
+          <div className="drawer-section-title">Label</div>
+          <div className="drawer-description">{n.label}</div>
+        </div>
+      )}
       <div className="drawer-section">
         <div className="drawer-section-title">Quality Attribute</div>
         <div className="drawer-description" style={{ textTransform: 'capitalize' }}>{n.attribute}</div>

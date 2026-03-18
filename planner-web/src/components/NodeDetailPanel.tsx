@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { ApiClient } from '../api/client.ts';
 import type {
   BlueprintNode,
+  ProjectNode,
   DecisionNode,
   TechnologyNode,
   ComponentNode,
@@ -22,6 +23,8 @@ interface NodeDetailPanelProps {
 
 function nodeTitle(node: BlueprintNode): string {
   switch (node.node_type) {
+    case 'project':
+      return node.name;
     case 'decision':
       return node.title;
     case 'technology':
@@ -31,12 +34,21 @@ function nodeTitle(node: BlueprintNode): string {
     case 'constraint':
       return node.title;
     case 'quality_requirement':
-      return node.scenario;
+      return node.label ?? node.scenario;
   }
 }
 
 function renderNodeBody(node: BlueprintNode) {
   switch (node.node_type) {
+    case 'project': {
+      const project = node as ProjectNode;
+      return (
+        <>
+          <p>{project.description}</p>
+          <p>Project root node for scoped blueprint relationships.</p>
+        </>
+      );
+    }
     case 'decision': {
       const decision = node as DecisionNode;
       return (
@@ -87,6 +99,7 @@ function renderNodeBody(node: BlueprintNode) {
       const quality = node as QualityRequirementNode;
       return (
         <>
+          {quality.label && <p>{quality.label}</p>}
           <p>{quality.scenario}</p>
           <p>{quality.attribute} · {quality.priority}</p>
         </>

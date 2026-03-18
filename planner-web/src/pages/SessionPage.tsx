@@ -4,12 +4,14 @@ import Layout from '../components/Layout.tsx';
 import ChatPanel from '../components/ChatPanel.tsx';
 import PipelineBar from '../components/PipelineBar.tsx';
 import MessageInput from '../components/MessageInput.tsx';
+import PromptBatchPanel from '../components/PromptBatchPanel.tsx';
 import ConvergenceBar from '../components/ConvergenceBar.tsx';
 import BeliefStatePanel from '../components/BeliefStatePanel.tsx';
 import SpeculativeDraftView from '../components/SpeculativeDraftView.tsx';
 import SessionEventsTable from '../components/SessionEventsTable.tsx';
 import SessionStatusHeader from '../components/SessionStatusHeader.tsx';
 import type { SessionHeaderAction } from '../components/SessionStatusHeader.tsx';
+import { buildKnowledgeDeepLink } from '../lib/knowledgeDeepLinks.ts';
 import { createApiClient } from '../api/client.ts';
 import { useGetAccessToken } from '../auth/useAuthenticatedFetch.ts';
 import { useSocraticWebSocket } from '../hooks/useSocraticWebSocket.ts';
@@ -68,15 +70,17 @@ function formatDimensionLabel(value: string | Record<string, unknown> | undefine
 
 function getCheckpointSummary(checkpoint: InterviewCheckpoint): string[] {
   const lines: string[] = [];
-  if (checkpoint.current_question?.question) {
-    lines.push(`Current question: ${checkpoint.current_question.question}`);
-  }
-  if (checkpoint.pending_draft?.sections?.length) {
-    const heading = checkpoint.pending_draft.sections[0]?.heading;
-    if (heading) {
-      lines.push(`Pending draft: ${heading}`);
+  const prompt = checkpoint.current_prompt;
+  if (prompt?.items?.length) {
+    if (prompt.kind === 'draft_review') {
+      const heading = prompt.draft_snapshot?.sections?.[0]?.heading;
+      if (heading) {
+        lines.push(`Pending draft review: ${heading}`);
+      } else {
+        lines.push('Pending draft review is available.');
+      }
     } else {
-      lines.push('Pending draft is available.');
+      lines.push(`Current prompt: ${prompt.items[0].text}`);
     }
   }
   if (checkpoint.contradictions?.length) {
@@ -86,6 +90,11 @@ function getCheckpointSummary(checkpoint: InterviewCheckpoint): string[] {
     }
   }
   return lines;
+}
+
+function getCheckpointTargetDimension(checkpoint: InterviewCheckpoint): string | null {
+  const target = checkpoint.current_prompt?.items?.find((item) => item.target_dimension)?.target_dimension;
+  return target ? formatDimensionLabel(target) : null;
 }
 
 function getSessionTitle(
@@ -134,6 +143,86 @@ function dedupePlannerEvents(events: PlannerEvent[]): PlannerEvent[] {
     deduped.push(event);
   }
   return deduped;
+}
+
+interface RetryFeedbackSummary {
+  feedbackCount: number;
+  categories: Record<string, number>;
+  severities: Record<string, number>;
+  attempt: number | null;
+}
+
+interface ArtifactProgressSummary {
+  totalPersisted: number;
+  latestTypeId: string | null;
+  byType: Record<string, number>;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function asNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  return null;
+}
+
+function asString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value : null;
+}
+
+function getEventDetail(event: PlannerEvent, key: string): unknown {
+  if (Object.prototype.hasOwnProperty.call(event.metadata, key)) {
+    return event.metadata[key];
+  }
+  const details = asRecord(event.metadata.details);
+  if (details && Object.prototype.hasOwnProperty.call(details, key)) {
+    return details[key];
+  }
+  return undefined;
+}
+
+function summarizeRetryFeedback(events: PlannerEvent[]): RetryFeedbackSummary | null {
+  const latest = events.find((event) => event.step === 'pipeline.retry.feedback');
+  if (!latest) return null;
+
+  const categories = asRecord(getEventDetail(latest, 'categories')) ?? {};
+  const severities = asRecord(getEventDetail(latest, 'severities')) ?? {};
+
+  const categoryCounts = Object.fromEntries(
+    Object.entries(categories).map(([key, value]) => [key, asNumber(value) ?? 0]),
+  );
+  const severityCounts = Object.fromEntries(
+    Object.entries(severities).map(([key, value]) => [key, asNumber(value) ?? 0]),
+  );
+
+  return {
+    feedbackCount: asNumber(getEventDetail(latest, 'feedback_count')) ?? 0,
+    categories: categoryCounts,
+    severities: severityCounts,
+    attempt: asNumber(getEventDetail(latest, 'attempt')),
+  };
+}
+
+function summarizeArtifactProgress(events: PlannerEvent[]): ArtifactProgressSummary | null {
+  const artifactEvents = events.filter((event) => event.step === 'pipeline.artifact.persisted');
+  if (artifactEvents.length === 0) return null;
+
+  const byType: Record<string, number> = {};
+  for (const event of artifactEvents) {
+    const typeId = asString(getEventDetail(event, 'type_id'));
+    if (!typeId) continue;
+    byType[typeId] = (byType[typeId] ?? 0) + 1;
+  }
+
+  const latestTypeId = asString(getEventDetail(artifactEvents[0], 'type_id'));
+
+  return {
+    totalPersisted: artifactEvents.length,
+    latestTypeId,
+    byType,
+  };
 }
 
 export default function SessionPage() {
@@ -191,7 +280,17 @@ export default function SessionPage() {
     );
   }, [socratic.events]);
 
+  const retryFeedbackSummary = useMemo(
+    () => summarizeRetryFeedback(socratic.events),
+    [socratic.events],
+  );
+  const artifactProgressSummary = useMemo(
+    () => summarizeArtifactProgress(socratic.events),
+    [socratic.events],
+  );
+
   const previousEventCountRef = useRef(0);
+  const autoForegroundEventsRef = useRef<string | null>(null);
   useEffect(() => {
     const nextCount = socratic.events.length;
     const delta = nextCount - previousEventCountRef.current;
@@ -208,6 +307,7 @@ export default function SessionPage() {
   useEffect(() => {
     previousEventCountRef.current = 0;
     setEventUnreadCount(0);
+    autoForegroundEventsRef.current = null;
   }, [sessionId]);
 
   // Track whether we've triggered attach for an existing session
@@ -467,10 +567,26 @@ export default function SessionPage() {
     ? socratic.intakePhase
     : (session?.intake_phase ?? 'waiting');
 
+  useEffect(() => {
+    if (!sessionId) return;
+    if (effectivePhase !== 'pipeline_running') return;
+    if (autoForegroundEventsRef.current === sessionId) return;
+    setRightTab('events');
+    setEventUnreadCount(0);
+    autoForegroundEventsRef.current = sessionId;
+  }, [effectivePhase, sessionId]);
+
   const sessionActions = useMemo<SessionHeaderAction[]>(() => {
     const actions: SessionHeaderAction[] = [];
     const projectBackPath = session?.project_slug
       ? `/projects/${encodeURIComponent(session.project_slug)}/sessions`
+      : null;
+    const knowledgePath = (session?.project_id && sessionId)
+      ? buildKnowledgeDeepLink({
+          projectId: session.project_id,
+          originPath: `/session/${encodeURIComponent(sessionId)}`,
+          originLabel: 'Session',
+        })
       : null;
 
     if (session && !socratic.isConnected && (session.can_resume_live || session.can_resume_checkpoint)) {
@@ -540,6 +656,14 @@ export default function SessionPage() {
     }
 
     if (sessionId) {
+      if (knowledgePath) {
+        actions.push({
+          key: 'knowledge',
+          label: 'Knowledge',
+          onClick: () => { void navigate(knowledgePath); },
+        });
+      }
+
       actions.push({
         key: 'back',
         label: projectBackPath ? 'Back to Project' : 'Back to Sessions',
@@ -557,9 +681,9 @@ export default function SessionPage() {
     handleRestartFromDescription,
     handleRetryPipeline,
     isStarting,
+    sessionId,
     navigate,
     session,
-    sessionId,
     socratic.isConnected,
     workflowAction,
   ]);
@@ -567,8 +691,100 @@ export default function SessionPage() {
   // ── Right panel content ──
   const rightPanelContent = (() => {
     if (rightTab === 'events') {
+      const retryCategorySummary = retryFeedbackSummary
+        ? Object.entries(retryFeedbackSummary.categories)
+          .filter(([, count]) => count > 0)
+          .map(([category, count]) => `${category}: ${count}`)
+          .join(' • ')
+        : '';
+      const retrySeveritySummary = retryFeedbackSummary
+        ? Object.entries(retryFeedbackSummary.severities)
+          .filter(([, count]) => count > 0)
+          .map(([severity, count]) => `${severity}: ${count}`)
+          .join(' • ')
+        : '';
+      const artifactTypeSummary = artifactProgressSummary
+        ? Object.entries(artifactProgressSummary.byType)
+          .filter(([, count]) => count > 0)
+          .slice(0, 4)
+          .map(([typeId, count]) => `${typeId} (${count})`)
+          .join(' • ')
+        : '';
+
       return (
-        <SessionEventsTable events={socratic.events} />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', height: '100%', overflow: 'hidden' }}>
+          {(retryFeedbackSummary || artifactProgressSummary) && (
+            <div style={{ display: 'grid', gap: '8px', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', padding: '10px 12px 0' }}>
+              {retryFeedbackSummary && (
+                <section
+                  aria-label="Retry feedback summary"
+                  style={{
+                    border: '1px solid var(--color-border)',
+                    borderRadius: '4px',
+                    padding: '10px 12px',
+                    background: 'var(--color-surface)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '6px',
+                  }}
+                >
+                  <span style={{ fontSize: '10px', color: 'var(--color-primary)', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                    Retry Feedback
+                  </span>
+                  <span style={{ fontSize: '12px', color: 'var(--color-text)' }}>
+                    {retryFeedbackSummary.feedbackCount} categorized item{retryFeedbackSummary.feedbackCount === 1 ? '' : 's'}
+                    {retryFeedbackSummary.attempt ? ` (attempt ${retryFeedbackSummary.attempt})` : ''}
+                  </span>
+                  {retryCategorySummary && (
+                    <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>
+                      Categories: {retryCategorySummary}
+                    </span>
+                  )}
+                  {retrySeveritySummary && (
+                    <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>
+                      Severities: {retrySeveritySummary}
+                    </span>
+                  )}
+                </section>
+              )}
+              {artifactProgressSummary && (
+                <section
+                  aria-label="Artifact persistence summary"
+                  style={{
+                    border: '1px solid var(--color-border)',
+                    borderRadius: '4px',
+                    padding: '10px 12px',
+                    background: 'var(--color-surface)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '6px',
+                  }}
+                >
+                  <span style={{ fontSize: '10px', color: 'var(--color-primary)', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                    Artifact Progress
+                  </span>
+                  <span style={{ fontSize: '12px', color: 'var(--color-text)' }}>
+                    {artifactProgressSummary.totalPersisted} artifact{artifactProgressSummary.totalPersisted === 1 ? '' : 's'} persisted
+                  </span>
+                  {artifactProgressSummary.latestTypeId && (
+                    <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>
+                      Latest: {artifactProgressSummary.latestTypeId}
+                    </span>
+                  )}
+                  {artifactTypeSummary && (
+                    <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>
+                      By type: {artifactTypeSummary}
+                    </span>
+                  )}
+                </section>
+              )}
+            </div>
+          )}
+
+          <div style={{ minHeight: 0, flex: 1 }}>
+            <SessionEventsTable events={socratic.events} />
+          </div>
+        </div>
       );
     }
     if (rightTab === 'draft' && socratic.speculativeDraft) {
@@ -576,8 +792,6 @@ export default function SessionPage() {
         <SpeculativeDraftView
           draft={socratic.speculativeDraft}
           onBack={() => setRightTab('belief')}
-          onReact={socratic.sendDraftReaction}
-          confirmedSections={socratic.confirmedSections}
         />
       );
     }
@@ -1034,9 +1248,9 @@ export default function SessionPage() {
             <span style={{ color: 'var(--color-text-muted)' }}>
               Last saved: {formatCheckpointTimestamp(detachedCheckpoint.last_checkpoint_at)}
             </span>
-            {detachedCheckpoint.current_question && (
+            {getCheckpointTargetDimension(detachedCheckpoint) && (
               <span>
-                Target dimension: {formatDimensionLabel(detachedCheckpoint.current_question.target_dimension)}
+                Target dimension: {getCheckpointTargetDimension(detachedCheckpoint)}
               </span>
             )}
             {checkpointSummaryLines.map((line) => (
@@ -1099,16 +1313,23 @@ export default function SessionPage() {
               </div>
             )}
 
-            <MessageInput
-              onSend={(content) => socratic.sendResponse(content)}
-              intakePhase={effectivePhase}
-              currentQuestion={socratic.currentQuestion}
-              onSkip={socratic.skipQuestion}
-              onDone={socratic.sendDone}
-              disabled={!socratic.isConnected}
-              pipelineRunning={isPipelineRunning}
-              convergencePct={socratic.convergencePct * 100}
-            />
+            {isInterviewing && socratic.currentPrompt ? (
+              <PromptBatchPanel
+                prompt={socratic.currentPrompt}
+                onSubmit={(_promptId, answers) => socratic.submitPromptAnswers(answers)}
+                onDone={socratic.sendDone}
+                disabled={!socratic.isConnected}
+              />
+            ) : (
+              <MessageInput
+                onSend={() => undefined}
+                intakePhase={effectivePhase}
+                onDone={socratic.sendDone}
+                disabled={true}
+                pipelineRunning={isPipelineRunning}
+                convergencePct={socratic.convergencePct * 100}
+              />
+            )}
           </div>
 
           {/* Right: tabbed panel — Belief State | Draft | Events */}

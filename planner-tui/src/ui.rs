@@ -433,6 +433,12 @@ fn draw_blueprint_detail(frame: &mut Frame, app: &App, area: Rect) {
     ];
 
     match node {
+        planner_schemas::artifacts::blueprint::BlueprintNode::Project(project) => {
+            lines.push(detail_line("Description", &project.description));
+            if let Some(doc) = &project.documentation {
+                lines.push(detail_line("Docs", doc));
+            }
+        }
         planner_schemas::artifacts::blueprint::BlueprintNode::Decision(decision) => {
             lines.push(detail_line("Context", &decision.context));
             if let Some(doc) = &decision.documentation {

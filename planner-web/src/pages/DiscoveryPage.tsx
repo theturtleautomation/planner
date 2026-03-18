@@ -4,7 +4,7 @@ import Layout from '../components/Layout.tsx';
 import { createApiClient } from '../api/client.ts';
 import { useGetAccessToken } from '../auth/useAuthenticatedFetch.ts';
 import { buildKnowledgeDeepLink } from '../lib/knowledgeDeepLinks.ts';
-import type { ProposedNode, ProposalStatus, DiscoverySource } from '../types/blueprint.ts';
+import type { ProposedNode, ProposedEdge, ProposalStatus, DiscoverySource } from '../types/blueprint.ts';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -16,11 +16,17 @@ const STATUS_FILTERS: { key: ProposalStatus | 'all'; label: string }[] = [
   { key: 'merged',   label: 'Merged' },
 ];
 
+const PROPOSAL_VIEWS: { key: 'nodes' | 'edges'; label: string }[] = [
+  { key: 'nodes', label: 'Node Proposals' },
+  { key: 'edges', label: 'Edge Proposals' },
+];
+
 const SOURCE_ICONS: Record<DiscoverySource, string> = {
   cargo_toml: '📦',
   directory_scan: '📁',
   pipeline_run: '⚡',
   manual: '✏️',
+  code_graph_context: '🕸️',
 };
 
 const SOURCE_LABELS: Record<DiscoverySource, string> = {
@@ -28,6 +34,7 @@ const SOURCE_LABELS: Record<DiscoverySource, string> = {
   directory_scan: 'Directory Scan',
   pipeline_run: 'Pipeline',
   manual: 'Manual',
+  code_graph_context: 'Code Graph',
 };
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -37,7 +44,9 @@ export default function DiscoveryPage() {
   const getToken = useGetAccessToken();
   const api = useMemo(() => createApiClient(getToken), [getToken]);
 
-  const [proposals, setProposals] = useState<ProposedNode[]>([]);
+  const [proposalView, setProposalView] = useState<'nodes' | 'edges'>('nodes');
+  const [nodeProposals, setNodeProposals] = useState<ProposedNode[]>([]);
+  const [edgeProposals, setEdgeProposals] = useState<ProposedEdge[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filterStatus, setFilterStatus] = useState<ProposalStatus | 'all'>('pending');
@@ -54,15 +63,20 @@ export default function DiscoveryPage() {
     setLoading(true);
     try {
       const statusParam = filterStatus === 'all' ? undefined : filterStatus;
-      const res = await api.listProposedNodes(statusParam);
-      setProposals(res.proposals);
+      if (proposalView === 'nodes') {
+        const res = await api.listProposedNodes(statusParam);
+        setNodeProposals(res.proposals);
+      } else {
+        const res = await api.listProposedEdges(statusParam);
+        setEdgeProposals(res.proposals);
+      }
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
-  }, [api, filterStatus]);
+  }, [api, filterStatus, proposalView]);
 
   useEffect(() => { loadProposals(); }, [loadProposals]);
 
@@ -75,9 +89,16 @@ export default function DiscoveryPage() {
     try {
       const res = await api.runDiscoveryScan({ scanners: ['all'] });
       const summary = res.results
-        .map(r => `${r.scanner}: ${r.proposed_count} proposed, ${r.skipped_count} skipped`)
+        .map((r) => {
+          if (r.proposed_edge_count > 0 || r.skipped_edge_count > 0) {
+            return `${r.scanner}: ${r.proposed_count} nodes, ${r.skipped_count} node skips, ${r.proposed_edge_count} edges, ${r.skipped_edge_count} edge skips`;
+          }
+          return `${r.scanner}: ${r.proposed_count} proposed, ${r.skipped_count} skipped`;
+        })
         .join(' · ');
-      setScanResult(`Scan complete — ${res.total_proposed} new proposals. ${summary}`);
+      setScanResult(
+        `Scan complete — ${res.total_proposed} node proposals, ${res.total_edge_proposed} edge proposals. ${summary}`,
+      );
       loadProposals();
     } catch (err) {
       setScanError(err instanceof Error ? err.message : String(err));
@@ -107,7 +128,7 @@ export default function DiscoveryPage() {
           : undefined,
       );
 
-      setProposals(prev => prev.map(p => {
+      setNodeProposals(prev => prev.map(p => {
         if (p.id !== id) return p;
         if (!shouldMarkManual || p.node.node_type !== 'component') {
           return { ...p, status: 'accepted' as const, reviewed_at: new Date().toISOString() };
@@ -141,7 +162,26 @@ export default function DiscoveryPage() {
     setActionLoading(id);
     try {
       await api.rejectProposal(id);
-      setProposals(prev => prev.map(p => p.id === id ? { ...p, status: 'rejected' as const, reviewed_at: new Date().toISOString() } : p));
+      setNodeProposals(prev => prev.map(p => p.id === id ? { ...p, status: 'rejected' as const, reviewed_at: new Date().toISOString() } : p));
+    } catch { /* keep current state */ }
+    finally { setActionLoading(null); }
+  }, [api]);
+
+  const handleAcceptEdge = useCallback(async (proposal: ProposedEdge) => {
+    const id = proposal.id;
+    setActionLoading(id);
+    try {
+      await api.acceptEdgeProposal(id);
+      setEdgeProposals(prev => prev.map(p => p.id === id ? { ...p, status: 'merged' as const, reviewed_at: new Date().toISOString() } : p));
+    } catch { /* keep current state */ }
+    finally { setActionLoading(null); }
+  }, [api]);
+
+  const handleRejectEdge = useCallback(async (id: string) => {
+    setActionLoading(id);
+    try {
+      await api.rejectEdgeProposal(id);
+      setEdgeProposals(prev => prev.map(p => p.id === id ? { ...p, status: 'rejected' as const, reviewed_at: new Date().toISOString() } : p));
     } catch { /* keep current state */ }
     finally { setActionLoading(null); }
   }, [api]);
@@ -162,7 +202,7 @@ export default function DiscoveryPage() {
 
   const getNodeDisplayName = (p: ProposedNode): string => {
     const n = p.node as unknown as Record<string, unknown>;
-    return (n.name ?? n.title ?? n.scenario ?? p.id) as string;
+    return (n.name ?? n.title ?? n.label ?? n.scenario ?? p.id) as string;
   };
 
   const getRelatedKnowledgeLink = (proposal: ProposedNode): string | null => {
@@ -190,7 +230,8 @@ export default function DiscoveryPage() {
     return 'var(--color-text-faint)';
   };
 
-  const pendingCount = proposals.filter(p => p.status === 'pending').length;
+  const activeProposals = proposalView === 'nodes' ? nodeProposals : edgeProposals;
+  const pendingCount = activeProposals.filter(p => p.status === 'pending').length;
 
   // ─── Render ────────────────────────────────────────────────────────────
 
@@ -200,7 +241,9 @@ export default function DiscoveryPage() {
         <div>
           <h1 className="page-title">Automated Discovery</h1>
           <p className="page-subtitle">
-            Scan project artifacts to discover technologies, components, and patterns.
+            {proposalView === 'nodes'
+              ? 'Scan project artifacts to discover technologies, components, and patterns.'
+              : 'Review relationship edges imported from code-graph tooling.'}
             {pendingCount > 0 && ` ${pendingCount} pending review.`}
           </p>
         </div>
@@ -250,6 +293,20 @@ export default function DiscoveryPage() {
 
       {/* Status filter chips */}
       <div className="event-filters" style={{ marginBottom: 'var(--space-4)' }}>
+        <div className="event-filter-group" style={{ marginBottom: 'var(--space-2)' }}>
+          {PROPOSAL_VIEWS.map(view => (
+            <button
+              key={view.key}
+              className={`event-filter-chip${proposalView === view.key ? ' active' : ''}`}
+              onClick={() => {
+                setProposalView(view.key);
+                setExpandedId(null);
+              }}
+            >
+              {view.label}
+            </button>
+          ))}
+        </div>
         <div className="event-filter-group">
           {STATUS_FILTERS.map(f => (
             <button
@@ -279,24 +336,26 @@ export default function DiscoveryPage() {
       )}
 
       {/* Empty */}
-      {!loading && !error && proposals.length === 0 && (
+      {!loading && !error && activeProposals.length === 0 && (
         <div className="empty-state">
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-faint)" strokeWidth="1.5" strokeLinecap="round" style={{ opacity: 0.4 }}>
             <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
           </svg>
           <p style={{ color: 'var(--color-text-faint)', marginTop: 'var(--space-3)' }}>
             {filterStatus === 'all'
-              ? 'No proposals yet. Run a discovery scan to detect technologies and components from your project.'
+              ? proposalView === 'nodes'
+                ? 'No proposals yet. Run a discovery scan to detect technologies and components from your project.'
+                : 'No relationship proposals yet. Import edge proposals from code-graph tooling to review them here.'
               : `No ${filterStatus} proposals.`
             }
           </p>
         </div>
       )}
 
-      {/* Proposal list */}
-      {!loading && !error && proposals.length > 0 && (
+      {/* Node proposal list */}
+      {!loading && !error && proposalView === 'nodes' && nodeProposals.length > 0 && (
         <div className="snapshot-list">
-          {proposals.map(p => {
+          {nodeProposals.map(p => {
             const relatedKnowledgeLink = getRelatedKnowledgeLink(p);
             const displayName = proposalNameOverrides[p.id]?.trim() || getNodeDisplayName(p);
             const suggestedComponentName =
@@ -471,6 +530,137 @@ export default function DiscoveryPage() {
                 )}
                 </div>
               );
+          })}
+        </div>
+      )}
+
+      {/* Edge proposal list */}
+      {!loading && !error && proposalView === 'edges' && edgeProposals.length > 0 && (
+        <div className="snapshot-list">
+          {edgeProposals.map(p => {
+            const displayName = `${p.edge.source} -> ${p.edge.target}`;
+            return (
+              <div
+                key={p.id}
+                className="snapshot-item"
+                style={{
+                  flexDirection: 'column',
+                  alignItems: 'stretch',
+                  cursor: 'pointer',
+                  borderColor: p.status === 'pending' ? 'color-mix(in srgb, var(--color-warning) 40%, var(--color-border))' : undefined,
+                }}
+                onClick={() => setExpandedId(expandedId === p.id ? null : p.id)}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', width: '100%' }}>
+                  <span style={{ fontSize: '1.2em' }} title={SOURCE_LABELS[p.source]}>
+                    {SOURCE_ICONS[p.source]}
+                  </span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                      <span style={{ fontWeight: 600, fontSize: 'var(--text-sm)', fontFamily: 'var(--font-mono)' }}>
+                        {displayName}
+                      </span>
+                      <span className="badge badge-component" style={{ fontSize: '0.5625rem' }}>
+                        {p.edge.edge_type}
+                      </span>
+                      <span style={{
+                        fontSize: '0.5625rem',
+                        fontWeight: 600,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.08em',
+                        color: p.status === 'pending' ? 'var(--color-warning)' :
+                               p.status === 'accepted' ? 'var(--color-success)' :
+                               p.status === 'rejected' ? 'var(--color-error)' : 'var(--color-primary)',
+                      }}>
+                        {p.status}
+                      </span>
+                    </div>
+                    <div style={{
+                      fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)',
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>
+                      {p.reason}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', flexShrink: 0 }}>
+                    <span style={{
+                      fontFamily: 'var(--font-mono)', fontSize: '0.625rem',
+                      fontWeight: 600, color: confidenceColor(p.confidence),
+                    }}>
+                      {Math.round(p.confidence * 100)}%
+                    </span>
+                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-faint)', whiteSpace: 'nowrap' }}>
+                      {relativeTime(p.proposed_at)}
+                    </span>
+                  </div>
+                </div>
+
+                {expandedId === p.id && (
+                  <div style={{
+                    marginTop: 'var(--space-3)',
+                    paddingTop: 'var(--space-3)',
+                    borderTop: '1px solid var(--color-divider)',
+                  }}
+                    onClick={e => e.stopPropagation()}
+                  >
+                    {p.source_artifact && (
+                      <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-faint)', marginBottom: 'var(--space-2)' }}>
+                        <strong>Source:</strong>{' '}
+                        <span style={{ fontFamily: 'var(--font-mono)' }}>{p.source_artifact}</span>
+                      </div>
+                    )}
+                    {p.edge.metadata && (
+                      <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-faint)', marginBottom: 'var(--space-2)' }}>
+                        <strong>Metadata:</strong> {p.edge.metadata}
+                      </div>
+                    )}
+                    <details>
+                      <summary style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', cursor: 'pointer' }}>
+                        Full edge data
+                      </summary>
+                      <pre style={{
+                        fontSize: '0.625rem', lineHeight: 1.4,
+                        padding: 'var(--space-2)', marginTop: 'var(--space-1)',
+                        background: 'var(--color-surface-offset)', borderRadius: 'var(--radius-sm)',
+                        overflow: 'auto', maxHeight: '200px',
+                      }}>
+                        {JSON.stringify(p, null, 2)}
+                      </pre>
+                    </details>
+
+                    {p.status === 'pending' && (
+                      <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-3)' }}>
+                        <button
+                          className="btn btn-primary"
+                          style={{ fontSize: 'var(--text-xs)', padding: 'var(--space-1) var(--space-3)' }}
+                          onClick={() => handleAcceptEdge(p)}
+                          disabled={actionLoading === p.id}
+                        >
+                          {actionLoading === p.id ? '…' : 'Accept Edge'}
+                        </button>
+                        <button
+                          className="btn btn-outline"
+                          style={{
+                            fontSize: 'var(--text-xs)', padding: 'var(--space-1) var(--space-3)',
+                            color: 'var(--color-error)', borderColor: 'var(--color-error)',
+                          }}
+                          onClick={() => handleRejectEdge(p.id)}
+                          disabled={actionLoading === p.id}
+                        >
+                          {actionLoading === p.id ? '…' : 'Reject Edge'}
+                        </button>
+                      </div>
+                    )}
+
+                    {p.reviewed_at && (
+                      <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-faint)', marginTop: 'var(--space-2)' }}>
+                        Reviewed {relativeTime(p.reviewed_at)}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
           })}
         </div>
       )}

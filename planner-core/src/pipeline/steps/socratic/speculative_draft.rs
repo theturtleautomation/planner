@@ -20,7 +20,7 @@ use crate::llm::{CompletionRequest, DefaultModels, Message, Role};
 /// Check if a speculative draft should be triggered.
 ///
 /// Trigger conditions (any one is sufficient):
-/// 1. filled.len() >= 5 AND uncertain.len() >= 2
+/// 1. filled.len() >= 5 with no unverified uncertainty remaining
 /// 2. User's last response was unusually long (>200 chars)
 /// 3. Turn count hits half the question budget
 pub fn should_trigger_draft(
@@ -34,8 +34,13 @@ pub fn should_trigger_draft(
         return false;
     }
 
-    // Condition 1: enough filled + uncertain to show something useful
-    if state.filled.len() >= 5 && state.uncertain.len() >= 2 {
+    // Ask explicit verification questions before showing a draft.
+    if !state.uncertain.is_empty() {
+        return false;
+    }
+
+    // Condition 1: enough confirmed material to show something useful
+    if state.filled.len() >= 5 {
         return true;
     }
 
@@ -69,19 +74,15 @@ Respond with ONLY a JSON object (no markdown fences):
       "dimensions": ["goal", "business_context"]
     }
   ],
-  "assumptions": [
-    {
-      "dimension": "performance",
-      "assumption": "Sub-200ms response times for all pages",
-      "confidence": 0.6
-    }
-  ],
+  "assumptions": [],
   "not_discussed": ["regulatory", "future_phases"]
 }
 
 ## Rules:
 - Group related filled dimensions into logical sections
-- Mark uncertain dimensions as explicit assumptions with confidence percentages
+- Never invent or preserve unverified assumptions
+- If a dimension is uncertain, leave it out of the draft sections and include it in "not_discussed" instead
+- Keep "assumptions" empty unless the user explicitly stated a temporary placeholder and asked to keep it visible
 - List dimensions not yet discussed so the user sees what's coming
 - Write in plain English, not technical jargon
 - Be specific — use actual values from the belief state, not placeholders
@@ -204,19 +205,6 @@ pub fn format_draft_for_display(draft: &SpeculativeDraft) -> String {
         text.push_str(&format!("## {}\n{}\n\n", section.heading, section.content));
     }
 
-    if !draft.assumptions.is_empty() {
-        text.push_str("## Assumptions (unconfirmed)\n");
-        for assumption in &draft.assumptions {
-            text.push_str(&format!(
-                "  ? {} ({}% confidence): {}\n",
-                assumption.dimension.label(),
-                (assumption.confidence * 100.0) as u32,
-                assumption.assumption
-            ));
-        }
-        text.push('\n');
-    }
-
     if !draft.not_discussed.is_empty() {
         text.push_str("## Not Yet Discussed\n");
         for dim in &draft.not_discussed {
@@ -299,9 +287,15 @@ mod tests {
     }
 
     #[test]
-    fn trigger_when_enough_filled_and_uncertain() {
-        let state = make_state(5, 2, 5);
+    fn trigger_when_enough_confirmed_material() {
+        let state = make_state(5, 0, 5);
         assert!(should_trigger_draft(&state, 50, false));
+    }
+
+    #[test]
+    fn no_trigger_when_uncertainty_still_needs_verification() {
+        let state = make_state(5, 2, 5);
+        assert!(!should_trigger_draft(&state, 50, false));
     }
 
     #[test]
@@ -324,7 +318,7 @@ mod tests {
 
     #[test]
     fn no_trigger_if_already_shown() {
-        let state = make_state(5, 2, 5);
+        let state = make_state(5, 0, 5);
         assert!(!should_trigger_draft(&state, 50, true));
     }
 
@@ -361,8 +355,7 @@ mod tests {
         let text = format_draft_for_display(&draft);
         assert!(text.contains("DRAFT SPECIFICATION"));
         assert!(text.contains("Goal"));
-        assert!(text.contains("Assumptions"));
-        assert!(text.contains("60%"));
+        assert!(!text.contains("Assumptions"));
         assert!(text.contains("Not Yet Discussed"));
     }
 }

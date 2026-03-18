@@ -11,9 +11,18 @@ import { useGetAccessToken } from '../auth/useAuthenticatedFetch.ts';
 import { uuidv4 } from '../lib/uuid.ts';
 import { parseKnowledgeDeepLink } from '../lib/knowledgeDeepLinks.ts';
 import { labelNodeType, labelScopeClass, labelScopeVisibility, labelSecondaryScopeField } from '../lib/taxonomy.ts';
-import type { BlueprintNode, BlueprintResponse, NodeSummary, NodeType, ScopeClass, ScopeVisibility } from '../types/blueprint.ts';
+import type {
+  BlueprintExportHistoryEntry,
+  BlueprintNode,
+  BlueprintResponse,
+  NodeSummary,
+  NodeType,
+  ScopeClass,
+  ScopeVisibility,
+} from '../types/blueprint.ts';
 
 const MAJOR_TYPES: NodeType[] = [
+  'project',
   'decision',
   'technology',
   'component',
@@ -23,6 +32,7 @@ const MAJOR_TYPES: NodeType[] = [
 ];
 
 const NODE_TYPE_LABELS: Record<NodeType, string> = {
+  project: labelNodeType('project', 'plural'),
   decision: labelNodeType('decision', 'plural'),
   technology: labelNodeType('technology', 'plural'),
   component: labelNodeType('component', 'plural'),
@@ -101,6 +111,7 @@ const DEFAULT_SCOPED_FILTERS: ScopedFiltersState = {
 
 const KNOWLEDGE_TYPE_FILTERS: { value: NodeType | 'all'; label: string }[] = [
   { value: 'all', label: 'All Types' },
+  { value: 'project', label: labelNodeType('project', 'plural') },
   { value: 'decision', label: labelNodeType('decision', 'plural') },
   { value: 'technology', label: labelNodeType('technology', 'plural') },
   { value: 'component', label: labelNodeType('component', 'plural') },
@@ -212,6 +223,22 @@ interface ProjectEventEntry {
   kind: 'mutation' | 'export';
   summary: string;
   details: string;
+}
+
+interface ScopeReviewDraft {
+  deferredReason: string;
+  owner: string;
+  dueAt: string;
+}
+
+interface ScopeReviewSuggestion {
+  projectId: string;
+  projectName: string;
+  confidence: number;
+  confidenceLabel: 'high' | 'medium' | 'low';
+  isCurrentProject: boolean;
+  reasons: string[];
+  contextualSummary: string | null;
 }
 
 function isMajorType(value: string): value is NodeType {
@@ -534,6 +561,7 @@ function eventNodeName(node: Record<string, unknown> | null): string {
   if (!node) return 'record';
   return readString(node.name)
     ?? readString(node.title)
+    ?? readString(node.label)
     ?? readString(node.scenario)
     ?? readString(node.id)
     ?? 'record';
@@ -549,10 +577,40 @@ function eventNodeLifecycle(node: Record<string, unknown> | null): 'active' | 'a
   const scope = isRecord(node.scope) ? node.scope : null;
   const lifecycle = readString(scope?.lifecycle);
   if (lifecycle === 'archived') return 'archived';
-  if (lifecycle === 'active') return 'active';
-  const hasLegacyArchivedTag = eventNodeTags(node)
-    .some(tag => tag.trim().toLowerCase() === LEGACY_ARCHIVED_TAG);
-  return hasLegacyArchivedTag ? 'archived' : 'active';
+  return 'active';
+}
+
+function eventNodeOverrideSource(node: Record<string, unknown> | null): string | null {
+  if (!node) return null;
+  const scope = isRecord(node.scope) ? node.scope : null;
+  const overrideScope = isRecord(scope?.override_scope) ? scope.override_scope : null;
+  return readString(overrideScope?.shared_source_id);
+}
+
+function eventNodeOverrideReason(node: Record<string, unknown> | null): string | null {
+  if (!node) return null;
+  const scope = isRecord(node.scope) ? node.scope : null;
+  const overrideScope = isRecord(scope?.override_scope) ? scope.override_scope : null;
+  return readString(overrideScope?.override_reason);
+}
+
+function withOverrideEventDetails(baseDetails: string, node: Record<string, unknown> | null): string {
+  const sourceId = eventNodeOverrideSource(node);
+  if (!sourceId) return baseDetails;
+  const overrideReason = eventNodeOverrideReason(node);
+  return `${baseDetails} · overrides ${sourceId}${overrideReason ? ` · ${overrideReason}` : ''}`;
+}
+
+function eventNodeScopeClass(node: Record<string, unknown> | null): string | null {
+  if (!node) return null;
+  const scope = isRecord(node.scope) ? node.scope : null;
+  return readString(scope?.scope_class);
+}
+
+function eventNodeHasScopeReview(node: Record<string, unknown> | null): boolean {
+  if (!node) return false;
+  const scope = isRecord(node.scope) ? node.scope : null;
+  return isRecord(scope?.scope_review);
 }
 
 function eventNodeMatchesProject(node: Record<string, unknown> | null, projectId: string): boolean {
@@ -579,14 +637,19 @@ function summarizeProjectEvent(
       const tags = eventNodeTags(node);
       const branched = tags.some(tag => tag.trim().toLowerCase() === 'branch')
         || tags.some(tag => tag.trim().toLowerCase().startsWith('lineage:branch-of:'));
+      const overrideSource = eventNodeOverrideSource(node);
       const name = eventNodeName(node);
       const type = nodeTypeLabel(readString(node?.node_type));
       return {
         id: `event:${event.timestamp}:${event.summary}`,
         timestamp: event.timestamp,
         kind: 'mutation',
-        summary: branched ? `Branched ${type} '${name}'` : `Created ${type} '${name}'`,
-        details: event.summary,
+        summary: overrideSource
+          ? `Created local override '${name}'`
+          : branched
+            ? `Branched ${type} '${name}'`
+            : `Created ${type} '${name}'`,
+        details: withOverrideEventDetails(event.summary, node),
       };
     }
     case 'node_updated': {
@@ -595,19 +658,22 @@ function summarizeProjectEvent(
       if (!eventNodeMatchesProject(after, projectId) && !eventNodeMatchesProject(before, projectId)) return null;
       const beforeArchived = eventNodeLifecycle(before) === 'archived';
       const afterArchived = eventNodeLifecycle(after) === 'archived';
+      const afterOverride = eventNodeOverrideSource(after);
       const name = eventNodeName(after ?? before);
       const type = nodeTypeLabel(readString(after?.node_type) ?? readString(before?.node_type));
       const summary = afterArchived && !beforeArchived
         ? `Archived ${type} '${name}'`
         : !afterArchived && beforeArchived
           ? `Restored ${type} '${name}'`
+          : afterOverride
+            ? `Updated local override '${name}'`
           : `Updated ${type} '${name}'`;
       return {
         id: `event:${event.timestamp}:${event.summary}`,
         timestamp: event.timestamp,
         kind: 'mutation',
         summary,
-        details: event.summary,
+        details: withOverrideEventDetails(event.summary, after ?? before),
       };
     }
     case 'node_deleted': {
@@ -677,9 +743,153 @@ function summarizeProjectEvent(
   }
 }
 
+function summarizeExportHistoryEntry(entry: BlueprintExportHistoryEntry): ProjectEventEntry {
+  const summary = entry.kind === 'single_record'
+    ? `Exported single record${entry.node_id ? ` (${entry.node_id})` : ''}`
+    : `Exported scoped view (${entry.node_count} records)`;
+  const detailParts = [
+    entry.summary,
+    `${entry.node_count} nodes`,
+    `${entry.edge_count} edges`,
+  ];
+  if (entry.actor) {
+    detailParts.push(`actor ${entry.actor}`);
+  }
+  const scopeContext = summarizeExportScopeContext(entry.scope_snapshot);
+  if (scopeContext) {
+    detailParts.push(scopeContext);
+  }
+  if (entry.retention_expires_at) {
+    detailParts.push(`retained until ${formatAuditDate(entry.retention_expires_at)}`);
+  }
+  if (entry.scope_snapshot_redacted) {
+    const redactedFields = entry.scope_snapshot_redacted_fields?.length
+      ? ` (${entry.scope_snapshot_redacted_fields.join(', ')})`
+      : '';
+    detailParts.push(`snapshot redacted${redactedFields}`);
+  }
+  return {
+    id: `export:${entry.export_id}`,
+    timestamp: entry.timestamp,
+    kind: 'export',
+    summary,
+    details: detailParts.join(' · '),
+  };
+}
+
+function formatAuditDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toISOString().slice(0, 10);
+}
+
+function summarizeExportScopeContext(snapshot?: Record<string, unknown>): string | null {
+  if (!snapshot) return null;
+  const filters = isRecord(snapshot.filters) ? snapshot.filters : null;
+  const parts: string[] = [];
+  const scopeClass = readString(filters?.scopeClass);
+  const feature = readString(filters?.feature);
+  const component = readString(filters?.component);
+  const lifecycle = readString(filters?.lifecycle);
+  const section = readString(snapshot.section);
+
+  if (scopeClass && scopeClass !== 'all') parts.push(`scope ${scopeClass}`);
+  if (feature && feature !== 'all') parts.push(`feature ${feature}`);
+  if (component && component !== 'all') parts.push(`component ${component}`);
+  if (lifecycle && lifecycle !== 'all') parts.push(`lifecycle ${lifecycle}`);
+  if (section && section !== 'overview') parts.push(`section ${section}`);
+
+  return parts.length > 0 ? `scope context: ${parts.join(', ')}` : null;
+}
+
+function exportHistoryFilterValue(value: string): string | undefined {
+  return value !== 'all' ? value : undefined;
+}
+
+function scopeReviewDraftFromNode(node: NodeSummary): ScopeReviewDraft {
+  return {
+    deferredReason: node.scope_review_deferred_reason ?? '',
+    owner: node.scope_review_owner ?? '',
+    dueAt: node.scope_review_due_at ?? '',
+  };
+}
+
+function formatScopeReviewDueDate(value?: string): string | null {
+  if (!value) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toISOString().slice(0, 10);
+}
+
+function normalizeComparable(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function buildScopeReviewSuggestion(
+  node: NodeSummary,
+  projects: ProjectSummary[],
+  currentProjectId?: string,
+  currentProjectName?: string,
+  contextualSummary?: string | null,
+): ScopeReviewSuggestion | null {
+  const nodeText = `${node.name} ${node.tags.join(' ')}`.toLowerCase();
+  const owner = normalizeComparable(extractOwnerLabel(node) ?? '');
+  const team = normalizeComparable(extractTeamLabel(node) ?? '');
+
+  const scored = projects
+    .map(project => {
+      let score = 0;
+      const reasons: string[] = [];
+      if (currentProjectId && project.id === currentProjectId) {
+        score += 5;
+        reasons.push('current project context');
+      }
+      if (owner && project.ownerLabel && normalizeComparable(project.ownerLabel) === owner) {
+        score += 4;
+        reasons.push(`owner match: ${project.ownerLabel}`);
+      }
+      if (team && project.teamLabel && normalizeComparable(project.teamLabel) === team) {
+        score += 4;
+        reasons.push(`team match: ${project.teamLabel}`);
+      }
+      if (nodeText.includes(project.id.toLowerCase())) {
+        score += 2;
+        reasons.push(`mentions ${project.id}`);
+      }
+      if (nodeText.includes(project.name.toLowerCase())) {
+        score += 2;
+        reasons.push(`mentions ${project.name}`);
+      }
+      return { project, score, reasons };
+    })
+    .sort((left, right) => (
+      right.score - left.score
+      || Number(right.project.id === currentProjectId) - Number(left.project.id === currentProjectId)
+      || right.project.healthScore - left.project.healthScore
+      || left.project.name.localeCompare(right.project.name)
+    ));
+
+  const best = scored[0];
+  if (!best || best.score <= 0) return null;
+
+  const confidence = best.score >= 7 ? 0.9 : best.score >= 5 ? 0.75 : 0.55;
+  const confidenceLabel: ScopeReviewSuggestion['confidenceLabel'] =
+    confidence >= 0.85 ? 'high' : confidence >= 0.7 ? 'medium' : 'low';
+
+  return {
+    projectId: best.project.id,
+    projectName: best.project.name || currentProjectName || best.project.id,
+    confidence,
+    confidenceLabel,
+    isCurrentProject: Boolean(currentProjectId && best.project.id === currentProjectId),
+    reasons: best.reasons,
+    contextualSummary: best.project.id === currentProjectId ? (contextualSummary ?? null) : null,
+  };
+}
+
 function isArchivedNode(node: NodeSummary): boolean {
-  if (node.lifecycle === 'archived') return true;
-  return node.tags.some(tag => tag.trim().toLowerCase() === LEGACY_ARCHIVED_TAG);
+  return node.lifecycle === 'archived';
 }
 
 function normalizeTags(tags: string[]): string[] {
@@ -705,7 +915,7 @@ function nodeDisplayName(node: BlueprintNode): string {
     case 'constraint':
       return node.title;
     case 'quality_requirement':
-      return node.scenario;
+      return node.label ?? node.scenario;
     default:
       return node.name;
   }
@@ -839,13 +1049,53 @@ export default function KnowledgeLibraryPage() {
   const [projectSection, setProjectSection] = useState<ProjectSection>('overview');
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [projectEvents, setProjectEvents] = useState<ProjectEventEntry[]>([]);
+  const [rawBlueprintEvents, setRawBlueprintEvents] = useState<BlueprintEventPayload[]>([]);
+  const [exportHistoryEntries, setExportHistoryEntries] = useState<ProjectEventEntry[]>([]);
   const [reviewBusyNodeId, setReviewBusyNodeId] = useState<string | null>(null);
+  const [bulkReviewBusy, setBulkReviewBusy] = useState(false);
+  const [activeScopeReviewNodeId, setActiveScopeReviewNodeId] = useState<string | null>(null);
+  const [scopeReviewDraft, setScopeReviewDraft] = useState<ScopeReviewDraft>({
+    deferredReason: '',
+    owner: '',
+    dueAt: '',
+  });
+  const [excludedBulkScopeReviewIds, setExcludedBulkScopeReviewIds] = useState<string[]>([]);
 
   // Delete state
   const [deleteNodeId, setDeleteNodeId] = useState<string | null>(null);
   const [deleteNodeName, setDeleteNodeName] = useState<string | null>(null);
 
   // ─── Data loading ───────────────────────────────────────────────────────
+
+  const loadExportHistory = useCallback(async () => {
+    if (!isProjectScoped || !projectId) {
+      setExportHistoryEntries([]);
+      return;
+    }
+    try {
+      const response = await api.listBlueprintExportHistory({
+        projectId,
+        scopeClass: scopedFilters.scopeClass !== 'all' ? scopedFilters.scopeClass : undefined,
+        feature: exportHistoryFilterValue(scopedFilters.feature),
+        widget: exportHistoryFilterValue(scopedFilters.widget),
+        artifact: exportHistoryFilterValue(scopedFilters.artifact),
+        component: exportHistoryFilterValue(scopedFilters.component),
+        limit: 40,
+      });
+      setExportHistoryEntries(response.entries.map(summarizeExportHistoryEntry));
+    } catch {
+      setExportHistoryEntries([]);
+    }
+  }, [
+    api,
+    isProjectScoped,
+    projectId,
+    scopedFilters.artifact,
+    scopedFilters.component,
+    scopedFilters.feature,
+    scopedFilters.scopeClass,
+    scopedFilters.widget,
+  ]);
 
   const loadBlueprint = useCallback(async () => {
     setLoading(true);
@@ -863,17 +1113,22 @@ export default function KnowledgeLibraryPage() {
       if (isProjectScoped && projectId) {
         try {
           const eventResponse = await api.listBlueprintEvents({ limit: 250 });
+          setRawBlueprintEvents(eventResponse.events);
           const projectNodeIds = new Set(data.nodes.map(node => node.id));
           const nextProjectEvents = eventResponse.events
             .map(event => summarizeProjectEvent(event, projectId, projectNodeIds))
             .filter((entry): entry is ProjectEventEntry => entry !== null)
+            .filter(entry => entry.kind === 'mutation')
             .slice(0, 40);
           setProjectEvents(nextProjectEvents);
         } catch {
           setProjectEvents([]);
+          setRawBlueprintEvents([]);
         }
       } else {
         setProjectEvents([]);
+        setRawBlueprintEvents([]);
+        setExportHistoryEntries([]);
       }
       setError(null);
     } catch (err) {
@@ -886,6 +1141,11 @@ export default function KnowledgeLibraryPage() {
   useEffect(() => {
     void loadBlueprint();
   }, [loadBlueprint]);
+
+  useEffect(() => {
+    if (projectSection !== 'activity') return;
+    void loadExportHistory();
+  }, [loadExportHistory, projectSection]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -1581,6 +1841,7 @@ export default function KnowledgeLibraryPage() {
             shared: null,
             lifecycle,
             override_scope: null,
+            scope_review: null,
           },
         } as unknown as Partial<BlueprintNode>);
         setActionNotice(`Assigned '${node.name}' to project scope.`);
@@ -1594,10 +1855,12 @@ export default function KnowledgeLibraryPage() {
             shared: null,
             lifecycle,
             override_scope: null,
+            scope_review: null,
           },
         } as unknown as Partial<BlueprintNode>);
         setActionNotice(`Marked '${node.name}' as intentionally global.`);
       }
+      setActiveScopeReviewNodeId(previous => (previous === node.id ? null : previous));
       await loadBlueprint();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -1605,6 +1868,56 @@ export default function KnowledgeLibraryPage() {
       setReviewBusyNodeId(previous => (previous === node.id ? null : previous));
     }
   }, [api, loadBlueprint, projectId, scopedProjectName]);
+
+  const startDeferredScopeReview = useCallback((node: NodeSummary) => {
+    setActiveScopeReviewNodeId(node.id);
+    setScopeReviewDraft(scopeReviewDraftFromNode(node));
+  }, []);
+
+  const cancelDeferredScopeReview = useCallback(() => {
+    setActiveScopeReviewNodeId(null);
+    setScopeReviewDraft({
+      deferredReason: '',
+      owner: '',
+      dueAt: '',
+    });
+  }, []);
+
+  const saveDeferredScopeReview = useCallback(async (node: NodeSummary) => {
+    const deferredReason = scopeReviewDraft.deferredReason.trim();
+    const owner = scopeReviewDraft.owner.trim();
+    const dueAt = scopeReviewDraft.dueAt.trim();
+    if (!deferredReason || !owner || !dueAt) {
+      setActionNotice('Deferred scope review requires reason, owner, and due date.');
+      return;
+    }
+    setReviewBusyNodeId(node.id);
+    try {
+      await api.updateBlueprintNode(node.id, {
+        scope: {
+          scope_class: 'unscoped',
+          project: null,
+          secondary: {},
+          is_shared: false,
+          shared: null,
+          lifecycle: node.lifecycle === 'archived' ? 'archived' : 'active',
+          override_scope: null,
+          scope_review: {
+            deferred_reason: deferredReason,
+            owner,
+            due_at: dueAt,
+          },
+        },
+      } as unknown as Partial<BlueprintNode>);
+      setActionNotice(`Deferred scope review for '${node.name}'.`);
+      cancelDeferredScopeReview();
+      await loadBlueprint();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setReviewBusyNodeId(previous => (previous === node.id ? null : previous));
+    }
+  }, [api, cancelDeferredScopeReview, loadBlueprint, scopeReviewDraft]);
 
   const toggleSelectedNode = useCallback((nodeId: string, selected: boolean) => {
     setSelectedNodeIds(previous => {
@@ -1709,6 +2022,7 @@ export default function KnowledgeLibraryPage() {
       });
       if (isProjectScoped) {
         await loadBlueprint();
+        await loadExportHistory();
       }
       setActionNotice(`Exported ${exportTargetLabel ?? 'selected record'} as JSON.`);
     } catch (err) {
@@ -1722,6 +2036,7 @@ export default function KnowledgeLibraryPage() {
     exportTargetNodeId,
     isProjectScoped,
     loadBlueprint,
+    loadExportHistory,
     projectId,
     scopedFilters,
     scopedProjectName,
@@ -1768,6 +2083,7 @@ export default function KnowledgeLibraryPage() {
       setActionNotice(`Exported ${sectionFilteredNodes.length} scoped record${sectionFilteredNodes.length === 1 ? '' : 's'} as JSON.`);
       if (isProjectScoped) {
         await loadBlueprint();
+        await loadExportHistory();
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -1777,6 +2093,7 @@ export default function KnowledgeLibraryPage() {
   }, [
     isProjectScoped,
     loadBlueprint,
+    loadExportHistory,
     projectId,
     projectSection,
     scopedFilters,
@@ -1841,6 +2158,7 @@ export default function KnowledgeLibraryPage() {
       const created: ProjectAccumulator = {
         nodeIds: new Set<string>(),
         typeCounts: {
+          project: 0,
           decision: 0,
           technology: 0,
           component: 0,
@@ -2030,10 +2348,7 @@ export default function KnowledgeLibraryPage() {
     () => projectEvents.filter(entry => entry.kind === 'mutation'),
     [projectEvents],
   );
-  const durableExportEvents = useMemo(
-    () => projectEvents.filter(entry => entry.kind === 'export'),
-    [projectEvents],
-  );
+  const durableExportEvents = exportHistoryEntries;
 
   const lineageEntries = useMemo(() => {
     return nodes
@@ -2089,6 +2404,170 @@ export default function KnowledgeLibraryPage() {
     () => nodes.filter(node => (node.scope_class ?? 'unscoped') === 'unscoped').slice(0, 20),
     [nodes],
   );
+  const scopeReviewContextualSummary = useMemo(() => {
+    const parts = [
+      scopedFilters.feature !== 'all' ? `feature ${scopedFilters.feature}` : null,
+      scopedFilters.widget !== 'all' ? `surface ${scopedFilters.widget}` : null,
+      scopedFilters.artifact !== 'all' ? `artifact ${scopedFilters.artifact}` : null,
+      scopedFilters.component !== 'all' ? `component ${scopedFilters.component}` : null,
+    ].filter((value): value is string => Boolean(value));
+    return parts.length > 0 ? parts.join(' · ') : null;
+  }, [
+    scopedFilters.artifact,
+    scopedFilters.component,
+    scopedFilters.feature,
+    scopedFilters.widget,
+  ]);
+  const scopeReviewSuggestions = useMemo(() => {
+    const entries = unscopedReviewNodes.map(node => [
+      node.id,
+      buildScopeReviewSuggestion(
+        node,
+        projectSummaries,
+        projectId,
+        scopedProjectName,
+        scopeReviewContextualSummary,
+      ),
+    ] as const);
+    return new Map(entries);
+  }, [
+    projectId,
+    projectSummaries,
+    scopedProjectName,
+    scopeReviewContextualSummary,
+    unscopedReviewNodes,
+  ]);
+  const bulkScopeReviewSelection = useMemo(
+    () => unscopedReviewNodes.filter(node => !excludedBulkScopeReviewIds.includes(node.id)),
+    [excludedBulkScopeReviewIds, unscopedReviewNodes],
+  );
+  const scopeReviewTelemetry = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    const deferredNodes = unscopedReviewNodes.filter(node => Boolean(node.scope_review_deferred_reason));
+    const overdueDeferred = deferredNodes.filter(node => {
+      const dueDate = formatScopeReviewDueDate(node.scope_review_due_at);
+      return Boolean(dueDate && dueDate < today);
+    });
+    const readyToAccept = unscopedReviewNodes.filter(node => {
+      const suggestion = scopeReviewSuggestions.get(node.id);
+      return Boolean(
+        suggestion
+        && suggestion.isCurrentProject
+        && suggestion.confidence >= 0.7,
+      );
+    });
+    const deferReasonCounts = new Map<string, number>();
+    for (const node of deferredNodes) {
+      const reason = node.scope_review_deferred_reason?.trim();
+      if (!reason) continue;
+      deferReasonCounts.set(reason, (deferReasonCounts.get(reason) ?? 0) + 1);
+    }
+    const topDeferReasons = Array.from(deferReasonCounts.entries())
+      .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+      .slice(0, 3);
+    const reviewActionTotals = rawBlueprintEvents.reduce(
+      (acc, event) => {
+        if (event.event_type !== 'node_updated') return acc;
+        const before = isRecord(event.data.before) ? event.data.before : null;
+        const after = isRecord(event.data.after) ? event.data.after : null;
+        const beforeScopeClass = eventNodeScopeClass(before);
+        const afterScopeClass = eventNodeScopeClass(after);
+        if (beforeScopeClass !== 'unscoped') return acc;
+        if (afterScopeClass === 'project' || afterScopeClass === 'global') {
+          acc.accepted += 1;
+          return acc;
+        }
+        if (
+          afterScopeClass === 'unscoped'
+          && eventNodeHasScopeReview(after)
+          && (
+            !eventNodeHasScopeReview(before)
+            || JSON.stringify(before?.scope) !== JSON.stringify(after?.scope)
+          )
+        ) {
+          acc.deferred += 1;
+        }
+        return acc;
+      },
+      { accepted: 0, deferred: 0 },
+    );
+    const reviewedActions = reviewActionTotals.accepted + reviewActionTotals.deferred;
+    const acceptanceRate = reviewedActions > 0
+      ? Math.round((reviewActionTotals.accepted / reviewedActions) * 100)
+      : null;
+    return {
+      unresolved: unscopedReviewNodes.length,
+      deferred: deferredNodes.length,
+      overdue: overdueDeferred.length,
+      readyToAccept: readyToAccept.length,
+      topDeferReasons,
+      acceptedActions: reviewActionTotals.accepted,
+      deferredActions: reviewActionTotals.deferred,
+      acceptanceRate,
+    };
+  }, [rawBlueprintEvents, scopeReviewSuggestions, unscopedReviewNodes]);
+
+  useEffect(() => {
+    const validNodeIds = new Set(unscopedReviewNodes.map(node => node.id));
+    setExcludedBulkScopeReviewIds(previous => previous.filter(nodeId => validNodeIds.has(nodeId)));
+    if (activeScopeReviewNodeId && !validNodeIds.has(activeScopeReviewNodeId)) {
+      setActiveScopeReviewNodeId(null);
+    }
+  }, [activeScopeReviewNodeId, unscopedReviewNodes]);
+
+  const setBulkScopeReviewIncluded = useCallback((nodeId: string, included: boolean) => {
+    setExcludedBulkScopeReviewIds(previous => {
+      if (included) {
+        return previous.filter(existing => existing !== nodeId);
+      }
+      return previous.includes(nodeId) ? previous : [...previous, nodeId];
+    });
+  }, []);
+
+  const selectAllBulkScopeReview = useCallback(() => {
+    setExcludedBulkScopeReviewIds([]);
+  }, []);
+
+  const clearBulkScopeReviewSelection = useCallback(() => {
+    setExcludedBulkScopeReviewIds(unscopedReviewNodes.map(node => node.id));
+  }, [unscopedReviewNodes]);
+
+  const assignSelectedScopeReviewNodesToProject = useCallback(async () => {
+    if (!projectId || bulkScopeReviewSelection.length === 0) return;
+    setBulkReviewBusy(true);
+    try {
+      const results = await Promise.allSettled(
+        bulkScopeReviewSelection.map(node => api.updateBlueprintNode(node.id, {
+          scope: {
+            scope_class: 'project',
+            project: {
+              project_id: projectId,
+              project_name: scopedProjectName ?? projectId,
+            },
+            secondary: {},
+            is_shared: false,
+            shared: null,
+            lifecycle: node.lifecycle === 'archived' ? 'archived' : 'active',
+            override_scope: null,
+            scope_review: null,
+          },
+        } as unknown as Partial<BlueprintNode>)),
+      );
+      const succeeded = results.filter(result => result.status === 'fulfilled').length;
+      const failed = results.length - succeeded;
+      if (failed > 0) {
+        setActionNotice(`Assigned ${succeeded} record${succeeded === 1 ? '' : 's'} to project scope; ${failed} failed and remain for review.`);
+      } else {
+        setActionNotice(`Assigned ${succeeded} record${succeeded === 1 ? '' : 's'} to project scope.`);
+      }
+      setExcludedBulkScopeReviewIds([]);
+      await loadBlueprint();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBulkReviewBusy(false);
+    }
+  }, [api, bulkScopeReviewSelection, loadBlueprint, projectId, scopedProjectName]);
 
   const initialCreateScope = useMemo(() => {
     const contextualFeature = scopedFilters.feature !== 'all' ? scopedFilters.feature : (deepLink.filters.feature ?? '');
@@ -2411,15 +2890,112 @@ export default function KnowledgeLibraryPage() {
                     <div style={{ marginTop: 'var(--space-4)' }}>
                       <h3 className="knowledge-section-subtitle">Needs Scope Review Workflow</h3>
                       <p className="knowledge-section-muted">
-                        Resolve ambiguous records by assigning project scope or marking intentionally global.
+                        Accept the current project suggestion in bulk, then leave exceptions behind for defer or global handling.
                       </p>
+                      <div className="knowledge-overview-grid" style={{ marginTop: 'var(--space-2)' }}>
+                        <div className="knowledge-overview-card">
+                          <span className="knowledge-overview-label">Unresolved</span>
+                          <span className="knowledge-overview-value">{scopeReviewTelemetry.unresolved}</span>
+                        </div>
+                        <div className="knowledge-overview-card">
+                          <span className="knowledge-overview-label">Ready To Accept</span>
+                          <span className="knowledge-overview-value">{scopeReviewTelemetry.readyToAccept}</span>
+                        </div>
+                        <div className="knowledge-overview-card">
+                          <span className="knowledge-overview-label">Deferred</span>
+                          <span className="knowledge-overview-value">{scopeReviewTelemetry.deferred}</span>
+                        </div>
+                        <div className="knowledge-overview-card">
+                          <span className="knowledge-overview-label">Overdue</span>
+                          <span className="knowledge-overview-value">{scopeReviewTelemetry.overdue}</span>
+                        </div>
+                        <div className="knowledge-overview-card">
+                          <span className="knowledge-overview-label">Acceptance Rate</span>
+                          <span className="knowledge-overview-value">
+                            {scopeReviewTelemetry.acceptanceRate === null ? 'n/a' : `${scopeReviewTelemetry.acceptanceRate}%`}
+                          </span>
+                        </div>
+                      </div>
+                      {scopeReviewTelemetry.topDeferReasons.length > 0 && (
+                        <p className="knowledge-section-muted" style={{ marginTop: 'var(--space-2)' }}>
+                          Top defer reasons:
+                          {' '}
+                          {scopeReviewTelemetry.topDeferReasons.map(([reason, count]) => `${reason} (${count})`).join(' · ')}
+                        </p>
+                      )}
+                      {scopeReviewTelemetry.acceptanceRate !== null && (
+                        <p className="knowledge-section-muted" style={{ marginTop: 'var(--space-2)' }}>
+                          Review actions: {scopeReviewTelemetry.acceptedActions} accepted · {scopeReviewTelemetry.deferredActions} deferred.
+                        </p>
+                      )}
+                      <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexWrap: 'wrap', marginTop: 'var(--space-2)' }}>
+                        <button
+                          type="button"
+                          className="scope-action-btn"
+                          disabled={bulkReviewBusy || !isProjectScoped || bulkScopeReviewSelection.length === 0}
+                          onClick={() => void assignSelectedScopeReviewNodesToProject()}
+                          title={isProjectScoped ? 'Assign included records to the current project' : 'Open a project view to bulk-assign project scope'}
+                        >
+                          {bulkReviewBusy ? 'Applying…' : `Assign selected to project (${bulkScopeReviewSelection.length})`}
+                        </button>
+                        <button
+                          type="button"
+                          className="scope-action-btn"
+                          disabled={bulkReviewBusy || excludedBulkScopeReviewIds.length === 0}
+                          onClick={selectAllBulkScopeReview}
+                        >
+                          Include all
+                        </button>
+                        <button
+                          type="button"
+                          className="scope-action-btn"
+                          disabled={bulkReviewBusy || bulkScopeReviewSelection.length === 0}
+                          onClick={clearBulkScopeReviewSelection}
+                        >
+                          Exclude all
+                        </button>
+                        <span style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-xs)' }}>
+                          Untick exceptions, then accept the rest in one pass.
+                        </span>
+                      </div>
                       <div className="knowledge-review-queue" style={{ marginTop: 'var(--space-2)' }}>
                         {unscopedReviewNodes.map(node => {
-                          const busy = reviewBusyNodeId === node.id;
+                          const busy = bulkReviewBusy || reviewBusyNodeId === node.id;
+                          const reviewOpen = activeScopeReviewNodeId === node.id;
+                          const dueDate = formatScopeReviewDueDate(node.scope_review_due_at);
+                          const includedInBulk = !excludedBulkScopeReviewIds.includes(node.id);
+                          const suggestion = scopeReviewSuggestions.get(node.id);
                           return (
                             <div key={`unscoped-${node.id}`} className="knowledge-review-queue-item" style={{ alignItems: 'stretch', gap: 'var(--space-2)' }}>
+                              <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>
+                                <input
+                                  type="checkbox"
+                                  aria-label={`Include ${node.name} in bulk accept`}
+                                  checked={includedInBulk}
+                                  disabled={bulkReviewBusy}
+                                  onChange={event => setBulkScopeReviewIncluded(node.id, event.target.checked)}
+                                />
+                                Include in bulk accept
+                              </label>
                               <span style={{ fontWeight: 600 }}>{node.name}</span>
                               <span style={{ color: 'var(--color-text-faint)', fontSize: 'var(--text-xs)' }}>{node.node_type}</span>
+                              {suggestion && (
+                                <div style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-xs)', lineHeight: 1.5 }}>
+                                  Suggested scope
+                                  {`: ${suggestion.projectName}`}
+                                  {suggestion.contextualSummary ? ` · ${suggestion.contextualSummary}` : ''}
+                                  {` · ${suggestion.confidenceLabel} confidence`}
+                                  {suggestion.reasons.length > 0 ? ` · ${suggestion.reasons.join(', ')}` : ''}
+                                </div>
+                              )}
+                              {(node.scope_review_deferred_reason || node.scope_review_owner || dueDate) && (
+                                <div style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-xs)', lineHeight: 1.5 }}>
+                                  Deferred
+                                  {node.scope_review_deferred_reason ? ` · ${node.scope_review_deferred_reason}` : ''}
+                                  {node.scope_review_owner ? ` · owner ${node.scope_review_owner}` : ''}
+                                  {dueDate ? ` · due ${dueDate}` : ''}
+                                </div>
+                              )}
                               <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
                                 <button
                                   type="button"
@@ -2438,7 +3014,66 @@ export default function KnowledgeLibraryPage() {
                                 >
                                   Mark global
                                 </button>
+                                <button
+                                  type="button"
+                                  className="scope-action-btn"
+                                  disabled={busy}
+                                  onClick={() => {
+                                    if (reviewOpen) {
+                                      cancelDeferredScopeReview();
+                                    } else {
+                                      startDeferredScopeReview(node);
+                                    }
+                                  }}
+                                >
+                                  {reviewOpen ? 'Cancel defer' : node.scope_review_deferred_reason ? 'Edit defer' : 'Defer'}
+                                </button>
                               </div>
+                              {reviewOpen && (
+                                <div style={{ display: 'grid', gap: 'var(--space-2)', marginTop: 'var(--space-2)' }}>
+                                  <input
+                                    className="field-input"
+                                    aria-label="Deferred reason"
+                                    placeholder="Deferred reason"
+                                    value={scopeReviewDraft.deferredReason}
+                                    onChange={e => setScopeReviewDraft(previous => ({ ...previous, deferredReason: e.target.value }))}
+                                  />
+                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 180px', gap: 'var(--space-2)' }}>
+                                    <input
+                                      className="field-input"
+                                      aria-label="Deferred owner"
+                                      placeholder="Owner"
+                                      value={scopeReviewDraft.owner}
+                                      onChange={e => setScopeReviewDraft(previous => ({ ...previous, owner: e.target.value }))}
+                                    />
+                                    <input
+                                      className="field-input"
+                                      aria-label="Deferred due date"
+                                      type="date"
+                                      value={scopeReviewDraft.dueAt}
+                                      onChange={e => setScopeReviewDraft(previous => ({ ...previous, dueAt: e.target.value }))}
+                                    />
+                                  </div>
+                                  <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+                                    <button
+                                      type="button"
+                                      className="scope-action-btn"
+                                      disabled={busy}
+                                      onClick={() => void saveDeferredScopeReview(node)}
+                                    >
+                                      {busy ? 'Saving…' : 'Save defer'}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="scope-action-btn"
+                                      disabled={busy}
+                                      onClick={cancelDeferredScopeReview}
+                                    >
+                                      Close
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           );
                         })}

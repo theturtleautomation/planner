@@ -15,6 +15,11 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use uuid::Uuid;
 
+use planner_schemas::{
+    PromptEnvelope, PromptResponse as StructuredPromptResponse,
+    UiCapabilities as ClientUiCapabilities,
+};
+
 use crate::AppState;
 
 // ---------------------------------------------------------------------------
@@ -76,22 +81,9 @@ pub enum ServerMessage {
         convergence_pct: f32,
     },
 
-    /// Question for the user.
-    #[serde(rename = "question")]
-    Question {
-        text: String,
-        target_dimension: String,
-        quick_options: Vec<serde_json::Value>,
-        allow_skip: bool,
-    },
-
-    /// Speculative draft for review.
-    #[serde(rename = "speculative_draft")]
-    SpeculativeDraft {
-        sections: Vec<serde_json::Value>,
-        assumptions: Vec<serde_json::Value>,
-        not_discussed: Vec<String>,
-    },
+    /// Structured prompt envelope for user response.
+    #[serde(rename = "prompt")]
+    Prompt { prompt: PromptEnvelope },
 
     /// Interview converged — ready to build.
     #[serde(rename = "converged")]
@@ -109,15 +101,6 @@ pub enum ServerMessage {
         value_b: String,
         explanation: String,
     },
-
-    /// Acknowledges a draft reaction was received and forwarded to the engine.
-    #[serde(rename = "draft_reaction_ack")]
-    DraftReactionAck {
-        /// Which section index or "assumptions" this acknowledges.
-        target: String,
-        /// The action that was acknowledged ("correct", "fix", "confirm_all", "fix_these").
-        action: String,
-    },
 }
 
 /// Client-to-server WebSocket message.
@@ -134,28 +117,23 @@ pub enum ClientMessage {
     // -----------------------------------------------------------------------
     // Socratic interview messages
     // -----------------------------------------------------------------------
-    /// User responds during Socratic interview.
-    #[serde(rename = "socratic_response")]
-    SocraticResponse { content: String },
+    /// User submits structured answers for a Socratic prompt envelope.
+    #[serde(rename = "prompt_response")]
+    PromptResponse {
+        #[serde(flatten)]
+        response: StructuredPromptResponse,
+    },
 
-    /// User skips current question.
-    #[serde(rename = "skip_question")]
-    SkipQuestion,
+    /// Client-advertised UI capabilities for prompt batch sizing and layout.
+    #[serde(rename = "ui_capabilities")]
+    UiCapabilities {
+        #[serde(flatten)]
+        capabilities: ClientUiCapabilities,
+    },
 
     /// User says "done, start building".
     #[serde(rename = "done")]
     Done,
-
-    /// User reacts to a speculative draft section (correct, fix, or confirm/fix assumptions).
-    #[serde(rename = "draft_reaction")]
-    DraftReaction {
-        /// Which section index or "assumptions" this applies to.
-        target: String,
-        /// "correct" | "fix" | "confirm_all" | "fix_these"
-        action: String,
-        /// Optional free-text correction when action is "fix" or "fix_these".
-        correction: Option<String>,
-    },
 
     /// User edits a dimension value directly from the belief state panel.
     #[serde(rename = "dimension_edit")]
@@ -295,24 +273,18 @@ pub async fn handle_ws(mut socket: WebSocket, state: Arc<AppState>, session_id: 
                                     });
 
                                     if !was_running {
-                                        let state_clone = state.clone();
-                                        let desc = description.clone();
-                                        tokio::spawn(async move {
-                                            crate::api::run_pipeline_for_session(
-                                                state_clone,
-                                                session_id,
-                                                desc,
-                                            )
-                                            .await;
-                                        });
+                                        let _ = crate::api::spawn_pipeline_runtime(
+                                            state.clone(),
+                                            session_id,
+                                            description.clone(),
+                                        );
                                     }
                                 }
                                 // Socratic messages are handled by ws_socratic::handle_socratic_ws;
                                 // ignore them in the pipeline-phase handler.
-                                ClientMessage::SocraticResponse { .. }
-                                | ClientMessage::SkipQuestion
+                                ClientMessage::PromptResponse { .. }
+                                | ClientMessage::UiCapabilities { .. }
                                 | ClientMessage::Done
-                                | ClientMessage::DraftReaction { .. }
                                 | ClientMessage::DimensionEdit { .. } => {}
                             }
                         }
@@ -332,7 +304,28 @@ pub async fn handle_ws(mut socket: WebSocket, state: Arc<AppState>, session_id: 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::session::SessionStore;
+    use crate::AppState;
+    use std::sync::Arc;
     use uuid::Uuid;
+
+    fn test_state() -> Arc<AppState> {
+        Arc::new(AppState {
+            sessions: SessionStore::new(),
+            auth_config: None,
+            event_store: None,
+            cxdb: None,
+            llm_router: Arc::new(planner_core::llm::providers::LlmRouter::from_env()),
+            socratic_runtimes: crate::runtime::SessionRuntimeRegistry::new(
+                std::time::Duration::from_secs(30),
+            ),
+            pipeline_runtimes: crate::runtime::SessionPipelineRegistry::new(),
+            started_at: std::time::Instant::now(),
+            blueprints: planner_core::blueprint::BlueprintStore::new(),
+            proposals: planner_core::discovery::ProposalStore::new(),
+            projects: crate::project::ProjectStore::new(),
+        })
+    }
 
     #[test]
     fn server_message_stage_update_serde() {
@@ -435,6 +428,103 @@ mod tests {
     }
 
     #[test]
+    fn server_message_prompt_serde() {
+        let msg = ServerMessage::Prompt {
+            prompt: PromptEnvelope {
+                prompt_id: "prompt-1".into(),
+                kind: planner_schemas::PromptKind::QuestionBatch,
+                title: "Continue interview".into(),
+                instructions: Some("Answer what you can.".into()),
+                items: vec![planner_schemas::PromptItem {
+                    item_id: "item-1".into(),
+                    kind: planner_schemas::PromptItemKind::Discovery,
+                    target_dimension: Some(planner_schemas::Dimension::Goal),
+                    section_ref: None,
+                    text: "What should this app optimize for first?".into(),
+                    options: vec![planner_schemas::PromptOption {
+                        option_id: "opt-1".into(),
+                        label: "Speed".into(),
+                        semantic_value: "speed".into(),
+                        direct_effect: None,
+                    }],
+                    response_mode: planner_schemas::PromptResponseMode::SingleSelectWithCustomText,
+                    required: true,
+                    priority: 100,
+                    dependency_item_ids: vec![],
+                }],
+                draft_snapshot: None,
+                required_item_ids: vec!["item-1".into()],
+                allow_partial_submit: true,
+                ui_hints: planner_schemas::PromptUiHints {
+                    preferred_layout: planner_schemas::PromptPreferredLayout::Cards,
+                    show_draft_sidebar: false,
+                },
+                based_on_turn: 2,
+                created_at: "2026-03-08T00:00:00Z".into(),
+            },
+        };
+
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"type\":\"prompt\""));
+        assert!(json.contains("\"prompt_id\":\"prompt-1\""));
+
+        let deserialized: ServerMessage = serde_json::from_str(&json).unwrap();
+        match deserialized {
+            ServerMessage::Prompt { prompt } => {
+                assert_eq!(prompt.prompt_id, "prompt-1");
+                assert_eq!(prompt.items.len(), 1);
+            }
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
+    fn client_message_prompt_response_serde() {
+        let json = r#"{
+            "type":"prompt_response",
+            "prompt_id":"prompt-1",
+            "answers":[{"item_id":"item-1","selected_option_id":"opt-1","custom_text":"Primary path","skipped":false}],
+            "submitted_at":"2026-03-08T00:00:00Z",
+            "client_context":{"viewport_class":"desktop"}
+        }"#;
+        let msg: ClientMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ClientMessage::PromptResponse { response } => {
+                assert_eq!(response.prompt_id, "prompt-1");
+                assert_eq!(response.answers.len(), 1);
+                assert_eq!(response.answers[0].item_id, "item-1");
+                assert_eq!(
+                    response.answers[0].selected_option_id.as_deref(),
+                    Some("opt-1")
+                );
+            }
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
+    fn client_message_ui_capabilities_serde() {
+        let json = r#"{
+            "type":"ui_capabilities",
+            "viewport_class":"tablet",
+            "max_visible_items":3,
+            "supports_split_draft_view":false
+        }"#;
+        let msg: ClientMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ClientMessage::UiCapabilities { capabilities } => {
+                assert_eq!(
+                    capabilities.viewport_class,
+                    planner_schemas::ViewportClass::Tablet
+                );
+                assert_eq!(capabilities.max_visible_items, 3);
+                assert!(!capabilities.supports_split_draft_view);
+            }
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
     fn server_message_contradiction_detected_serde() {
         let msg = ServerMessage::ContradictionDetected {
             dimension_a: "Deployment".into(),
@@ -463,42 +553,6 @@ mod tests {
     }
 
     #[test]
-    fn client_message_draft_reaction_serde() {
-        let json = r#"{"type":"draft_reaction","target":"0","action":"fix","correction":"Should use REST not GraphQL"}"#;
-        let msg: ClientMessage = serde_json::from_str(json).unwrap();
-        match msg {
-            ClientMessage::DraftReaction {
-                target,
-                action,
-                correction,
-            } => {
-                assert_eq!(target, "0");
-                assert_eq!(action, "fix");
-                assert_eq!(correction.unwrap(), "Should use REST not GraphQL");
-            }
-            _ => panic!("wrong variant"),
-        }
-    }
-
-    #[test]
-    fn client_message_draft_reaction_no_correction() {
-        let json = r#"{"type":"draft_reaction","target":"assumptions","action":"confirm_all"}"#;
-        let msg: ClientMessage = serde_json::from_str(json).unwrap();
-        match msg {
-            ClientMessage::DraftReaction {
-                target,
-                action,
-                correction,
-            } => {
-                assert_eq!(target, "assumptions");
-                assert_eq!(action, "confirm_all");
-                assert!(correction.is_none());
-            }
-            _ => panic!("wrong variant"),
-        }
-    }
-
-    #[test]
     fn client_message_dimension_edit_serde() {
         let json = r#"{"type":"dimension_edit","dimension":"Database","new_value":"SQLite"}"#;
         let msg: ClientMessage = serde_json::from_str(json).unwrap();
@@ -514,36 +568,35 @@ mod tests {
         }
     }
 
-    #[test]
-    fn server_message_draft_reaction_ack_serde() {
-        let msg = ServerMessage::DraftReactionAck {
-            target: "0".into(),
-            action: "correct".into(),
-        };
-        let json = serde_json::to_string(&msg).unwrap();
-        assert!(json.contains("\"type\":\"draft_reaction_ack\""));
-        assert!(json.contains("\"target\":\"0\""));
-        assert!(json.contains("\"action\":\"correct\""));
+    #[tokio::test]
+    async fn ws_pipeline_start_registers_pipeline_runtime() {
+        let state = test_state();
+        let session = state.sessions.create("dev|local");
+        let session_id = session.id;
+        let description = "Run websocket pipeline".to_string();
 
-        let deserialized: ServerMessage = serde_json::from_str(&json).unwrap();
-        match deserialized {
-            ServerMessage::DraftReactionAck { target, action } => {
-                assert_eq!(target, "0");
-                assert_eq!(action, "correct");
+        let was_running = state
+            .sessions
+            .get(session_id)
+            .map(|s| s.pipeline_running)
+            .unwrap_or(false);
+
+        state.sessions.update(session_id, |s| {
+            s.add_message("user", &description);
+            if !s.pipeline_running {
+                s.pipeline_running = true;
+                s.project_description = Some(description.clone());
+                if let Some(stage) = s.stages.first_mut() {
+                    stage.status = "running".into();
+                }
             }
-            _ => panic!("wrong variant"),
-        }
-    }
+        });
 
-    #[test]
-    fn server_message_draft_reaction_ack_assumptions() {
-        let msg = ServerMessage::DraftReactionAck {
-            target: "assumptions".into(),
-            action: "confirm_all".into(),
-        };
-        let json = serde_json::to_string(&msg).unwrap();
-        assert!(json.contains("draft_reaction_ack"));
-        assert!(json.contains("assumptions"));
-        assert!(json.contains("confirm_all"));
+        if !was_running {
+            let _ = crate::api::spawn_pipeline_runtime(state.clone(), session_id, description);
+        }
+
+        assert!(state.pipeline_runtimes.get(session_id).is_some());
+        crate::api::stop_active_session_work(&state, session_id);
     }
 }

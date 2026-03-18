@@ -92,6 +92,9 @@ check_deps() {
 #     gemini/           ← HOME for gemini CLI
 #       .gemini/        ← user-level settings
 #       settings.json   ← system-level lockdown (no extensions/MCPs)
+#     gemini-codegraph/ ← HOME for dedicated Gemini+CGC MCP worker
+#       .gemini/        ← shared auth symlinks only
+#       settings.json   ← system-level config with only CodeGraphContext MCP
 #     codex/            ← HOME for codex CLI
 #       .codex/         ← auth + config (CODEX_HOME)
 #       .config/        ← XDG_CONFIG_HOME
@@ -110,6 +113,7 @@ setup_cli_isolation() {
 
     # Gemini
     mkdir -p "${cli_home}/gemini/.gemini"
+    mkdir -p "${cli_home}/gemini-codegraph/.gemini"
 
     # Write a locked-down Gemini settings file.
     # tools.core: [] is an empty allowlist — Planner uses Gemini purely for
@@ -145,6 +149,52 @@ setup_cli_isolation() {
 }
 GEMINI_SETTINGS
 
+    local cgc_command="${PLANNER_CGC_COMMAND:-${INSTALL_DIR}/bin/cgc}"
+    local cgc_neo4j_uri="${PLANNER_CGC_NEO4J_URI:-}"
+    local cgc_neo4j_username="${PLANNER_CGC_NEO4J_USERNAME:-neo4j}"
+    local cgc_neo4j_password="${PLANNER_CGC_NEO4J_PASSWORD:-}"
+
+    # Dedicated Gemini profile for CodeGraphContext MCP. Kept separate from
+    # the default Planner Gemini profile so the normal runtime stays fully
+    # locked down. Auth is shared via symlinks below.
+    cat > "${cli_home}/gemini-codegraph/settings.json" <<GEMINI_CODEGRAPH_SETTINGS
+{
+  "tools": {
+    "core": []
+  },
+  "security": {
+    "auth": {
+      "selectedType": "oauth-personal"
+    },
+    "disableYoloMode": true,
+    "blockGitExtensions": true,
+    "enablePermanentToolApproval": false
+  },
+  "hooksConfig": {
+    "disabled": ["*"]
+  },
+  "mcpServers": {
+    "CodeGraphContext": {
+      "command": "/bin/bash",
+      "args": [
+        "-lc",
+        "CGC_CMD=\"${cgc_command}\"; if \"\$CGC_CMD\" mcp start --help >/dev/null 2>&1; then exec \"\$CGC_CMD\" mcp start; else exec \"\$CGC_CMD\" start; fi"
+      ],
+      "env": {
+        "NEO4J_URI": "${cgc_neo4j_uri}",
+        "NEO4J_USERNAME": "${cgc_neo4j_username}",
+        "NEO4J_PASSWORD": "${cgc_neo4j_password}"
+      }
+    }
+  },
+  "admin": {
+    "extensions": {
+      "enabled": false
+    }
+  }
+}
+GEMINI_CODEGRAPH_SETTINGS
+
     # Gemini Policy Engine — deny all tools by default.
     # Planner invokes `gemini` in non-interactive mode with a specific
     # prompt; it does not need the CLI to execute tools on its own.
@@ -158,6 +208,11 @@ toolName = "*"
 decision = "deny"
 priority = 999
 GEMINI_POLICY
+
+    # Share Gemini OAuth state into the dedicated CGC profile without
+    # inheriting the default deny-all policy file.
+    ln -sfn "${cli_home}/gemini/.gemini/oauth_creds.json" "${cli_home}/gemini-codegraph/.gemini/oauth_creds.json"
+    ln -sfn "${cli_home}/gemini/.gemini/google_accounts.json" "${cli_home}/gemini-codegraph/.gemini/google_accounts.json"
 
     # Codex
     mkdir -p "${cli_home}/codex/.codex"
@@ -234,6 +289,30 @@ install_llm_clis() {
     fi
 
     local found=0
+    local npm_cmd="npm"
+    local node_cmd="node"
+
+    if [[ -n "$user_home" ]]; then
+        local nvm_script="${user_home}/.nvm/nvm.sh"
+        local nvm_source=""
+        if [[ -s "$nvm_script" ]]; then
+            nvm_source=". \"${nvm_script}\" --no-use 2>/dev/null; nvm use default >/dev/null 2>&1;"
+        fi
+
+        local user_npm
+        user_npm=$(sudo -u "$invoking_user" bash -c "${nvm_source} command -v npm 2>/dev/null" 2>/dev/null || true)
+        if [[ -n "$user_npm" ]]; then
+            npm_cmd="$user_npm"
+        fi
+        local user_node
+        user_node=$(sudo -u "$invoking_user" bash -c "${nvm_source} command -v node 2>/dev/null" 2>/dev/null || true)
+        if [[ -n "$user_node" ]]; then
+            node_cmd="$user_node"
+        fi
+    fi
+
+    info "  Using npm: ${npm_cmd}"
+    info "  Using node: ${node_cmd}"
 
     installed_npm_package_version() {
         local pkg="$1"
@@ -245,6 +324,16 @@ install_llm_clis() {
     latest_npm_package_version() {
         local pkg="$1"
         "${npm_cmd}" view "${pkg}" version 2>/dev/null | tail -n 1 | tr -d '[:space:]'
+    }
+
+    installed_claude_version() {
+        local binary="$1"
+        [[ -x "${binary}" ]] || return 1
+        "${binary}" --version 2>/dev/null | sed -nE 's/^([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' | head -n 1
+    }
+
+    latest_claude_version() {
+        latest_npm_package_version "@anthropic-ai/claude-code"
     }
 
     patch_gemini_cli_empty_tools_bug() {
@@ -307,9 +396,26 @@ NODE
     # Claude — native binary (no Node.js required)
     # ---------------------------------------------------------------
     if [[ -x "${planner_bin}/claude" ]]; then
-        info "  ✓ claude already installed at ${planner_bin}/claude — skipping"
-        found=$((found + 1))
-    else
+        local installed_claude=""
+        local latest_claude=""
+        installed_claude=$(installed_claude_version "${planner_bin}/claude" || true)
+        latest_claude=$(latest_claude_version || true)
+
+        if [[ -n "${installed_claude}" ]] && [[ -n "${latest_claude}" ]] && [[ "${installed_claude}" == "${latest_claude}" ]]; then
+            info "  ✓ claude already installed at ${planner_bin}/claude (${installed_claude}, latest)"
+            found=$((found + 1))
+        else
+            if [[ -n "${installed_claude}" ]] && [[ -n "${latest_claude}" ]]; then
+                info "  Updating claude ${installed_claude} → ${latest_claude}..."
+            elif [[ -n "${installed_claude}" ]]; then
+                warn "  ! Could not verify latest claude version — attempting refresh from native installer"
+            else
+                warn "  ! Existing claude binary version is unknown — refreshing install"
+            fi
+        fi
+    fi
+
+    if [[ ! -x "${planner_bin}/claude" ]] || [[ -z "${installed_claude:-}" ]] || [[ -z "${latest_claude:-}" ]] || [[ "${installed_claude}" != "${latest_claude}" ]]; then
     info "  Installing claude (native binary)..."
     local claude_src=""
 
@@ -342,6 +448,17 @@ NODE
 
     if [[ -n "$claude_src" ]]; then
         # Resolve to actual file (follow symlinks)
+        local claude_real
+        claude_real=$(readlink -f "$claude_src" 2>/dev/null || echo "$claude_src")
+        local claude_real_version=""
+        claude_real_version=$(installed_claude_version "${claude_real}" || true)
+        if [[ -n "${latest_claude:-}" ]] && [[ -n "${claude_real_version}" ]] && [[ "${claude_real_version}" != "${latest_claude}" ]]; then
+            info "    Existing claude binary is ${claude_real_version}; downloading ${latest_claude} instead"
+            claude_src=""
+        fi
+    fi
+
+    if [[ -n "$claude_src" ]]; then
         local claude_real
         claude_real=$(readlink -f "$claude_src" 2>/dev/null || echo "$claude_src")
         local dest_real=""
@@ -378,39 +495,11 @@ NODE
         rm -rf "$tmp_claude_home"
     fi
 
-    fi  # end claude skip-if-exists
+    fi
 
     # ---------------------------------------------------------------
     # Gemini + Codex — npm install
     # ---------------------------------------------------------------
-    # Locate npm + node.  nvm does not load in non-interactive shells
-    # (bash -lc won't source .bashrc behind an interactivity guard).
-    # We explicitly source nvm.sh if present in the invoking user's home.
-    local npm_cmd="npm"
-    local node_cmd="node"
-
-    if [[ -n "$user_home" ]]; then
-        local nvm_script="${user_home}/.nvm/nvm.sh"
-        local nvm_source=""
-        if [[ -s "$nvm_script" ]]; then
-            nvm_source=". \"${nvm_script}\" --no-use 2>/dev/null; nvm use default >/dev/null 2>&1;"
-        fi
-
-        local user_npm
-        user_npm=$(sudo -u "$invoking_user" bash -c "${nvm_source} command -v npm 2>/dev/null" 2>/dev/null || true)
-        if [[ -n "$user_npm" ]]; then
-            npm_cmd="$user_npm"
-        fi
-        local user_node
-        user_node=$(sudo -u "$invoking_user" bash -c "${nvm_source} command -v node 2>/dev/null" 2>/dev/null || true)
-        if [[ -n "$user_node" ]]; then
-            node_cmd="$user_node"
-        fi
-    fi
-
-    info "  Using npm: ${npm_cmd}"
-    info "  Using node: ${node_cmd}"
-
     declare -A npm_packages=(
         [gemini]="@google/gemini-cli"
         [codex]="@openai/codex"
@@ -490,6 +579,16 @@ NODE
         warn "  \u2717 Could not locate node binary — gemini/codex CLI tools may not work"
     fi
 
+    cat > "${planner_bin}/gemini-cgc" <<'GEMINI_CGC_WRAPPER'
+#!/usr/bin/env bash
+set -euo pipefail
+export HOME="/opt/planner/cli-home/gemini-codegraph"
+export GEMINI_CLI_SYSTEM_SETTINGS_PATH="/opt/planner/cli-home/gemini-codegraph/settings.json"
+exec /opt/planner/bin/gemini "$@"
+GEMINI_CGC_WRAPPER
+    chmod 755 "${planner_bin}/gemini-cgc"
+    info "  \u2713 gemini-cgc wrapper installed \u2192 ${planner_bin}/gemini-cgc"
+
     # Fix ownership — everything under INSTALL_DIR should be accessible
     chown -R "${SERVICE_USER}:${SERVICE_USER}" "${INSTALL_DIR}/bin" 2>/dev/null || true
     chown -R "${SERVICE_USER}:${SERVICE_USER}" "${INSTALL_DIR}/lib" 2>/dev/null || true
@@ -520,19 +619,56 @@ NODE
 # ---------------------------------------------------------------------------
 # LLM auth verification — check each installed CLI has valid credentials
 # ---------------------------------------------------------------------------
-# Checks for subscription-auth credential files. If missing, the service will
-# fail at runtime when it tries to call that CLI.
+# Credentials on disk are a necessary but insufficient signal. Gemini in
+# particular can report a logged-in state while still failing headless prompt
+# execution due to OAuth / Code Assist entitlement drift. Use a real runtime
+# probe for Gemini so install/update output distinguishes "credential files
+# exist" from "Planner can actually invoke the CLI".
 #
+GEMINI_PROBE_ERROR=""
+
+probe_gemini_runtime() {
+    local planner_bin="${INSTALL_DIR}/bin"
+    local cli_home="${INSTALL_DIR}/cli-home"
+    local timeout_cmd=()
+    local output=""
+    local status=0
+    local shell_cmd="cd ${INSTALL_DIR} && HOME=${cli_home}/gemini GEMINI_CLI_SYSTEM_SETTINGS_PATH=${cli_home}/gemini/settings.json ${planner_bin}/gemini --prompt \"Reply with OK only.\" --output-format json --model gemini-2.5-flash-lite"
+
+    GEMINI_PROBE_ERROR=""
+
+    if ! [[ -x "${planner_bin}/gemini" ]]; then
+        GEMINI_PROBE_ERROR="gemini binary not found at ${planner_bin}/gemini"
+        return 1
+    fi
+
+    if command -v timeout >/dev/null 2>&1; then
+        timeout_cmd=(timeout 30s)
+    fi
+
+    if output="$("${timeout_cmd[@]}" sudo -u "${SERVICE_USER}" /bin/bash --noprofile --norc -lc "${shell_cmd}" 2>&1)"; then
+        if grep -qE '"(response|result)"[[:space:]]*:' <<< "${output}"; then
+            return 0
+        fi
+        GEMINI_PROBE_ERROR="runtime probe returned unexpected output: $(echo "${output}" | tr '\n' ' ' | sed 's/[[:space:]]\\+/ /g' | cut -c1-220)"
+        return 1
+    fi
+
+    status=$?
+    GEMINI_PROBE_ERROR="runtime probe failed (exit ${status}): $(echo "${output}" | tr '\n' ' ' | sed 's/[[:space:]]\\+/ /g' | cut -c1-220)"
+    return 1
+}
+
 check_llm_auth() {
     info "Verifying LLM authentication..."
     echo ""
 
     local planner_bin="${INSTALL_DIR}/bin"
     local cli_home="${INSTALL_DIR}/cli-home"
-    local conf="${CONF_DIR}/planner.env"
     local authed=0
     local installed=0
     local unauthenticated=()
+    local unhealthy=()
 
     # --- Claude ---
     if [[ -x "${planner_bin}/claude" ]]; then
@@ -549,11 +685,17 @@ check_llm_auth() {
     # --- Gemini ---
     if [[ -x "${planner_bin}/gemini" ]]; then
         installed=$((installed + 1))
-        if [[ -d "${cli_home}/gemini/.gemini" ]] &&              find "${cli_home}/gemini/.gemini" -name "*.json" -size +0c 2>/dev/null | grep -q .; then
-            info "  \u2713 gemini  — credentials found in ${cli_home}/gemini/"
-            authed=$((authed + 1))
+        if [[ -s "${cli_home}/gemini/.gemini/oauth_creds.json" ]] || [[ -s "${cli_home}/gemini/.gemini/google_accounts.json" ]]; then
+            if probe_gemini_runtime; then
+                info "  \u2713 gemini  — credentials found and headless prompt probe passed"
+                authed=$((authed + 1))
+            else
+                warn "  \u26a0 gemini  — credentials found, but headless prompt probe failed"
+                warn "      ${GEMINI_PROBE_ERROR}"
+                unhealthy+=(gemini)
+            fi
         else
-            warn "  \u2717 gemini  — NOT AUTHENTICATED"
+            warn "  \u2717 gemini  — NOT AUTHENTICATED (expected ${cli_home}/gemini/.gemini/oauth_creds.json)"
             unauthenticated+=(gemini)
         fi
     fi
@@ -581,13 +723,25 @@ check_llm_auth() {
         echo ""
         for cli in "${unauthenticated[@]}"; do
             case "$cli" in
-                claude) warn "  sudo -u ${SERVICE_USER} HOME=${cli_home}/claude ${planner_bin}/claude login" ;;
-                gemini) warn "  sudo -u ${SERVICE_USER} HOME=${cli_home}/gemini ${planner_bin}/gemini auth login" ;;
-                codex)  warn "  sudo -u ${SERVICE_USER} HOME=${cli_home}/codex CODEX_HOME=${cli_home}/codex/.codex ${planner_bin}/codex login" ;;
+                claude) warn "  sudo -u ${SERVICE_USER} /bin/bash --noprofile --norc -lc 'cd ${INSTALL_DIR} && HOME=${cli_home}/claude ${planner_bin}/claude login'" ;;
+                gemini) warn "  sudo -u ${SERVICE_USER} /bin/bash --noprofile --norc -lc 'cd ${INSTALL_DIR} && HOME=${cli_home}/gemini ${planner_bin}/gemini'  # then choose Login with Google or run /auth" ;;
+                codex)  warn "  sudo -u ${SERVICE_USER} /bin/bash --noprofile --norc -lc 'cd ${INSTALL_DIR} && HOME=${cli_home}/codex CODEX_HOME=${cli_home}/codex/.codex ${planner_bin}/codex login'" ;;
             esac
         done
         echo ""
-    elif [[ $installed -gt 0 ]]; then
+    fi
+
+    if [[ ${#unhealthy[@]} -gt 0 ]]; then
+        warn "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+        warn "  ${#unhealthy[@]} PROVIDER(S) HAVE CREDENTIALS BUT FAILED A RUNTIME PROBE"
+        warn "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+        echo ""
+        info "Gemini health check command:"
+        warn "  sudo -u ${SERVICE_USER} /bin/bash --noprofile --norc -lc 'cd ${INSTALL_DIR} && HOME=${cli_home}/gemini GEMINI_CLI_SYSTEM_SETTINGS_PATH=${cli_home}/gemini/settings.json ${planner_bin}/gemini --prompt \"Reply with OK only.\" --output-format json --model gemini-2.5-flash-lite'"
+        echo ""
+    fi
+
+    if [[ ${#unauthenticated[@]} -eq 0 ]] && [[ ${#unhealthy[@]} -eq 0 ]] && [[ $installed -gt 0 ]]; then
         info "  All ${authed} installed provider(s) are authenticated."
     fi
 }

@@ -3,6 +3,11 @@ import type { ComponentType, NodeType, ScopeClass, ScopeVisibility } from '../ty
 type NodeTypeVariant = 'singular' | 'plural' | 'short';
 
 const NODE_TYPE_LABELS: Record<NodeType, { singular: string; plural: string; short: string }> = {
+  project: {
+    singular: 'Project',
+    plural: 'Projects',
+    short: 'Project',
+  },
   decision: {
     singular: 'Decision',
     plural: 'Decisions',

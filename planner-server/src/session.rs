@@ -24,7 +24,9 @@ use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
 use planner_schemas::artifacts::socratic::{
-    Contradiction, DomainClassification, QuestionOutput, RequirementsBeliefState, SpeculativeDraft,
+    Contradiction, DomainClassification, PromptEnvelope, PromptItem, PromptItemKind, PromptKind,
+    PromptOption, PromptPreferredLayout, PromptResponseMode, PromptUiHints, QuestionOutput,
+    RequirementsBeliefState, SpeculativeDraft, UiCapabilities,
 };
 
 fn normalize_title(value: &str) -> Option<String> {
@@ -85,8 +87,12 @@ impl Default for ResumeStatus {
     }
 }
 
+fn now_rfc3339() -> String {
+    Utc::now().to_rfc3339()
+}
+
 /// Durable interview checkpoint used for detached session recovery UX.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct InterviewCheckpoint {
     /// Stable run identifier reused for CXDB and checkpoint persistence.
     pub socratic_run_id: Uuid,
@@ -94,10 +100,8 @@ pub struct InterviewCheckpoint {
     pub classification: Option<DomainClassification>,
     /// Latest belief-state snapshot.
     pub belief_state: Option<RequirementsBeliefState>,
-    /// Last asked question, if waiting for user input.
-    pub current_question: Option<QuestionOutput>,
-    /// Last speculative draft generated, if awaiting reaction.
-    pub pending_draft: Option<SpeculativeDraft>,
+    /// Active prompt envelope, if waiting for user input.
+    pub current_prompt: Option<PromptEnvelope>,
     /// Active contradictions captured so far.
     #[serde(default)]
     pub contradictions: Vec<Contradiction>,
@@ -110,23 +114,263 @@ pub struct InterviewCheckpoint {
     pub last_checkpoint_at: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct InterviewCheckpointCurrentWire {
+    pub socratic_run_id: Uuid,
+    #[serde(default)]
+    pub classification: Option<DomainClassification>,
+    #[serde(default)]
+    pub belief_state: Option<RequirementsBeliefState>,
+    #[serde(default)]
+    pub current_prompt: Option<PromptEnvelope>,
+    #[serde(default)]
+    pub contradictions: Vec<Contradiction>,
+    #[serde(default)]
+    pub stale_turns: u32,
+    #[serde(default)]
+    pub draft_shown_at_turn: Option<u32>,
+    #[serde(default = "now_rfc3339")]
+    pub last_checkpoint_at: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct InterviewCheckpointLegacyWire {
+    pub socratic_run_id: Uuid,
+    #[serde(default)]
+    pub classification: Option<DomainClassification>,
+    #[serde(default)]
+    pub belief_state: Option<RequirementsBeliefState>,
+    #[serde(default)]
+    pub current_question: Option<QuestionOutput>,
+    #[serde(default)]
+    pub pending_draft: Option<SpeculativeDraft>,
+    #[serde(default)]
+    pub contradictions: Vec<Contradiction>,
+    #[serde(default)]
+    pub stale_turns: u32,
+    #[serde(default)]
+    pub draft_shown_at_turn: Option<u32>,
+    #[serde(default = "now_rfc3339")]
+    pub last_checkpoint_at: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum InterviewCheckpointWire {
+    Current(InterviewCheckpointCurrentWire),
+    Legacy(InterviewCheckpointLegacyWire),
+}
+
+// Explicit migration adapter for historical checkpoints.
+//
+// Remove this module after the legacy checkpoint migration window closes.
+mod legacy_checkpoint_prompt_adapter {
+    use super::*;
+
+    pub fn promote(
+        current_question: Option<QuestionOutput>,
+        pending_draft: Option<SpeculativeDraft>,
+        draft_shown_at_turn: Option<u32>,
+        fallback_turn: u32,
+        created_at: &str,
+    ) -> Option<PromptEnvelope> {
+        if let Some(draft) = pending_draft {
+            return Some(from_legacy_draft(
+                draft,
+                draft_shown_at_turn.unwrap_or(fallback_turn),
+                created_at,
+            ));
+        }
+
+        current_question.map(|question| from_legacy_question(question, fallback_turn, created_at))
+    }
+
+    fn from_legacy_question(
+        output: QuestionOutput,
+        based_on_turn: u32,
+        created_at: &str,
+    ) -> PromptEnvelope {
+        let item_id = String::from("legacy-question-item");
+        let required = !output.allow_skip;
+        let required_item_ids = required.then(|| vec![item_id.clone()]).unwrap_or_default();
+
+        PromptEnvelope {
+            prompt_id: String::from("legacy-question"),
+            kind: PromptKind::QuestionBatch,
+            title: String::from("Continue interview"),
+            instructions: None,
+            items: vec![PromptItem {
+                item_id,
+                kind: PromptItemKind::Discovery,
+                target_dimension: Some(output.target_dimension),
+                section_ref: None,
+                text: output.question,
+                options: output
+                    .quick_options
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, option)| PromptOption {
+                        option_id: format!("legacy-option-{}", index + 1),
+                        label: option.label,
+                        semantic_value: option.value,
+                        direct_effect: None,
+                    })
+                    .collect(),
+                response_mode: PromptResponseMode::SingleSelectWithCustomText,
+                required,
+                priority: 100,
+                dependency_item_ids: Vec::new(),
+            }],
+            draft_snapshot: None,
+            required_item_ids,
+            allow_partial_submit: true,
+            ui_hints: PromptUiHints {
+                preferred_layout: PromptPreferredLayout::Cards,
+                show_draft_sidebar: false,
+            },
+            based_on_turn,
+            created_at: created_at.to_string(),
+        }
+    }
+
+    fn from_legacy_draft(
+        draft: SpeculativeDraft,
+        based_on_turn: u32,
+        created_at: &str,
+    ) -> PromptEnvelope {
+        let item_id = String::from("legacy-draft-item");
+        let section_ref = draft
+            .sections
+            .first()
+            .map(|section| section.heading.clone());
+        let text = section_ref
+            .as_ref()
+            .map(|heading| format!("Review section '{}'. Confirm or correct it.", heading))
+            .unwrap_or_else(|| {
+                String::from("Review this draft and share confirmations or corrections.")
+            });
+
+        PromptEnvelope {
+            prompt_id: String::from("legacy-draft-review"),
+            kind: PromptKind::DraftReview,
+            title: String::from("Review draft"),
+            instructions: Some(String::from(
+                "Confirm accurate sections and provide corrections where needed.",
+            )),
+            items: vec![PromptItem {
+                item_id,
+                kind: PromptItemKind::DraftSection,
+                target_dimension: None,
+                section_ref,
+                text,
+                options: vec![
+                    PromptOption {
+                        option_id: String::from("confirm"),
+                        label: String::from("Looks correct"),
+                        semantic_value: String::from("confirm"),
+                        direct_effect: None,
+                    },
+                    PromptOption {
+                        option_id: String::from("correct"),
+                        label: String::from("Needs correction"),
+                        semantic_value: String::from("correct"),
+                        direct_effect: None,
+                    },
+                    PromptOption {
+                        option_id: String::from("surprise"),
+                        label: String::from("Unexpected but useful"),
+                        semantic_value: String::from("surprise"),
+                        direct_effect: None,
+                    },
+                    PromptOption {
+                        option_id: String::from("reject"),
+                        label: String::from("Fundamentally wrong"),
+                        semantic_value: String::from("reject"),
+                        direct_effect: None,
+                    },
+                ],
+                response_mode: PromptResponseMode::SingleSelectWithCustomText,
+                required: false,
+                priority: 100,
+                dependency_item_ids: Vec::new(),
+            }],
+            draft_snapshot: Some(draft),
+            required_item_ids: Vec::new(),
+            allow_partial_submit: true,
+            ui_hints: PromptUiHints {
+                preferred_layout: PromptPreferredLayout::Review,
+                show_draft_sidebar: true,
+            },
+            based_on_turn,
+            created_at: created_at.to_string(),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for InterviewCheckpoint {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let wire = InterviewCheckpointWire::deserialize(deserializer)?;
+        match wire {
+            InterviewCheckpointWire::Current(wire) => Ok(Self {
+                socratic_run_id: wire.socratic_run_id,
+                classification: wire.classification,
+                belief_state: wire.belief_state,
+                current_prompt: wire.current_prompt,
+                contradictions: wire.contradictions,
+                stale_turns: wire.stale_turns,
+                draft_shown_at_turn: wire.draft_shown_at_turn,
+                last_checkpoint_at: wire.last_checkpoint_at,
+            }),
+            InterviewCheckpointWire::Legacy(wire) => {
+                let fallback_turn = wire
+                    .belief_state
+                    .as_ref()
+                    .map(|state| state.turn_count)
+                    .unwrap_or(0);
+                let current_prompt = legacy_checkpoint_prompt_adapter::promote(
+                    wire.current_question,
+                    wire.pending_draft,
+                    wire.draft_shown_at_turn,
+                    fallback_turn,
+                    &wire.last_checkpoint_at,
+                );
+
+                Ok(Self {
+                    socratic_run_id: wire.socratic_run_id,
+                    classification: wire.classification,
+                    belief_state: wire.belief_state,
+                    current_prompt,
+                    contradictions: wire.contradictions,
+                    stale_turns: wire.stale_turns,
+                    draft_shown_at_turn: wire.draft_shown_at_turn,
+                    last_checkpoint_at: wire.last_checkpoint_at,
+                })
+            }
+        }
+    }
+}
+
 impl InterviewCheckpoint {
     pub fn new(socratic_run_id: Uuid) -> Self {
         Self {
             socratic_run_id,
             classification: None,
             belief_state: None,
-            current_question: None,
-            pending_draft: None,
+            current_prompt: None,
             contradictions: Vec::new(),
             stale_turns: 0,
             draft_shown_at_turn: None,
-            last_checkpoint_at: Utc::now().to_rfc3339(),
+            last_checkpoint_at: now_rfc3339(),
         }
     }
 
     pub fn touch(&mut self) {
-        self.last_checkpoint_at = Utc::now().to_rfc3339();
+        self.last_checkpoint_at = now_rfc3339();
     }
 }
 
@@ -181,6 +425,10 @@ pub struct Session {
     /// This is only meaningful while `intake_phase == "interviewing"`.
     #[serde(default)]
     pub interview_live_attached: bool,
+
+    /// Most recent client-advertised UI capabilities for prompt sizing.
+    #[serde(default)]
+    pub ui_capabilities: Option<UiCapabilities>,
 
     /// Whether an in-memory interview runtime currently exists for this session.
     ///
@@ -311,6 +559,7 @@ impl Session {
             checkpoint: None,
             intake_phase: "waiting".into(),
             interview_live_attached: false,
+            ui_capabilities: None,
             interview_runtime_active: false,
             can_resume_live: false,
             can_resume_checkpoint: false,
@@ -374,6 +623,185 @@ impl Session {
         }
     }
 
+    fn normalize_stage_name(raw: &str) -> Option<&'static str> {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "intake" => Some("Intake"),
+            "chunk" | "chunk planning" => Some("Chunk"),
+            "compile" | "specification compilation" => Some("Compile"),
+            "lint" => Some("Lint"),
+            "ar review" | "adversarial review" => Some("AR Review"),
+            "refine" | "refinement" => Some("Refine"),
+            "scenarios" | "scenario generation" => Some("Scenarios"),
+            "ralph" | "ralph advisory" => Some("Ralph"),
+            "graph" | "graph compilation" => Some("Graph"),
+            "factory" => Some("Factory"),
+            "validate" | "validation" => Some("Validate"),
+            "git" | "git projection" => Some("Git"),
+            _ => None,
+        }
+    }
+
+    fn stage_from_message(message: &str) -> Option<&'static str> {
+        let lower = message.to_ascii_lowercase();
+        const PATTERNS: [(&str, &str); 17] = [
+            ("intake stage", "Intake"),
+            ("chunk planning stage", "Chunk"),
+            ("chunk stage", "Chunk"),
+            ("specification compilation stage", "Compile"),
+            ("compile stage", "Compile"),
+            ("lint stage", "Lint"),
+            ("adversarial review stage", "AR Review"),
+            ("ar review stage", "AR Review"),
+            ("refinement stage", "Refine"),
+            ("refine stage", "Refine"),
+            ("scenario generation stage", "Scenarios"),
+            ("scenarios stage", "Scenarios"),
+            ("ralph advisory stage", "Ralph"),
+            ("graph compilation stage", "Graph"),
+            ("factory stage", "Factory"),
+            ("validation stage", "Validate"),
+            ("git projection stage", "Git"),
+        ];
+
+        PATTERNS
+            .iter()
+            .find_map(|(needle, stage)| lower.contains(needle).then_some(*stage))
+    }
+
+    fn stage_from_event(event: &planner_core::observability::PlannerEvent) -> Option<String> {
+        let metadata_stage = event
+            .metadata
+            .get("stage")
+            .and_then(|value| value.as_str())
+            .or_else(|| {
+                event
+                    .metadata
+                    .get("stage_name")
+                    .and_then(|value| value.as_str())
+            })
+            .or_else(|| {
+                event
+                    .metadata
+                    .get("details")
+                    .and_then(|details| details.get("stage"))
+                    .and_then(|value| value.as_str())
+            })
+            .or_else(|| {
+                event
+                    .metadata
+                    .get("details")
+                    .and_then(|details| details.get("stage_name"))
+                    .and_then(|value| value.as_str())
+            })
+            .and_then(Self::normalize_stage_name)
+            .map(str::to_string);
+
+        metadata_stage.or_else(|| Self::stage_from_message(&event.message).map(str::to_string))
+    }
+
+    fn sole_running_stage(&self) -> Option<String> {
+        let mut running = self.stages.iter().filter(|stage| stage.status == "running");
+        let first = running.next()?;
+        if running.next().is_some() {
+            return None;
+        }
+        Some(first.name.clone())
+    }
+
+    fn event_bool(
+        event: &planner_core::observability::PlannerEvent,
+        key: &'static str,
+    ) -> Option<bool> {
+        event
+            .metadata
+            .get(key)
+            .and_then(|value| value.as_bool())
+            .or_else(|| {
+                event
+                    .metadata
+                    .get("details")
+                    .and_then(|details| details.get(key))
+                    .and_then(|value| value.as_bool())
+            })
+    }
+
+    fn set_stage_status(&mut self, stage_name: &str, status: &str) {
+        if let Some(stage) = self
+            .stages
+            .iter_mut()
+            .find(|stage| stage.name == stage_name)
+        {
+            stage.status = status.into();
+        }
+    }
+
+    fn apply_pipeline_event(&mut self, event: &planner_core::observability::PlannerEvent) {
+        let Some(step) = event.step.as_deref() else {
+            return;
+        };
+
+        match step {
+            "pipeline.stage.started" => {
+                if let Some(stage_name) = Self::stage_from_event(event) {
+                    self.set_stage_status(stage_name.as_str(), "running");
+                }
+                self.pipeline_running = true;
+                if self.intake_phase != "complete" {
+                    self.intake_phase = "pipeline_running".into();
+                }
+            }
+            "pipeline.stage.completed" => {
+                let stage_name =
+                    Self::stage_from_event(event).or_else(|| self.sole_running_stage());
+                if let Some(stage_name) = stage_name {
+                    self.set_stage_status(stage_name.as_str(), "complete");
+                    if stage_name == "Git" {
+                        self.pipeline_running = false;
+                        self.intake_phase = "complete".into();
+                        self.error_message = None;
+                    }
+                }
+            }
+            "pipeline.stage.failed" => {
+                let stage_name =
+                    Self::stage_from_event(event).or_else(|| self.sole_running_stage());
+                if let Some(stage_name) = stage_name {
+                    self.set_stage_status(stage_name.as_str(), "failed");
+                }
+
+                let retry_planned = Self::event_bool(event, "retry_planned").unwrap_or(false);
+                let terminal = Self::event_bool(event, "terminal")
+                    .unwrap_or(event.level == planner_core::observability::EventLevel::Error);
+                if terminal && !retry_planned {
+                    self.pipeline_running = false;
+                    self.intake_phase = "error".into();
+                } else if retry_planned {
+                    self.pipeline_running = true;
+                    self.intake_phase = "pipeline_running".into();
+                }
+            }
+            "pipeline.retry.started" => {
+                self.pipeline_running = true;
+                self.intake_phase = "pipeline_running".into();
+                let stage_name = Self::stage_from_event(event)
+                    .or_else(|| self.sole_running_stage())
+                    .unwrap_or_else(|| String::from("Factory"));
+                self.set_stage_status(stage_name.as_str(), "running");
+            }
+            "pipeline.validation.completed" => {
+                let stage_name =
+                    Self::stage_from_event(event).unwrap_or_else(|| String::from("Validate"));
+                if let Some(gates_passed) = Self::event_bool(event, "gates_passed") {
+                    self.set_stage_status(
+                        stage_name.as_str(),
+                        if gates_passed { "complete" } else { "failed" },
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
+
     pub fn reset_for_interview_restart(&mut self) {
         self.pipeline_running = false;
         self.belief_state = None;
@@ -383,6 +811,7 @@ impl Session {
         self.has_checkpoint = false;
         self.intake_phase = "interviewing".into();
         self.interview_live_attached = false;
+        self.ui_capabilities = None;
         self.interview_runtime_active = false;
         self.events.clear();
         self.current_step = None;
@@ -473,6 +902,7 @@ impl Session {
         };
         duplicate.pipeline_running = false;
         duplicate.interview_live_attached = false;
+        duplicate.ui_capabilities = self.ui_capabilities.clone();
         duplicate.interview_runtime_active = false;
         duplicate.events.clear();
         duplicate.current_step = None;
@@ -651,7 +1081,13 @@ impl Session {
 
     /// Push an event into this session's log and update current_step/error_message.
     pub fn record_event(&mut self, event: planner_core::observability::PlannerEvent) {
-        if event.level == planner_core::observability::EventLevel::Error {
+        self.apply_pipeline_event(&event);
+
+        let retryable_stage_failure = event.step.as_deref() == Some("pipeline.stage.failed")
+            && Self::event_bool(&event, "terminal") == Some(false);
+
+        if event.level == planner_core::observability::EventLevel::Error && !retryable_stage_failure
+        {
             self.error_message = Some(event.message.clone());
         }
         if let Some(ref step) = event.step {
@@ -911,6 +1347,35 @@ impl SessionStore {
             .collect()
     }
 
+    /// List all sessions assigned to a specific project ID across all users.
+    pub fn list_for_project(&self, project_id: Uuid) -> Vec<Session> {
+        self.sessions
+            .read()
+            .values()
+            .filter(|s| s.project_id == Some(project_id))
+            .cloned()
+            .collect()
+    }
+
+    /// Delete all sessions assigned to a project ID.
+    pub fn delete_project_session_set(&self, project_id: Uuid) -> usize {
+        let ids: Vec<Uuid> = self
+            .sessions
+            .read()
+            .iter()
+            .filter_map(|(id, session)| (session.project_id == Some(project_id)).then_some(*id))
+            .collect();
+
+        let mut removed = 0usize;
+        for id in &ids {
+            if matches!(self.delete(*id), Ok(true)) {
+                removed += 1;
+            }
+        }
+
+        removed
+    }
+
     /// List all session IDs.
     pub fn list_ids(&self) -> Vec<Uuid> {
         self.sessions.read().keys().copied().collect()
@@ -949,7 +1414,9 @@ impl SessionStore {
             let mut dirty = self.dirty.write();
             for id in &removed_ids {
                 dirty.remove(id);
-                self.delete_from_disk(*id);
+                if let Err(error) = self.delete_from_disk(*id) {
+                    tracing::warn!("Failed to delete expired session file {}: {}", id, error);
+                }
             }
         }
 
@@ -960,13 +1427,15 @@ impl SessionStore {
 
     /// Explicitly delete a session by ID.
     /// Removes from memory, dirty set, and disk.
-    pub fn delete(&self, id: Uuid) -> bool {
-        let existed = self.sessions.write().remove(&id).is_some();
-        if existed {
-            self.dirty.write().remove(&id);
-            self.delete_from_disk(id);
+    pub fn delete(&self, id: Uuid) -> std::io::Result<bool> {
+        if !self.sessions.read().contains_key(&id) {
+            return Ok(false);
         }
-        existed
+
+        self.delete_from_disk(id)?;
+        self.sessions.write().remove(&id);
+        self.dirty.write().remove(&id);
+        Ok(true)
     }
 
     // -----------------------------------------------------------------------
@@ -1063,20 +1532,19 @@ impl SessionStore {
     }
 
     /// Delete a session's file from disk.
-    fn delete_from_disk(&self, id: Uuid) {
+    fn delete_from_disk(&self, id: Uuid) -> std::io::Result<()> {
         if let Some(dir) = &self.sessions_dir {
             let path = dir.join(format!("{}.msgpack", id));
             if path.exists() {
-                if let Err(e) = std::fs::remove_file(&path) {
-                    tracing::warn!("Failed to delete session file {}: {}", id, e);
-                }
+                std::fs::remove_file(&path)?;
             }
             // Also clean up any lingering tmp file.
             let tmp = dir.join(format!("{}.msgpack.tmp", id));
             if tmp.exists() {
-                let _ = std::fs::remove_file(&tmp);
+                std::fs::remove_file(&tmp)?;
             }
         }
+        Ok(())
     }
 
     /// Returns true if this store has disk backing enabled.
@@ -1100,6 +1568,25 @@ impl SessionStore {
             .read()
             .iter()
             .map(|(id, s)| (*id, s.events.clone()))
+            .collect()
+    }
+
+    /// Snapshot all events with project context for admin aggregations.
+    ///
+    /// Returns `(session_id, project_id, project_name, events)` tuples. Does
+    /// NOT mark anything dirty.
+    pub fn snapshot_all_events_with_context(
+        &self,
+    ) -> Vec<(
+        Uuid,
+        Option<Uuid>,
+        Option<String>,
+        Vec<planner_core::observability::PlannerEvent>,
+    )> {
+        self.sessions
+            .read()
+            .iter()
+            .map(|(id, s)| (*id, s.project_id, s.project_name.clone(), s.events.clone()))
             .collect()
     }
 
@@ -1213,6 +1700,38 @@ impl SessionStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_question_prompt(question: &str) -> PromptEnvelope {
+        PromptEnvelope {
+            prompt_id: "prompt-test-question".into(),
+            kind: PromptKind::QuestionBatch,
+            title: "Continue interview".into(),
+            instructions: None,
+            items: vec![PromptItem {
+                item_id: "item-1".into(),
+                kind: PromptItemKind::Discovery,
+                target_dimension: Some(
+                    planner_schemas::artifacts::socratic::Dimension::Stakeholders,
+                ),
+                section_ref: None,
+                text: question.into(),
+                options: Vec::new(),
+                response_mode: PromptResponseMode::SingleSelectWithCustomText,
+                required: false,
+                priority: 100,
+                dependency_item_ids: Vec::new(),
+            }],
+            draft_snapshot: None,
+            required_item_ids: Vec::new(),
+            allow_partial_submit: true,
+            ui_hints: PromptUiHints {
+                preferred_layout: PromptPreferredLayout::Cards,
+                show_draft_sidebar: false,
+            },
+            based_on_turn: 0,
+            created_at: "2026-03-08T00:00:00Z".into(),
+        }
+    }
 
     #[test]
     fn session_creation() {
@@ -1362,12 +1881,8 @@ mod tests {
         session.set_title(Some("Operations Console".into()));
         session.project_description = Some("Build an ops console".into());
         session.intake_phase = "interviewing".into();
-        session.ensure_checkpoint().current_question = Some(QuestionOutput {
-            question: "Who approves changes?".into(),
-            target_dimension: planner_schemas::artifacts::socratic::Dimension::Stakeholders,
-            quick_options: Vec::new(),
-            allow_skip: true,
-        });
+        session.ensure_checkpoint().current_prompt =
+            Some(test_question_prompt("Who approves changes?"));
         session.interview_live_attached = true;
         session.interview_runtime_active = true;
         session.record_event(planner_core::observability::PlannerEvent::info(
@@ -1566,6 +2081,50 @@ mod tests {
     }
 
     #[test]
+    fn session_store_delete_project_session_set() {
+        let store = SessionStore::new();
+        let project_id = Uuid::new_v4();
+        let other_project_id = Uuid::new_v4();
+
+        let session_a = store.create("user_a");
+        let session_b = store.create("user_b");
+        let session_c = store.create("user_c");
+
+        store.update(session_a.id, |s| s.project_id = Some(project_id));
+        store.update(session_b.id, |s| s.project_id = Some(project_id));
+        store.update(session_c.id, |s| s.project_id = Some(other_project_id));
+
+        let removed = store.delete_project_session_set(project_id);
+        assert_eq!(removed, 2);
+        assert!(store.get(session_a.id).is_none());
+        assert!(store.get(session_b.id).is_none());
+        assert!(store.get(session_c.id).is_some());
+    }
+
+    #[test]
+    fn session_store_delete_errors_when_disk_removal_fails() {
+        let data_dir =
+            std::env::temp_dir().join(format!("planner_session_delete_err_{}", Uuid::new_v4()));
+        let store = SessionStore::open(&data_dir).unwrap();
+        let session = store.create("user_a");
+        let (flushed, errors) = store.flush_dirty();
+        assert_eq!(flushed, 1);
+        assert_eq!(errors, 0);
+
+        let session_path = data_dir
+            .join("sessions")
+            .join(format!("{}.msgpack", session.id));
+        std::fs::remove_file(&session_path).unwrap();
+        std::fs::create_dir_all(&session_path).unwrap();
+
+        let error = store.delete(session.id).unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::IsADirectory);
+        assert!(store.get(session.id).is_some());
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
     fn session_store_get_missing() {
         let store = SessionStore::new();
         assert!(store.get(Uuid::new_v4()).is_none());
@@ -1624,6 +2183,189 @@ mod tests {
         let start_event = PlannerEvent::info(EventSource::LlmRouter, "llm.call.start", "Starting");
         session.record_event(start_event);
         assert_eq!(session.llm_call_count(), 1); // still 1
+    }
+
+    #[test]
+    fn session_record_event_updates_pipeline_stages_from_event_metadata() {
+        use planner_core::observability::{EventSource, PlannerEvent};
+
+        let mut session = Session::new("auth0|events");
+
+        session.record_event(
+            PlannerEvent::info(
+                EventSource::Pipeline,
+                "pipeline.stage.started",
+                "Compile stage started",
+            )
+            .with_metadata(serde_json::json!({
+                "stage": "Compile",
+                "terminal": false,
+            })),
+        );
+        assert_eq!(
+            session
+                .stages
+                .iter()
+                .find(|stage| stage.name == "Compile")
+                .map(|stage| stage.status.as_str()),
+            Some("running")
+        );
+        assert_eq!(session.intake_phase, "pipeline_running");
+        assert!(session.pipeline_running);
+
+        session.record_event(
+            PlannerEvent::info(
+                EventSource::Pipeline,
+                "pipeline.stage.completed",
+                "Compile stage completed",
+            )
+            .with_metadata(serde_json::json!({
+                "stage": "Compile",
+                "terminal": false,
+            })),
+        );
+        assert_eq!(
+            session
+                .stages
+                .iter()
+                .find(|stage| stage.name == "Compile")
+                .map(|stage| stage.status.as_str()),
+            Some("complete")
+        );
+
+        session.record_event(
+            PlannerEvent::error(
+                EventSource::Pipeline,
+                "pipeline.stage.failed",
+                "Validate stage failed, retry planned",
+            )
+            .with_metadata(serde_json::json!({
+                "stage": "Validate",
+                "terminal": false,
+                "retry_planned": true,
+            })),
+        );
+        assert_eq!(session.intake_phase, "pipeline_running");
+        assert!(session.pipeline_running);
+        assert!(session.error_message.is_none());
+
+        session.record_event(
+            PlannerEvent::error(
+                EventSource::Pipeline,
+                "pipeline.stage.failed",
+                "Validate stage failed permanently",
+            )
+            .with_metadata(serde_json::json!({
+                "stage": "Validate",
+                "terminal": true,
+                "retry_planned": false,
+            })),
+        );
+        assert_eq!(session.intake_phase, "error");
+        assert!(!session.pipeline_running);
+        assert_eq!(
+            session
+                .stages
+                .iter()
+                .find(|stage| stage.name == "Validate")
+                .map(|stage| stage.status.as_str()),
+            Some("failed")
+        );
+    }
+
+    #[test]
+    fn session_record_event_marks_complete_when_git_stage_completes() {
+        use planner_core::observability::{EventSource, PlannerEvent};
+
+        let mut session = Session::new("auth0|events");
+        session.pipeline_running = true;
+        session.intake_phase = "pipeline_running".into();
+
+        session.record_event(
+            PlannerEvent::info(
+                EventSource::Pipeline,
+                "pipeline.stage.completed",
+                "Git stage completed",
+            )
+            .with_metadata(serde_json::json!({
+                "stage": "Git",
+                "terminal": false,
+            })),
+        );
+
+        assert_eq!(session.intake_phase, "complete");
+        assert!(!session.pipeline_running);
+        assert_eq!(
+            session
+                .stages
+                .iter()
+                .find(|stage| stage.name == "Git")
+                .map(|stage| stage.status.as_str()),
+            Some("complete")
+        );
+    }
+
+    #[test]
+    fn session_record_event_derives_stage_from_message_when_metadata_is_missing() {
+        use planner_core::observability::{EventSource, PlannerEvent};
+
+        let mut session = Session::new("auth0|events");
+        session.pipeline_running = true;
+        session.intake_phase = "pipeline_running".into();
+
+        session.record_event(PlannerEvent::info(
+            EventSource::Pipeline,
+            "pipeline.stage.started",
+            "Factory stage started (attempt 1/3)",
+        ));
+
+        assert_eq!(
+            session
+                .stages
+                .iter()
+                .find(|stage| stage.name == "Factory")
+                .map(|stage| stage.status.as_str()),
+            Some("running")
+        );
+    }
+
+    #[test]
+    fn session_record_event_falls_back_to_running_stage_for_missing_metadata() {
+        use planner_core::observability::{EventSource, PlannerEvent};
+
+        let mut session = Session::new("auth0|events");
+        if let Some(stage) = session
+            .stages
+            .iter_mut()
+            .find(|stage| stage.name == "Compile")
+        {
+            stage.status = "running".into();
+        }
+        session.pipeline_running = true;
+        session.intake_phase = "pipeline_running".into();
+
+        session.record_event(
+            PlannerEvent::error(
+                EventSource::Pipeline,
+                "pipeline.stage.failed",
+                "Stage failed; retry planned",
+            )
+            .with_metadata(serde_json::json!({
+                "terminal": false,
+                "retry_planned": true,
+            })),
+        );
+
+        assert_eq!(
+            session
+                .stages
+                .iter()
+                .find(|stage| stage.name == "Compile")
+                .map(|stage| stage.status.as_str()),
+            Some("failed")
+        );
+        assert_eq!(session.intake_phase, "pipeline_running");
+        assert!(session.pipeline_running);
     }
 
     #[test]
@@ -1763,10 +2505,6 @@ mod tests {
 
     #[test]
     fn disk_backed_store_persists_interview_checkpoint() {
-        use planner_schemas::{
-            Dimension, DraftSection, QuestionOutput, QuickOption, SpeculativeDraft,
-        };
-
         let data_dir = temp_data_dir();
         let run_id = Uuid::new_v4();
         let session_id;
@@ -1779,24 +2517,8 @@ mod tests {
             store.update(session_id, |s| {
                 s.socratic_run_id = Some(run_id);
                 let checkpoint = s.ensure_checkpoint();
-                checkpoint.current_question = Some(QuestionOutput {
-                    question: "What are the core user roles?".into(),
-                    target_dimension: Dimension::Stakeholders,
-                    quick_options: vec![QuickOption {
-                        label: "Single user".into(),
-                        value: "single_user".into(),
-                    }],
-                    allow_skip: true,
-                });
-                checkpoint.pending_draft = Some(SpeculativeDraft {
-                    sections: vec![DraftSection {
-                        heading: "Goal".into(),
-                        content: "Build a resilient task tracker".into(),
-                        dimensions: vec![Dimension::Goal],
-                    }],
-                    assumptions: Vec::new(),
-                    not_discussed: vec![Dimension::Integrations],
-                });
+                checkpoint.current_prompt =
+                    Some(test_question_prompt("What are the core user roles?"));
                 checkpoint.stale_turns = 2;
                 checkpoint.draft_shown_at_turn = Some(4);
                 checkpoint.touch();
@@ -1817,24 +2539,71 @@ mod tests {
             assert_eq!(checkpoint.socratic_run_id, run_id);
             assert_eq!(
                 checkpoint
-                    .current_question
+                    .current_prompt
                     .as_ref()
-                    .map(|q| q.question.as_str()),
+                    .and_then(|prompt| prompt.items.first())
+                    .map(|item| item.text.as_str()),
                 Some("What are the core user roles?")
-            );
-            assert_eq!(
-                checkpoint
-                    .pending_draft
-                    .as_ref()
-                    .and_then(|d| d.sections.first())
-                    .map(|s| s.heading.as_str()),
-                Some("Goal")
             );
             assert_eq!(checkpoint.stale_turns, 2);
             assert_eq!(checkpoint.draft_shown_at_turn, Some(4));
         }
 
         let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    fn interview_checkpoint_promotes_legacy_question_on_read() {
+        let payload = serde_json::json!({
+            "socratic_run_id": Uuid::new_v4(),
+            "current_question": {
+                "question": "What platform are you targeting?",
+                "target_dimension": "platform",
+                "quick_options": [
+                    { "label": "Web", "value": "web" }
+                ],
+                "allow_skip": true
+            },
+            "last_checkpoint_at": "2026-03-08T00:00:00Z"
+        });
+
+        let checkpoint: InterviewCheckpoint =
+            serde_json::from_value(payload).expect("legacy question checkpoint should decode");
+        let prompt = checkpoint
+            .current_prompt
+            .expect("legacy question should promote to current_prompt");
+        assert_eq!(prompt.kind, PromptKind::QuestionBatch);
+        assert_eq!(prompt.items.len(), 1);
+        assert_eq!(prompt.items[0].text, "What platform are you targeting?");
+    }
+
+    #[test]
+    fn interview_checkpoint_promotes_legacy_draft_on_read() {
+        let payload = serde_json::json!({
+            "socratic_run_id": Uuid::new_v4(),
+            "pending_draft": {
+                "sections": [
+                    {
+                        "heading": "Goal",
+                        "content": "Build a resilient task tracker",
+                        "dimensions": ["goal"]
+                    }
+                ],
+                "assumptions": [],
+                "not_discussed": []
+            },
+            "draft_shown_at_turn": 7,
+            "last_checkpoint_at": "2026-03-08T00:00:00Z"
+        });
+
+        let checkpoint: InterviewCheckpoint =
+            serde_json::from_value(payload).expect("legacy draft checkpoint should decode");
+        let prompt = checkpoint
+            .current_prompt
+            .expect("legacy draft should promote to current_prompt");
+        assert_eq!(prompt.kind, PromptKind::DraftReview);
+        assert!(prompt.draft_snapshot.is_some());
+        assert_eq!(prompt.based_on_turn, 7);
     }
 
     #[test]

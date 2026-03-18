@@ -3,11 +3,17 @@ import type { QuickOption } from '../types.ts';
 
 interface QuickOptionsProps {
   options: QuickOption[];
-  onSelect: (value: string) => void;
+  selectedValues?: string[];
+  onToggle: (value: string) => void;
   disabled?: boolean;
 }
 
-export default function QuickOptions({ options, onSelect, disabled = false }: QuickOptionsProps) {
+export default function QuickOptions({
+  options,
+  selectedValues = [],
+  onToggle,
+  disabled = false,
+}: QuickOptionsProps) {
   const [hovered, setHovered] = useState<string | null>(null);
 
   if (options.length === 0) return null;
@@ -20,14 +26,17 @@ export default function QuickOptions({ options, onSelect, disabled = false }: Qu
         gap: '6px',
         padding: '8px 0 4px 0',
       }}
-    >
+      >
       {options.map((option) => {
         const isHovered = hovered === option.value;
+        const isSelected = selectedValues.includes(option.value);
 
         return (
           <button
             key={option.value}
-            onClick={() => !disabled && onSelect(option.value)}
+            type="button"
+            aria-pressed={isSelected}
+            onClick={() => !disabled && onToggle(option.value)}
             onMouseEnter={() => !disabled && setHovered(option.value)}
             onMouseLeave={() => setHovered(null)}
             disabled={disabled}
@@ -35,10 +44,16 @@ export default function QuickOptions({ options, onSelect, disabled = false }: Qu
               display: 'inline-flex',
               alignItems: 'center',
               padding: '5px 12px',
-              background: isHovered ? 'rgba(0,212,255,0.08)' : 'var(--color-surface-2)',
-              border: `1px solid ${isHovered ? 'var(--color-primary)' : 'var(--color-border)'}`,
+              background: isSelected
+                ? 'rgba(0,212,255,0.14)'
+                : isHovered
+                  ? 'rgba(0,212,255,0.08)'
+                  : 'var(--color-surface-2)',
+              border: `1px solid ${
+                isSelected || isHovered ? 'var(--color-primary)' : 'var(--color-border)'
+              }`,
               borderRadius: '3px',
-              color: isHovered ? 'var(--color-primary)' : 'var(--color-text)',
+              color: isSelected || isHovered ? 'var(--color-primary)' : 'var(--color-text)',
               fontSize: '11px',
               fontFamily: 'inherit',
               letterSpacing: '0.03em',
@@ -49,6 +64,7 @@ export default function QuickOptions({ options, onSelect, disabled = false }: Qu
               whiteSpace: 'nowrap',
             }}
           >
+            {isSelected ? '✓ ' : ''}
             {option.label}
           </button>
         );

@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
 import MessageInput from '../MessageInput';
@@ -149,32 +149,6 @@ describe('MessageInput', () => {
     expect(screen.getByRole('button', { name: /send message/i })).toHaveTextContent('send');
   });
 
-  // ─── New tests for intakePhase / currentQuestion / onSkip / onDone ───────────
-
-  it('shows Skip button when currentQuestion.allowSkip is true and intakePhase is interviewing', () => {
-    render(
-      <MessageInput
-        onSend={vi.fn()}
-        intakePhase="interviewing"
-        currentQuestion={{ text: 'What stack?', allowSkip: true }}
-        onSkip={vi.fn()}
-      />
-    );
-    expect(screen.getByRole('button', { name: /skip question/i })).toBeInTheDocument();
-  });
-
-  it('does NOT show Skip button when currentQuestion.allowSkip is false', () => {
-    render(
-      <MessageInput
-        onSend={vi.fn()}
-        intakePhase="interviewing"
-        currentQuestion={{ text: 'What stack?', allowSkip: false }}
-        onSkip={vi.fn()}
-      />
-    );
-    expect(screen.queryByRole('button', { name: /skip question/i })).not.toBeInTheDocument();
-  });
-
   it('shows Done button when intakePhase is interviewing', () => {
     render(
       <MessageInput
@@ -207,21 +181,6 @@ describe('MessageInput', () => {
     expect(screen.queryByRole('button', { name: /done with interview/i })).not.toBeInTheDocument();
   });
 
-  it('calls onSkip when Skip button is clicked', async () => {
-    const user = userEvent.setup();
-    const onSkip = vi.fn();
-    render(
-      <MessageInput
-        onSend={vi.fn()}
-        intakePhase="interviewing"
-        currentQuestion={{ text: 'What stack?', allowSkip: true }}
-        onSkip={onSkip}
-      />
-    );
-    await user.click(screen.getByRole('button', { name: /skip question/i }));
-    expect(onSkip).toHaveBeenCalledTimes(1);
-  });
-
   it('calls onDone when Done button is clicked', async () => {
     const user = userEvent.setup();
     const onDone = vi.fn();
@@ -245,39 +204,5 @@ describe('MessageInput', () => {
     );
     const textarea = screen.getByRole('textbox', { name: /message input/i });
     expect(textarea).toHaveAttribute('placeholder', expect.stringMatching(/type your answer/i));
-  });
-
-  it('renders quick options when currentQuestion has quickOptions', () => {
-    const options = [
-      { label: 'React', value: 'react' },
-      { label: 'Vue', value: 'vue' },
-    ];
-    render(
-      <MessageInput
-        onSend={vi.fn()}
-        intakePhase="interviewing"
-        currentQuestion={{ text: 'What framework?', quickOptions: options }}
-      />
-    );
-    expect(screen.getByRole('button', { name: 'React' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Vue' })).toBeInTheDocument();
-  });
-
-  it('clicking a quick option calls onSend with the option value', async () => {
-    const user = userEvent.setup();
-    const onSend = vi.fn();
-    const options = [
-      { label: 'React', value: 'react' },
-      { label: 'Vue', value: 'vue' },
-    ];
-    render(
-      <MessageInput
-        onSend={onSend}
-        intakePhase="interviewing"
-        currentQuestion={{ text: 'What framework?', quickOptions: options }}
-      />
-    );
-    await user.click(screen.getByRole('button', { name: 'React' }));
-    expect(onSend).toHaveBeenCalledWith('react');
   });
 });

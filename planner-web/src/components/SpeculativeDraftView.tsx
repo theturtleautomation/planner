@@ -1,4 +1,3 @@
-import { useState, useCallback } from 'react';
 import type { SpeculativeDraft } from '../types.ts';
 
 /** Safely coerce serde enum wrappers (e.g. {"custom": "X"}) to plain strings. */
@@ -20,128 +19,9 @@ function toDisplayString(v: unknown): string {
 interface SpeculativeDraftViewProps {
   draft: SpeculativeDraft;
   onBack: () => void;
-  onReact?: (target: string, action: string, correction?: string) => void;
-  /** Server-acknowledged confirmed sections. Keyed by target ("0", "1", … or "assumptions"). */
-  confirmedSections: Set<string>;
 }
 
-/** Small inline correction input shown when "Fix" is clicked. */
-function CorrectionInput({
-  onSubmit,
-  onCancel,
-}: {
-  onSubmit: (correction: string) => void;
-  onCancel: () => void;
-}) {
-  const [value, setValue] = useState('');
-
-  return (
-    <div
-      style={{
-        marginTop: '6px',
-        display: 'flex',
-        gap: '6px',
-        alignItems: 'flex-end',
-      }}
-    >
-      <textarea
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.shiftKey && value.trim()) {
-            e.preventDefault();
-            onSubmit(value.trim());
-          } else if (e.key === 'Escape') {
-            onCancel();
-          }
-        }}
-        placeholder="Describe what should change…"
-        rows={2}
-        autoFocus
-        style={{
-          flex: 1,
-          background: 'var(--color-bg)',
-          border: '1px solid var(--color-gold)',
-          borderRadius: '2px',
-          color: 'var(--color-text)',
-          fontSize: '12px',
-          padding: '6px 8px',
-          fontFamily: 'inherit',
-          resize: 'none',
-          outline: 'none',
-          lineHeight: '1.5',
-        }}
-      />
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-        <button
-          onClick={() => value.trim() && onSubmit(value.trim())}
-          disabled={!value.trim()}
-          style={{
-            background: value.trim() ? 'var(--color-gold)' : 'transparent',
-            border: `1px solid ${value.trim() ? 'var(--color-gold)' : 'var(--color-border)'}`,
-            borderRadius: '2px',
-            color: value.trim() ? 'var(--color-bg)' : 'var(--color-text-muted)',
-            fontSize: '10px',
-            fontWeight: 700,
-            padding: '4px 10px',
-            cursor: value.trim() ? 'pointer' : 'not-allowed',
-            fontFamily: 'inherit',
-          }}
-        >
-          Submit
-        </button>
-        <button
-          onClick={onCancel}
-          style={{
-            background: 'transparent',
-            border: '1px solid var(--color-border)',
-            borderRadius: '2px',
-            color: 'var(--color-text-muted)',
-            fontSize: '10px',
-            padding: '4px 10px',
-            cursor: 'pointer',
-            fontFamily: 'inherit',
-          }}
-        >
-          Cancel
-        </button>
-      </div>
-    </div>
-  );
-}
-
-export default function SpeculativeDraftView({ draft, onBack, onReact, confirmedSections }: SpeculativeDraftViewProps) {
-  // Track which section/assumptions has an open correction input.
-  const [fixingTarget, setFixingTarget] = useState<string | null>(null);
-
-  const handleCorrect = useCallback((target: string) => {
-    onReact?.(target, 'correct');
-    setFixingTarget(null);
-  }, [onReact]);
-
-  const handleFix = useCallback((target: string) => {
-    setFixingTarget(target);
-  }, []);
-
-  const handleFixSubmit = useCallback((target: string, correction: string) => {
-    onReact?.(target, 'fix', correction);
-    setFixingTarget(null);
-  }, [onReact]);
-
-  const handleConfirmAllAssumptions = useCallback(() => {
-    onReact?.('assumptions', 'confirm_all');
-    setFixingTarget(null);
-  }, [onReact]);
-
-  const handleFixAssumptions = useCallback(() => {
-    setFixingTarget('assumptions');
-  }, []);
-
-  const handleFixAssumptionsSubmit = useCallback((correction: string) => {
-    onReact?.('assumptions', 'fix_these', correction);
-    setFixingTarget(null);
-  }, [onReact]);
-
+export default function SpeculativeDraftView({ draft, onBack }: SpeculativeDraftViewProps) {
   return (
     <div
       style={{
@@ -152,7 +32,6 @@ export default function SpeculativeDraftView({ draft, onBack, onReact, confirmed
         flexDirection: 'column',
       }}
     >
-      {/* Header */}
       <div
         style={{
           display: 'flex',
@@ -186,7 +65,7 @@ export default function SpeculativeDraftView({ draft, onBack, onReact, confirmed
               letterSpacing: '0',
             }}
           >
-            (review and correct)
+            (review alongside prompt items)
           </span>
         </span>
 
@@ -213,11 +92,10 @@ export default function SpeculativeDraftView({ draft, onBack, onReact, confirmed
             (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-text-muted)';
           }}
         >
-          ← Back to State
+          Back to State
         </button>
       </div>
 
-      {/* Body */}
       <div
         style={{
           padding: '16px 20px',
@@ -226,229 +104,44 @@ export default function SpeculativeDraftView({ draft, onBack, onReact, confirmed
           gap: '20px',
         }}
       >
-        {/* Draft sections */}
-        {draft.sections.map((section, i) => {
-          const target = String(i);
-          const isReacted = confirmedSections.has(target);
-          const isFixing = fixingTarget === target;
-
-          return (
-            <div
-              key={i}
-              className="draft-section-enter"
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '6px',
-                opacity: isReacted ? 0.6 : 1,
-                transition: 'opacity 0.3s',
-              }}
-            >
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: '12px',
-                    fontWeight: 700,
-                    color: 'var(--color-primary)',
-                    letterSpacing: '0.04em',
-                    textTransform: 'uppercase',
-                  }}
-                >
-                  {section.heading}
-                </div>
-
-                {/* Reaction buttons */}
-                {onReact && !isReacted && (
-                  <div style={{ display: 'flex', gap: '4px' }}>
-                    <button
-                      onClick={() => handleCorrect(target)}
-                      style={{
-                        background: 'transparent',
-                        border: '1px solid var(--color-success)',
-                        borderRadius: '2px',
-                        color: 'var(--color-success)',
-                        fontSize: '10px',
-                        fontFamily: 'inherit',
-                        padding: '2px 8px',
-                        cursor: 'pointer',
-                        letterSpacing: '0.03em',
-                      }}
-                    >
-                      ✓ Correct
-                    </button>
-                    <button
-                      onClick={() => handleFix(target)}
-                      style={{
-                        background: 'transparent',
-                        border: '1px solid var(--color-gold)',
-                        borderRadius: '2px',
-                        color: 'var(--color-gold)',
-                        fontSize: '10px',
-                        fontFamily: 'inherit',
-                        padding: '2px 8px',
-                        cursor: 'pointer',
-                        letterSpacing: '0.03em',
-                      }}
-                    >
-                      ✎ Fix
-                    </button>
-                  </div>
-                )}
-
-                {isReacted && (
-                  <span style={{ fontSize: '10px', color: 'var(--color-success)' }}>
-                    ✓ reviewed
-                  </span>
-                )}
-              </div>
-
-              <div
-                style={{
-                  fontSize: '13px',
-                  color: 'var(--color-text)',
-                  lineHeight: '1.7',
-                  paddingLeft: '10px',
-                  borderLeft: '2px solid var(--color-border)',
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-word',
-                }}
-              >
-                {section.content}
-              </div>
-
-              {isFixing && (
-                <CorrectionInput
-                  onSubmit={(correction) => handleFixSubmit(target, correction)}
-                  onCancel={() => setFixingTarget(null)}
-                />
-              )}
-            </div>
-          );
-        })}
-
-        {/* Assumptions */}
-        {draft.assumptions.length > 0 && (
+        {draft.sections.map((section, i) => (
           <div
+            key={i}
+            className="draft-section-enter"
             style={{
-              borderTop: '1px solid var(--color-border)',
-              paddingTop: '14px',
               display: 'flex',
               flexDirection: 'column',
-              gap: '8px',
-              opacity: confirmedSections.has('assumptions') ? 0.6 : 1,
-              transition: 'opacity 0.3s',
+              gap: '6px',
             }}
           >
             <div
               style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
+                fontSize: '12px',
+                fontWeight: 700,
+                color: 'var(--color-primary)',
+                letterSpacing: '0.04em',
+                textTransform: 'uppercase',
               }}
             >
-              <div
-                style={{
-                  fontSize: '11px',
-                  fontWeight: 700,
-                  letterSpacing: '0.08em',
-                  textTransform: 'uppercase',
-                  color: 'var(--color-gold)',
-                }}
-              >
-                Assumptions (unconfirmed):
-              </div>
-
-              {/* Assumption reaction buttons */}
-              {onReact && !confirmedSections.has('assumptions') && (
-                <div style={{ display: 'flex', gap: '4px' }}>
-                  <button
-                    onClick={handleConfirmAllAssumptions}
-                    style={{
-                      background: 'transparent',
-                      border: '1px solid var(--color-success)',
-                      borderRadius: '2px',
-                      color: 'var(--color-success)',
-                      fontSize: '10px',
-                      fontFamily: 'inherit',
-                      padding: '2px 8px',
-                      cursor: 'pointer',
-                      letterSpacing: '0.03em',
-                    }}
-                  >
-                    ✓ Confirm All
-                  </button>
-                  <button
-                    onClick={handleFixAssumptions}
-                    style={{
-                      background: 'transparent',
-                      border: '1px solid var(--color-gold)',
-                      borderRadius: '2px',
-                      color: 'var(--color-gold)',
-                      fontSize: '10px',
-                      fontFamily: 'inherit',
-                      padding: '2px 8px',
-                      cursor: 'pointer',
-                      letterSpacing: '0.03em',
-                    }}
-                  >
-                    ✎ Fix These
-                  </button>
-                </div>
-              )}
-
-              {confirmedSections.has('assumptions') && (
-                <span style={{ fontSize: '10px', color: 'var(--color-success)' }}>
-                  ✓ reviewed
-                </span>
-              )}
+              {section.heading}
             </div>
 
             <div
               style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '4px',
+                fontSize: '13px',
+                color: 'var(--color-text)',
+                lineHeight: '1.7',
+                paddingLeft: '10px',
+                borderLeft: '2px solid var(--color-border)',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
               }}
             >
-              {draft.assumptions.map((a, i) => (
-                <div
-                  key={i}
-                  style={{
-                    fontSize: '12px',
-                    color: 'var(--color-gold)',
-                    display: 'flex',
-                    gap: '6px',
-                    alignItems: 'baseline',
-                  }}
-                >
-                  <span style={{ flexShrink: 0 }}>?</span>
-                  <span>
-                    <span style={{ fontWeight: 700 }}>{toDisplayString(a.dimension)}</span>
-                    <span style={{ color: 'var(--color-text-muted)', margin: '0 6px' }}>—</span>
-                    <span style={{ color: 'var(--color-text)', fontWeight: 400 }}>
-                      {a.assumption}
-                    </span>
-                  </span>
-                </div>
-              ))}
+              {section.content}
             </div>
-
-            {fixingTarget === 'assumptions' && (
-              <CorrectionInput
-                onSubmit={handleFixAssumptionsSubmit}
-                onCancel={() => setFixingTarget(null)}
-              />
-            )}
           </div>
-        )}
+        ))}
 
-        {/* Not yet discussed */}
         {draft.not_discussed.length > 0 && (
           <div
             style={{

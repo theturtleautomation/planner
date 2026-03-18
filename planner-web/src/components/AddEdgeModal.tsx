@@ -16,6 +16,7 @@ interface AddEdgeModalProps {
 // ─── Constants ──────────────────────────────────────────────────────────────
 
 const EDGE_TYPES: { value: EdgeType; label: string; description: string }[] = [
+  { value: 'contains',    label: 'Contains',      description: 'Project → project-scoped node' },
   { value: 'decided_by',  label: 'Decided By',  description: 'Tech/Comp/Pattern → Decision' },
   { value: 'supersedes',  label: 'Supersedes',   description: 'Decision → Decision' },
   { value: 'depends_on',  label: 'Depends On',   description: 'Component → Component' },

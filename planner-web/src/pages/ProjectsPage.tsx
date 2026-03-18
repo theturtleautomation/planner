@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import Layout from '../components/Layout.tsx';
+import CreateProjectModal from '../components/CreateProjectModal.tsx';
 import { createApiClient } from '../api/client.ts';
 import { useGetAccessToken } from '../auth/useAuthenticatedFetch.ts';
 import type { Project } from '../types.ts';
@@ -29,15 +30,18 @@ export default function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [archiveMutationProjectId, setArchiveMutationProjectId] = useState<string | null>(null);
+  const [deleteMutationProjectId, setDeleteMutationProjectId] = useState<string | null>(null);
 
   const query = searchParams.get('query') ?? '';
+  const showArchived = searchParams.get('show_archived') === 'true';
 
   const loadProjects = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await api.listProjects();
+      const response = await api.listProjects({ includeArchived: showArchived });
       const sorted = [...response.projects].sort((left, right) => (
         new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime()
       ));
@@ -47,47 +51,65 @@ export default function ProjectsPage() {
     } finally {
       setLoading(false);
     }
-  }, [api]);
+  }, [api, showArchived]);
 
   useEffect(() => {
     void loadProjects();
   }, [loadProjects]);
 
   const filtered = useMemo(() => {
+    const visible = showArchived ? projects : projects.filter((project) => !project.archived_at);
     const normalized = query.trim().toLowerCase();
-    if (!normalized) return projects;
+    if (!normalized) return visible;
 
-    return projects.filter((project) => {
+    return visible.filter((project) => {
       const name = project.name.toLowerCase();
       const slug = project.slug.toLowerCase();
       const description = project.description?.toLowerCase() ?? '';
       return name.includes(normalized) || slug.includes(normalized) || description.includes(normalized);
     });
-  }, [projects, query]);
+  }, [projects, query, showArchived]);
 
-  const handleCreateProject = useCallback(async () => {
-    const name = window.prompt('Project name');
-    if (name === null) return;
-    const trimmed = name.trim();
-    if (!trimmed) return;
-
-    const description = window.prompt('Optional short description') ?? undefined;
-    setCreating(true);
-    setError(null);
-
+  const handleCreateProject = useCallback(async (name: string, description?: string) => {
     try {
-      const response = await api.createProject({
-        name: trimmed,
-        description: description?.trim() || undefined,
-      });
+      const response = await api.createProject({ name, description });
       await loadProjects();
       void navigate(projectSessionsPath(response.project.slug));
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setCreating(false);
+      throw err; // Let the modal handle the error display
     }
   }, [api, loadProjects, navigate]);
+
+  const handleArchiveToggle = useCallback(async (project: Project, archived: boolean) => {
+    setArchiveMutationProjectId(project.id);
+    setError(null);
+    try {
+      await api.updateProject(project.slug, { archived });
+      await loadProjects();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setArchiveMutationProjectId(null);
+    }
+  }, [api, loadProjects]);
+
+  const handleDeleteProject = useCallback(async (project: Project) => {
+    const confirmed = window.confirm(
+      `Delete "${project.name}" permanently?\n\nThis will stop any active sessions, remove this project's sessions and owned knowledge, and preserve shared knowledge by unlinking it from this project. This action cannot be undone.`,
+    );
+    if (!confirmed) return;
+
+    setDeleteMutationProjectId(project.id);
+    setError(null);
+    try {
+      await api.deleteProject(project.slug);
+      await loadProjects();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDeleteMutationProjectId(null);
+    }
+  }, [api, loadProjects]);
 
   return (
     <Layout>
@@ -126,8 +148,8 @@ export default function ProjectsPage() {
             <button className="btn btn-outline" onClick={() => { void navigate('/sessions'); }}>
               Open Sessions
             </button>
-            <button className="btn btn-primary" onClick={() => { void handleCreateProject(); }} disabled={creating}>
-              {creating ? 'Creating…' : 'New Project'}
+            <button className="btn btn-primary" onClick={() => setCreateModalOpen(true)}>
+              New Project
             </button>
           </div>
         </header>
@@ -158,6 +180,35 @@ export default function ProjectsPage() {
               fontSize: '13px',
             }}
           />
+          <label
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              color: 'var(--color-text-muted)',
+              fontSize: '12px',
+              border: '1px solid var(--color-border)',
+              borderRadius: '6px',
+              padding: '0 10px',
+              minHeight: '38px',
+              background: 'var(--color-surface)',
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={showArchived}
+              onChange={(event) => {
+                const nextParams = new URLSearchParams(searchParams);
+                if (event.target.checked) {
+                  nextParams.set('show_archived', 'true');
+                } else {
+                  nextParams.delete('show_archived');
+                }
+                setSearchParams(nextParams, { replace: true });
+              }}
+            />
+            Show archived
+          </label>
           {query && (
             <button
               className="btn"
@@ -180,7 +231,7 @@ export default function ProjectsPage() {
           </div>
         )}
 
-        {!loading && !error && filtered.length === 0 && (
+        {!loading && filtered.length === 0 && (
           <div
             style={{
               border: '1px dashed var(--color-border)',
@@ -198,14 +249,11 @@ export default function ProjectsPage() {
             </span>
             <span>
               {projects.length === 0
-                ? 'Create a project to start project-scoped sessions and planning work.'
+                ? 'Use the New Project button above to start project-scoped sessions and planning work.'
                 : 'Try a broader search or clear the current query.'}
             </span>
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-              <button className="btn btn-primary" onClick={() => { void handleCreateProject(); }} disabled={creating}>
-                {creating ? 'Creating…' : 'Create Project'}
-              </button>
-              {query && (
+            {query && (
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                 <button
                   className="btn btn-outline"
                   onClick={() => {
@@ -216,62 +264,103 @@ export default function ProjectsPage() {
                 >
                   Reset Search
                 </button>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         )}
 
-        {!loading && !error && filtered.length > 0 && (
+        {!loading && filtered.length > 0 && (
           <div style={{ display: 'grid', gap: '12px', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))' }}>
-            {filtered.map((project) => (
-              <article
-                key={project.id}
-                style={{
-                  border: '1px solid var(--color-border)',
-                  borderRadius: '10px',
-                  padding: '14px',
-                  background: 'var(--color-surface)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '10px',
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ color: 'var(--color-text)', fontSize: '15px', fontWeight: 700 }}>{project.name}</div>
-                    <div style={{ color: 'var(--color-primary)', fontSize: '11px', fontFamily: 'monospace' }}>
-                      {project.slug}
+            {filtered.map((project) => {
+              const isArchiving = archiveMutationProjectId === project.id;
+              const isDeleting = deleteMutationProjectId === project.id;
+              const isMutating = isArchiving || isDeleting;
+              return (
+                <article
+                  key={project.id}
+                  style={{
+                    border: '1px solid var(--color-border)',
+                    borderRadius: '10px',
+                    padding: '14px',
+                    background: 'var(--color-surface)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '10px',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ color: 'var(--color-text)', fontSize: '15px', fontWeight: 700 }}>{project.name}</div>
+                      <div style={{ color: 'var(--color-primary)', fontSize: '11px', fontFamily: 'monospace' }}>
+                        {project.slug}
+                      </div>
+                      {project.archived_at && (
+                        <div style={{ color: 'var(--color-text-muted)', fontSize: '11px' }}>
+                          Archived
+                        </div>
+                      )}
                     </div>
+                    <button className="btn btn-outline" onClick={() => { void navigate(projectSessionsPath(project.slug)); }}>
+                      Open
+                    </button>
                   </div>
-                  <button className="btn btn-outline" onClick={() => { void navigate(projectSessionsPath(project.slug)); }}>
-                    Open
-                  </button>
-                </div>
 
-                <div style={{ color: 'var(--color-text-muted)', fontSize: '12px', lineHeight: 1.5 }}>
-                  {project.description?.trim() || 'No description yet.'}
-                </div>
+                  <div style={{ color: 'var(--color-text-muted)', fontSize: '12px', lineHeight: 1.5 }}>
+                    {project.description?.trim() || 'No description yet.'}
+                  </div>
 
-                <div style={{ color: 'var(--color-text-muted)', fontSize: '11px' }}>
-                  Updated {formatDate(project.updated_at)}
-                </div>
+                  <div style={{ color: 'var(--color-text-muted)', fontSize: '11px' }}>
+                    Updated {formatDate(project.updated_at)}
+                  </div>
 
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                  <button className="btn" onClick={() => { void navigate(`/projects/${encodeURIComponent(project.slug)}/knowledge`); }}>
-                    Knowledge
-                  </button>
-                  <button className="btn" onClick={() => { void navigate(`/projects/${encodeURIComponent(project.slug)}/blueprint`); }}>
-                    Blueprint
-                  </button>
-                  <button className="btn" onClick={() => { void navigate(`/projects/${encodeURIComponent(project.slug)}/events`); }}>
-                    Events
-                  </button>
-                </div>
-              </article>
-            ))}
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <button className="btn" onClick={() => { void navigate(`/projects/${encodeURIComponent(project.slug)}/knowledge`); }}>
+                      Knowledge
+                    </button>
+                    <button className="btn" onClick={() => { void navigate(`/projects/${encodeURIComponent(project.slug)}/blueprint`); }}>
+                      Blueprint
+                    </button>
+                    <button className="btn" onClick={() => { void navigate(`/projects/${encodeURIComponent(project.slug)}/events`); }}>
+                      Events
+                    </button>
+                    {!project.archived_at && (
+                      <button
+                        className="btn btn-outline"
+                        onClick={() => { void handleArchiveToggle(project, true); }}
+                        disabled={isMutating}
+                      >
+                        {isArchiving ? 'Archiving…' : 'Archive'}
+                      </button>
+                    )}
+                    {project.archived_at && (
+                      <button
+                        className="btn btn-outline"
+                        onClick={() => { void handleArchiveToggle(project, false); }}
+                        disabled={isMutating}
+                      >
+                        {isArchiving ? 'Restoring…' : 'Unarchive'}
+                      </button>
+                    )}
+                    <button
+                      className="btn btn-outline"
+                      onClick={() => { void handleDeleteProject(project); }}
+                      disabled={isMutating}
+                      style={{ borderColor: 'var(--color-error)', color: 'var(--color-error)' }}
+                    >
+                      {isDeleting ? 'Deleting…' : 'Delete'}
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
           </div>
         )}
       </div>
+      <CreateProjectModal
+        isOpen={createModalOpen}
+        onClose={() => setCreateModalOpen(false)}
+        onCreate={handleCreateProject}
+      />
     </Layout>
   );
 }

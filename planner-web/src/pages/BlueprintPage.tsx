@@ -1,9 +1,11 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import Layout from '../components/Layout.tsx';
+import BlueprintOverview from '../components/BlueprintOverview.tsx';
 import BlueprintGraph from '../components/BlueprintGraph.tsx';
 import TableView from '../components/TableView.tsx';
-import RadarView from '../components/RadarView.tsx';
+import TraceabilityView from '../components/TraceabilityView.tsx';
+import DependenciesView from '../components/DependenciesView.tsx';
 import DetailDrawer from '../components/DetailDrawer.tsx';
 import ImpactPreviewModal from '../components/ImpactPreviewModal.tsx';
 import CreateNodeModal from '../components/CreateNodeModal.tsx';
@@ -18,12 +20,13 @@ import type { BlueprintResponse, BlueprintNode, NodeType, NodeSummary, ImpactRep
 
 // ─── View types ─────────────────────────────────────────────────────────────
 
-type ViewMode = 'graph' | 'table' | 'radar';
+type ViewMode = 'overview' | 'traceability' | 'dependencies' | 'graph' | 'table';
 
 // ─── Node type filter config ────────────────────────────────────────────────
 
 const NODE_TYPES: { value: NodeType | null; label: string; icon: string }[] = [
   { value: null,                  label: 'All Nodes',    icon: '◎' },
+  { value: 'project',            label: 'Projects',      icon: '⬢' },
   { value: 'decision',           label: 'Decisions',     icon: '◆' },
   { value: 'technology',         label: 'Technologies',  icon: '⬡' },
   { value: 'component',          label: 'Components',    icon: '▪' },
@@ -35,6 +38,7 @@ const NODE_TYPES: { value: NodeType | null; label: string; icon: string }[] = [
 // ─── Edge type labels ───────────────────────────────────────────────────────
 
 const EDGE_STYLES: { type: string; label: string; dash: string }[] = [
+  { type: 'contains',    label: 'contains',   dash: '' },
   { type: 'depends_on',  label: 'depends on', dash: '' },
   { type: 'decided_by',  label: 'decided by', dash: '8,4' },
   { type: 'supersedes',  label: 'supersedes', dash: '4,2,1,2' },
@@ -49,8 +53,10 @@ const EDGE_STYLES: { type: string; label: string; dash: string }[] = [
 
 export default function BlueprintPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const getToken = useGetAccessToken();
   const api = useMemo(() => createApiClient(getToken), [getToken]);
+  const projectId = searchParams.get('project_id')?.trim() || undefined;
 
   // Data state
   const [blueprint, setBlueprint] = useState<BlueprintResponse | null>(null);
@@ -58,12 +64,13 @@ export default function BlueprintPage() {
   const [fetchError, setFetchError] = useState<string | null>(null);
 
   // UI state
-  const [viewMode, setViewMode] = useState<ViewMode>('graph');
+  const [viewMode, setViewMode] = useState<ViewMode>('overview');
   const [layoutMode, setLayoutMode] = useState<'force' | 'hierarchical'>('force');
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [filterType, setFilterType] = useState<NodeType | null>(null);
   const [globalSearch, setGlobalSearch] = useState('');
+  const [showArchived, setShowArchived] = useState(false);
 
   // Impact preview state
   const [impactNodeId, setImpactNodeId] = useState<string | null>(null);
@@ -89,14 +96,22 @@ export default function BlueprintPage() {
     setLoading(true);
     setFetchError(null);
     try {
-      const data = await api.getBlueprint();
+      const data = await api.getBlueprint(
+        projectId
+          ? {
+              projectId,
+              includeShared: true,
+              includeGlobal: false,
+            }
+          : undefined,
+      );
       setBlueprint(data);
     } catch (err) {
       setFetchError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
-  }, [api]);
+  }, [api, projectId]);
 
   useEffect(() => {
     void loadBlueprint();
@@ -324,13 +339,39 @@ export default function BlueprintPage() {
     return blueprint.counts;
   }, [blueprint]);
 
+  const hygieneSummary = useMemo(() => {
+    if (!blueprint) {
+      return { archived: 0, unscoped: 0, factoryHistory: 0, scopeDrift: 0 };
+    }
+
+    const projectNames = new Map(
+      blueprint.nodes
+        .filter(node => node.node_type === 'project' && node.project_id)
+        .map(node => [node.project_id as string, node.name]),
+    );
+
+    return {
+      archived: blueprint.nodes.filter(node => node.lifecycle === 'archived').length,
+      unscoped: blueprint.nodes.filter(node => node.scope_class === 'unscoped').length,
+      factoryHistory: blueprint.nodes.filter(node =>
+        node.lifecycle === 'archived' && node.tags.includes('factory'),
+      ).length,
+      scopeDrift: blueprint.nodes.filter(node => {
+        if (!node.project_id || !node.project_name) return false;
+        const canonical = projectNames.get(node.project_id);
+        return Boolean(canonical && canonical !== node.project_name);
+      }).length,
+    };
+  }, [blueprint]);
+
   // ─── Global search filtering ───────────────────────────────────────────
 
   const filteredBlueprint = useMemo(() => {
     if (!blueprint) return null;
     const q = globalSearch.trim().toLowerCase();
-    if (!q && !filterType) return blueprint;
-    let nodes = blueprint.nodes;
+    let nodes = showArchived
+      ? blueprint.nodes
+      : blueprint.nodes.filter(n => n.lifecycle !== 'archived');
     if (filterType) nodes = nodes.filter(n => n.node_type === filterType);
     if (q) {
       nodes = nodes.filter(n =>
@@ -344,7 +385,7 @@ export default function BlueprintPage() {
     const nodeIds = new Set(nodes.map(n => n.id));
     const edges = blueprint.edges.filter(e => nodeIds.has(e.source) && nodeIds.has(e.target));
     return { ...blueprint, nodes, edges };
-  }, [blueprint, filterType, globalSearch]);
+  }, [blueprint, filterType, globalSearch, showArchived]);
 
   // ─── Render ─────────────────────────────────────────────────────────────
 
@@ -388,12 +429,18 @@ export default function BlueprintPage() {
 
             {/* View tabs */}
             <div className="view-tabs">
-              {(['graph', 'table', 'radar'] as ViewMode[]).map(v => (
+              {(['overview', 'traceability', 'dependencies', 'table', 'graph'] as ViewMode[]).map(v => (
                 <button
                   key={v}
                   className={`view-tab${viewMode === v ? ' active' : ''}`}
                   onClick={() => setViewMode(v)}
                 >
+                  {v === 'overview' && (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                      <rect x="3" y="4" width="7" height="7" rx="1"/><rect x="14" y="4" width="7" height="7" rx="1"/>
+                      <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+                    </svg>
+                  )}
                   {v === 'graph' && (
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                       <circle cx="6" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><circle cx="18" cy="6" r="3"/>
@@ -405,16 +452,34 @@ export default function BlueprintPage() {
                       <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/>
                     </svg>
                   )}
-                  {v === 'radar' && (
+                  {v === 'traceability' && (
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                      <circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>
-                      <path d="M12 2v4M12 18v4"/>
+                      <path d="M4 6h16M4 12h16M4 18h10"/><circle cx="18" cy="18" r="2"/>
                     </svg>
                   )}
-                  {v.charAt(0).toUpperCase() + v.slice(1)}
+                  {v === 'dependencies' && (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                      <circle cx="5" cy="12" r="2.5"/><circle cx="19" cy="6" r="2.5"/><circle cx="19" cy="18" r="2.5"/>
+                      <path d="M7.5 11l9-4M7.5 13l9 4"/>
+                    </svg>
+                  )}
+                  {v === 'overview' && 'Overview'}
+                  {v === 'traceability' && 'Traceability'}
+                  {v === 'dependencies' && 'Dependencies'}
+                  {v === 'table' && 'Inventory'}
+                  {v === 'graph' && 'Map'}
                 </button>
               ))}
             </div>
+
+            <button
+              className={`btn btn-ghost${showArchived ? ' active' : ''}`}
+              onClick={() => setShowArchived(value => !value)}
+              title={showArchived ? 'Hide archived blueprint history' : 'Show archived blueprint history'}
+              style={{ fontSize: 'var(--text-xs)' }}
+            >
+              {showArchived ? 'Hide archived' : 'Show archived'}
+            </button>
 
             {/* Refresh */}
             <button
@@ -583,6 +648,43 @@ export default function BlueprintPage() {
 
           {/* Main view area */}
           <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
+            {!loading && !fetchError && blueprint && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  zIndex: 1,
+                  padding: 'var(--space-3) var(--space-4) 0',
+                  pointerEvents: 'none',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: 'var(--space-2)',
+                    flexWrap: 'wrap',
+                    pointerEvents: 'auto',
+                  }}
+                >
+                  <span className="badge" style={{ border: '1px solid var(--color-border)' }}>
+                    {hygieneSummary.archived} archived{showArchived ? ' shown' : ' hidden'}
+                  </span>
+                  <span className="badge" style={{ border: '1px solid var(--color-border)' }}>
+                    {hygieneSummary.unscoped} unscoped
+                  </span>
+                  <span className="badge" style={{ border: '1px solid var(--color-border)' }}>
+                    {hygieneSummary.factoryHistory} factory history
+                  </span>
+                  {hygieneSummary.scopeDrift > 0 && (
+                    <span className="badge" style={{ border: '1px solid var(--color-warning)', color: 'var(--color-warning)' }}>
+                      {hygieneSummary.scopeDrift} scope name drift
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
             {/* Loading state */}
             {loading && (
               <div style={{
@@ -617,6 +719,34 @@ export default function BlueprintPage() {
                   retry
                 </button>
               </div>
+            )}
+
+            {/* Overview view */}
+            {!loading && !fetchError && filteredBlueprint && viewMode === 'overview' && (
+              <BlueprintOverview
+                nodes={filteredBlueprint.nodes}
+                edges={filteredBlueprint.edges}
+                selectedNodeId={selectedNodeId}
+                onSelectNode={(id) => handleSelectNode(id)}
+              />
+            )}
+
+            {!loading && !fetchError && filteredBlueprint && viewMode === 'traceability' && (
+              <TraceabilityView
+                nodes={filteredBlueprint.nodes}
+                edges={filteredBlueprint.edges}
+                selectedNodeId={selectedNodeId}
+                onSelectNode={(id) => handleSelectNode(id)}
+              />
+            )}
+
+            {!loading && !fetchError && filteredBlueprint && viewMode === 'dependencies' && (
+              <DependenciesView
+                nodes={filteredBlueprint.nodes}
+                edges={filteredBlueprint.edges}
+                selectedNodeId={selectedNodeId}
+                onSelectNode={(id) => handleSelectNode(id)}
+              />
             )}
 
             {/* Graph view */}
@@ -662,18 +792,9 @@ export default function BlueprintPage() {
                 nodes={filteredBlueprint.nodes}
                 edges={filteredBlueprint.edges}
                 filterType={filterType}
+                showArchived={showArchived}
                 onSelectNode={(id) => handleSelectNode(id)}
               />
-            )}
-
-            {/* Radar view */}
-            {!loading && !fetchError && filteredBlueprint && viewMode === 'radar' && (
-              <div style={{ width: '100%', height: '100%' }}>
-                <RadarView
-                  nodes={filteredBlueprint.nodes}
-                  onSelectNode={(id) => handleSelectNode(id)}
-                />
-              </div>
             )}
           </div>
         </div>

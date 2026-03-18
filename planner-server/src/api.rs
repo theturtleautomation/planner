@@ -87,6 +87,12 @@ pub struct ListSessionsQuery {
     pub include_archived: bool,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct ListProjectsQuery {
+    #[serde(default)]
+    pub include_archived: bool,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GetSessionResponse {
     pub session: Session,
@@ -100,6 +106,24 @@ pub struct ProjectResponse {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ListProjectsResponse {
     pub projects: Vec<Project>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DeleteProjectResponse {
+    pub project_id: String,
+    pub project_name: String,
+    pub stopped_live_sessions: usize,
+    pub stopped_pipeline_sessions: usize,
+    pub deleted_sessions: usize,
+    pub deleted_session_event_files: usize,
+    pub deleted_cxdb_runs: usize,
+    pub deleted_blueprint_nodes: usize,
+    pub unlinked_shared_blueprint_nodes: usize,
+    pub deleted_project_record: bool,
+    #[serde(default)]
+    pub blueprint_events_pruned: usize,
+    #[serde(default)]
+    pub blueprint_history_snapshots_pruned: usize,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -127,6 +151,8 @@ pub struct UpdateProjectRequest {
     pub team_label: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub legacy_scope_keys: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub archived: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -353,10 +379,61 @@ pub struct BlueprintEventsQuery {
     pub limit: Option<usize>,
 }
 
+/// Query parameters for `GET /blueprint/export-history`.
+#[derive(Debug, Deserialize)]
+pub struct BlueprintExportHistoryQuery {
+    #[serde(default)]
+    pub project_id: Option<String>,
+    #[serde(default)]
+    pub scope_class: Option<String>,
+    #[serde(default)]
+    pub feature: Option<String>,
+    #[serde(default)]
+    pub widget: Option<String>,
+    #[serde(default)]
+    pub artifact: Option<String>,
+    #[serde(default)]
+    pub component: Option<String>,
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
 /// API response for the event log.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct BlueprintEventsResponse {
     pub events: Vec<BlueprintEventPayload>,
+    pub total: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BlueprintExportHistoryEntry {
+    pub export_id: String,
+    pub kind: planner_schemas::artifacts::blueprint::BlueprintExportKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub actor: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub node_id: Option<String>,
+    pub node_count: usize,
+    pub edge_count: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope_snapshot: Option<serde_json::Value>,
+    #[serde(default)]
+    pub scope_snapshot_redacted: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub scope_snapshot_redacted_fields: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retention_expires_at: Option<String>,
+    pub summary: String,
+    pub timestamp: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BlueprintExportHistoryResponse {
+    pub entries: Vec<BlueprintExportHistoryEntry>,
     pub total: usize,
 }
 
@@ -404,6 +481,10 @@ pub struct DiscoveryScanResult {
     pub scanner: String,
     pub proposed_count: usize,
     pub skipped_count: usize,
+    #[serde(default)]
+    pub proposed_edge_count: usize,
+    #[serde(default)]
+    pub skipped_edge_count: usize,
     pub errors: Vec<String>,
     pub duration_ms: u64,
 }
@@ -412,11 +493,19 @@ pub struct DiscoveryScanResult {
 pub struct DiscoveryRunResponse {
     pub results: Vec<DiscoveryScanResult>,
     pub total_proposed: usize,
+    #[serde(default)]
+    pub total_edge_proposed: usize,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ProposedNodesResponse {
     pub proposals: Vec<planner_core::discovery::ProposedNode>,
+    pub total: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ProposedEdgesResponse {
+    pub proposals: Vec<planner_core::discovery::ProposedEdge>,
     pub total: usize,
 }
 
@@ -436,6 +525,11 @@ pub struct RejectProposalRequest {
 pub struct AcceptProposalRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub node_patch: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ImportEdgeProposalsRequest {
+    pub proposals: Vec<planner_core::discovery::ImportedEdgeProposal>,
 }
 
 // ---------------------------------------------------------------------------
@@ -477,6 +571,8 @@ pub struct AdminEventEntry {
     pub level: String,
     pub source: String,
     pub session_id: Option<String>,
+    pub project_id: Option<String>,
+    pub project_name: Option<String>,
     pub step: Option<String>,
     pub message: String,
     pub duration_ms: Option<u64>,
@@ -503,7 +599,9 @@ pub fn routes(state: Arc<AppState>) -> Router {
         .route("/projects", get(list_projects).post(create_project))
         .route(
             "/projects/{projectRef}",
-            get(get_project).patch(update_project),
+            get(get_project)
+                .patch(update_project)
+                .delete(delete_project),
         )
         .route(
             "/projects/{projectRef}/sessions",
@@ -546,6 +644,7 @@ pub fn routes(state: Arc<AppState>) -> Router {
         )
         .route("/blueprint/history", get(list_blueprint_history))
         .route("/blueprint/events", get(list_blueprint_events))
+        .route("/blueprint/export-history", get(list_blueprint_export_history))
         .route("/blueprint/exports", post(record_blueprint_export))
         .route("/blueprint/impact-preview", post(impact_preview))
         .route("/blueprint/reconverge", post(reconverge_blueprint))
@@ -553,12 +652,32 @@ pub fn routes(state: Arc<AppState>) -> Router {
         .route("/blueprint/discovery/scan", post(run_discovery_scan))
         .route("/blueprint/discovery/proposals", get(list_proposals))
         .route(
+            "/blueprint/discovery/component-proposals",
+            get(list_proposals),
+        )
+        .route(
+            "/blueprint/discovery/edge-proposals",
+            get(list_edge_proposals),
+        )
+        .route(
+            "/blueprint/discovery/edge-proposals/import",
+            post(import_edge_proposals_endpoint),
+        )
+        .route(
             "/blueprint/discovery/proposals/{id}/accept",
             post(accept_proposal),
         )
         .route(
+            "/blueprint/discovery/edge-proposals/{id}/accept",
+            post(accept_edge_proposal),
+        )
+        .route(
             "/blueprint/discovery/proposals/{id}/reject",
             post(reject_proposal),
+        )
+        .route(
+            "/blueprint/discovery/edge-proposals/{id}/reject",
+            post(reject_edge_proposal),
         )
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
@@ -779,19 +898,51 @@ async fn admin_events(
     // Collect events from all in-memory sessions via single read-lock snapshot.
     let mut all_events: Vec<AdminEventEntry> = state
         .sessions
-        .snapshot_all_events()
+        .snapshot_all_events_with_context()
         .into_iter()
-        .flat_map(|(_, events)| events)
+        .flat_map(|(session_id, project_id, project_name, events)| {
+            let project_id = project_id.map(|id| id.to_string());
+            let session_id = session_id.to_string();
+            events.into_iter().map(move |e| AdminEventEntry {
+                id: e.id.to_string(),
+                timestamp: e.timestamp.to_rfc3339(),
+                level: match e.level {
+                    EventLevel::Info => "info".into(),
+                    EventLevel::Warn => "warn".into(),
+                    EventLevel::Error => "error".into(),
+                },
+                source: match e.source {
+                    EventSource::SocraticEngine => "socratic_engine".into(),
+                    EventSource::LlmRouter => "llm_router".into(),
+                    EventSource::Pipeline => "pipeline".into(),
+                    EventSource::Factory => "factory".into(),
+                    EventSource::System => "system".into(),
+                },
+                session_id: Some(session_id.clone()),
+                project_id: project_id.clone(),
+                project_name: project_name.clone(),
+                step: e.step,
+                message: e.message,
+                duration_ms: e.duration_ms,
+                metadata: e.metadata,
+            })
+        })
         .filter(|e| {
             if let Some(ref lvl) = filter_level {
-                if &e.level != lvl {
+                let expected_level = match lvl {
+                    EventLevel::Info => "info",
+                    EventLevel::Warn => "warn",
+                    EventLevel::Error => "error",
+                };
+                if e.level != expected_level {
                     return false;
                 }
             }
             if let Some(ref sid) = filter_session_id {
-                match e.session_id {
-                    Some(ref esid) => {
-                        if esid != sid {
+                let expected_session_id = sid.to_string();
+                match e.session_id.as_deref() {
+                    Some(esid) => {
+                        if esid != expected_session_id {
                             return false;
                         }
                     }
@@ -799,27 +950,6 @@ async fn admin_events(
                 }
             }
             true
-        })
-        .map(|e| AdminEventEntry {
-            id: e.id.to_string(),
-            timestamp: e.timestamp.to_rfc3339(),
-            level: match e.level {
-                EventLevel::Info => "info".into(),
-                EventLevel::Warn => "warn".into(),
-                EventLevel::Error => "error".into(),
-            },
-            source: match e.source {
-                EventSource::SocraticEngine => "socratic_engine".into(),
-                EventSource::LlmRouter => "llm_router".into(),
-                EventSource::Pipeline => "pipeline".into(),
-                EventSource::Factory => "factory".into(),
-                EventSource::System => "system".into(),
-            },
-            session_id: e.session_id.map(|id| id.to_string()),
-            step: e.step,
-            message: e.message,
-            duration_ms: e.duration_ms,
-            metadata: e.metadata,
         })
         .collect();
 
@@ -878,8 +1008,11 @@ async fn models() -> Json<ModelsResponse> {
 async fn list_projects(
     State(state): State<Arc<AppState>>,
     claims: Claims,
+    Query(query): Query<ListProjectsQuery>,
 ) -> Json<ListProjectsResponse> {
-    let mut projects = state.projects.list_for_user(&claims.sub);
+    let mut projects = state
+        .projects
+        .list_for_user(&claims.sub, query.include_archived);
     projects.sort_by(|left, right| {
         right
             .updated_at
@@ -946,6 +1079,7 @@ async fn update_project(
         && req.description.is_none()
         && req.team_label.is_none()
         && req.legacy_scope_keys.is_none()
+        && req.archived.is_none()
     {
         return Err((
             StatusCode::BAD_REQUEST,
@@ -956,23 +1090,37 @@ async fn update_project(
         ));
     }
 
-    let updated = state.projects.update(project.id, |draft| {
-        if let Some(name) = req.name.as_ref() {
-            draft.name = name.clone();
-        }
-        if let Some(slug) = req.slug.as_ref() {
-            draft.slug = slug.clone();
-        }
-        if let Some(description) = req.description.as_ref() {
-            draft.description = Some(description.clone());
-        }
-        if let Some(team_label) = req.team_label.as_ref() {
-            draft.team_label = Some(team_label.clone());
-        }
-        if let Some(legacy_scope_keys) = req.legacy_scope_keys.as_ref() {
-            draft.legacy_scope_keys = legacy_scope_keys.clone();
-        }
-    });
+    let has_metadata_patch = req.name.is_some()
+        || req.slug.is_some()
+        || req.description.is_some()
+        || req.team_label.is_some()
+        || req.legacy_scope_keys.is_some();
+
+    let mut updated = if has_metadata_patch {
+        state.projects.update(project.id, |draft| {
+            if let Some(name) = req.name.as_ref() {
+                draft.name = name.clone();
+            }
+            if let Some(slug) = req.slug.as_ref() {
+                draft.slug = slug.clone();
+            }
+            if let Some(description) = req.description.as_ref() {
+                draft.description = Some(description.clone());
+            }
+            if let Some(team_label) = req.team_label.as_ref() {
+                draft.team_label = Some(team_label.clone());
+            }
+            if let Some(legacy_scope_keys) = req.legacy_scope_keys.as_ref() {
+                draft.legacy_scope_keys = legacy_scope_keys.clone();
+            }
+        })
+    } else {
+        Some(project.clone())
+    };
+
+    if let Some(archived) = req.archived {
+        updated = state.projects.set_archived(project.id, archived);
+    }
 
     match updated {
         Some(project) => Ok(Json(ProjectResponse { project })),
@@ -984,6 +1132,134 @@ async fn update_project(
             }),
         )),
     }
+}
+
+async fn delete_project(
+    State(state): State<Arc<AppState>>,
+    claims: Claims,
+    Path(project_ref): Path<String>,
+) -> Result<Json<DeleteProjectResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let project = resolve_project_for_user(&state, &claims, &project_ref)?;
+    let project_sessions = state.sessions.list_for_project(project.id);
+
+    let mut stopped_live_sessions = 0usize;
+    let mut stopped_pipeline_sessions = 0usize;
+    let mut deleted_sessions = 0usize;
+    let mut deleted_session_event_files = 0usize;
+
+    for session in project_sessions {
+        let stop_report = stop_active_session_work(&state, session.id);
+        if stop_report.stopped_live_session {
+            stopped_live_sessions += 1;
+        }
+        if stop_report.stopped_pipeline_session {
+            stopped_pipeline_sessions += 1;
+        }
+
+        if let Some(store) = state.event_store.as_ref() {
+            let had_persisted_events = store
+                .load_session_events(session.id)
+                .map(|events| !events.is_empty())
+                .map_err(|error| {
+                    internal_error_response(
+                        format!(
+                            "Failed to inspect session events for {} during project delete: {}",
+                            session.id, error
+                        ),
+                        "PROJECT_DELETE_EVENT_INSPECTION_FAILED",
+                    )
+                })?;
+            store.delete_session_events(session.id).map_err(|error| {
+                internal_error_response(
+                    format!(
+                        "Failed to delete session events for {} during project delete: {}",
+                        session.id, error
+                    ),
+                    "PROJECT_DELETE_EVENT_DELETE_FAILED",
+                )
+            })?;
+            if had_persisted_events {
+                deleted_session_event_files += 1;
+            }
+        }
+
+        match state.sessions.delete(session.id).map_err(|error| {
+            internal_error_response(
+                format!(
+                    "Failed to delete session {} during project delete: {}",
+                    session.id, error
+                ),
+                "PROJECT_DELETE_SESSION_FAILED",
+            )
+        })? {
+            true => deleted_sessions += 1,
+            false => {
+                return Err(internal_error_response(
+                    format!(
+                        "Session {} disappeared during project delete for {}",
+                        session.id, project.id
+                    ),
+                    "PROJECT_DELETE_SESSION_MISSING",
+                ));
+            }
+        }
+    }
+
+    let mut deleted_cxdb_runs = 0usize;
+    if let Some(cxdb) = state.cxdb.as_ref() {
+        let report = cxdb.delete_project(project.id).map_err(|error| {
+            internal_error_response(
+                format!(
+                    "Failed to delete CXDB project data for {}: {}",
+                    project.id, error
+                ),
+                "PROJECT_DELETE_CXDB_FAILED",
+            )
+        })?;
+        deleted_cxdb_runs = report.runs_deleted;
+    }
+
+    let blueprint_report = state.blueprints.purge_project(&project.id.to_string());
+    state.blueprints.flush().map_err(|error| {
+        internal_error_response(
+            format!(
+                "Failed to flush blueprint store after project purge {}: {}",
+                project.id, error
+            ),
+            "PROJECT_DELETE_BLUEPRINT_FLUSH_FAILED",
+        )
+    })?;
+
+    let deleted_project_record = state.projects.delete(project.id).map_err(|error| {
+        internal_error_response(
+            format!("Failed to delete project record {}: {}", project.id, error),
+            "PROJECT_DELETE_PROJECT_RECORD_FAILED",
+        )
+    })?;
+    if !deleted_project_record {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: format!("Project not found: {}", project_ref),
+                code: Some("PROJECT_NOT_FOUND".into()),
+            }),
+        ));
+    }
+
+    Ok(Json(DeleteProjectResponse {
+        project_id: project.id.to_string(),
+        project_name: project.name,
+        stopped_live_sessions,
+        stopped_pipeline_sessions,
+        deleted_sessions,
+        deleted_session_event_files,
+        deleted_cxdb_runs,
+        deleted_blueprint_nodes: blueprint_report.local_nodes_deleted,
+        unlinked_shared_blueprint_nodes: blueprint_report.shared_nodes_unlinked,
+        deleted_project_record,
+        blueprint_events_pruned: blueprint_report.event_entries_pruned,
+        blueprint_history_snapshots_pruned: blueprint_report.history_snapshots_pruned,
+    }))
 }
 
 async fn list_project_sessions(
@@ -1289,11 +1565,120 @@ async fn export_session(
     }
 }
 
-fn stop_session_runtime(state: &Arc<AppState>, session_id: Uuid) {
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct StopActiveSessionWorkReport {
+    pub stopped_live_session: bool,
+    pub stopped_pipeline_session: bool,
+}
+
+fn stop_session_runtime(state: &Arc<AppState>, session_id: Uuid) -> bool {
     if let Some(runtime) = state.socratic_runtimes.remove(session_id) {
         runtime.close_input();
         runtime.signal_closed();
+        true
+    } else {
+        false
     }
+}
+
+pub(crate) fn stop_active_session_work(
+    state: &Arc<AppState>,
+    session_id: Uuid,
+) -> StopActiveSessionWorkReport {
+    let stopped_live_session = stop_session_runtime(state, session_id);
+    let stopped_pipeline_session = state.pipeline_runtimes.stop(session_id).is_some();
+    if stopped_live_session || stopped_pipeline_session {
+        let _ = state.sessions.update(session_id, |session| {
+            if session.pipeline_running || stopped_pipeline_session {
+                session.pipeline_running = false;
+            }
+            if session.intake_phase == "pipeline_running" {
+                session.intake_phase = "waiting".into();
+            }
+            if stopped_live_session {
+                session.interview_live_attached = false;
+                session.interview_runtime_active = false;
+            }
+        });
+    }
+    StopActiveSessionWorkReport {
+        stopped_live_session,
+        stopped_pipeline_session,
+    }
+}
+
+fn internal_error_response(
+    message: impl Into<String>,
+    code: &'static str,
+) -> (StatusCode, Json<ErrorResponse>) {
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(ErrorResponse {
+            error: message.into(),
+            code: Some(code.into()),
+        }),
+    )
+}
+
+fn persist_session_events_if_available(state: &Arc<AppState>, session_id: Uuid) {
+    if let Some(ref store) = state.event_store {
+        if let Some(session) = state.sessions.get(session_id) {
+            if let Err(error) = store.save_session_events(session_id, &session.events) {
+                tracing::warn!(
+                    "Failed to persist events for session {}: {}",
+                    session_id,
+                    error
+                );
+            }
+        }
+    }
+}
+
+fn record_session_event(
+    state: &Arc<AppState>,
+    session_id: Uuid,
+    mut event: planner_core::observability::PlannerEvent,
+) {
+    if event.session_id.is_none() {
+        event = event.with_session(session_id);
+    }
+
+    state.sessions.update(session_id, |s| {
+        s.record_event(event.clone());
+    });
+    persist_session_events_if_available(state, session_id);
+}
+
+pub(crate) fn spawn_pipeline_runtime(
+    state: Arc<AppState>,
+    session_id: Uuid,
+    description: String,
+) -> bool {
+    let (runtime, mut shutdown_rx) = crate::runtime::SessionPipelineRuntime::new();
+    if state
+        .pipeline_runtimes
+        .insert(session_id, runtime.clone())
+        .is_err()
+    {
+        tracing::warn!(
+            "Session {}: pipeline runtime already registered; skipping duplicate spawn",
+            session_id
+        );
+        return false;
+    }
+
+    let state_for_task = state.clone();
+    let join_handle = tokio::spawn(async move {
+        tokio::select! {
+            _ = shutdown_rx.changed() => {
+                tracing::info!("Session {}: pipeline runtime shutdown signal received", session_id);
+            }
+            _ = run_pipeline_for_session(state_for_task.clone(), session_id, description) => {}
+        }
+        let _ = state_for_task.pipeline_runtimes.remove(session_id);
+    });
+    runtime.set_abort_handle(join_handle.abort_handle());
+    true
 }
 
 async fn restart_from_description(
@@ -1348,7 +1733,7 @@ async fn restart_from_description(
         ));
     }
 
-    stop_session_runtime(&state, id);
+    stop_active_session_work(&state, id);
 
     let session = state.sessions.update(id, |s| {
         s.reset_for_interview_restart();
@@ -1419,7 +1804,7 @@ async fn retry_pipeline(
         ));
     }
 
-    stop_session_runtime(&state, id);
+    stop_active_session_work(&state, id);
 
     let description = session.project_description.clone().unwrap_or_default();
     let session = state.sessions.update(id, |s| {
@@ -1429,10 +1814,7 @@ async fn retry_pipeline(
 
     match session {
         Some(session) => {
-            let state_clone = state.clone();
-            tokio::spawn(async move {
-                run_pipeline_for_session(state_clone, id, description).await;
-            });
+            let _ = spawn_pipeline_runtime(state.clone(), id, description);
             Ok(Json(GetSessionResponse { session }))
         }
         None => Err((
@@ -1535,13 +1917,7 @@ async fn send_message(
                     session = refreshed;
                 }
 
-                let state_clone = state.clone();
-                let session_id = id;
-                let description = content.clone();
-
-                tokio::spawn(async move {
-                    run_pipeline_for_session(state_clone, session_id, description).await;
-                });
+                let _ = spawn_pipeline_runtime(state.clone(), id, content.clone());
             }
 
             // Use safe index access for the response messages.
@@ -1594,11 +1970,26 @@ pub async fn run_pipeline_for_session(state: Arc<AppState>, session_id: Uuid, de
     let worker = match planner_core::pipeline::steps::factory_worker::CodexFactoryWorker::new() {
         Ok(w) => w,
         Err(e) => {
+            record_session_event(
+                &state,
+                session_id,
+                planner_core::observability::PlannerEvent::error(
+                    planner_core::observability::EventSource::Pipeline,
+                    "pipeline.stage.failed",
+                    format!("Pipeline setup failed: {}", e),
+                )
+                .with_metadata(serde_json::json!({
+                    "stage": "Intake",
+                    "terminal": true,
+                    "retry_planned": false,
+                    "details": {
+                        "error": e.to_string(),
+                        "kind": "factory_worker_init",
+                    }
+                })),
+            );
             state.sessions.update(session_id, |s| {
                 s.add_message("planner", &format!("Pipeline setup failed: {}", e));
-                if let Some(stage) = s.stages.iter_mut().find(|stage| stage.status == "running") {
-                    stage.status = "failed".into();
-                }
                 s.pipeline_running = false;
                 s.intake_phase = "error".into();
                 s.error_message = Some(format!("Pipeline setup failed: {}", e));
@@ -1610,11 +2001,26 @@ pub async fn run_pipeline_for_session(state: Arc<AppState>, session_id: Uuid, de
     let project = match ensure_session_project_assignment(&state, session_id, &description) {
         Ok(project) => project,
         Err(error) => {
+            record_session_event(
+                &state,
+                session_id,
+                planner_core::observability::PlannerEvent::error(
+                    planner_core::observability::EventSource::Pipeline,
+                    "pipeline.stage.failed",
+                    format!("Project assignment failed: {}", error),
+                )
+                .with_metadata(serde_json::json!({
+                    "stage": "Intake",
+                    "terminal": true,
+                    "retry_planned": false,
+                    "details": {
+                        "error": error.to_string(),
+                        "kind": "project_assignment",
+                    }
+                })),
+            );
             state.sessions.update(session_id, |s| {
                 s.add_message("planner", &format!("Project assignment failed: {}", error));
-                if let Some(stage) = s.stages.iter_mut().find(|stage| stage.status == "running") {
-                    stage.status = "failed".into();
-                }
                 s.pipeline_running = false;
                 s.intake_phase = "error".into();
                 s.error_message = Some(format!("Project assignment failed: {}", error));
@@ -1646,58 +2052,39 @@ pub async fn run_pipeline_for_session(state: Arc<AppState>, session_id: Uuid, de
         }
     }
 
-    match cxdb_ref {
+    let (pipeline_event_sink, mut pipeline_event_rx) =
+        planner_core::observability::ChannelEventSink::new();
+    let pipeline_event_sink = Arc::new(pipeline_event_sink);
+
+    let run_result = match cxdb_ref {
         Some(engine) => {
             let config = planner_core::pipeline::PipelineConfig {
                 router: router.as_ref(),
                 store: Some(engine),
                 dtu_registry: None,
                 blueprints: Some(&state.blueprints),
+                event_sink: Some(pipeline_event_sink.as_ref()),
             };
 
-            match planner_core::pipeline::run_full_pipeline_with_run_id(
-                &config,
-                &worker,
-                project_id,
-                run_id,
-                &description,
-            )
-            .await
-            {
-                Ok(output) => {
-                    state.sessions.update(session_id, |s| {
-                        for stage in &mut s.stages {
-                            stage.status = "complete".into();
+            let mut pipeline_future =
+                Box::pin(planner_core::pipeline::run_full_pipeline_with_run_id(
+                    &config,
+                    &worker,
+                    project_id,
+                    run_id,
+                    &description,
+                ));
+
+            loop {
+                tokio::select! {
+                    maybe_event = pipeline_event_rx.recv() => {
+                        if let Some(event) = maybe_event {
+                            record_session_event(&state, session_id, event);
                         }
-                        s.add_message(
-                            "planner",
-                            &format!(
-                                "Pipeline complete!\n\nProject: {}\nSpecs: {} chunk(s)\nFactory: {:?}",
-                                output.front_office.intake.project_name,
-                                output.front_office.specs.len(),
-                                output.factory_output.build_status,
-                            ),
-                        );
-                        s.pipeline_running = false;
-                        s.intake_phase = "complete".into();
-                        s.error_message = None;
-                    });
-                    tracing::info!("Session {}: pipeline complete", session_id);
-                }
-                Err(e) => {
-                    state.sessions.update(session_id, |s| {
-                        s.add_message("planner", &format!("Pipeline failed: {}", e));
-                        for stage in &mut s.stages {
-                            if stage.status == "running" {
-                                stage.status = "failed".into();
-                                break;
-                            }
-                        }
-                        s.pipeline_running = false;
-                        s.intake_phase = "error".into();
-                        s.error_message = Some(format!("Pipeline failed: {}", e));
-                    });
-                    tracing::warn!("Session {}: pipeline failed: {}", session_id, e);
+                    }
+                    result = &mut pipeline_future => {
+                        break result;
+                    }
                 }
             }
         }
@@ -1708,53 +2095,95 @@ pub async fn run_pipeline_for_session(state: Arc<AppState>, session_id: Uuid, de
                 store: None,
                 dtu_registry: None,
                 blueprints: Some(&state.blueprints),
+                event_sink: Some(pipeline_event_sink.as_ref()),
             };
 
-            match planner_core::pipeline::run_full_pipeline_with_run_id(
-                &config,
-                &worker,
-                project_id,
-                run_id,
-                &description,
-            )
-            .await
-            {
-                Ok(output) => {
-                    state.sessions.update(session_id, |s| {
-                        for stage in &mut s.stages {
-                            stage.status = "complete".into();
+            let mut pipeline_future =
+                Box::pin(planner_core::pipeline::run_full_pipeline_with_run_id(
+                    &config,
+                    &worker,
+                    project_id,
+                    run_id,
+                    &description,
+                ));
+
+            loop {
+                tokio::select! {
+                    maybe_event = pipeline_event_rx.recv() => {
+                        if let Some(event) = maybe_event {
+                            record_session_event(&state, session_id, event);
                         }
-                        s.add_message(
-                            "planner",
-                            &format!(
-                                "Pipeline complete!\n\nProject: {}\nSpecs: {} chunk(s)\nFactory: {:?}",
-                                output.front_office.intake.project_name,
-                                output.front_office.specs.len(),
-                                output.factory_output.build_status,
-                            ),
-                        );
-                        s.pipeline_running = false;
-                        s.intake_phase = "complete".into();
-                        s.error_message = None;
-                    });
-                    tracing::info!("Session {}: pipeline complete", session_id);
-                }
-                Err(e) => {
-                    state.sessions.update(session_id, |s| {
-                        s.add_message("planner", &format!("Pipeline failed: {}", e));
-                        for stage in &mut s.stages {
-                            if stage.status == "running" {
-                                stage.status = "failed".into();
-                                break;
-                            }
-                        }
-                        s.pipeline_running = false;
-                        s.intake_phase = "error".into();
-                        s.error_message = Some(format!("Pipeline failed: {}", e));
-                    });
-                    tracing::warn!("Session {}: pipeline failed: {}", session_id, e);
+                    }
+                    result = &mut pipeline_future => {
+                        break result;
+                    }
                 }
             }
+        }
+    };
+
+    while let Ok(event) = pipeline_event_rx.try_recv() {
+        record_session_event(&state, session_id, event);
+    }
+
+    match run_result {
+        Ok(output) => {
+            state.sessions.update(session_id, |s| {
+                s.add_message(
+                    "planner",
+                    &format!(
+                        "Pipeline complete!\n\nProject: {}\nSpecs: {} chunk(s)\nFactory: {:?}",
+                        output.front_office.intake.project_name,
+                        output.front_office.specs.len(),
+                        output.factory_output.build_status,
+                    ),
+                );
+                s.pipeline_running = false;
+                s.intake_phase = "complete".into();
+                s.error_message = None;
+            });
+            tracing::info!("Session {}: pipeline complete", session_id);
+        }
+        Err(error) => {
+            let failing_stage = state
+                .sessions
+                .get(session_id)
+                .and_then(|s| {
+                    s.stages
+                        .iter()
+                        .find(|stage| stage.status == "running")
+                        .map(|stage| stage.name.clone())
+                })
+                .unwrap_or_else(|| String::from("Intake"));
+
+            record_session_event(
+                &state,
+                session_id,
+                planner_core::observability::PlannerEvent::error(
+                    planner_core::observability::EventSource::Pipeline,
+                    "pipeline.stage.failed",
+                    format!(
+                        "Pipeline failed during stage '{}': {}",
+                        failing_stage, error
+                    ),
+                )
+                .with_metadata(serde_json::json!({
+                    "stage": failing_stage,
+                    "terminal": true,
+                    "retry_planned": false,
+                    "details": {
+                        "error": error.to_string(),
+                    }
+                })),
+            );
+
+            state.sessions.update(session_id, |s| {
+                s.add_message("planner", &format!("Pipeline failed: {}", error));
+                s.pipeline_running = false;
+                s.intake_phase = "error".into();
+                s.error_message = Some(format!("Pipeline failed: {}", error));
+            });
+            tracing::warn!("Session {}: pipeline failed: {}", session_id, error);
         }
     }
 }
@@ -2045,10 +2474,7 @@ async fn start_socratic(
     };
 
     // Store the initial description in the session for reference.
-    if let Some(runtime) = state.socratic_runtimes.remove(id) {
-        runtime.close_input();
-        runtime.signal_closed();
-    }
+    stop_active_session_work(&state, id);
     state.sessions.update(id, |s| {
         s.project_description = Some(req.description.clone());
         s.ensure_title_from_description();
@@ -2263,6 +2689,7 @@ fn node_tags_mut(
 ) -> &mut Vec<String> {
     use planner_schemas::artifacts::blueprint::BlueprintNode;
     match node {
+        BlueprintNode::Project(n) => &mut n.tags,
         BlueprintNode::Decision(n) => &mut n.tags,
         BlueprintNode::Technology(n) => &mut n.tags,
         BlueprintNode::Component(n) => &mut n.tags,
@@ -2277,6 +2704,7 @@ fn node_scope_mut(
 ) -> &mut planner_schemas::artifacts::blueprint::NodeScope {
     use planner_schemas::artifacts::blueprint::BlueprintNode;
     match node {
+        BlueprintNode::Project(n) => &mut n.scope,
         BlueprintNode::Decision(n) => &mut n.scope,
         BlueprintNode::Technology(n) => &mut n.scope,
         BlueprintNode::Component(n) => &mut n.scope,
@@ -2344,10 +2772,20 @@ fn normalize_component_naming(
             })
             .unwrap_or_else(|| next_component.name.clone());
         let strategy = previous_component
-            .and_then(|component| component.naming.as_ref().map(|naming| naming.strategy.clone()))
+            .and_then(|component| {
+                component
+                    .naming
+                    .as_ref()
+                    .map(|naming| naming.strategy.clone())
+            })
             .unwrap_or(ComponentNamingStrategy::ManualCreate);
         let source = previous_component
-            .and_then(|component| component.naming.as_ref().map(|naming| naming.source.clone()))
+            .and_then(|component| {
+                component
+                    .naming
+                    .as_ref()
+                    .map(|naming| naming.source.clone())
+            })
             .unwrap_or(ComponentNameSource::Manual);
 
         next_component.naming = Some(ComponentNaming {
@@ -2458,6 +2896,26 @@ fn normalize_blueprint_node_metadata(
             });
         }
     }
+    if let Some(scope_review) = scope.scope_review.as_mut() {
+        scope_review.deferred_reason = scope_review.deferred_reason.trim().to_string();
+        scope_review.owner = scope_review.owner.trim().to_string();
+        scope_review.due_at = scope_review.due_at.trim().to_string();
+        let trimmed_deferred_at = scope_review
+            .deferred_at
+            .as_deref()
+            .map(str::trim)
+            .map(str::to_string)
+            .filter(|value| !value.is_empty());
+        scope_review.deferred_at = trimmed_deferred_at;
+        if scope_review.deferred_at.is_none() {
+            scope_review.deferred_at = Some(chrono::Utc::now().to_rfc3339());
+        }
+    }
+}
+
+fn is_valid_scope_review_due_at(value: &str) -> bool {
+    chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d").is_ok()
+        || chrono::DateTime::parse_from_rfc3339(value).is_ok()
 }
 
 fn validate_blueprint_node_scope(
@@ -2544,6 +3002,57 @@ fn validate_blueprint_node_scope(
         }
     }
 
+    if let Some(scope_review) = &scope.scope_review {
+        if !matches!(
+            scope.scope_class,
+            planner_schemas::artifacts::blueprint::ScopeClass::Unscoped
+        ) {
+            return Err("scope_review is only allowed on unscoped records".into());
+        }
+        if scope_review.deferred_reason.trim().is_empty() {
+            return Err("scope_review.deferred_reason cannot be blank".into());
+        }
+        if scope_review.owner.trim().is_empty() {
+            return Err("scope_review.owner cannot be blank".into());
+        }
+        if scope_review.due_at.trim().is_empty() {
+            return Err("scope_review.due_at cannot be blank".into());
+        }
+        if !is_valid_scope_review_due_at(scope_review.due_at.trim()) {
+            return Err("scope_review.due_at must be YYYY-MM-DD or RFC3339".into());
+        }
+        if let Some(deferred_at) = &scope_review.deferred_at {
+            if chrono::DateTime::parse_from_rfc3339(deferred_at.trim()).is_err() {
+                return Err("scope_review.deferred_at must be RFC3339".into());
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_blueprint_override_source(
+    state: &AppState,
+    node: &planner_schemas::artifacts::blueprint::BlueprintNode,
+) -> Result<(), String> {
+    let Some(override_scope) = &node.scope().override_scope else {
+        return Ok(());
+    };
+
+    let source_id = override_scope.shared_source_id.trim();
+    if source_id == node.id().0 {
+        return Err("override_scope.shared_source_id cannot reference the node itself".into());
+    }
+
+    let source = state
+        .blueprints
+        .get_node(source_id)
+        .ok_or_else(|| format!("override_scope.shared_source_id not found: {}", source_id))?;
+
+    if !source.scope().is_shared {
+        return Err("override_scope.shared_source_id must reference a shared record".into());
+    }
+
     Ok(())
 }
 
@@ -2619,6 +3128,15 @@ async fn create_blueprint_node(
     );
     normalize_blueprint_node_metadata(&mut node);
     validate_blueprint_node_scope(&node).map_err(|message| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: message,
+                code: Some("INVALID_SCOPE".into()),
+            }),
+        )
+    })?;
+    validate_blueprint_override_source(&state, &node).map_err(|message| {
         (
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse {
@@ -2726,14 +3244,19 @@ async fn update_blueprint_node(
         ));
     }
 
-    normalize_component_naming(
-        Some(&existing_node),
-        &patch_for_component_naming,
-        &mut node,
-    );
+    normalize_component_naming(Some(&existing_node), &patch_for_component_naming, &mut node);
     normalize_blueprint_node_metadata(&mut node);
 
     validate_blueprint_node_scope(&node).map_err(|message| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: message,
+                code: Some("INVALID_SCOPE".into()),
+            }),
+        )
+    })?;
+    validate_blueprint_override_source(&state, &node).map_err(|message| {
         (
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse {
@@ -2903,16 +3426,276 @@ async fn list_blueprint_events(
                     ..
                 } => "export_recorded",
             };
+            let mut data = serde_json::to_value(e).unwrap_or_default();
+            normalize_blueprint_event_payload_data(event_type, &mut data);
             BlueprintEventPayload {
                 event_type: event_type.to_string(),
                 summary: e.summary(),
                 timestamp: e.timestamp().to_string(),
-                data: serde_json::to_value(e).unwrap_or_default(),
+                data,
             }
         })
         .collect();
 
     Json(BlueprintEventsResponse { events, total })
+}
+
+fn normalize_blueprint_event_payload_data(event_type: &str, data: &mut serde_json::Value) {
+    let Some(object) = data.as_object_mut() else {
+        return;
+    };
+
+    match event_type {
+        "node_created" => {
+            if let Some(node) = object.get_mut("node") {
+                normalize_blueprint_event_payload_node(node);
+            }
+        }
+        "node_updated" => {
+            if let Some(before) = object.get_mut("before") {
+                normalize_blueprint_event_payload_node(before);
+            }
+            if let Some(after) = object.get_mut("after") {
+                normalize_blueprint_event_payload_node(after);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn normalize_blueprint_event_payload_node(node: &mut serde_json::Value) {
+    let Ok(mut decoded) =
+        serde_json::from_value::<planner_schemas::artifacts::blueprint::BlueprintNode>(
+            node.clone(),
+        )
+    else {
+        return;
+    };
+
+    normalize_blueprint_node_metadata(&mut decoded);
+    if let Ok(normalized) = serde_json::to_value(decoded) {
+        *node = normalized;
+    }
+}
+
+fn normalized_export_history_filter(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty() && !value.eq_ignore_ascii_case("all"))
+        .map(|value| value.to_ascii_lowercase())
+}
+
+fn export_scope_snapshot_filter(
+    snapshot: Option<&serde_json::Value>,
+    field: &str,
+) -> Option<String> {
+    snapshot
+        .and_then(|value| value.get("filters"))
+        .and_then(|value| value.get(field))
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty() && !value.eq_ignore_ascii_case("all"))
+        .map(|value| value.to_ascii_lowercase())
+}
+
+const EXPORT_AUDIT_RETENTION_DAYS: i64 = 90;
+const EXPORT_SCOPE_FILTER_ALLOWLIST: &[&str] = &[
+    "knowledgetype",
+    "scopeclass",
+    "scopevisibility",
+    "feature",
+    "widget",
+    "artifact",
+    "component",
+    "lifecycle",
+    "stale",
+    "orphan",
+    "documentation",
+    "updateddate",
+];
+
+fn sanitize_export_scope_snapshot(
+    snapshot: Option<&serde_json::Value>,
+) -> (Option<serde_json::Value>, bool, Vec<String>) {
+    let Some(snapshot) = snapshot else {
+        return (None, false, Vec::new());
+    };
+
+    let Some(snapshot_object) = snapshot.as_object() else {
+        return (None, true, vec!["scope_snapshot".into()]);
+    };
+
+    let mut sanitized = serde_json::Map::new();
+    let mut redacted_fields = Vec::new();
+
+    for (key, value) in snapshot_object {
+        match key.as_str() {
+            "filters" => {
+                let Some(filters) = value.as_object() else {
+                    redacted_fields.push("filters".into());
+                    continue;
+                };
+                let mut sanitized_filters = serde_json::Map::new();
+                for (filter_key, filter_value) in filters {
+                    if EXPORT_SCOPE_FILTER_ALLOWLIST
+                        .iter()
+                        .any(|allowed| filter_key.eq_ignore_ascii_case(allowed))
+                    {
+                        sanitized_filters.insert(filter_key.clone(), filter_value.clone());
+                    } else if !filter_value.is_null() {
+                        redacted_fields.push(format!("filters.{}", filter_key));
+                    }
+                }
+                if !sanitized_filters.is_empty() {
+                    sanitized.insert("filters".into(), serde_json::Value::Object(sanitized_filters));
+                }
+            }
+            "section" => {
+                sanitized.insert("section".into(), value.clone());
+            }
+            other => {
+                if !value.is_null() {
+                    redacted_fields.push(other.to_string());
+                }
+            }
+        }
+    }
+
+    (
+        (!sanitized.is_empty()).then_some(serde_json::Value::Object(sanitized)),
+        !redacted_fields.is_empty(),
+        redacted_fields,
+    )
+}
+
+fn export_history_retention_expires_at(timestamp: &str) -> Option<String> {
+    let parsed = chrono::DateTime::parse_from_rfc3339(timestamp).ok()?;
+    Some(
+        (parsed + chrono::Duration::days(EXPORT_AUDIT_RETENTION_DAYS)).to_rfc3339(),
+    )
+}
+
+fn export_history_matches_query(
+    project_id: Option<&str>,
+    scope_snapshot: Option<&serde_json::Value>,
+    query: &BlueprintExportHistoryQuery,
+) -> bool {
+    let Some(requested_project_id) = normalized_export_history_filter(query.project_id.as_deref())
+    else {
+        return [
+            ("scopeClass", query.scope_class.as_deref()),
+            ("feature", query.feature.as_deref()),
+            ("widget", query.widget.as_deref()),
+            ("artifact", query.artifact.as_deref()),
+            ("component", query.component.as_deref()),
+        ]
+        .into_iter()
+        .all(|(field, value)| {
+            let Some(expected) = normalized_export_history_filter(value) else {
+                return true;
+            };
+            export_scope_snapshot_filter(scope_snapshot, field) == Some(expected)
+        });
+    };
+
+    if normalized_export_history_filter(project_id) != Some(requested_project_id) {
+        return false;
+    }
+
+    [
+        ("scopeClass", query.scope_class.as_deref()),
+        ("feature", query.feature.as_deref()),
+        ("widget", query.widget.as_deref()),
+        ("artifact", query.artifact.as_deref()),
+        ("component", query.component.as_deref()),
+    ]
+    .into_iter()
+    .all(|(field, value)| {
+        let Some(expected) = normalized_export_history_filter(value) else {
+            return true;
+        };
+        export_scope_snapshot_filter(scope_snapshot, field) == Some(expected)
+    })
+}
+
+/// GET /blueprint/export-history — List durable export events with project/scope filtering.
+async fn list_blueprint_export_history(
+    State(state): State<Arc<AppState>>,
+    _claims: Claims,
+    Query(query): Query<BlueprintExportHistoryQuery>,
+) -> Json<BlueprintExportHistoryResponse> {
+    let filtered: Vec<BlueprintExportHistoryEntry> = state
+        .blueprints
+        .events()
+        .into_iter()
+        .filter_map(|event| match event {
+            planner_schemas::artifacts::blueprint::BlueprintEvent::ExportRecorded {
+                export_id,
+                kind,
+                actor,
+                node_id,
+                node_count,
+                edge_count,
+                project_id,
+                project_name,
+                scope_snapshot,
+                timestamp,
+            } => {
+                if !export_history_matches_query(
+                    project_id.as_deref(),
+                    scope_snapshot.as_ref(),
+                    &query,
+                ) {
+                    return None;
+                }
+
+                let (scope_snapshot, scope_snapshot_redacted, scope_snapshot_redacted_fields) =
+                    sanitize_export_scope_snapshot(scope_snapshot.as_ref());
+                let retention_expires_at = export_history_retention_expires_at(&timestamp);
+
+                let summary = planner_schemas::artifacts::blueprint::BlueprintEvent::ExportRecorded {
+                    export_id: export_id.clone(),
+                    kind: kind.clone(),
+                    actor: actor.clone(),
+                    node_id: node_id.clone(),
+                    node_count,
+                    edge_count,
+                    project_id: project_id.clone(),
+                    project_name: project_name.clone(),
+                    scope_snapshot: scope_snapshot.clone(),
+                    timestamp: timestamp.clone(),
+                }
+                .summary();
+
+                Some(BlueprintExportHistoryEntry {
+                    export_id,
+                    kind,
+                    actor,
+                    node_id,
+                    node_count,
+                    edge_count,
+                    project_id,
+                    project_name,
+                    scope_snapshot,
+                    scope_snapshot_redacted,
+                    scope_snapshot_redacted_fields,
+                    retention_expires_at,
+                    summary,
+                    timestamp,
+                })
+            }
+            _ => None,
+        })
+        .collect();
+
+    let total = filtered.len();
+    let entries = filtered
+        .into_iter()
+        .rev()
+        .take(query.limit.unwrap_or(usize::MAX))
+        .collect();
+
+    Json(BlueprintExportHistoryResponse { entries, total })
 }
 
 /// POST /blueprint/exports — Record a durable export activity event.
@@ -3221,8 +4004,13 @@ async fn run_discovery_scan(
     _claims: Claims,
     Json(req): Json<DiscoveryScanRequest>,
 ) -> Result<Json<DiscoveryRunResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let cgc_scan_enabled = planner_core::discovery::code_graph_context_available();
     let requested = if req.scanners.iter().any(|scanner| scanner == "all") {
-        vec!["cargo_toml".to_string(), "directory_structure".to_string()]
+        let mut scanners = vec!["cargo_toml".to_string(), "directory_structure".to_string()];
+        if cgc_scan_enabled {
+            scanners.push("code_graph_context".to_string());
+        }
+        scanners
     } else {
         req.scanners.clone()
     };
@@ -3260,12 +4048,86 @@ async fn run_discovery_scan(
 
     for scanner in requested {
         let started = std::time::Instant::now();
-        let scan_output = match scanner.as_str() {
+        let mut proposed_count = 0usize;
+        let mut skipped_count = 0usize;
+        let mut proposed_edge_count = 0usize;
+        let mut skipped_edge_count = 0usize;
+        let mut errors = Vec::new();
+
+        match scanner.as_str() {
             "cargo_toml" => {
-                planner_core::discovery::scan_cargo_toml(&project_root, &state.blueprints)
+                let scan_output =
+                    planner_core::discovery::scan_cargo_toml(&project_root, &state.blueprints);
+                let (inserted, deduped) = state
+                    .proposals
+                    .insert_many(scan_output.proposals)
+                    .map_err(|err| {
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            Json(ErrorResponse {
+                                error: format!("Failed to persist discovery proposals: {}", err),
+                                code: Some("PROPOSAL_PERSIST_FAILED".into()),
+                            }),
+                        )
+                    })?;
+                proposed_count = inserted;
+                skipped_count = scan_output.skipped_count + deduped;
+                errors = scan_output.errors;
             }
             "directory_structure" => {
-                planner_core::discovery::scan_directory_structure(&project_root, &state.blueprints)
+                let scan_output = planner_core::discovery::scan_directory_structure(
+                    &project_root,
+                    &state.blueprints,
+                );
+                let (inserted, deduped) = state
+                    .proposals
+                    .insert_many(scan_output.proposals)
+                    .map_err(|err| {
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            Json(ErrorResponse {
+                                error: format!("Failed to persist discovery proposals: {}", err),
+                                code: Some("PROPOSAL_PERSIST_FAILED".into()),
+                            }),
+                        )
+                    })?;
+                proposed_count = inserted;
+                skipped_count = scan_output.skipped_count + deduped;
+                errors = scan_output.errors;
+            }
+            "code_graph_context" => {
+                if !cgc_scan_enabled {
+                    errors.push("CodeGraphContext is not available".into());
+                } else {
+                    match planner_core::discovery::collect_code_graph_edge_proposals(
+                        &project_root,
+                        &state.blueprints,
+                    ) {
+                        Ok(imports) => {
+                            let import_result = planner_core::discovery::import_edge_proposals(
+                                &state.proposals,
+                                &state.blueprints,
+                                imports,
+                            )
+                            .map_err(|err| {
+                                (
+                                    StatusCode::INTERNAL_SERVER_ERROR,
+                                    Json(ErrorResponse {
+                                        error: format!(
+                                            "Failed to import discovery edge proposals: {}",
+                                            err
+                                        ),
+                                        code: Some("EDGE_PROPOSAL_IMPORT_FAILED".into()),
+                                    }),
+                                )
+                            })?;
+                            proposed_edge_count = import_result.inserted;
+                            skipped_edge_count = import_result.skipped;
+                            errors.extend(import_result.errors);
+                        }
+                        Err(err) => errors.push(err),
+                    }
+                }
             }
             other => {
                 return Err((
@@ -3276,35 +4138,28 @@ async fn run_discovery_scan(
                     }),
                 ));
             }
-        };
-
-        let (inserted, deduped) =
-            state
-                .proposals
-                .insert_many(scan_output.proposals)
-                .map_err(|err| {
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(ErrorResponse {
-                            error: format!("Failed to persist discovery proposals: {}", err),
-                            code: Some("PROPOSAL_PERSIST_FAILED".into()),
-                        }),
-                    )
-                })?;
+        }
 
         results.push(DiscoveryScanResult {
             scanner,
-            proposed_count: inserted,
-            skipped_count: scan_output.skipped_count + deduped,
-            errors: scan_output.errors,
+            proposed_count,
+            skipped_count,
+            proposed_edge_count,
+            skipped_edge_count,
+            errors,
             duration_ms: started.elapsed().as_millis() as u64,
         });
     }
 
     let total_proposed = results.iter().map(|result| result.proposed_count).sum();
+    let total_edge_proposed = results
+        .iter()
+        .map(|result| result.proposed_edge_count)
+        .sum();
     Ok(Json(DiscoveryRunResponse {
         results,
         total_proposed,
+        total_edge_proposed,
     }))
 }
 
@@ -3326,6 +4181,49 @@ async fn list_proposals(
     let proposals = state.proposals.list(status);
     let total = proposals.len();
     Ok(Json(ProposedNodesResponse { proposals, total }))
+}
+
+async fn list_edge_proposals(
+    State(state): State<Arc<AppState>>,
+    _claims: Claims,
+    Query(query): Query<ProposedNodesQuery>,
+) -> Result<Json<ProposedEdgesResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let status = parse_proposal_status(query.status.as_deref()).map_err(|err| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: err,
+                code: Some("INVALID_PROPOSAL_STATUS".into()),
+            }),
+        )
+    })?;
+
+    let proposals = state.proposals.list_edge_proposals(status);
+    let total = proposals.len();
+    Ok(Json(ProposedEdgesResponse { proposals, total }))
+}
+
+async fn import_edge_proposals_endpoint(
+    State(state): State<Arc<AppState>>,
+    _claims: Claims,
+    Json(req): Json<ImportEdgeProposalsRequest>,
+) -> Result<Json<planner_core::discovery::EdgeImportResult>, (StatusCode, Json<ErrorResponse>)> {
+    let result = planner_core::discovery::import_edge_proposals(
+        &state.proposals,
+        &state.blueprints,
+        req.proposals,
+    )
+    .map_err(|err| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("Failed to import edge proposals: {}", err),
+                code: Some("EDGE_PROPOSAL_IMPORT_FAILED".into()),
+            }),
+        )
+    })?;
+
+    Ok(Json(result))
 }
 
 async fn accept_proposal(
@@ -3469,6 +4367,104 @@ async fn reject_proposal(
     })))
 }
 
+async fn accept_edge_proposal(
+    State(state): State<Arc<AppState>>,
+    _claims: Claims,
+    Path(proposal_id): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
+    let Some(proposal) = state
+        .proposals
+        .mark_edge_accepted(&proposal_id)
+        .map_err(|err| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("Failed to update edge proposal state: {}", err),
+                    code: Some("PROPOSAL_UPDATE_FAILED".into()),
+                }),
+            )
+        })?
+    else {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: format!("Edge proposal not found: {}", proposal_id),
+                code: Some("PROPOSAL_NOT_FOUND".into()),
+            }),
+        ));
+    };
+
+    if proposal.status == planner_core::discovery::ProposalStatus::Merged {
+        return Ok(Json(serde_json::json!({
+            "edge": proposal.edge,
+            "message": "Edge proposal was already merged"
+        })));
+    }
+
+    if state
+        .blueprints
+        .get_node(proposal.edge.source.as_str())
+        .is_none()
+        || state
+            .blueprints
+            .get_node(proposal.edge.target.as_str())
+            .is_none()
+    {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "Edge proposal endpoints no longer exist".into(),
+                code: Some("EDGE_ENDPOINT_NOT_FOUND".into()),
+            }),
+        ));
+    }
+
+    state.blueprints.add_edge(proposal.edge.clone());
+    let _ = state.proposals.mark_edge_merged(&proposal_id);
+
+    Ok(Json(serde_json::json!({
+        "edge": proposal.edge,
+        "message": "Edge proposal accepted and merged into blueprint"
+    })))
+}
+
+async fn reject_edge_proposal(
+    State(state): State<Arc<AppState>>,
+    _claims: Claims,
+    Path(proposal_id): Path<String>,
+    req: Option<Json<RejectProposalRequest>>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
+    let request = req
+        .map(|Json(value)| value)
+        .unwrap_or(RejectProposalRequest { reason: None });
+    let Some(proposal) = state
+        .proposals
+        .mark_edge_rejected(&proposal_id, request.reason)
+        .map_err(|err| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("Failed to update edge proposal state: {}", err),
+                    code: Some("PROPOSAL_UPDATE_FAILED".into()),
+                }),
+            )
+        })?
+    else {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: format!("Edge proposal not found: {}", proposal_id),
+                code: Some("PROPOSAL_NOT_FOUND".into()),
+            }),
+        ));
+    };
+
+    Ok(Json(serde_json::json!({
+        "proposal_id": proposal.id,
+        "message": "Edge proposal rejected"
+    })))
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -3496,6 +4492,43 @@ mod tests {
             socratic_runtimes: crate::runtime::SessionRuntimeRegistry::new(
                 std::time::Duration::from_secs(30),
             ),
+            pipeline_runtimes: crate::runtime::SessionPipelineRegistry::new(),
+            started_at: std::time::Instant::now(),
+        })
+    }
+
+    fn test_state_with_event_store(data_dir: &std::path::Path) -> Arc<AppState> {
+        Arc::new(AppState {
+            sessions: SessionStore::new(),
+            blueprints: planner_core::blueprint::BlueprintStore::new(),
+            proposals: planner_core::discovery::ProposalStore::new(),
+            projects: crate::project::ProjectStore::new(),
+            auth_config: None,
+            event_store: Some(planner_core::observability::EventStore::new(data_dir).unwrap()),
+            cxdb: None,
+            llm_router: Arc::new(planner_core::llm::providers::LlmRouter::from_env()),
+            socratic_runtimes: crate::runtime::SessionRuntimeRegistry::new(
+                std::time::Duration::from_secs(30),
+            ),
+            pipeline_runtimes: crate::runtime::SessionPipelineRegistry::new(),
+            started_at: std::time::Instant::now(),
+        })
+    }
+
+    fn test_state_with_persistent_blueprints(data_dir: &std::path::Path) -> Arc<AppState> {
+        Arc::new(AppState {
+            sessions: SessionStore::new(),
+            blueprints: planner_core::blueprint::BlueprintStore::open(data_dir).unwrap(),
+            proposals: planner_core::discovery::ProposalStore::new(),
+            projects: crate::project::ProjectStore::new(),
+            auth_config: None,
+            event_store: None,
+            cxdb: None,
+            llm_router: Arc::new(planner_core::llm::providers::LlmRouter::from_env()),
+            socratic_runtimes: crate::runtime::SessionRuntimeRegistry::new(
+                std::time::Duration::from_secs(30),
+            ),
+            pipeline_runtimes: crate::runtime::SessionPipelineRegistry::new(),
             started_at: std::time::Instant::now(),
         })
     }
@@ -3540,6 +4573,7 @@ mod tests {
             socratic_runtimes: crate::runtime::SessionRuntimeRegistry::new(
                 std::time::Duration::from_secs(30),
             ),
+            pipeline_runtimes: crate::runtime::SessionPipelineRegistry::new(),
             started_at: std::time::Instant::now(),
         });
         let app = routes(state);
@@ -3611,6 +4645,612 @@ mod tests {
             .unwrap();
         let fetched: ProjectResponse = serde_json::from_slice(&body).unwrap();
         assert_eq!(fetched.project.id, created.project.id);
+    }
+
+    #[tokio::test]
+    async fn test_list_projects_excludes_archived_by_default() {
+        let state = test_state();
+        let active =
+            state
+                .projects
+                .create("dev|local", "Active Project", None, None, Vec::new(), None);
+        let archived = state.projects.create(
+            "dev|local",
+            "Archived Project",
+            None,
+            None,
+            Vec::new(),
+            None,
+        );
+        let _ = state.projects.set_archived(archived.id, true).unwrap();
+
+        let app = routes(state);
+        let req = Request::builder()
+            .method("GET")
+            .uri("/projects")
+            .body(Body::empty())
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let listed: ListProjectsResponse = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(listed.projects.len(), 1);
+        assert_eq!(listed.projects[0].id, active.id);
+    }
+
+    #[tokio::test]
+    async fn test_list_projects_can_include_archived() {
+        let state = test_state();
+        state
+            .projects
+            .create("dev|local", "Active Project", None, None, Vec::new(), None);
+        let archived = state.projects.create(
+            "dev|local",
+            "Archived Project",
+            None,
+            None,
+            Vec::new(),
+            None,
+        );
+        let _ = state.projects.set_archived(archived.id, true).unwrap();
+
+        let app = routes(state);
+        let req = Request::builder()
+            .method("GET")
+            .uri("/projects?include_archived=true")
+            .body(Body::empty())
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let listed: ListProjectsResponse = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(listed.projects.len(), 2);
+        assert!(listed
+            .projects
+            .iter()
+            .any(|project| project.archived_at.is_some()));
+    }
+
+    #[tokio::test]
+    async fn test_update_project_can_archive() {
+        let state = test_state();
+        let project =
+            state
+                .projects
+                .create("dev|local", "Archive Toggle", None, None, Vec::new(), None);
+        let app = routes(state);
+
+        let req = Request::builder()
+            .method("PATCH")
+            .uri(format!("/projects/{}", project.slug))
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({ "archived": true }).to_string(),
+            ))
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let updated: ProjectResponse = serde_json::from_slice(&body).unwrap();
+        assert!(updated.project.archived_at.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_update_project_can_unarchive() {
+        let state = test_state();
+        let project =
+            state
+                .projects
+                .create("dev|local", "Archive Toggle", None, None, Vec::new(), None);
+        let _ = state.projects.set_archived(project.id, true).unwrap();
+        let app = routes(state);
+
+        let req = Request::builder()
+            .method("PATCH")
+            .uri(format!("/projects/{}", project.slug))
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({ "archived": false }).to_string(),
+            ))
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let updated: ProjectResponse = serde_json::from_slice(&body).unwrap();
+        assert!(updated.project.archived_at.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_get_archived_project_by_slug_still_works() {
+        let state = test_state();
+        let project = state.projects.create(
+            "dev|local",
+            "Archived Direct Fetch",
+            None,
+            None,
+            Vec::new(),
+            None,
+        );
+        let _ = state.projects.set_archived(project.id, true).unwrap();
+        let app = routes(state);
+
+        let req = Request::builder()
+            .uri(format!("/projects/{}", project.slug))
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let fetched: ProjectResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(fetched.project.id, project.id);
+        assert!(fetched.project.archived_at.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_delete_project_removes_project_record() {
+        let state = test_state();
+        let project =
+            state
+                .projects
+                .create("dev|local", "Delete Target", None, None, Vec::new(), None);
+        let app = routes(state.clone());
+
+        let req = Request::builder()
+            .method("DELETE")
+            .uri(format!("/projects/{}", project.slug))
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let summary: DeleteProjectResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(summary.project_id, project.id.to_string());
+        assert_eq!(summary.project_name, "Delete Target");
+        assert_eq!(summary.deleted_sessions, 0);
+        assert!(summary.deleted_project_record);
+        assert!(state.projects.resolve_ref(&project.slug).is_none());
+    }
+
+    #[tokio::test]
+    async fn test_delete_project_removes_owned_sessions() {
+        let state = test_state();
+        let project =
+            state
+                .projects
+                .create("dev|local", "Delete Sessions", None, None, Vec::new(), None);
+        let session_a = state.sessions.create("dev|local");
+        let session_b = state.sessions.create("dev|local");
+        state.sessions.update(session_a.id, |s| {
+            s.project_id = Some(project.id);
+            s.project_slug = Some(project.slug.clone());
+            s.project_name = Some(project.name.clone());
+        });
+        state.sessions.update(session_b.id, |s| {
+            s.project_id = Some(project.id);
+            s.project_slug = Some(project.slug.clone());
+            s.project_name = Some(project.name.clone());
+        });
+
+        let app = routes(state.clone());
+        let req = Request::builder()
+            .method("DELETE")
+            .uri(format!("/projects/{}", project.slug))
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let summary: DeleteProjectResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(summary.deleted_sessions, 2);
+        assert!(state.sessions.get(session_a.id).is_none());
+        assert!(state.sessions.get(session_b.id).is_none());
+    }
+
+    #[tokio::test]
+    async fn test_delete_project_removes_session_event_files() {
+        let data_dir =
+            std::env::temp_dir().join(format!("planner_delete_events_{}", Uuid::new_v4()));
+        let state = test_state_with_event_store(&data_dir);
+        let project =
+            state
+                .projects
+                .create("dev|local", "Delete Events", None, None, Vec::new(), None);
+        let session = state.sessions.create("dev|local");
+        state.sessions.update(session.id, |s| {
+            s.project_id = Some(project.id);
+            s.project_slug = Some(project.slug.clone());
+            s.project_name = Some(project.name.clone());
+        });
+
+        let store = state.event_store.as_ref().unwrap();
+        let events = vec![planner_core::observability::PlannerEvent::info(
+            planner_core::observability::EventSource::System,
+            "delete.events",
+            "Persist me",
+        )];
+        store.save_session_events(session.id, &events).unwrap();
+        let event_path = data_dir
+            .join("events")
+            .join(format!("{}.msgpack", session.id));
+        assert!(event_path.exists());
+
+        let app = routes(state.clone());
+        let req = Request::builder()
+            .method("DELETE")
+            .uri(format!("/projects/{}", project.slug))
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let summary: DeleteProjectResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(summary.deleted_session_event_files, 1);
+        assert!(!event_path.exists());
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[tokio::test]
+    async fn test_delete_project_stops_active_session_work() {
+        let state = test_state();
+        let project =
+            state
+                .projects
+                .create("dev|local", "Delete Active", None, None, Vec::new(), None);
+        let session = state.sessions.create("dev|local");
+        state.sessions.update(session.id, |s| {
+            s.project_id = Some(project.id);
+            s.project_slug = Some(project.slug.clone());
+            s.project_name = Some(project.name.clone());
+            s.pipeline_running = true;
+            s.intake_phase = "pipeline_running".into();
+            s.project_description = Some("Long-running pipeline".into());
+        });
+        let _ = spawn_pipeline_runtime(state.clone(), session.id, "Long-running pipeline".into());
+        assert!(state.pipeline_runtimes.get(session.id).is_some());
+
+        let app = routes(state.clone());
+        let req = Request::builder()
+            .method("DELETE")
+            .uri(format!("/projects/{}", project.slug))
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let summary: DeleteProjectResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(summary.stopped_pipeline_sessions, 1);
+        assert_eq!(summary.stopped_live_sessions, 0);
+        assert!(state.pipeline_runtimes.get(session.id).is_none());
+    }
+
+    #[tokio::test]
+    async fn test_delete_project_counts_only_registry_backed_live_work() {
+        let state = test_state();
+        let project =
+            state
+                .projects
+                .create("dev|local", "Delete Detached", None, None, Vec::new(), None);
+        let session = state.sessions.create("dev|local");
+        state.sessions.update(session.id, |s| {
+            s.project_id = Some(project.id);
+            s.project_slug = Some(project.slug.clone());
+            s.project_name = Some(project.name.clone());
+            s.pipeline_running = true;
+            s.intake_phase = "interviewing".into();
+            s.interview_live_attached = false;
+            s.interview_runtime_active = false;
+        });
+
+        let app = routes(state.clone());
+        let req = Request::builder()
+            .method("DELETE")
+            .uri(format!("/projects/{}", project.slug))
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let summary: DeleteProjectResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(summary.stopped_live_sessions, 0);
+        assert_eq!(summary.stopped_pipeline_sessions, 0);
+    }
+
+    #[tokio::test]
+    async fn test_delete_project_returns_500_when_blueprint_flush_fails() {
+        use planner_schemas::artifacts::blueprint::{
+            BlueprintNode, Decision, DecisionStatus, NodeId, NodeLifecycle, NodeScope,
+            ProjectScope, ScopeClass, SecondaryScopeRefs,
+        };
+
+        let data_dir =
+            std::env::temp_dir().join(format!("planner_delete_phase6_flush_{}", Uuid::new_v4()));
+        let state = test_state_with_persistent_blueprints(&data_dir);
+        let project = state.projects.create(
+            "dev|local",
+            "Delete Flush Fail",
+            None,
+            None,
+            Vec::new(),
+            None,
+        );
+
+        state
+            .blueprints
+            .upsert_node(BlueprintNode::Decision(Decision {
+                id: NodeId::from_raw("dec-delete-flush-fail"),
+                title: "Project local".into(),
+                status: DecisionStatus::Proposed,
+                context: "local".into(),
+                options: vec![],
+                consequences: vec![],
+                assumptions: vec![],
+                supersedes: None,
+                tags: vec![],
+                documentation: None,
+                scope: NodeScope {
+                    scope_class: ScopeClass::Project,
+                    project: Some(ProjectScope {
+                        project_id: project.id.to_string(),
+                        project_name: Some(project.name.clone()),
+                    }),
+                    secondary: SecondaryScopeRefs::default(),
+                    is_shared: false,
+                    shared: None,
+                    lifecycle: NodeLifecycle::Active,
+                    override_scope: None,
+            scope_review: None,
+                },
+                created_at: "2026-03-08T00:00:00Z".into(),
+                updated_at: "2026-03-08T00:00:00Z".into(),
+            }));
+        state.blueprints.flush().unwrap();
+
+        let events_path = data_dir.join("blueprint/events.msgpack");
+        std::fs::remove_file(&events_path).unwrap();
+        std::fs::create_dir_all(&events_path).unwrap();
+
+        let app = routes(state.clone());
+        let req = Request::builder()
+            .method("DELETE")
+            .uri(format!("/projects/{}", project.slug))
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert!(state.projects.resolve_ref(&project.slug).is_some());
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[tokio::test]
+    async fn test_delete_project_forbidden_for_non_owner() {
+        let state = test_state();
+        let project =
+            state
+                .projects
+                .create("other_user|123", "Not Yours", None, None, Vec::new(), None);
+        let app = routes(state);
+
+        let req = Request::builder()
+            .method("DELETE")
+            .uri(format!("/projects/{}", project.slug))
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn test_delete_project_not_found() {
+        let state = test_state();
+        let app = routes(state);
+
+        let req = Request::builder()
+            .method("DELETE")
+            .uri("/projects/missing-project")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_delete_project_purges_cxdb_and_blueprint_scope() {
+        use planner_schemas::artifacts::blueprint::{
+            BlueprintNode, Decision, DecisionStatus, NodeId, NodeLifecycle, NodeScope,
+            ProjectScope, ScopeClass, SecondaryScopeRefs, SharedScope,
+        };
+
+        let data_dir =
+            std::env::temp_dir().join(format!("planner_delete_phase6d_{}", Uuid::new_v4()));
+        let cxdb =
+            planner_core::cxdb::durable::DurableCxdbEngine::open(data_dir.join("cxdb")).unwrap();
+        let state = Arc::new(AppState {
+            sessions: SessionStore::new(),
+            blueprints: planner_core::blueprint::BlueprintStore::new(),
+            proposals: planner_core::discovery::ProposalStore::new(),
+            projects: crate::project::ProjectStore::new(),
+            auth_config: None,
+            event_store: None,
+            cxdb: Some(cxdb),
+            llm_router: Arc::new(planner_core::llm::providers::LlmRouter::from_env()),
+            socratic_runtimes: crate::runtime::SessionRuntimeRegistry::new(
+                std::time::Duration::from_secs(30),
+            ),
+            pipeline_runtimes: crate::runtime::SessionPipelineRegistry::new(),
+            started_at: std::time::Instant::now(),
+        });
+
+        let project = state.projects.create(
+            "dev|local",
+            "Delete Project 6D",
+            None,
+            None,
+            Vec::new(),
+            None,
+        );
+        let other_project = state.projects.create(
+            "dev|local",
+            "Other Project 6D",
+            None,
+            None,
+            Vec::new(),
+            None,
+        );
+        let run_a = Uuid::new_v4();
+        let run_b = Uuid::new_v4();
+        state
+            .cxdb
+            .as_ref()
+            .unwrap()
+            .register_run(project.id, run_a)
+            .unwrap();
+        state
+            .cxdb
+            .as_ref()
+            .unwrap()
+            .register_run(other_project.id, run_b)
+            .unwrap();
+
+        state
+            .blueprints
+            .upsert_node(BlueprintNode::Decision(Decision {
+                id: NodeId::from_raw("dec-delete-local"),
+                title: "Project local".into(),
+                status: DecisionStatus::Proposed,
+                context: "local".into(),
+                options: vec![],
+                consequences: vec![],
+                assumptions: vec![],
+                supersedes: None,
+                tags: vec![],
+                documentation: None,
+                scope: NodeScope {
+                    scope_class: ScopeClass::Project,
+                    project: Some(ProjectScope {
+                        project_id: project.id.to_string(),
+                        project_name: Some(project.name.clone()),
+                    }),
+                    secondary: SecondaryScopeRefs::default(),
+                    is_shared: false,
+                    shared: None,
+                    lifecycle: NodeLifecycle::Active,
+                    override_scope: None,
+            scope_review: None,
+                },
+                created_at: "2026-03-08T00:00:00Z".into(),
+                updated_at: "2026-03-08T00:00:00Z".into(),
+            }));
+
+        state
+            .blueprints
+            .upsert_node(BlueprintNode::Decision(Decision {
+                id: NodeId::from_raw("dec-delete-shared"),
+                title: "Shared knowledge".into(),
+                status: DecisionStatus::Accepted,
+                context: "shared".into(),
+                options: vec![],
+                consequences: vec![],
+                assumptions: vec![],
+                supersedes: None,
+                tags: vec![],
+                documentation: None,
+                scope: NodeScope {
+                    scope_class: ScopeClass::Project,
+                    project: Some(ProjectScope {
+                        project_id: other_project.id.to_string(),
+                        project_name: Some(other_project.name.clone()),
+                    }),
+                    secondary: SecondaryScopeRefs::default(),
+                    is_shared: true,
+                    shared: Some(SharedScope {
+                        linked_project_ids: vec![
+                            project.id.to_string(),
+                            other_project.id.to_string(),
+                        ],
+                        inherit_to_linked_projects: true,
+                    }),
+                    lifecycle: NodeLifecycle::Active,
+                    override_scope: None,
+            scope_review: None,
+                },
+                created_at: "2026-03-08T00:00:00Z".into(),
+                updated_at: "2026-03-08T00:00:00Z".into(),
+            }));
+
+        let app = routes(state.clone());
+        let req = Request::builder()
+            .method("DELETE")
+            .uri(format!("/projects/{}", project.slug))
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let summary: DeleteProjectResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(summary.deleted_cxdb_runs, 1);
+        assert_eq!(summary.deleted_blueprint_nodes, 1);
+        assert_eq!(summary.unlinked_shared_blueprint_nodes, 1);
+
+        assert!(state
+            .cxdb
+            .as_ref()
+            .unwrap()
+            .list_runs(project.id)
+            .is_empty());
+        assert_eq!(
+            state.cxdb.as_ref().unwrap().list_runs(other_project.id),
+            vec![run_b]
+        );
+        assert!(state.blueprints.get_node("dec-delete-local").is_none());
+        let shared = state.blueprints.get_node("dec-delete-shared").unwrap();
+        let linked = shared
+            .scope()
+            .shared
+            .as_ref()
+            .map(|scope| scope.linked_project_ids.clone())
+            .unwrap_or_default();
+        assert_eq!(linked, vec![other_project.id.to_string()]);
+
+        let _ = std::fs::remove_dir_all(&data_dir);
     }
 
     #[tokio::test]
@@ -3771,6 +5411,70 @@ mod tests {
             .unwrap();
         let wrapped: GetSessionResponse = serde_json::from_slice(&body).unwrap();
         assert_eq!(wrapped.session.id, id);
+    }
+
+    #[tokio::test]
+    async fn test_get_session_includes_current_prompt_in_checkpoint_payload() {
+        let state = test_state();
+        let session = state.sessions.create("dev|local");
+        let id = session.id;
+
+        state.sessions.update(id, |draft| {
+            let checkpoint = draft.ensure_checkpoint();
+            checkpoint.current_prompt = Some(planner_schemas::PromptEnvelope {
+                prompt_id: "prompt-123".into(),
+                kind: planner_schemas::PromptKind::QuestionBatch,
+                title: "Continue interview".into(),
+                instructions: None,
+                items: vec![planner_schemas::PromptItem {
+                    item_id: "item-1".into(),
+                    kind: planner_schemas::PromptItemKind::Discovery,
+                    target_dimension: Some(planner_schemas::Dimension::Goal),
+                    section_ref: None,
+                    text: "What is the primary goal?".into(),
+                    options: vec![planner_schemas::PromptOption {
+                        option_id: "opt-1".into(),
+                        label: "Ship MVP".into(),
+                        semantic_value: "ship_mvp".into(),
+                        direct_effect: None,
+                    }],
+                    response_mode: planner_schemas::PromptResponseMode::SingleSelectWithCustomText,
+                    required: true,
+                    priority: 100,
+                    dependency_item_ids: vec![],
+                }],
+                draft_snapshot: None,
+                required_item_ids: vec!["item-1".into()],
+                allow_partial_submit: true,
+                ui_hints: planner_schemas::PromptUiHints {
+                    preferred_layout: planner_schemas::PromptPreferredLayout::Cards,
+                    show_draft_sidebar: false,
+                },
+                based_on_turn: 1,
+                created_at: "2026-03-08T00:00:00Z".into(),
+            });
+        });
+
+        let app = routes(state);
+        let req = Request::builder()
+            .uri(format!("/sessions/{}", id))
+            .body(Body::empty())
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let wrapped: GetSessionResponse = serde_json::from_slice(&body).unwrap();
+        let prompt = wrapped
+            .session
+            .checkpoint
+            .and_then(|checkpoint| checkpoint.current_prompt)
+            .expect("current_prompt should be present in session payload");
+        assert_eq!(prompt.prompt_id, "prompt-123");
+        assert_eq!(prompt.items.len(), 1);
     }
 
     #[tokio::test]
@@ -3942,6 +5646,57 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn send_message_registers_pipeline_runtime_when_pipeline_starts() {
+        let state = test_state();
+        let session = state.sessions.create("dev|local");
+        let id = session.id;
+        let app = routes(state.clone());
+
+        let req = Request::builder()
+            .method("POST")
+            .uri(format!("/sessions/{}/message", id))
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({ "content": "Build me a planner dashboard" }).to_string(),
+            ))
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert!(state.pipeline_runtimes.get(id).is_some());
+
+        stop_active_session_work(&state, id);
+    }
+
+    #[tokio::test]
+    async fn retry_pipeline_registers_pipeline_runtime() {
+        let state = test_state();
+        let session = state.sessions.create("dev|local");
+        let id = session.id;
+        state.sessions.update(id, |s| {
+            s.project_description = Some("Retry me".into());
+            s.intake_phase = "error".into();
+            if let Some(stage) = s.stages.first_mut() {
+                stage.status = "failed".into();
+            }
+        });
+        let app = routes(state.clone());
+
+        let req = Request::builder()
+            .method("POST")
+            .uri(format!("/sessions/{}/retry-pipeline", id))
+            .header("content-type", "application/json")
+            .body(Body::from("{}"))
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert!(state.pipeline_runtimes.get(id).is_some());
+
+        stop_active_session_work(&state, id);
+    }
+
+    #[tokio::test]
     async fn test_send_message_wrong_user() {
         let state = test_state();
         // Session belongs to a different user
@@ -4009,6 +5764,7 @@ mod tests {
             socratic_runtimes: crate::runtime::SessionRuntimeRegistry::new(
                 std::time::Duration::from_secs(30),
             ),
+            pipeline_runtimes: crate::runtime::SessionPipelineRegistry::new(),
             started_at: std::time::Instant::now(),
         });
         let app = routes(state);
@@ -4201,6 +5957,69 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_get_events_includes_retry_and_validation_feedback() {
+        use planner_core::observability::{EventSource, PlannerEvent};
+        let state = test_state();
+        let session_obj = state.sessions.create("dev|local");
+        let id = session_obj.id;
+
+        state.sessions.update(id, |s| {
+            s.record_event(
+                PlannerEvent::warn(
+                    EventSource::Pipeline,
+                    "pipeline.retry.started",
+                    "Retrying validation loop",
+                )
+                .with_metadata(serde_json::json!({
+                    "next_attempt": 2,
+                    "max_attempts": 3,
+                })),
+            );
+            s.record_event(
+                PlannerEvent::info(
+                    EventSource::Pipeline,
+                    "pipeline.validation.completed",
+                    "Validation attempt failed",
+                )
+                .with_metadata(serde_json::json!({
+                    "stage": "Validate",
+                    "attempt": 1,
+                    "gates_passed": false,
+                    "passed_count": 3,
+                    "total_count": 7,
+                })),
+            );
+        });
+
+        let app = routes(state);
+
+        let req = Request::builder()
+            .uri(format!("/sessions/{}/events?source=pipeline", id))
+            .body(Body::empty())
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let result: SessionEventsResponse = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(result.count, 2);
+        assert!(result
+            .events
+            .iter()
+            .any(|event| event.step.as_deref() == Some("pipeline.retry.started")));
+        let validation_event = result
+            .events
+            .iter()
+            .find(|event| event.step.as_deref() == Some("pipeline.validation.completed"))
+            .expect("validation event should be present");
+        assert_eq!(validation_event.metadata["gates_passed"], false);
+    }
+
+    #[tokio::test]
     async fn test_get_events_filter_level() {
         use planner_core::observability::{EventSource, PlannerEvent};
         let state = test_state();
@@ -4231,6 +6050,57 @@ mod tests {
         assert_eq!(result.count, 1);
         assert_eq!(result.events.len(), 1);
         assert_eq!(result.events[0].message, "error event");
+    }
+
+    #[tokio::test]
+    async fn test_admin_events_include_project_identity_for_project_sessions() {
+        use planner_core::observability::{EventSource, PlannerEvent};
+
+        let state = test_state();
+        let session_obj = state.sessions.create("dev|local");
+        let id = session_obj.id;
+        let project = state.projects.create(
+            "dev|local",
+            "Admin Knowledge Project",
+            None,
+            None,
+            Vec::new(),
+            None,
+        );
+
+        state.sessions.update(id, |s| {
+            s.project_id = Some(project.id);
+            s.project_name = Some(project.name.clone());
+            s.record_event(PlannerEvent::info(
+                EventSource::Pipeline,
+                "pipeline.compile",
+                "Compiled project blueprint",
+            ));
+        });
+
+        let app = routes(state);
+        let req = Request::builder()
+            .uri("/admin/events?limit=10")
+            .body(Body::empty())
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let result: AdminEventsResponse = serde_json::from_slice(&body).unwrap();
+        let session_id = id.to_string();
+        let project_id = project.id.to_string();
+        assert_eq!(result.total, 1);
+        assert_eq!(result.events.len(), 1);
+        assert_eq!(result.events[0].session_id.as_deref(), Some(session_id.as_str()));
+        assert_eq!(result.events[0].project_id.as_deref(), Some(project_id.as_str()));
+        assert_eq!(
+            result.events[0].project_name.as_deref(),
+            Some(project.name.as_str())
+        );
     }
 
     #[tokio::test]
@@ -4624,6 +6494,85 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_create_blueprint_node_invalid_scope_review_rejected() {
+        let state = test_state();
+        let app = routes(state);
+
+        let mut invalid = sample_decision_json();
+        invalid["id"] = serde_json::json!("dec-invalid-scope-review-a1b2c3d4");
+        invalid["scope"] = serde_json::json!({
+            "scope_class": "unscoped",
+            "secondary": {},
+            "is_shared": false,
+            "lifecycle": "active",
+            "scope_review": {
+                "deferred_reason": "Need product input",
+                "owner": "",
+                "due_at": "2026-03-31"
+            }
+        });
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/blueprint/nodes")
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_string(&invalid).unwrap()))
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let err: ErrorResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(err.code.as_deref(), Some("INVALID_SCOPE"));
+        assert!(err.error.contains("scope_review.owner"));
+    }
+
+    #[tokio::test]
+    async fn test_create_blueprint_node_valid_scope_review_persisted() {
+        let state = test_state();
+        let app = routes(state);
+
+        let mut valid = sample_decision_json();
+        valid["id"] = serde_json::json!("dec-valid-scope-review-a1b2c3d4");
+        valid["scope"] = serde_json::json!({
+            "scope_class": "unscoped",
+            "secondary": {},
+            "is_shared": false,
+            "lifecycle": "active",
+            "scope_review": {
+                "deferred_reason": "Need product input",
+                "owner": "alice",
+                "due_at": "2026-03-31"
+            }
+        });
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/blueprint/nodes")
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_string(&valid).unwrap()))
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::CREATED);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let node: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(
+            node["scope"]["scope_review"]["deferred_reason"],
+            "Need product input"
+        );
+        assert_eq!(node["scope"]["scope_review"]["owner"], "alice");
+        assert_eq!(node["scope"]["scope_review"]["due_at"], "2026-03-31");
+        assert!(node["scope"]["scope_review"]["deferred_at"]
+            .as_str()
+            .is_some());
+    }
+
+    #[tokio::test]
     async fn test_create_blueprint_node_invalid_override_scope_rejected() {
         let state = test_state();
         let app = routes(state);
@@ -4654,6 +6603,200 @@ mod tests {
         let err: ErrorResponse = serde_json::from_slice(&body).unwrap();
         assert_eq!(err.code.as_deref(), Some("INVALID_SCOPE"));
         assert!(err.error.contains("override_scope"));
+    }
+
+    #[tokio::test]
+    async fn test_create_blueprint_node_override_source_must_exist() {
+        let state = test_state();
+        let app = routes(state);
+
+        let mut invalid = sample_decision_json();
+        invalid["id"] = serde_json::json!("dec-missing-override-source-a1b2c3d4");
+        invalid["scope"] = serde_json::json!({
+            "scope_class": "project",
+            "project": {
+                "project_id": "proj-alpha",
+                "project_name": "Alpha Project"
+            },
+            "secondary": {},
+            "is_shared": false,
+            "shared": null,
+            "lifecycle": "active",
+            "override_scope": {
+                "shared_source_id": "dec-shared-missing"
+            }
+        });
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/blueprint/nodes")
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_string(&invalid).unwrap()))
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let err: ErrorResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(err.code.as_deref(), Some("INVALID_SCOPE"));
+        assert!(err.error.contains("not found"));
+    }
+
+    #[tokio::test]
+    async fn test_create_blueprint_node_override_source_must_reference_shared_node() {
+        let state = test_state();
+        let mut local_source = sample_decision_json();
+        local_source["id"] = serde_json::json!("dec-local-source-a1b2c3d4");
+        local_source["scope"] = serde_json::json!({
+            "scope_class": "project",
+            "project": {
+                "project_id": "proj-alpha",
+                "project_name": "Alpha Project"
+            },
+            "secondary": {},
+            "is_shared": false,
+            "shared": null,
+            "lifecycle": "active"
+        });
+        let local_source_node: planner_schemas::artifacts::blueprint::BlueprintNode =
+            serde_json::from_value(local_source).unwrap();
+        state.blueprints.upsert_node(local_source_node);
+
+        let app = routes(state);
+        let mut invalid = sample_decision_json();
+        invalid["id"] = serde_json::json!("dec-invalid-override-target-a1b2c3d4");
+        invalid["scope"] = serde_json::json!({
+            "scope_class": "project",
+            "project": {
+                "project_id": "proj-alpha",
+                "project_name": "Alpha Project"
+            },
+            "secondary": {},
+            "is_shared": false,
+            "shared": null,
+            "lifecycle": "active",
+            "override_scope": {
+                "shared_source_id": "dec-local-source-a1b2c3d4"
+            }
+        });
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/blueprint/nodes")
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_string(&invalid).unwrap()))
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let err: ErrorResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(err.code.as_deref(), Some("INVALID_SCOPE"));
+        assert!(err.error.contains("shared record"));
+    }
+
+    #[tokio::test]
+    async fn test_create_blueprint_node_override_source_cannot_self_reference() {
+        let state = test_state();
+        let app = routes(state);
+
+        let mut invalid = sample_decision_json();
+        invalid["id"] = serde_json::json!("dec-self-override-a1b2c3d4");
+        invalid["scope"] = serde_json::json!({
+            "scope_class": "project",
+            "project": {
+                "project_id": "proj-alpha",
+                "project_name": "Alpha Project"
+            },
+            "secondary": {},
+            "is_shared": false,
+            "shared": null,
+            "lifecycle": "active",
+            "override_scope": {
+                "shared_source_id": "dec-self-override-a1b2c3d4"
+            }
+        });
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/blueprint/nodes")
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_string(&invalid).unwrap()))
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let err: ErrorResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(err.code.as_deref(), Some("INVALID_SCOPE"));
+        assert!(err.error.contains("cannot reference the node itself"));
+    }
+
+    #[tokio::test]
+    async fn test_create_blueprint_node_valid_override_source_accepted() {
+        let state = test_state();
+        let mut shared_source = sample_decision_json();
+        shared_source["id"] = serde_json::json!("dec-shared-source-a1b2c3d4");
+        shared_source["scope"] = serde_json::json!({
+            "scope_class": "project",
+            "project": {
+                "project_id": "proj-alpha",
+                "project_name": "Alpha Project"
+            },
+            "secondary": {},
+            "is_shared": true,
+            "shared": {
+                "linked_project_ids": ["proj-alpha"],
+                "inherit_to_linked_projects": true
+            },
+            "lifecycle": "active"
+        });
+        let shared_source_node: planner_schemas::artifacts::blueprint::BlueprintNode =
+            serde_json::from_value(shared_source).unwrap();
+        state.blueprints.upsert_node(shared_source_node);
+
+        let app = routes(state);
+        let mut valid = sample_decision_json();
+        valid["id"] = serde_json::json!("dec-valid-override-a1b2c3d4");
+        valid["scope"] = serde_json::json!({
+            "scope_class": "project",
+            "project": {
+                "project_id": "proj-alpha",
+                "project_name": "Alpha Project"
+            },
+            "secondary": {},
+            "is_shared": false,
+            "shared": null,
+            "lifecycle": "active",
+            "override_scope": {
+                "shared_source_id": "dec-shared-source-a1b2c3d4",
+                "override_reason": "Project-specific deviation"
+            }
+        });
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/blueprint/nodes")
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_string(&valid).unwrap()))
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::CREATED);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let node: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(
+            node["scope"]["override_scope"]["shared_source_id"],
+            "dec-shared-source-a1b2c3d4"
+        );
     }
 
     #[tokio::test]
@@ -5311,6 +7454,162 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_blueprint_export_history_filtered_by_project_and_scope() {
+        let state = test_state();
+        state.blueprints.record_export_event(
+            "exp-alpha".into(),
+            planner_schemas::artifacts::blueprint::BlueprintExportKind::ScopedView,
+            Some("alice".into()),
+            None,
+            3,
+            1,
+            Some("proj-alpha".into()),
+            Some("Alpha Project".into()),
+            Some(serde_json::json!({
+                "filters": {
+                    "scopeClass": "project_contextual",
+                    "feature": "task-tracker",
+                    "component": "task-widget"
+                }
+            })),
+        );
+        state.blueprints.record_export_event(
+            "exp-beta".into(),
+            planner_schemas::artifacts::blueprint::BlueprintExportKind::ScopedView,
+            Some("bob".into()),
+            None,
+            2,
+            0,
+            Some("proj-beta".into()),
+            Some("Beta Project".into()),
+            Some(serde_json::json!({
+                "filters": {
+                    "scopeClass": "project",
+                    "feature": "billing",
+                    "component": "ledger-widget"
+                }
+            })),
+        );
+
+        let app = routes(state.clone());
+        let req = Request::builder()
+            .uri("/blueprint/export-history?project_id=proj-alpha&scope_class=project_contextual&component=task-widget")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let history: BlueprintExportHistoryResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(history.total, 1);
+        assert_eq!(history.entries.len(), 1);
+        assert_eq!(history.entries[0].export_id, "exp-alpha");
+        assert_eq!(history.entries[0].project_id.as_deref(), Some("proj-alpha"));
+        assert_eq!(
+            history.entries[0]
+                .scope_snapshot
+                .as_ref()
+                .and_then(|value| value.get("filters"))
+                .and_then(|value| value.get("component"))
+                .and_then(serde_json::Value::as_str),
+            Some("task-widget")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_blueprint_export_history_redacts_sensitive_scope_fields_and_exposes_retention() {
+        let state = test_state();
+        state.blueprints.record_export_event(
+            "exp-governed".into(),
+            planner_schemas::artifacts::blueprint::BlueprintExportKind::SingleRecord,
+            Some("auth0|auditor".into()),
+            Some("dec-use-msgpack-a1b2c3d4".into()),
+            1,
+            0,
+            Some("proj-alpha".into()),
+            Some("Alpha Project".into()),
+            Some(serde_json::json!({
+                "filters": {
+                    "scopeClass": "project_contextual",
+                    "feature": "task-tracker",
+                    "component": "task-widget",
+                    "owner": "alice",
+                    "tag": "sensitive"
+                },
+                "section": "activity",
+                "selected_node_id": "dec-use-msgpack-a1b2c3d4"
+            })),
+        );
+
+        let app = routes(state.clone());
+        let req = Request::builder()
+            .uri("/blueprint/export-history?project_id=proj-alpha")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let history: BlueprintExportHistoryResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(history.total, 1);
+        assert_eq!(history.entries.len(), 1);
+        let entry = &history.entries[0];
+        assert_eq!(entry.actor.as_deref(), Some("auth0|auditor"));
+        assert_eq!(
+            entry.scope_snapshot
+                .as_ref()
+                .and_then(|value| value.get("filters"))
+                .and_then(|value| value.get("component"))
+                .and_then(serde_json::Value::as_str),
+            Some("task-widget")
+        );
+        assert!(
+            entry
+                .scope_snapshot
+                .as_ref()
+                .and_then(|value| value.get("filters"))
+                .and_then(|value| value.get("owner"))
+                .is_none()
+        );
+        assert!(
+            entry
+                .scope_snapshot
+                .as_ref()
+                .and_then(|value| value.get("selected_node_id"))
+                .is_none()
+        );
+        assert!(entry.scope_snapshot_redacted);
+        assert!(
+            entry
+                .scope_snapshot_redacted_fields
+                .contains(&"filters.owner".to_string())
+        );
+        assert!(
+            entry
+                .scope_snapshot_redacted_fields
+                .contains(&"filters.tag".to_string())
+        );
+        assert!(
+            entry
+                .scope_snapshot_redacted_fields
+                .contains(&"selected_node_id".to_string())
+        );
+
+        let timestamp =
+            chrono::DateTime::parse_from_rfc3339(&entry.timestamp).expect("entry timestamp");
+        let retention = chrono::DateTime::parse_from_rfc3339(
+            entry
+                .retention_expires_at
+                .as_deref()
+                .expect("retention metadata"),
+        )
+        .expect("retention timestamp");
+        assert_eq!(retention - timestamp, chrono::Duration::days(EXPORT_AUDIT_RETENTION_DAYS));
+    }
+
+    #[tokio::test]
     async fn test_blueprint_events_filtered_by_node() {
         let state = test_state();
 
@@ -5338,6 +7637,59 @@ mod tests {
         let events: BlueprintEventsResponse = serde_json::from_slice(&body).unwrap();
         assert_eq!(events.total, 1);
         assert_eq!(events.events[0].event_type, "node_created");
+    }
+
+    #[tokio::test]
+    async fn test_list_blueprint_events_normalizes_legacy_scope_tags_in_payloads() {
+        use planner_schemas::artifacts::blueprint::{
+            BlueprintNode, NodeLifecycle, NodeScope, ProjectScope, ScopeClass,
+            SecondaryScopeRefs,
+        };
+
+        let state = test_state();
+
+        let mut legacy: BlueprintNode = serde_json::from_value(sample_decision_json()).unwrap();
+        if let BlueprintNode::Decision(decision) = &mut legacy {
+            decision.tags = vec![
+                "storage".into(),
+                "archived".into(),
+                "overrides:shared-guidance".into(),
+            ];
+            decision.scope = NodeScope {
+                scope_class: ScopeClass::Project,
+                project: Some(ProjectScope {
+                    project_id: "proj-alpha".into(),
+                    project_name: Some("Alpha Project".into()),
+                }),
+                secondary: SecondaryScopeRefs::default(),
+                is_shared: false,
+                shared: None,
+                lifecycle: NodeLifecycle::Active,
+                override_scope: None,
+                scope_review: None,
+            };
+        }
+        state.blueprints.upsert_node(legacy);
+
+        let app = routes(state.clone());
+        let req = Request::builder()
+            .uri("/blueprint/events")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let events: BlueprintEventsResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(events.total, 1);
+        assert_eq!(events.events[0].event_type, "node_created");
+        assert_eq!(events.events[0].data["node"]["scope"]["lifecycle"], "archived");
+        assert_eq!(
+            events.events[0].data["node"]["scope"]["override_scope"]["shared_source_id"],
+            "shared-guidance"
+        );
+        assert_eq!(events.events[0].data["node"]["tags"], serde_json::json!(["storage"]));
     }
 
     #[tokio::test]
@@ -5430,9 +7782,7 @@ mod tests {
             .method("POST")
             .uri("/blueprint/discovery/proposals/proposal-component-1/accept")
             .header("content-type", "application/json")
-            .body(Body::from(
-                r#"{"node_patch":{"name":"Identity Service"}}"#,
-            ))
+            .body(Body::from(r#"{"node_patch":{"name":"Identity Service"}}"#))
             .unwrap();
 
         let resp = app.oneshot(req).await.unwrap();
@@ -5546,5 +7896,111 @@ mod tests {
         let response: ProposedNodesResponse = serde_json::from_slice(&body).unwrap();
         assert_eq!(response.total, 1);
         assert_eq!(response.proposals[0].id, "proposal-rejected");
+    }
+
+    #[tokio::test]
+    async fn test_list_component_proposals_alias_filter_by_status() {
+        let state = test_state();
+        let pending = planner_core::discovery::ProposedNode {
+            id: "proposal-component-pending".into(),
+            node: serde_json::from_value(sample_component_json()).unwrap(),
+            source: planner_core::discovery::DiscoverySource::DirectoryScan,
+            reason: "Pending".into(),
+            status: planner_core::discovery::ProposalStatus::Pending,
+            proposed_at: "2026-03-06T00:00:00Z".into(),
+            reviewed_at: None,
+            confidence: 0.85,
+            source_artifact: Some("src/auth".into()),
+            review_note: None,
+        };
+        let rejected = planner_core::discovery::ProposedNode {
+            id: "proposal-component-rejected".into(),
+            node: serde_json::from_value(sample_component_json()).unwrap(),
+            source: planner_core::discovery::DiscoverySource::DirectoryScan,
+            reason: "Rejected".into(),
+            status: planner_core::discovery::ProposalStatus::Rejected,
+            proposed_at: "2026-03-06T00:00:00Z".into(),
+            reviewed_at: Some("2026-03-06T01:00:00Z".into()),
+            confidence: 0.85,
+            source_artifact: Some("src/review".into()),
+            review_note: Some("duplicate".into()),
+        };
+        state
+            .proposals
+            .insert_many(vec![pending, rejected])
+            .unwrap();
+
+        let app = routes(state);
+        let req = Request::builder()
+            .uri("/blueprint/discovery/component-proposals?status=pending")
+            .body(Body::empty())
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let response: ProposedNodesResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(response.total, 1);
+        assert_eq!(response.proposals[0].id, "proposal-component-pending");
+    }
+
+    #[tokio::test]
+    async fn test_list_edge_proposals_filter_by_status() {
+        let state = test_state();
+        let pending = planner_core::discovery::ProposedEdge {
+            id: "edge-proposal-pending".into(),
+            edge: planner_schemas::artifacts::blueprint::Edge {
+                source: planner_schemas::artifacts::blueprint::NodeId::from_raw("proj-root"),
+                target: planner_schemas::artifacts::blueprint::NodeId::from_raw("comp-auth"),
+                edge_type: planner_schemas::artifacts::blueprint::EdgeType::Contains,
+                metadata: Some("directory".into()),
+            },
+            source: planner_core::discovery::DiscoverySource::CodeGraphContext,
+            reason: "Pending".into(),
+            status: planner_core::discovery::ProposalStatus::Pending,
+            proposed_at: "2026-03-06T00:00:00Z".into(),
+            reviewed_at: None,
+            confidence: 0.9,
+            source_artifact: Some("src/auth".into()),
+            review_note: None,
+        };
+        let merged = planner_core::discovery::ProposedEdge {
+            id: "edge-proposal-merged".into(),
+            edge: planner_schemas::artifacts::blueprint::Edge {
+                source: planner_schemas::artifacts::blueprint::NodeId::from_raw("proj-root"),
+                target: planner_schemas::artifacts::blueprint::NodeId::from_raw("comp-review"),
+                edge_type: planner_schemas::artifacts::blueprint::EdgeType::Contains,
+                metadata: Some("cgc:indexed-package".into()),
+            },
+            source: planner_core::discovery::DiscoverySource::CodeGraphContext,
+            reason: "Merged".into(),
+            status: planner_core::discovery::ProposalStatus::Merged,
+            proposed_at: "2026-03-06T00:00:00Z".into(),
+            reviewed_at: Some("2026-03-06T01:00:00Z".into()),
+            confidence: 0.95,
+            source_artifact: Some("planner-core".into()),
+            review_note: None,
+        };
+        state
+            .proposals
+            .insert_many_edges(vec![pending, merged])
+            .unwrap();
+
+        let app = routes(state);
+        let req = Request::builder()
+            .uri("/blueprint/discovery/edge-proposals?status=merged")
+            .body(Body::empty())
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let response: ProposedEdgesResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(response.total, 1);
+        assert_eq!(response.proposals[0].id, "edge-proposal-merged");
     }
 }

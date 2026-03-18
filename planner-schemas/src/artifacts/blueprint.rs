@@ -8,6 +8,7 @@
 //!
 //! | Type               | Shape (UI) | ID Prefix |
 //! |--------------------|------------|-----------|
+//! | Project            | capsule      | PROJ-     |
 //! | Decision           | rounded rect | DEC-      |
 //! | Technology         | hexagon      | TECH-     |
 //! | Component          | sharp rect   | COMP-     |
@@ -19,6 +20,7 @@
 //!
 //! | Edge          | Source → Target                              |
 //! |---------------|----------------------------------------------|
+//! | contains      | Project → any project-scoped node            |
 //! | decided_by    | Tech/Comp/Pattern → Decision                 |
 //! | supersedes    | Decision → Decision                          |
 //! | depends_on    | Component → Component                        |
@@ -101,6 +103,8 @@ impl std::fmt::Display for NodeId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EdgeType {
+    /// Project → any project-scoped node: "belongs to"
+    Contains,
     /// Technology/Component/Pattern → Decision: "exists because of"
     DecidedBy,
     /// Decision → Decision: "replaces"
@@ -122,6 +126,7 @@ pub enum EdgeType {
 impl EdgeType {
     /// All edge type variants for iteration.
     pub const ALL: &'static [EdgeType] = &[
+        EdgeType::Contains,
         EdgeType::DecidedBy,
         EdgeType::Supersedes,
         EdgeType::DependsOn,
@@ -136,6 +141,7 @@ impl EdgeType {
 impl std::fmt::Display for EdgeType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            EdgeType::Contains => write!(f, "contains"),
             EdgeType::DecidedBy => write!(f, "decided_by"),
             EdgeType::Supersedes => write!(f, "supersedes"),
             EdgeType::DependsOn => write!(f, "depends_on"),
@@ -364,6 +370,16 @@ pub struct OverrideScope {
     pub effective_from: Option<String>,
 }
 
+/// Deferred review metadata for records that still need scope resolution.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScopeReview {
+    pub deferred_reason: String,
+    pub owner: String,
+    pub due_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deferred_at: Option<String>,
+}
+
 /// Scope payload attached to every node.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeScope {
@@ -381,6 +397,8 @@ pub struct NodeScope {
     pub lifecycle: NodeLifecycle,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub override_scope: Option<OverrideScope>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope_review: Option<ScopeReview>,
 }
 
 fn default_true() -> bool {
@@ -403,6 +421,7 @@ impl NodeScope {
             shared: None,
             lifecycle: NodeLifecycle::Active,
             override_scope: None,
+            scope_review: None,
         }
     }
 
@@ -414,6 +433,29 @@ impl NodeScope {
         } else {
             ScopeVisibility::ProjectLocal
         }
+    }
+
+    pub fn is_project_local_to(&self, project_id: &str) -> bool {
+        !self.is_shared
+            && self
+                .project
+                .as_ref()
+                .map(|project| project.project_id.eq_ignore_ascii_case(project_id))
+                .unwrap_or(false)
+    }
+
+    pub fn is_shared_linked_to(&self, project_id: &str) -> bool {
+        self.is_shared
+            && self
+                .shared
+                .as_ref()
+                .map(|shared| {
+                    shared
+                        .linked_project_ids
+                        .iter()
+                        .any(|linked| linked.eq_ignore_ascii_case(project_id))
+                })
+                .unwrap_or(false)
     }
 }
 
@@ -444,6 +486,22 @@ pub struct Assumption {
     pub description: String,
     /// high / medium / low
     pub confidence: String,
+}
+
+/// Architectural decision with rationale (MADR variant).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Project {
+    pub id: NodeId,
+    pub name: String,
+    pub description: String,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub documentation: Option<String>,
+    #[serde(default)]
+    pub scope: NodeScope,
+    pub created_at: String,
+    pub updated_at: String,
 }
 
 /// Architectural decision with rationale (MADR variant).
@@ -563,6 +621,8 @@ pub struct Pattern {
 pub struct QualityRequirement {
     pub id: NodeId,
     pub attribute: QualityAttribute,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
     /// Specific, testable scenario.
     pub scenario: String,
     pub priority: QualityPriority,
@@ -585,6 +645,7 @@ pub struct QualityRequirement {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "node_type", rename_all = "snake_case")]
 pub enum BlueprintNode {
+    Project(Project),
     Decision(Decision),
     Technology(Technology),
     Component(Component),
@@ -597,6 +658,7 @@ impl BlueprintNode {
     /// Return the NodeId of this node.
     pub fn id(&self) -> &NodeId {
         match self {
+            BlueprintNode::Project(n) => &n.id,
             BlueprintNode::Decision(n) => &n.id,
             BlueprintNode::Technology(n) => &n.id,
             BlueprintNode::Component(n) => &n.id,
@@ -609,18 +671,20 @@ impl BlueprintNode {
     /// Return the display name of this node.
     pub fn name(&self) -> &str {
         match self {
+            BlueprintNode::Project(n) => &n.name,
             BlueprintNode::Decision(n) => &n.title,
             BlueprintNode::Technology(n) => &n.name,
             BlueprintNode::Component(n) => &n.name,
             BlueprintNode::Constraint(n) => &n.title,
             BlueprintNode::Pattern(n) => &n.name,
-            BlueprintNode::QualityRequirement(n) => &n.scenario,
+            BlueprintNode::QualityRequirement(n) => n.label.as_deref().unwrap_or(&n.scenario),
         }
     }
 
     /// Return the type name as a static string (for filtering/display).
     pub fn type_name(&self) -> &'static str {
         match self {
+            BlueprintNode::Project(_) => "project",
             BlueprintNode::Decision(_) => "decision",
             BlueprintNode::Technology(_) => "technology",
             BlueprintNode::Component(_) => "component",
@@ -633,6 +697,7 @@ impl BlueprintNode {
     /// Return updated_at timestamp.
     pub fn updated_at(&self) -> &str {
         match self {
+            BlueprintNode::Project(n) => &n.updated_at,
             BlueprintNode::Decision(n) => &n.updated_at,
             BlueprintNode::Technology(n) => &n.updated_at,
             BlueprintNode::Component(n) => &n.updated_at,
@@ -645,6 +710,7 @@ impl BlueprintNode {
     /// Return tags for this node.
     pub fn tags(&self) -> &[String] {
         match self {
+            BlueprintNode::Project(n) => &n.tags,
             BlueprintNode::Decision(n) => &n.tags,
             BlueprintNode::Technology(n) => &n.tags,
             BlueprintNode::Component(n) => &n.tags,
@@ -657,6 +723,7 @@ impl BlueprintNode {
     /// Return the optional markdown documentation attached to this node.
     pub fn documentation(&self) -> Option<&str> {
         match self {
+            BlueprintNode::Project(n) => n.documentation.as_deref(),
             BlueprintNode::Decision(n) => n.documentation.as_deref(),
             BlueprintNode::Technology(n) => n.documentation.as_deref(),
             BlueprintNode::Component(n) => n.documentation.as_deref(),
@@ -669,6 +736,7 @@ impl BlueprintNode {
     /// Return the scope metadata attached to this node.
     pub fn scope(&self) -> &NodeScope {
         match self {
+            BlueprintNode::Project(n) => &n.scope,
             BlueprintNode::Decision(n) => &n.scope,
             BlueprintNode::Technology(n) => &n.scope,
             BlueprintNode::Component(n) => &n.scope,
@@ -684,6 +752,7 @@ impl BlueprintNode {
     /// to a single human-readable string for table/filter UIs.
     pub fn status(&self) -> String {
         match self {
+            BlueprintNode::Project(_) => "Active".into(),
             BlueprintNode::Decision(n) => match n.status {
                 DecisionStatus::Proposed => "Proposed".into(),
                 DecisionStatus::Accepted => "Accepted".into(),
@@ -814,32 +883,16 @@ pub struct NodeSummary {
     pub override_reason: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub override_effective_from: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope_review_deferred_reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope_review_owner: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope_review_due_at: Option<String>,
     pub tags: Vec<String>,
     #[serde(default)]
     pub has_documentation: bool,
     pub updated_at: String,
-}
-
-const LEGACY_ARCHIVED_TAG: &str = "archived";
-const LEGACY_OVERRIDE_PREFIX: &str = "overrides:";
-
-fn legacy_has_archived_tag(tags: &[String]) -> bool {
-    tags.iter()
-        .any(|tag| tag.trim().eq_ignore_ascii_case(LEGACY_ARCHIVED_TAG))
-}
-
-fn legacy_override_source(tags: &[String]) -> Option<String> {
-    tags.iter().find_map(|tag| {
-        let trimmed = tag.trim();
-        if !trimmed
-            .to_ascii_lowercase()
-            .starts_with(LEGACY_OVERRIDE_PREFIX)
-        {
-            return None;
-        }
-        let source = trimmed[LEGACY_OVERRIDE_PREFIX.len()..].trim();
-        (!source.is_empty()).then(|| source.to_string())
-    })
 }
 
 impl From<&BlueprintNode> for NodeSummary {
@@ -861,13 +914,7 @@ impl From<&BlueprintNode> for NodeSummary {
             .as_ref()
             .map(|shared| shared.linked_project_ids.clone())
             .unwrap_or_default();
-        let lifecycle = if matches!(scope.lifecycle, NodeLifecycle::Archived)
-            || legacy_has_archived_tag(&tags)
-        {
-            NodeLifecycle::Archived
-        } else {
-            NodeLifecycle::Active
-        };
+        let lifecycle = scope.lifecycle.clone();
         let (override_source_id, override_reason, override_effective_from) = scope
             .override_scope
             .as_ref()
@@ -878,7 +925,17 @@ impl From<&BlueprintNode> for NodeSummary {
                     override_scope.effective_from.clone(),
                 )
             })
-            .or_else(|| legacy_override_source(&tags).map(|source| (Some(source), None, None)))
+            .unwrap_or((None, None, None));
+        let (scope_review_deferred_reason, scope_review_owner, scope_review_due_at) = scope
+            .scope_review
+            .as_ref()
+            .map(|review| {
+                (
+                    Some(review.deferred_reason.clone()),
+                    Some(review.owner.clone()),
+                    Some(review.due_at.clone()),
+                )
+            })
             .unwrap_or((None, None, None));
 
         NodeSummary {
@@ -897,6 +954,9 @@ impl From<&BlueprintNode> for NodeSummary {
             override_source_id,
             override_reason,
             override_effective_from,
+            scope_review_deferred_reason,
+            scope_review_owner,
+            scope_review_due_at,
             tags,
             has_documentation: node.documentation().is_some(),
             updated_at: node.updated_at().to_string(),
@@ -1193,10 +1253,7 @@ mod tests {
         assert_eq!(decoded.type_name(), "component");
         if let BlueprintNode::Component(component) = decoded {
             assert_eq!(
-                component
-                    .naming
-                    .as_ref()
-                    .map(|n| n.origin_key.as_str()),
+                component.naming.as_ref().map(|n| n.origin_key.as_str()),
                 Some("path:src/cxdb")
             );
         } else {
@@ -1231,6 +1288,7 @@ mod tests {
         let qr = QualityRequirement {
             id: NodeId::from_raw("qr-crash-safe-f7a8b9c0"),
             attribute: QualityAttribute::Reliability,
+            label: Some("Goal: Recover sessions quickly".into()),
             scenario: "Session recovery on restart completes within 2s for 1000 sessions".into(),
             priority: QualityPriority::Critical,
             tags: vec!["persistence".into()],
@@ -1352,6 +1410,7 @@ mod tests {
                 }),
                 lifecycle: NodeLifecycle::Active,
                 override_scope: None,
+            scope_review: None,
             },
             created_at: "2026-03-01T00:00:00Z".into(),
             updated_at: "2026-03-02T00:00:00Z".into(),
@@ -1370,6 +1429,29 @@ mod tests {
         assert_eq!(
             summary.linked_project_ids,
             vec!["proj-planner", "proj-shared"]
+        );
+    }
+
+    #[test]
+    fn node_summary_ignores_legacy_archive_and_override_tags_without_scope_fields() {
+        let node = BlueprintNode::Pattern(Pattern {
+            id: NodeId::from_raw("pat-legacy-tags-a1b2c3d4"),
+            name: "Legacy Tagged Pattern".into(),
+            description: "Legacy tags should not drive summary state".into(),
+            rationale: "Scope fields are canonical".into(),
+            tags: vec!["archived".into(), "overrides:shared-guidance".into()],
+            documentation: None,
+            scope: NodeScope::default(),
+            created_at: "2026-03-01T00:00:00Z".into(),
+            updated_at: "2026-03-01T00:00:00Z".into(),
+        });
+
+        let summary = NodeSummary::from(&node);
+        assert_eq!(summary.lifecycle, NodeLifecycle::Active);
+        assert_eq!(summary.override_source_id, None);
+        assert_eq!(
+            summary.tags,
+            vec!["archived", "overrides:shared-guidance"]
         );
     }
 
@@ -1436,6 +1518,7 @@ mod tests {
                 shared: None,
                 lifecycle: NodeLifecycle::Active,
                 override_scope: None,
+            scope_review: None,
             },
             created_at: "2026-03-01T00:00:00Z".into(),
             updated_at: "2026-03-01T00:00:00Z".into(),
@@ -1444,5 +1527,51 @@ mod tests {
         let json = serde_json::to_value(&node).unwrap();
         assert_eq!(json["scope"]["scope_class"], "project");
         assert_eq!(json["scope"]["project"]["project_id"], "proj-demo");
+    }
+
+    #[test]
+    fn node_scope_project_helpers_identify_local_scope() {
+        let scope = NodeScope {
+            scope_class: ScopeClass::Project,
+            project: Some(ProjectScope {
+                project_id: "proj-a".into(),
+                project_name: Some("Project A".into()),
+            }),
+            secondary: SecondaryScopeRefs::default(),
+            is_shared: false,
+            shared: None,
+            lifecycle: NodeLifecycle::Active,
+            override_scope: None,
+            scope_review: None,
+        };
+
+        assert!(scope.is_project_local_to("proj-a"));
+        assert!(!scope.is_project_local_to("proj-b"));
+        assert!(!scope.is_shared_linked_to("proj-a"));
+    }
+
+    #[test]
+    fn node_scope_project_helpers_identify_shared_links() {
+        let scope = NodeScope {
+            scope_class: ScopeClass::Project,
+            project: Some(ProjectScope {
+                project_id: "proj-b".into(),
+                project_name: Some("Project B".into()),
+            }),
+            secondary: SecondaryScopeRefs::default(),
+            is_shared: true,
+            shared: Some(SharedScope {
+                linked_project_ids: vec!["proj-a".into(), "proj-b".into()],
+                inherit_to_linked_projects: true,
+            }),
+            lifecycle: NodeLifecycle::Active,
+            override_scope: None,
+            scope_review: None,
+        };
+
+        assert!(scope.is_shared_linked_to("proj-a"));
+        assert!(scope.is_shared_linked_to("proj-b"));
+        assert!(!scope.is_shared_linked_to("proj-c"));
+        assert!(!scope.is_project_local_to("proj-a"));
     }
 }

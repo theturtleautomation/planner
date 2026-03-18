@@ -502,6 +502,183 @@ pub struct QuickOption {
 }
 
 // ===========================================================================
+// Prompt Envelope Protocol
+// ===========================================================================
+
+/// Top-level prompt envelope sent to the client.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PromptEnvelope {
+    /// Stable ID for this prompt batch.
+    pub prompt_id: String,
+    /// Prompt category used for prioritization and rendering.
+    pub kind: PromptKind,
+    /// User-facing title shown above the prompt items.
+    pub title: String,
+    /// Optional extra guidance for this batch.
+    #[serde(default)]
+    pub instructions: Option<String>,
+    /// Prompt items answerable within this batch.
+    pub items: Vec<PromptItem>,
+    /// Optional draft snapshot rendered alongside draft-review prompts.
+    #[serde(default)]
+    pub draft_snapshot: Option<SpeculativeDraft>,
+    /// Item IDs that must be completed before hard-submit when partial submit is disabled.
+    #[serde(default)]
+    pub required_item_ids: Vec<String>,
+    /// Whether the client may submit only completed items.
+    pub allow_partial_submit: bool,
+    /// Rendering hints for clients with different layouts.
+    pub ui_hints: PromptUiHints,
+    /// Belief-state turn this prompt is based on.
+    pub based_on_turn: u32,
+    /// RFC3339 creation timestamp.
+    pub created_at: String,
+}
+
+/// Prompt category for workflow and UI decisions.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PromptKind {
+    QuestionBatch,
+    VerificationBatch,
+    ContradictionBatch,
+    DraftReview,
+}
+
+/// Prompt rendering hints supplied by the server.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PromptUiHints {
+    pub preferred_layout: PromptPreferredLayout,
+    pub show_draft_sidebar: bool,
+}
+
+/// Preferred layout style for prompt rendering.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PromptPreferredLayout {
+    Cards,
+    Review,
+}
+
+/// A single answerable item inside a prompt envelope.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PromptItem {
+    /// Stable item identifier.
+    pub item_id: String,
+    /// Item type for prioritization and semantics.
+    pub kind: PromptItemKind,
+    /// Optional dimension this item updates or verifies.
+    #[serde(default)]
+    pub target_dimension: Option<Dimension>,
+    /// Optional reference to a draft section.
+    #[serde(default)]
+    pub section_ref: Option<String>,
+    /// User-facing prompt text.
+    pub text: String,
+    /// Allowed options for this item.
+    pub options: Vec<PromptOption>,
+    /// Expected answer mode.
+    pub response_mode: PromptResponseMode,
+    /// Whether this item is required for submit-complete.
+    pub required: bool,
+    /// Higher value means higher priority within the envelope.
+    pub priority: u32,
+    /// Item IDs that must be answered first.
+    #[serde(default)]
+    pub dependency_item_ids: Vec<String>,
+}
+
+/// Item type within a prompt envelope.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PromptItemKind {
+    Discovery,
+    Verification,
+    Contradiction,
+    DraftSection,
+}
+
+/// Supported response modes for prompt items.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PromptResponseMode {
+    SingleSelectWithCustomText,
+}
+
+/// A selectable option for a prompt item.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PromptOption {
+    /// Stable option identifier.
+    pub option_id: String,
+    /// User-facing option label.
+    pub label: String,
+    /// Semantic value used by adjudication.
+    pub semantic_value: String,
+    /// Optional deterministic effect that can be applied without LLM interpretation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub direct_effect: Option<PromptDirectEffect>,
+}
+
+/// A deterministic state effect tied to a prompt option.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum PromptDirectEffect {
+    SetDimensionValue { dimension: Dimension, value: String },
+    MarkDimensionUncertain { dimension: Dimension, value: String },
+    MarkDimensionOutOfScope { dimension: Dimension },
+}
+
+/// Client response payload for a prompt envelope.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PromptResponse {
+    /// Prompt envelope being answered.
+    pub prompt_id: String,
+    /// Answered items in this submission.
+    pub answers: Vec<PromptAnswer>,
+    /// RFC3339 client submit timestamp.
+    pub submitted_at: String,
+    /// Optional client context for telemetry and follow-up planning.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client_context: Option<PromptClientContext>,
+}
+
+/// Optional context attached to prompt submissions.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PromptClientContext {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub viewport_class: Option<ViewportClass>,
+}
+
+/// Single answered (or skipped) item inside a prompt response.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PromptAnswer {
+    pub item_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selected_option_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_text: Option<String>,
+    #[serde(default)]
+    pub skipped: bool,
+}
+
+/// Client-advertised UI capacity for prompt layout.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct UiCapabilities {
+    pub viewport_class: ViewportClass,
+    pub max_visible_items: u32,
+    pub supports_split_draft_view: bool,
+}
+
+/// Coarse viewport class used by prompt batching.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ViewportClass {
+    Mobile,
+    Tablet,
+    Desktop,
+}
+
+// ===========================================================================
 // Component 4: Speculative Draft
 // ===========================================================================
 
@@ -509,7 +686,7 @@ pub struct QuickOption {
 ///
 /// Presented to the user for reaction-based elicitation. User reactions
 /// to a draft are 2–5× more information-dense than answers to open questions.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SpeculativeDraft {
     /// Formatted draft sections.
     pub sections: Vec<DraftSection>,
@@ -520,7 +697,7 @@ pub struct SpeculativeDraft {
 }
 
 /// A section of the speculative draft.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct DraftSection {
     /// Section heading (e.g., "Goal", "Core Features").
     pub heading: String,
@@ -531,7 +708,7 @@ pub struct DraftSection {
 }
 
 /// An assumption from the uncertain slots, presented for validation.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct DraftAssumption {
     /// The dimension this assumption covers.
     pub dimension: Dimension,
@@ -738,13 +915,9 @@ pub enum SocraticEvent {
     #[serde(rename = "belief_state_update")]
     BeliefStateUpdate { state: RequirementsBeliefState },
 
-    /// System asks a question.
-    #[serde(rename = "question")]
-    Question { output: QuestionOutput },
-
-    /// Speculative draft generated — present for review.
-    #[serde(rename = "speculative_draft")]
-    SpeculativeDraftReady { draft: SpeculativeDraft },
+    /// Prompt envelope generated for the next user submission.
+    #[serde(rename = "prompt_generated")]
+    PromptGenerated { prompt: PromptEnvelope },
 
     /// Contradiction detected.
     #[serde(rename = "contradiction")]
@@ -988,6 +1161,85 @@ mod tests {
         assert_eq!(counts.uncertain, 1);
         // Goal moved from missing to filled, Performance moved from missing to uncertain.
         assert_eq!(counts.missing, initial_missing - 2);
+    }
+
+    #[test]
+    fn prompt_envelope_serde_round_trip() {
+        let envelope = PromptEnvelope {
+            prompt_id: "prompt-123".into(),
+            kind: PromptKind::VerificationBatch,
+            title: "Verify key details".into(),
+            instructions: Some("Answer only what you know now.".into()),
+            items: vec![PromptItem {
+                item_id: "item-1".into(),
+                kind: PromptItemKind::Verification,
+                target_dimension: Some(Dimension::Security),
+                section_ref: None,
+                text: "Do you need SSO for enterprise accounts?".into(),
+                options: vec![PromptOption {
+                    option_id: "opt-1".into(),
+                    label: "Yes, SSO is required".into(),
+                    semantic_value: "requires_sso".into(),
+                    direct_effect: Some(PromptDirectEffect::SetDimensionValue {
+                        dimension: Dimension::Auth,
+                        value: "sso_required".into(),
+                    }),
+                }],
+                response_mode: PromptResponseMode::SingleSelectWithCustomText,
+                required: true,
+                priority: 90,
+                dependency_item_ids: Vec::new(),
+            }],
+            draft_snapshot: None,
+            required_item_ids: vec!["item-1".into()],
+            allow_partial_submit: true,
+            ui_hints: PromptUiHints {
+                preferred_layout: PromptPreferredLayout::Cards,
+                show_draft_sidebar: false,
+            },
+            based_on_turn: 4,
+            created_at: "2026-03-08T00:00:00Z".into(),
+        };
+
+        let json = serde_json::to_string(&envelope).expect("prompt envelope should serialize");
+        assert!(json.contains("\"kind\":\"verification_batch\""));
+        assert!(json.contains("\"response_mode\":\"single_select_with_custom_text\""));
+
+        let decoded: PromptEnvelope =
+            serde_json::from_str(&json).expect("prompt envelope should deserialize");
+        assert_eq!(decoded, envelope);
+    }
+
+    #[test]
+    fn prompt_response_serde_round_trip() {
+        let response = PromptResponse {
+            prompt_id: "prompt-123".into(),
+            answers: vec![
+                PromptAnswer {
+                    item_id: "item-1".into(),
+                    selected_option_id: Some("opt-1".into()),
+                    custom_text: None,
+                    skipped: false,
+                },
+                PromptAnswer {
+                    item_id: "item-2".into(),
+                    selected_option_id: None,
+                    custom_text: Some("We might need this in Q2.".into()),
+                    skipped: false,
+                },
+            ],
+            submitted_at: "2026-03-08T00:00:10Z".into(),
+            client_context: Some(PromptClientContext {
+                viewport_class: Some(ViewportClass::Desktop),
+            }),
+        };
+
+        let json = serde_json::to_string(&response).expect("prompt response should serialize");
+        assert!(json.contains("\"viewport_class\":\"desktop\""));
+
+        let decoded: PromptResponse =
+            serde_json::from_str(&json).expect("prompt response should deserialize");
+        assert_eq!(decoded, response);
     }
 
     #[test]

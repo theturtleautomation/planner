@@ -8,20 +8,21 @@
 //!
 //! ```text
 //! Client                           Server
-//!   │  SocraticResponse / SkipQuestion / Done  │
+//!   │  prompt_response / ui_capabilities / done │
 //!   │ ────────────────────────────────────────► │  input_tx
 //!   │                                           │      │
 //!   │                                           │  WsSocraticIO::receive_input()
 //!   │                                           │      │
 //!   │                                           │  run_interview() (socratic_engine)
 //!   │                                           │      │
-//!   │  classified / question / belief_state_update / … │
+//!   │  classified / prompt / belief_state_update / … │
 //!   │ ◄──────────────────────────────────────── │  event_tx
 //! ```
 //!
 //! After `Converged` is received the handler transitions to pipeline mode,
 //! delegating to `api::run_pipeline_for_session`.
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use axum::extract::ws::{Message, WebSocket};
@@ -35,11 +36,11 @@ use planner_core::pipeline::steps::socratic::{
 };
 
 use planner_schemas::{
-    ConvergenceResult, DomainClassification, QuestionOutput, RequirementsBeliefState,
-    SocraticEvent, SpeculativeDraft,
+    ConvergenceResult, DomainClassification, PromptAnswer, PromptEnvelope, PromptResponse,
+    RequirementsBeliefState, SocraticEvent, UiCapabilities, ViewportClass,
 };
 
-use crate::runtime::{AttachError, RuntimeAttachment, SessionRuntime};
+use crate::runtime::{AttachError, RuntimeAttachment, SessionRuntime, SocraticRuntimeInput};
 use crate::ws::{ClientMessage, ServerMessage};
 use crate::AppState;
 
@@ -52,12 +53,14 @@ use crate::AppState;
 /// Forwards engine events to the WebSocket client via `event_tx` and receives
 /// user input from the client via `input_rx`.
 pub struct WsSocraticIO {
+    /// Shared app state for reading live ui capabilities.
+    state: Arc<AppState>,
     /// Send events to the WebSocket client.
     event_tx: mpsc::UnboundedSender<ServerMessage>,
     /// Forward raw Socratic events for checkpoint projection.
     checkpoint_tx: mpsc::UnboundedSender<SocraticEvent>,
     /// Receive user input forwarded from the WebSocket client.
-    input_rx: Arc<Mutex<mpsc::UnboundedReceiver<String>>>,
+    input_rx: Arc<Mutex<mpsc::UnboundedReceiver<SocraticRuntimeInput>>>,
     /// Optional observability event sink.
     event_sink: Option<Arc<dyn EventSink>>,
     /// Session ID for tagging emitted events.
@@ -66,13 +69,15 @@ pub struct WsSocraticIO {
 
 impl WsSocraticIO {
     pub fn new(
+        state: Arc<AppState>,
         event_tx: mpsc::UnboundedSender<ServerMessage>,
         checkpoint_tx: mpsc::UnboundedSender<SocraticEvent>,
-        input_rx: Arc<Mutex<mpsc::UnboundedReceiver<String>>>,
+        input_rx: Arc<Mutex<mpsc::UnboundedReceiver<SocraticRuntimeInput>>>,
         event_sink: Option<Arc<dyn EventSink>>,
         session_id: Uuid,
     ) -> Self {
         Self {
+            state,
             event_tx,
             checkpoint_tx,
             input_rx,
@@ -84,6 +89,47 @@ impl WsSocraticIO {
     /// Helper: send a `ServerMessage`, logging errors silently.
     fn send(&self, msg: ServerMessage) {
         let _ = self.event_tx.send(msg);
+    }
+
+    fn emit_prompt_submission_event(&self, prompt: &PromptEnvelope, response: &PromptResponse) {
+        let Some(ref sink) = self.event_sink else {
+            return;
+        };
+
+        let answered_item_ids: HashSet<&str> = response
+            .answers
+            .iter()
+            .map(|answer| answer.item_id.as_str())
+            .collect();
+        let answered_count = answered_item_ids.len();
+        let total_count = prompt.items.len();
+        let unanswered_count = total_count.saturating_sub(answered_count);
+        let is_partial = unanswered_count > 0;
+        let step = if is_partial {
+            "socratic.prompt.partial_submitted"
+        } else {
+            "socratic.prompt.submitted"
+        };
+
+        sink.emit(
+            planner_core::observability::PlannerEvent::info(
+                planner_core::observability::EventSource::SocraticEngine,
+                step,
+                format!(
+                    "Prompt '{}' submitted ({} answered, {} unanswered)",
+                    prompt.prompt_id, answered_count, unanswered_count
+                ),
+            )
+            .with_session(self.session_id)
+            .with_metadata(serde_json::json!({
+                "prompt_id": prompt.prompt_id.clone(),
+                "kind": prompt.kind.clone(),
+                "answered_count": answered_count,
+                "unanswered_count": unanswered_count,
+                "total_count": total_count,
+                "submitted_at": response.submitted_at.clone(),
+            })),
+        );
     }
 }
 
@@ -98,36 +144,115 @@ impl planner_core::pipeline::steps::socratic::SocraticIO for WsSocraticIO {
         });
     }
 
-    async fn send_question(&self, output: &QuestionOutput) {
-        let quick_options = output
-            .quick_options
-            .iter()
-            .filter_map(|opt| serde_json::to_value(opt).ok())
-            .collect();
-
-        self.send(ServerMessage::Question {
-            text: output.question.clone(),
-            target_dimension: output.target_dimension.label(),
-            quick_options,
-            allow_skip: output.allow_skip,
+    async fn send_prompt(&self, prompt: &PromptEnvelope) {
+        self.send(ServerMessage::Prompt {
+            prompt: prompt.clone(),
         });
 
         if let Some(ref sink) = self.event_sink {
+            let previous_prompt = self
+                .state
+                .sessions
+                .get(self.session_id)
+                .and_then(|session| session.checkpoint)
+                .and_then(|checkpoint| checkpoint.current_prompt);
+
+            if let Some(previous_prompt) = previous_prompt {
+                let previous_item_ids: HashSet<&str> = previous_prompt
+                    .items
+                    .iter()
+                    .map(|item| item.item_id.as_str())
+                    .collect();
+                let next_item_ids: HashSet<&str> = prompt
+                    .items
+                    .iter()
+                    .map(|item| item.item_id.as_str())
+                    .collect();
+                let invalidated_item_ids: Vec<String> = previous_prompt
+                    .items
+                    .iter()
+                    .filter(|item| !next_item_ids.contains(item.item_id.as_str()))
+                    .map(|item| item.item_id.clone())
+                    .collect();
+                let replacement_item_ids: Vec<String> = prompt
+                    .items
+                    .iter()
+                    .filter(|item| !previous_item_ids.contains(item.item_id.as_str()))
+                    .map(|item| item.item_id.clone())
+                    .collect();
+                if previous_prompt.prompt_id != prompt.prompt_id {
+                    sink.emit(
+                        planner_core::observability::PlannerEvent::info(
+                            planner_core::observability::EventSource::SocraticEngine,
+                            "socratic.prompt.invalidated",
+                            format!("Prompt '{}' invalidated", previous_prompt.prompt_id),
+                        )
+                        .with_session(self.session_id)
+                        .with_metadata(serde_json::json!({
+                            "prompt_id": previous_prompt.prompt_id.clone(),
+                            "next_prompt_id": prompt.prompt_id.clone(),
+                            "invalidated_item_ids": invalidated_item_ids,
+                            "replacement_item_ids": replacement_item_ids,
+                        })),
+                    );
+                }
+
+                let reissued_item_ids: Vec<String> = prompt
+                    .items
+                    .iter()
+                    .filter(|item| previous_item_ids.contains(item.item_id.as_str()))
+                    .map(|item| item.item_id.clone())
+                    .collect();
+
+                if !reissued_item_ids.is_empty() {
+                    sink.emit(
+                        planner_core::observability::PlannerEvent::info(
+                            planner_core::observability::EventSource::SocraticEngine,
+                            "socratic.prompt.reissued",
+                            format!(
+                                "Prompt '{}' reissued {} item(s)",
+                                prompt.prompt_id,
+                                reissued_item_ids.len()
+                            ),
+                        )
+                        .with_session(self.session_id)
+                        .with_metadata(serde_json::json!({
+                            "prompt_id": prompt.prompt_id.clone(),
+                            "reissued_item_ids": reissued_item_ids,
+                            "kind": prompt.kind.clone(),
+                        })),
+                    );
+                }
+            }
+
             sink.emit(
                 planner_core::observability::PlannerEvent::info(
                     planner_core::observability::EventSource::SocraticEngine,
-                    "socratic.question.generated",
-                    format!(
-                        "Question generated for dimension '{}'",
-                        output.target_dimension.label(),
-                    ),
+                    "socratic.prompt.generated",
+                    format!("Prompt generated with {} item(s)", prompt.items.len()),
                 )
                 .with_session(self.session_id)
                 .with_metadata(serde_json::json!({
-                    "target_dimension": output.target_dimension.label(),
-                    "allow_skip": output.allow_skip,
+                    "prompt_id": prompt.prompt_id.clone(),
+                    "kind": prompt.kind.clone(),
+                    "item_count": prompt.items.len(),
                 })),
             );
+
+            if prompt.draft_snapshot.is_some() {
+                sink.emit(
+                    planner_core::observability::PlannerEvent::info(
+                        planner_core::observability::EventSource::SocraticEngine,
+                        "socratic.draft.generated",
+                        "Draft review prompt generated",
+                    )
+                    .with_session(self.session_id)
+                    .with_metadata(serde_json::json!({
+                        "prompt_id": prompt.prompt_id.clone(),
+                        "item_count": prompt.items.len(),
+                    })),
+                );
+            }
         }
     }
 
@@ -179,29 +304,25 @@ impl planner_core::pipeline::steps::socratic::SocraticIO for WsSocraticIO {
                     "missing_count": state.missing.len(),
                 })),
             );
+
+            sink.emit(
+                planner_core::observability::PlannerEvent::info(
+                    planner_core::observability::EventSource::SocraticEngine,
+                    "socratic.response.adjudicated",
+                    format!(
+                        "Prompt response adjudicated at {:.0}% convergence",
+                        convergence_pct * 100.0
+                    ),
+                )
+                .with_session(self.session_id)
+                .with_metadata(serde_json::json!({
+                    "convergence_pct": convergence_pct,
+                    "filled_count": state.filled.len(),
+                    "uncertain_count": state.uncertain.len(),
+                    "missing_count": state.missing.len(),
+                })),
+            );
         }
-    }
-
-    async fn send_draft(&self, draft: &SpeculativeDraft) {
-        let sections = draft
-            .sections
-            .iter()
-            .filter_map(|s| serde_json::to_value(s).ok())
-            .collect();
-
-        let assumptions = draft
-            .assumptions
-            .iter()
-            .filter_map(|a| serde_json::to_value(a).ok())
-            .collect();
-
-        let not_discussed = draft.not_discussed.iter().map(|d| d.label()).collect();
-
-        self.send(ServerMessage::SpeculativeDraft {
-            sections,
-            assumptions,
-            not_discussed,
-        });
     }
 
     async fn send_convergence(&self, result: &ConvergenceResult) {
@@ -270,8 +391,43 @@ impl planner_core::pipeline::steps::socratic::SocraticIO for WsSocraticIO {
         }
     }
 
-    async fn receive_input(&self) -> Option<String> {
-        self.input_rx.lock().await.recv().await
+    async fn receive_prompt_response(&self, prompt: &PromptEnvelope) -> Option<PromptResponse> {
+        loop {
+            let incoming = self.input_rx.lock().await.recv().await?;
+            match incoming {
+                SocraticRuntimeInput::PromptResponse(response) => {
+                    if response.prompt_id != prompt.prompt_id {
+                        tracing::warn!(
+                            "Session {}: ignoring prompt_response for stale prompt '{}' (expected '{}')",
+                            self.session_id,
+                            response.prompt_id,
+                            prompt.prompt_id
+                        );
+                        continue;
+                    }
+                    self.emit_prompt_submission_event(prompt, &response);
+                    return Some(response);
+                }
+                SocraticRuntimeInput::Done => return None,
+                SocraticRuntimeInput::DimensionEdit { .. } => {
+                    // Dimension edits are applied by the websocket handler and
+                    // are not prompt answers for the Socratic engine.
+                    continue;
+                }
+            }
+        }
+    }
+
+    fn current_ui_capabilities(&self) -> UiCapabilities {
+        self.state
+            .sessions
+            .get(self.session_id)
+            .and_then(|session| session.ui_capabilities)
+            .unwrap_or(UiCapabilities {
+                viewport_class: ViewportClass::Desktop,
+                max_visible_items: 3,
+                supports_split_draft_view: true,
+            })
     }
 
     async fn send_event(&self, event: &SocraticEvent) {
@@ -321,6 +477,85 @@ fn clear_interview_runtime_state(state: &Arc<AppState>, session_id: Uuid) {
     });
 }
 
+fn update_session_ui_capabilities(
+    state: &Arc<AppState>,
+    session_id: Uuid,
+    capabilities: UiCapabilities,
+) {
+    let _ = state.sessions.update(session_id, |s| {
+        s.ui_capabilities = Some(capabilities);
+    });
+}
+
+fn prompt_answer_to_input_text(
+    answer: &PromptAnswer,
+    prompt: Option<&PromptEnvelope>,
+) -> Option<String> {
+    if answer.skipped {
+        return Some(String::from("skip"));
+    }
+
+    let matched_item =
+        prompt.and_then(|p| p.items.iter().find(|item| item.item_id == answer.item_id));
+    let selected = answer
+        .selected_option_id
+        .as_ref()
+        .map(|selected_option_id| {
+            matched_item
+                .and_then(|item| {
+                    item.options
+                        .iter()
+                        .find(|option| option.option_id == *selected_option_id)
+                })
+                .map(|option| option.semantic_value.clone())
+                .unwrap_or_else(|| selected_option_id.clone())
+        });
+    let custom = answer
+        .custom_text
+        .as_deref()
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+        .map(str::to_string);
+
+    match (selected, custom) {
+        (Some(selected), Some(custom)) => Some(format!("{selected}\n{custom}")),
+        (Some(selected), None) => Some(selected),
+        (None, Some(custom)) => Some(custom),
+        (None, None) => None,
+    }
+}
+
+fn prompt_response_to_input(
+    response: &PromptResponse,
+    prompt: Option<&PromptEnvelope>,
+) -> Option<String> {
+    response
+        .answers
+        .iter()
+        .find_map(|answer| prompt_answer_to_input_text(answer, prompt))
+}
+
+async fn replay_current_prompt_if_present(
+    socket: &mut WebSocket,
+    state: &Arc<AppState>,
+    session_id: Uuid,
+) -> Result<(), ()> {
+    if let Some(msg) = current_prompt_replay_message(state, session_id) {
+        send_ws_message(socket, &msg).await?;
+    }
+
+    Ok(())
+}
+
+fn current_prompt_replay_message(state: &Arc<AppState>, session_id: Uuid) -> Option<ServerMessage> {
+    state
+        .sessions
+        .get(session_id)
+        .and_then(|session| session.checkpoint)
+        .and_then(|checkpoint| checkpoint.current_prompt)
+        .map(|prompt| ServerMessage::Prompt { prompt })
+}
+
 pub fn expire_detached_runtimes(state: &Arc<AppState>) {
     for (session_id, runtime) in state.socratic_runtimes.expire_detached() {
         tracing::info!(
@@ -350,6 +585,12 @@ fn sorted_uncertain_confidences(state: &RequirementsBeliefState) -> Vec<f32> {
         .collect();
     entries.sort_by(|a, b| a.0.cmp(&b.0));
     entries.into_iter().map(|(_, conf)| conf).collect()
+}
+
+fn resume_pending_prompt_from_envelope(prompt: &PromptEnvelope) -> Option<ResumePendingPrompt> {
+    Some(ResumePendingPrompt {
+        prompt: prompt.clone(),
+    })
 }
 
 fn apply_checkpoint_from_event(state: &Arc<AppState>, session_id: Uuid, event: &SocraticEvent) {
@@ -383,8 +624,7 @@ fn apply_checkpoint_from_event(state: &Arc<AppState>, session_id: Uuid, event: &
             let checkpoint = s.ensure_checkpoint();
             checkpoint.belief_state = Some(next_state.clone());
             checkpoint.contradictions = next_state.contradictions.clone();
-            checkpoint.current_question = None;
-            checkpoint.pending_draft = None;
+            checkpoint.current_prompt = None;
             checkpoint.stale_turns = if is_stale_turn {
                 previous_stale_turns.saturating_add(1)
             } else {
@@ -392,23 +632,11 @@ fn apply_checkpoint_from_event(state: &Arc<AppState>, session_id: Uuid, event: &
             };
             checkpoint.touch();
         }
-        SocraticEvent::Question { output } => {
+        SocraticEvent::PromptGenerated { prompt } => {
             let checkpoint = s.ensure_checkpoint();
-            checkpoint.current_question = Some(output.clone());
-            checkpoint.pending_draft = None;
-            checkpoint.touch();
-        }
-        SocraticEvent::SpeculativeDraftReady { draft } => {
-            let draft_turn = s
-                .checkpoint
-                .as_ref()
-                .and_then(|cp| cp.belief_state.as_ref())
-                .map(|bs| bs.turn_count);
-            let checkpoint = s.ensure_checkpoint();
-            checkpoint.current_question = None;
-            checkpoint.pending_draft = Some(draft.clone());
-            if let Some(turn) = draft_turn {
-                checkpoint.draft_shown_at_turn = Some(turn);
+            checkpoint.current_prompt = Some(prompt.clone());
+            if prompt.draft_snapshot.is_some() {
+                checkpoint.draft_shown_at_turn = Some(prompt.based_on_turn);
             }
             checkpoint.touch();
         }
@@ -419,8 +647,7 @@ fn apply_checkpoint_from_event(state: &Arc<AppState>, session_id: Uuid, event: &
         }
         SocraticEvent::Converged { .. } => {
             let checkpoint = s.ensure_checkpoint();
-            checkpoint.current_question = None;
-            checkpoint.pending_draft = None;
+            checkpoint.current_prompt = None;
             checkpoint.touch();
         }
         SocraticEvent::SystemMessage { .. } | SocraticEvent::Error { .. } => {}
@@ -446,14 +673,10 @@ fn build_checkpoint_resume_state(
                 .map(RequirementsBeliefState::from_classification)
         })?;
 
-    let pending_prompt = if let Some(output) = checkpoint.current_question.clone() {
-        Some(ResumePendingPrompt::Question(output))
-    } else {
-        checkpoint
-            .pending_draft
-            .clone()
-            .map(ResumePendingPrompt::Draft)
-    };
+    let pending_prompt = checkpoint
+        .current_prompt
+        .as_ref()
+        .and_then(resume_pending_prompt_from_envelope);
 
     Some(CheckpointResumeState {
         belief_state,
@@ -473,7 +696,7 @@ async fn run_interview_runtime(
     state: Arc<AppState>,
     session_id: Uuid,
     runtime: Arc<SessionRuntime>,
-    input_rx: Arc<Mutex<mpsc::UnboundedReceiver<String>>>,
+    input_rx: Arc<Mutex<mpsc::UnboundedReceiver<SocraticRuntimeInput>>>,
     start_mode: InterviewStartMode,
 ) {
     let (event_tx, mut event_rx) = mpsc::unbounded_channel::<ServerMessage>();
@@ -482,6 +705,7 @@ async fn run_interview_runtime(
     let event_sink: Arc<dyn planner_core::observability::EventSink> = Arc::new(event_sink);
 
     let io = Arc::new(WsSocraticIO::new(
+        state.clone(),
         event_tx,
         checkpoint_tx,
         input_rx,
@@ -622,8 +846,7 @@ async fn run_interview_runtime(
                     checkpoint.classification = session.belief_state.classification.clone();
                     checkpoint.contradictions = session.belief_state.contradictions.clone();
                     if did_converge {
-                        checkpoint.current_question = None;
-                        checkpoint.pending_draft = None;
+                        checkpoint.current_prompt = None;
                     }
                     checkpoint.touch();
                     if did_converge {
@@ -782,10 +1005,7 @@ async fn run_interview_runtime(
                 }
             });
 
-            let state_clone = state.clone();
-            tokio::spawn(async move {
-                crate::api::run_pipeline_for_session(state_clone, session_id, description).await;
-            });
+            let _ = crate::api::spawn_pipeline_runtime(state.clone(), session_id, description);
         }
     }
 }
@@ -814,12 +1034,23 @@ fn start_interview_runtime(
     Ok(runtime)
 }
 
-async fn wait_for_initial_description(socket: &mut WebSocket, session_id: Uuid) -> Option<String> {
+async fn wait_for_initial_description(
+    socket: &mut WebSocket,
+    state: &Arc<AppState>,
+    session_id: Uuid,
+) -> Option<String> {
     loop {
         match socket.recv().await {
             Some(Ok(Message::Text(text))) => match serde_json::from_str::<ClientMessage>(&text) {
-                Ok(ClientMessage::SocraticResponse { content }) => return Some(content),
+                Ok(ClientMessage::PromptResponse { response }) => {
+                    if let Some(content) = prompt_response_to_input(&response, None) {
+                        return Some(content);
+                    }
+                }
                 Ok(ClientMessage::StartPipeline { description }) => return Some(description),
+                Ok(ClientMessage::UiCapabilities { capabilities }) => {
+                    update_session_ui_capabilities(state, session_id, capabilities);
+                }
                 Ok(ClientMessage::Done) => return None,
                 Ok(_) => continue,
                 Err(e) => {
@@ -850,6 +1081,14 @@ async fn handle_live_runtime_ws(
     let mut shutdown_rx = runtime.subscribe_shutdown();
 
     mark_interview_runtime_attached(&state, session_id);
+    if replay_current_prompt_if_present(&mut socket, &state, session_id)
+        .await
+        .is_err()
+    {
+        runtime.mark_detached();
+        mark_interview_detached_if_active(&state, session_id);
+        return;
+    }
 
     loop {
         tokio::select! {
@@ -881,47 +1120,42 @@ async fn handle_live_runtime_ws(
                 match client_msg {
                     Some(Ok(Message::Text(text))) => {
                         match serde_json::from_str::<ClientMessage>(&text) {
-                            Ok(ClientMessage::SocraticResponse { content }) => {
-                                state.sessions.update(session_id, |s| {
-                                    s.add_message("user", &content);
-                                });
-                                let _ = input_tx.send(content);
+                            Ok(ClientMessage::PromptResponse { response }) => {
+                                let prompt_for_response = state
+                                    .sessions
+                                    .get(session_id)
+                                    .and_then(|session| session.checkpoint)
+                                    .and_then(|checkpoint| checkpoint.current_prompt)
+                                    .filter(|prompt| prompt.prompt_id == response.prompt_id);
+                                if let Some(content) =
+                                    prompt_response_to_input(&response, prompt_for_response.as_ref())
+                                {
+                                    state.sessions.update(session_id, |s| {
+                                        s.add_message("user", &content);
+                                    });
+                                } else {
+                                    tracing::debug!(
+                                        "Session {}: prompt_response '{}' had no displayable inline content",
+                                        session_id,
+                                        response.prompt_id
+                                    );
+                                }
+                                let _ = input_tx.send(SocraticRuntimeInput::PromptResponse(response));
                             }
-                            Ok(ClientMessage::SkipQuestion) => {
-                                let _ = input_tx.send("skip".into());
+                            Ok(ClientMessage::UiCapabilities { capabilities }) => {
+                                update_session_ui_capabilities(&state, session_id, capabilities);
                             }
                             Ok(ClientMessage::Done) => {
-                                let _ = input_tx.send("done".into());
-                            }
-                            Ok(ClientMessage::DraftReaction { target, action, correction }) => {
-                                let corr_str = correction.as_deref().unwrap_or("(no correction)");
-                                let msg = if correction.is_some() {
-                                    format!("[draft_reaction] target={} action={} correction={}", target, action, corr_str)
-                                } else {
-                                    format!("[draft_reaction] target={} action={}", target, action)
-                                };
-                                state.sessions.update(session_id, |s| {
-                                    s.add_message("user", &format!("Draft feedback: {} section {} — {}",
-                                        action, target, corr_str));
-                                });
-                                let _ = input_tx.send(msg);
-
-                                let ack = ServerMessage::DraftReactionAck {
-                                    target: target.clone(),
-                                    action: action.clone(),
-                                };
-                                if send_ws_message(&mut socket, &ack).await.is_err() {
-                                    runtime.mark_detached();
-                                    mark_interview_detached_if_active(&state, session_id);
-                                    return;
-                                }
+                                let _ = input_tx.send(SocraticRuntimeInput::Done);
                             }
                             Ok(ClientMessage::DimensionEdit { dimension, new_value }) => {
-                                let msg = format!("[dimension_edit] {}={}", dimension, new_value);
                                 state.sessions.update(session_id, |s| {
                                     s.add_message("user", &format!("Edited dimension '{}' → '{}'", dimension, new_value));
                                 });
-                                let _ = input_tx.send(msg);
+                                let _ = input_tx.send(SocraticRuntimeInput::DimensionEdit {
+                                    dimension,
+                                    new_value,
+                                });
                             }
                             Ok(_) => {}
                             Err(e) => {
@@ -963,9 +1197,9 @@ async fn handle_live_runtime_ws(
 ///
 /// ## Protocol
 ///
-/// 1. The first `SocraticResponse` (or `StartPipeline`) message carries the
+/// 1. The first `prompt_response` (or `StartPipeline`) message carries the
 ///    initial project description and starts `run_interview`.
-/// 2. Subsequent `SocraticResponse` / `SkipQuestion` / `Done` messages are
+/// 2. Subsequent `prompt_response` / `Done` messages are
 ///    forwarded to the engine via `input_tx`.
 /// 3. After convergence the session transitions to pipeline mode and the
 ///    existing `api::run_pipeline_for_session` task is spawned.
@@ -1036,7 +1270,8 @@ pub async fn handle_socratic_ws(mut socket: WebSocket, state: Arc<AppState>, ses
         });
         InterviewStartMode::CheckpointResume { resume_state }
     } else {
-        let Some(initial_description) = wait_for_initial_description(&mut socket, session_id).await
+        let Some(initial_description) =
+            wait_for_initial_description(&mut socket, &state, session_id).await
         else {
             return;
         };
@@ -1237,7 +1472,12 @@ mod tests {
     use super::*;
     use crate::session::SessionStore;
     use crate::AppState;
-    use planner_schemas::{ComplexityTier, Dimension, DraftSection, ProjectType, QuickOption};
+    use planner_schemas::{
+        ComplexityTier, Dimension, DraftSection, ProjectType, PromptAnswer, PromptEnvelope,
+        PromptItem, PromptItemKind, PromptKind, PromptOption, PromptPreferredLayout,
+        PromptResponse, PromptResponseMode, PromptUiHints, SpeculativeDraft, UiCapabilities,
+        ViewportClass,
+    };
 
     fn test_state() -> Arc<AppState> {
         Arc::new(AppState {
@@ -1249,6 +1489,7 @@ mod tests {
             socratic_runtimes: crate::runtime::SessionRuntimeRegistry::new(
                 std::time::Duration::from_secs(30),
             ),
+            pipeline_runtimes: crate::runtime::SessionPipelineRegistry::new(),
             started_at: std::time::Instant::now(),
             blueprints: planner_core::blueprint::BlueprintStore::new(),
             proposals: planner_core::discovery::ProposalStore::new(),
@@ -1256,12 +1497,104 @@ mod tests {
         })
     }
 
+    fn test_prompt(text: &str) -> PromptEnvelope {
+        PromptEnvelope {
+            prompt_id: "prompt-test".into(),
+            kind: PromptKind::QuestionBatch,
+            title: "Continue interview".into(),
+            instructions: None,
+            items: vec![PromptItem {
+                item_id: "item-1".into(),
+                kind: PromptItemKind::Discovery,
+                target_dimension: Some(Dimension::Stakeholders),
+                section_ref: None,
+                text: text.into(),
+                options: vec![PromptOption {
+                    option_id: "option-1".into(),
+                    label: "Internal team".into(),
+                    semantic_value: "internal_team".into(),
+                    direct_effect: None,
+                }],
+                response_mode: PromptResponseMode::SingleSelectWithCustomText,
+                required: false,
+                priority: 100,
+                dependency_item_ids: Vec::new(),
+            }],
+            draft_snapshot: None,
+            required_item_ids: Vec::new(),
+            allow_partial_submit: true,
+            ui_hints: PromptUiHints {
+                preferred_layout: PromptPreferredLayout::Cards,
+                show_draft_sidebar: false,
+            },
+            based_on_turn: 1,
+            created_at: "2026-03-08T00:00:00Z".into(),
+        }
+    }
+
+    fn test_draft_prompt() -> PromptEnvelope {
+        let draft = SpeculativeDraft {
+            sections: vec![DraftSection {
+                heading: "Goal".into(),
+                content: "Build a resilient planner".into(),
+                dimensions: vec![Dimension::Goal],
+            }],
+            assumptions: Vec::new(),
+            not_discussed: vec![Dimension::Integrations],
+        };
+
+        PromptEnvelope {
+            prompt_id: "prompt-draft".into(),
+            kind: PromptKind::DraftReview,
+            title: "Review draft".into(),
+            instructions: Some(
+                "Confirm accurate sections and provide corrections where needed.".into(),
+            ),
+            items: vec![PromptItem {
+                item_id: "draft-item-1".into(),
+                kind: PromptItemKind::DraftSection,
+                target_dimension: Some(Dimension::Goal),
+                section_ref: Some("Goal".into()),
+                text: "Review section 'Goal'. Confirm or correct it.".into(),
+                options: vec![
+                    PromptOption {
+                        option_id: "confirm".into(),
+                        label: "Looks correct".into(),
+                        semantic_value: "confirm".into(),
+                        direct_effect: None,
+                    },
+                    PromptOption {
+                        option_id: "correct".into(),
+                        label: "Needs correction".into(),
+                        semantic_value: "correct".into(),
+                        direct_effect: None,
+                    },
+                ],
+                response_mode: PromptResponseMode::SingleSelectWithCustomText,
+                required: false,
+                priority: 100,
+                dependency_item_ids: Vec::new(),
+            }],
+            draft_snapshot: Some(draft),
+            required_item_ids: Vec::new(),
+            allow_partial_submit: true,
+            ui_hints: PromptUiHints {
+                preferred_layout: PromptPreferredLayout::Review,
+                show_draft_sidebar: true,
+            },
+            based_on_turn: 2,
+            created_at: "2026-03-08T00:00:00Z".into(),
+        }
+    }
+
     #[tokio::test]
     async fn ws_socratic_io_send_classification() {
+        let state = test_state();
         let (event_tx, mut event_rx) = mpsc::unbounded_channel::<ServerMessage>();
         let (checkpoint_tx, _checkpoint_rx) = mpsc::unbounded_channel::<SocraticEvent>();
-        let (_input_tx, input_rx) = mpsc::unbounded_channel::<String>();
+        let (_input_tx, input_rx) = mpsc::unbounded_channel::<SocraticRuntimeInput>();
         let io = WsSocraticIO::new(
+            state,
             event_tx,
             checkpoint_tx,
             Arc::new(Mutex::new(input_rx)),
@@ -1296,10 +1629,12 @@ mod tests {
 
     #[tokio::test]
     async fn ws_socratic_io_send_message() {
+        let state = test_state();
         let (event_tx, mut event_rx) = mpsc::unbounded_channel::<ServerMessage>();
         let (checkpoint_tx, _checkpoint_rx) = mpsc::unbounded_channel::<SocraticEvent>();
-        let (_input_tx, input_rx) = mpsc::unbounded_channel::<String>();
+        let (_input_tx, input_rx) = mpsc::unbounded_channel::<SocraticRuntimeInput>();
         let io = WsSocraticIO::new(
+            state,
             event_tx,
             checkpoint_tx,
             Arc::new(Mutex::new(input_rx)),
@@ -1321,11 +1656,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ws_socratic_io_receive_input() {
+    async fn ws_socratic_io_receive_prompt_response() {
+        let state = test_state();
         let (event_tx, _event_rx) = mpsc::unbounded_channel::<ServerMessage>();
         let (checkpoint_tx, _checkpoint_rx) = mpsc::unbounded_channel::<SocraticEvent>();
-        let (input_tx, input_rx) = mpsc::unbounded_channel::<String>();
+        let (input_tx, input_rx) = mpsc::unbounded_channel::<SocraticRuntimeInput>();
         let io = WsSocraticIO::new(
+            state,
             event_tx,
             checkpoint_tx,
             Arc::new(Mutex::new(input_rx)),
@@ -1333,19 +1670,46 @@ mod tests {
             Uuid::new_v4(),
         );
 
-        input_tx.send("hello world".into()).unwrap();
+        let prompt = test_prompt("Test question");
+        let item_id = prompt
+            .items
+            .first()
+            .expect("prompt should include item")
+            .item_id
+            .clone();
+        input_tx
+            .send(SocraticRuntimeInput::PromptResponse(PromptResponse {
+                prompt_id: prompt.prompt_id.clone(),
+                answers: vec![PromptAnswer {
+                    item_id,
+                    selected_option_id: None,
+                    custom_text: Some("hello world".into()),
+                    skipped: false,
+                }],
+                submitted_at: "2026-03-08T00:00:00Z".into(),
+                client_context: None,
+            }))
+            .unwrap();
 
         use planner_core::pipeline::steps::socratic::SocraticIO;
-        let received = io.receive_input().await;
-        assert_eq!(received, Some("hello world".into()));
+        let received = io.receive_prompt_response(&prompt).await;
+        assert_eq!(
+            received
+                .as_ref()
+                .and_then(|response| response.answers.first())
+                .and_then(|answer| answer.custom_text.as_deref()),
+            Some("hello world")
+        );
     }
 
     #[tokio::test]
-    async fn ws_socratic_io_receive_input_returns_none_when_closed() {
+    async fn ws_socratic_io_receive_prompt_response_returns_none_when_closed() {
+        let state = test_state();
         let (event_tx, _event_rx) = mpsc::unbounded_channel::<ServerMessage>();
         let (checkpoint_tx, _checkpoint_rx) = mpsc::unbounded_channel::<SocraticEvent>();
-        let (input_tx, input_rx) = mpsc::unbounded_channel::<String>();
+        let (input_tx, input_rx) = mpsc::unbounded_channel::<SocraticRuntimeInput>();
         let io = WsSocraticIO::new(
+            state,
             event_tx,
             checkpoint_tx,
             Arc::new(Mutex::new(input_rx)),
@@ -1357,16 +1721,146 @@ mod tests {
         drop(input_tx);
 
         use planner_core::pipeline::steps::socratic::SocraticIO;
-        let received = io.receive_input().await;
+        let prompt = test_prompt("Test question");
+        let received = io.receive_prompt_response(&prompt).await;
         assert!(received.is_none());
     }
 
     #[tokio::test]
+    async fn ws_socratic_io_receive_prompt_response_ignores_stale_prompt_ids() {
+        let state = test_state();
+        let (event_tx, _event_rx) = mpsc::unbounded_channel::<ServerMessage>();
+        let (checkpoint_tx, _checkpoint_rx) = mpsc::unbounded_channel::<SocraticEvent>();
+        let (input_tx, input_rx) = mpsc::unbounded_channel::<SocraticRuntimeInput>();
+        let io = WsSocraticIO::new(
+            state,
+            event_tx,
+            checkpoint_tx,
+            Arc::new(Mutex::new(input_rx)),
+            None,
+            Uuid::new_v4(),
+        );
+
+        input_tx
+            .send(SocraticRuntimeInput::PromptResponse(PromptResponse {
+                prompt_id: "stale-prompt".into(),
+                answers: vec![PromptAnswer {
+                    item_id: "item-1".into(),
+                    selected_option_id: None,
+                    custom_text: Some("stale".into()),
+                    skipped: false,
+                }],
+                submitted_at: "2026-03-08T00:00:00Z".into(),
+                client_context: None,
+            }))
+            .unwrap();
+        input_tx.send(SocraticRuntimeInput::Done).unwrap();
+
+        use planner_core::pipeline::steps::socratic::SocraticIO;
+        let prompt = test_prompt("Test question");
+        let received = io.receive_prompt_response(&prompt).await;
+        assert!(received.is_none());
+    }
+
+    #[tokio::test]
+    async fn ws_socratic_io_receive_prompt_response_emits_partial_submit_event() {
+        let state = test_state();
+        let (event_tx, _event_rx) = mpsc::unbounded_channel::<ServerMessage>();
+        let (checkpoint_tx, _checkpoint_rx) = mpsc::unbounded_channel::<SocraticEvent>();
+        let (input_tx, input_rx) = mpsc::unbounded_channel::<SocraticRuntimeInput>();
+        let sink = Arc::new(planner_core::observability::CollectorEventSink::new());
+        let io = WsSocraticIO::new(
+            state,
+            event_tx,
+            checkpoint_tx,
+            Arc::new(Mutex::new(input_rx)),
+            Some(sink.clone()),
+            Uuid::new_v4(),
+        );
+
+        let mut prompt = test_prompt("Which team owns this first?");
+        prompt.items.push(PromptItem {
+            item_id: "item-2".into(),
+            kind: PromptItemKind::Verification,
+            target_dimension: Some(Dimension::Performance),
+            section_ref: None,
+            text: "How strict should latency targets be?".into(),
+            options: vec![PromptOption {
+                option_id: "fast".into(),
+                label: "Strict".into(),
+                semantic_value: "strict".into(),
+                direct_effect: None,
+            }],
+            response_mode: PromptResponseMode::SingleSelectWithCustomText,
+            required: false,
+            priority: 50,
+            dependency_item_ids: Vec::new(),
+        });
+
+        input_tx
+            .send(SocraticRuntimeInput::PromptResponse(PromptResponse {
+                prompt_id: prompt.prompt_id.clone(),
+                answers: vec![PromptAnswer {
+                    item_id: "item-1".into(),
+                    selected_option_id: Some("option-1".into()),
+                    custom_text: None,
+                    skipped: false,
+                }],
+                submitted_at: "2026-03-08T00:00:00Z".into(),
+                client_context: None,
+            }))
+            .unwrap();
+
+        use planner_core::pipeline::steps::socratic::SocraticIO;
+        let received = io.receive_prompt_response(&prompt).await;
+        assert!(received.is_some());
+
+        let steps: Vec<Option<String>> =
+            sink.events().into_iter().map(|event| event.step).collect();
+        assert!(steps
+            .iter()
+            .any(|step| step.as_deref() == Some("socratic.prompt.partial_submitted")));
+    }
+
+    #[tokio::test]
+    async fn ws_socratic_io_send_prompt_emits_draft_generated_event() {
+        let state = test_state();
+        let (event_tx, _event_rx) = mpsc::unbounded_channel::<ServerMessage>();
+        let (checkpoint_tx, _checkpoint_rx) = mpsc::unbounded_channel::<SocraticEvent>();
+        let (_input_tx, input_rx) = mpsc::unbounded_channel::<SocraticRuntimeInput>();
+        let sink = Arc::new(planner_core::observability::CollectorEventSink::new());
+        let io = WsSocraticIO::new(
+            state,
+            event_tx,
+            checkpoint_tx,
+            Arc::new(Mutex::new(input_rx)),
+            Some(sink.clone()),
+            Uuid::new_v4(),
+        );
+
+        let prompt = test_draft_prompt();
+
+        use planner_core::pipeline::steps::socratic::SocraticIO;
+        io.send_prompt(&prompt).await;
+
+        let steps: Vec<Option<String>> =
+            sink.events().into_iter().map(|event| event.step).collect();
+        assert!(steps
+            .iter()
+            .any(|step| step.as_deref() == Some("socratic.prompt.generated")));
+        assert!(steps
+            .iter()
+            .any(|step| step.as_deref() == Some("socratic.draft.generated")));
+    }
+
+    #[tokio::test]
     async fn ws_socratic_io_send_event_contradiction() {
+        let state = test_state();
         let (event_tx, mut event_rx) = mpsc::unbounded_channel::<ServerMessage>();
         let (checkpoint_tx, mut checkpoint_rx) = mpsc::unbounded_channel::<SocraticEvent>();
-        let (_input_tx, input_rx) = mpsc::unbounded_channel::<String>();
+        let (_input_tx, input_rx) = mpsc::unbounded_channel::<SocraticRuntimeInput>();
         let io = WsSocraticIO::new(
+            state,
             event_tx,
             checkpoint_tx,
             Arc::new(Mutex::new(input_rx)),
@@ -1412,7 +1906,10 @@ mod tests {
                 assert_eq!(contradiction.dimension_a, Dimension::DataModel);
                 assert_eq!(contradiction.dimension_b, Dimension::Integrations);
             }
-            other => panic!("expected ContradictionDetected checkpoint event, got {:?}", other),
+            other => panic!(
+                "expected ContradictionDetected checkpoint event, got {:?}",
+                other
+            ),
         }
 
         // No extra chat message should be emitted for operational events.
@@ -1420,21 +1917,13 @@ mod tests {
     }
 
     #[test]
-    fn checkpoint_updates_on_question_event() {
+    fn checkpoint_updates_on_prompt_generated_event() {
         let state = test_state();
         let session = state.sessions.create("dev|local");
         let session_id = session.id;
 
-        let event = SocraticEvent::Question {
-            output: QuestionOutput {
-                question: "Who will use this tool most often?".into(),
-                target_dimension: Dimension::Stakeholders,
-                quick_options: vec![QuickOption {
-                    label: "Internal team".into(),
-                    value: "internal_team".into(),
-                }],
-                allow_skip: true,
-            },
+        let event = SocraticEvent::PromptGenerated {
+            prompt: test_prompt("Who will use this tool most often?"),
         };
 
         apply_checkpoint_from_event(&state, session_id, &event);
@@ -1446,16 +1935,17 @@ mod tests {
         let checkpoint = after.checkpoint.expect("checkpoint should be present");
         assert_eq!(
             checkpoint
-                .current_question
+                .current_prompt
                 .as_ref()
-                .map(|q| q.question.as_str()),
+                .and_then(|prompt| prompt.items.first())
+                .map(|item| item.text.as_str()),
             Some("Who will use this tool most often?")
         );
         assert!(after.has_checkpoint);
     }
 
     #[test]
-    fn checkpoint_updates_on_draft_event() {
+    fn checkpoint_updates_on_draft_prompt_generated_event() {
         let state = test_state();
         let session = state.sessions.create("dev|local");
         let session_id = session.id;
@@ -1477,20 +1967,13 @@ mod tests {
             },
         );
 
-        let draft = SpeculativeDraft {
-            sections: vec![DraftSection {
-                heading: "Goal".into(),
-                content: "Build a resilient task tracker".into(),
-                dimensions: vec![Dimension::Goal],
-            }],
-            assumptions: Vec::new(),
-            not_discussed: vec![Dimension::Integrations],
-        };
+        let mut draft_prompt = test_draft_prompt();
+        draft_prompt.based_on_turn = 3;
         apply_checkpoint_from_event(
             &state,
             session_id,
-            &SocraticEvent::SpeculativeDraftReady {
-                draft: draft.clone(),
+            &SocraticEvent::PromptGenerated {
+                prompt: draft_prompt,
             },
         );
 
@@ -1501,12 +1984,118 @@ mod tests {
         let checkpoint = after.checkpoint.expect("checkpoint should be present");
         assert_eq!(
             checkpoint
-                .pending_draft
+                .current_prompt
                 .as_ref()
-                .and_then(|d| d.sections.first())
-                .map(|s| s.heading.as_str()),
+                .and_then(|prompt| prompt.draft_snapshot.as_ref())
+                .and_then(|draft| draft.sections.first())
+                .map(|section| section.heading.as_str()),
             Some("Goal")
         );
         assert_eq!(checkpoint.draft_shown_at_turn, Some(3));
+    }
+
+    #[tokio::test]
+    async fn socratic_pipeline_transition_registers_pipeline_runtime() {
+        let state = test_state();
+        let session = state.sessions.create("dev|local");
+        let session_id = session.id;
+        let description = "Socratic interview converged".to_string();
+
+        let was_running = state
+            .sessions
+            .get(session_id)
+            .map(|s| s.pipeline_running)
+            .unwrap_or(false);
+
+        if !was_running {
+            state.sessions.update(session_id, |s| {
+                s.pipeline_running = true;
+                s.project_description = Some(description.clone());
+                s.intake_phase = "pipeline_running".into();
+                if let Some(stage) = s.stages.first_mut() {
+                    stage.status = "running".into();
+                }
+            });
+            let _ = crate::api::spawn_pipeline_runtime(state.clone(), session_id, description);
+        }
+
+        assert!(state.pipeline_runtimes.get(session_id).is_some());
+        crate::api::stop_active_session_work(&state, session_id);
+    }
+
+    #[test]
+    fn prompt_response_to_input_uses_structured_answer_payload() {
+        let prompt = test_prompt("Who is this for?");
+        let item = prompt.items.first().expect("prompt item");
+
+        let response = PromptResponse {
+            prompt_id: prompt.prompt_id.clone(),
+            answers: vec![PromptAnswer {
+                item_id: item.item_id.clone(),
+                selected_option_id: Some("option-1".into()),
+                custom_text: Some("plus contractors".into()),
+                skipped: false,
+            }],
+            submitted_at: "2026-03-08T00:00:00Z".into(),
+            client_context: None,
+        };
+
+        let as_input = prompt_response_to_input(&response, Some(&prompt));
+        assert_eq!(as_input.as_deref(), Some("internal_team\nplus contractors"));
+    }
+
+    #[test]
+    fn current_prompt_replay_message_replays_checkpoint_prompt() {
+        let state = test_state();
+        let session = state.sessions.create("dev|local");
+        let session_id = session.id;
+
+        apply_checkpoint_from_event(
+            &state,
+            session_id,
+            &SocraticEvent::PromptGenerated {
+                prompt: test_prompt("What should this optimize first?"),
+            },
+        );
+
+        let replay = current_prompt_replay_message(&state, session_id)
+            .expect("checkpoint prompt should be replayable");
+        match replay {
+            ServerMessage::Prompt { prompt } => {
+                assert_eq!(prompt.kind, PromptKind::QuestionBatch);
+                assert_eq!(
+                    prompt.items.first().map(|item| item.text.as_str()),
+                    Some("What should this optimize first?")
+                );
+            }
+            other => panic!("expected prompt replay message, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn ui_capabilities_are_tracked_on_session_state() {
+        let state = test_state();
+        let session = state.sessions.create("dev|local");
+        let session_id = session.id;
+
+        update_session_ui_capabilities(
+            &state,
+            session_id,
+            UiCapabilities {
+                viewport_class: ViewportClass::Desktop,
+                max_visible_items: 4,
+                supports_split_draft_view: true,
+            },
+        );
+
+        let stored = state
+            .sessions
+            .get(session_id)
+            .expect("session should exist")
+            .ui_capabilities
+            .expect("ui capabilities should be stored");
+        assert_eq!(stored.viewport_class, ViewportClass::Desktop);
+        assert_eq!(stored.max_visible_items, 4);
+        assert!(stored.supports_split_draft_view);
     }
 }

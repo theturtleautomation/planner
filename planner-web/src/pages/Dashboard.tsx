@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout.tsx';
 import { createApiClient } from '../api/client.ts';
 import { useGetAccessToken } from '../auth/useAuthenticatedFetch.ts';
+import { buildKnowledgeDeepLink } from '../lib/knowledgeDeepLinks.ts';
 import type { IntakePhase, SessionSummary } from '../types.ts';
 
 type BadgeTone = 'default' | 'primary' | 'success' | 'warning' | 'error';
@@ -333,11 +334,13 @@ function CardActionButton(
   {
     label,
     ariaLabel,
+    title,
     onClick,
     disabled = false,
   }: {
     label: string;
     ariaLabel: string;
+    title?: string;
     onClick: () => void;
     disabled?: boolean;
   },
@@ -346,6 +349,7 @@ function CardActionButton(
     <button
       type="button"
       aria-label={ariaLabel}
+      title={title}
       disabled={disabled}
       onClick={(event) => {
         event.stopPropagation();
@@ -373,6 +377,7 @@ function CardActionButton(
 interface SessionCardProps {
   session: SessionSummary;
   onClick: () => void;
+  onOpenKnowledge: () => void;
   onRename: () => void;
   onDuplicate: () => void;
   onArchiveToggle: () => void;
@@ -382,6 +387,7 @@ interface SessionCardProps {
 function SessionCard({
   session,
   onClick,
+  onOpenKnowledge,
   onRename,
   onDuplicate,
   onArchiveToggle,
@@ -413,6 +419,7 @@ function SessionCard({
     ? `Checkpoint ${formatRelativeTime(session.checkpoint_last_saved_at)}`
     : null;
   const projectLabel = session.project_name?.trim() || session.project_slug?.trim() || null;
+  const knowledgeAvailable = Boolean(session.project_id?.trim());
   const alertMessage = session.error_message
     ? session.error_message
     : session.resume_status === 'interview_resume_unknown'
@@ -525,6 +532,17 @@ function SessionCard({
       )}
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+        <CardActionButton
+          label="Knowledge"
+          ariaLabel={knowledgeAvailable ? `Open knowledge for session ${session.id}` : `Knowledge unavailable for session ${session.id}`}
+          title={knowledgeAvailable
+            ? projectLabel
+              ? `Open Knowledge for ${projectLabel}`
+              : 'Open project-scoped Knowledge'
+            : 'Knowledge unavailable: session is not attached to a project yet'}
+          onClick={onOpenKnowledge}
+          disabled={!knowledgeAvailable || actionBusy !== null}
+        />
         <CardActionButton
           label={actionBusy === 'rename' ? 'Renaming…' : 'Rename'}
           ariaLabel={`Rename session ${session.id}`}
@@ -915,6 +933,16 @@ export default function Dashboard() {
                 key={session.id}
                 session={session}
                 onClick={() => void navigate(`/session/${session.id}`)}
+                onOpenKnowledge={() => {
+                  if (!session.project_id?.trim()) return;
+                  void navigate(
+                    buildKnowledgeDeepLink({
+                      projectId: session.project_id,
+                      originPath: '/sessions',
+                      originLabel: 'Sessions',
+                    }),
+                  );
+                }}
                 onRename={() => { void handleRename(session); }}
                 onDuplicate={() => { void handleDuplicate(session); }}
                 onArchiveToggle={() => { void handleArchiveToggle(session); }}

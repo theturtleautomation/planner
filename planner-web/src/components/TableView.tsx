@@ -2,19 +2,20 @@ import { useState, useMemo } from 'react';
 import type { NodeSummary, EdgePayload, NodeType } from '../types/blueprint.ts';
 import { labelNodeType } from '../lib/taxonomy.ts';
 
-const ALL_TYPES: (NodeType | 'all')[] = ['all', 'decision', 'technology', 'component', 'constraint', 'pattern', 'quality_requirement'];
+const ALL_TYPES: (NodeType | 'all')[] = ['all', 'project', 'decision', 'technology', 'component', 'constraint', 'pattern', 'quality_requirement'];
 
 interface TableViewProps {
   nodes: NodeSummary[];
   edges: EdgePayload[];
   filterType: NodeType | null;
+  showArchived: boolean;
   onSelectNode: (nodeId: string) => void;
 }
 
 type SortCol = 'name' | 'type' | 'status' | 'id';
 type SortDir = 'asc' | 'desc';
 
-export default function TableView({ nodes, edges, filterType, onSelectNode }: TableViewProps) {
+export default function TableView({ nodes, edges, filterType, showArchived, onSelectNode }: TableViewProps) {
   const [sortCol, setSortCol] = useState<SortCol>('name');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
   const [localFilter, setLocalFilter] = useState<NodeType | 'all'>('all');
@@ -102,6 +103,8 @@ export default function TableView({ nodes, edges, filterType, onSelectNode }: Ta
             >
               ID <span className="sort-arrow">↕</span>
             </th>
+            <th>Scope</th>
+            <th>Lifecycle</th>
             <th>Connections</th>
           </tr>
         </thead>
@@ -118,11 +121,29 @@ export default function TableView({ nodes, edges, filterType, onSelectNode }: Ta
               <td><span className={`badge badge-${n.node_type}`}>{labelNodeType(n.node_type, 'short')}</span></td>
               <td><span className={`status-badge status-${(n.status ?? '').toLowerCase().replace(/\s+/g, '-')}`}>{n.status ?? ''}</span></td>
               <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.6875rem', color: 'var(--color-text-faint)' }}>{n.id}</td>
+              <td style={{ color: 'var(--color-text-faint)' }}>
+                {n.scope_class === 'project'
+                  ? (n.project_name ?? 'Project')
+                  : n.scope_class === 'project_contextual'
+                    ? `${n.project_name ?? 'Project'} context`
+                    : 'Unscoped'}
+              </td>
+              <td>
+                <span className={`status-badge status-${n.lifecycle === 'archived' ? 'archived' : 'active'}`}>
+                  {n.lifecycle === 'archived' ? 'Archived' : 'Active'}
+                </span>
+              </td>
               <td style={{ fontVariantNumeric: 'tabular-nums', color: 'var(--color-text-faint)' }}>{getConnections(n.id)}</td>
             </tr>
           ))}
         </tbody>
       </table>
+
+      {!showArchived && (
+        <div style={{ marginTop: 'var(--space-3)', fontSize: 'var(--text-xs)', color: 'var(--color-text-faint)' }}>
+          Archived history is hidden from Inventory by default.
+        </div>
+      )}
 
       {filteredNodes.length === 0 && (
         <div style={{

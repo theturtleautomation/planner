@@ -4,7 +4,7 @@
 //! respecting the question budget and UX cost.
 //!
 //! Two-level selection:
-//! 1. Strategy: which dimension to target (priority × information gain)
+//! 1. Strategy: which dimension to target (verify uncertainty before expanding scope)
 //! 2. Generation: how to ask about the chosen dimension (LLM call)
 
 use planner_schemas::*;
@@ -42,10 +42,12 @@ Respond with ONLY a JSON object (no markdown fences):
 ## Rules:
 - Ask exactly ONE question. Never compound questions.
 - Use clear, jargon-free language unless the user has demonstrated expertise.
-- Provide 2-4 quick-select options when the answer is likely categorical.
+- Provide 4-7 quick-select options whenever the answer can be scaffolded.
+- Treat quick-select options as a baseline shortlist the user can choose from inline before sending a fuller answer.
 - Include a "Not sure yet" option via allow_skip: true when the question is optional.
 - Reference what's already known to show you've been listening.
-- Use Paul & Elder's taxonomy: clarifying → probing assumptions → exploring implications.
+- If the target dimension already has an uncertain candidate, ask the user to verify or correct it directly before moving on.
+- Use Paul & Elder's taxonomy: clarifying → probing uncertainty → exploring implications.
 - Calibrate difficulty to the user's expertise level.
 - Never assume technologies the user hasn't mentioned."#;
 
@@ -69,11 +71,36 @@ pub async fn plan_next_question(
         None => return Ok(None), // No more dimensions to ask about
     };
 
-    // Step 2: Generate the question via LLM
+    plan_question_for_dimension(
+        router,
+        state,
+        constitution,
+        conversation_history,
+        strategy.target_dimension,
+        strategy.rationale.as_str(),
+    )
+    .await
+    .map(Some)
+}
+
+/// Generate a question for a specific target dimension.
+pub async fn plan_question_for_dimension(
+    router: &LlmRouter,
+    state: &RequirementsBeliefState,
+    constitution: &InterviewerConstitution,
+    conversation_history: &[SocraticTurn],
+    target_dimension: Dimension,
+    rationale: &str,
+) -> StepResult<QuestionOutput> {
+    let strategy = QuestionStrategy {
+        target_dimension: target_dimension.clone(),
+        rationale: rationale.to_string(),
+        score: target_dimension.priority_weight(),
+    };
+
     let output =
         generate_question(router, state, &strategy, constitution, conversation_history).await?;
 
-    // Step 3: Self-critique against constitution
     let violations = evaluate_question(
         &output.question,
         &strategy.target_dimension,
@@ -81,21 +108,19 @@ pub async fn plan_next_question(
         constitution,
     );
 
-    if !violations.is_empty() {
-        // Regenerate with critique feedback
-        let output = regenerate_with_critique(
-            router,
-            state,
-            &strategy,
-            constitution,
-            conversation_history,
-            &violations,
-        )
-        .await?;
-        return Ok(Some(output));
+    if violations.is_empty() {
+        return Ok(output);
     }
 
-    Ok(Some(output))
+    regenerate_with_critique(
+        router,
+        state,
+        &strategy,
+        constitution,
+        conversation_history,
+        &violations,
+    )
+    .await
 }
 
 /// Select the best dimension to target next.
@@ -105,16 +130,61 @@ pub async fn plan_next_question(
 /// - Information gain estimate (missing > uncertain)
 /// - Dependency check (don't ask about auth before scope is set)
 pub fn select_target_dimension(state: &RequirementsBeliefState) -> Option<QuestionStrategy> {
-    let mut candidates: Vec<(Dimension, f32, String)> = Vec::new();
+    let contradiction_candidate = state
+        .contradictions
+        .iter()
+        .find(|contradiction| !contradiction.resolved)
+        .map(|contradiction| QuestionStrategy {
+            target_dimension: contradiction.dimension_a.clone(),
+            rationale: format!(
+                "Unresolved contradiction: {} vs {}",
+                contradiction.dimension_a.label(),
+                contradiction.dimension_b.label()
+            ),
+            score: 2.0,
+        });
 
-    // Score missing dimensions (higher info gain — we know nothing)
+    if contradiction_candidate.is_some() {
+        return contradiction_candidate;
+    }
+
+    let mut uncertain_candidates: Vec<(Dimension, f32, String)> = Vec::new();
+    for (dim, (_val, confidence)) in &state.uncertain {
+        let weight = dim.priority_weight();
+        let info_gain = 1.0 - confidence; // Lower confidence → higher info gain
+        let dep_penalty = dependency_penalty(dim, state);
+        let score = weight * info_gain * dep_penalty;
+
+        uncertain_candidates.push((
+            dim.clone(),
+            score,
+            format!(
+                "Needs verification first (confidence={:.0}%, weight={:.2}, info_gain={:.2})",
+                confidence * 100.0,
+                weight,
+                info_gain
+            ),
+        ));
+    }
+
+    uncertain_candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    if let Some((dim, score, rationale)) = uncertain_candidates.first() {
+        return Some(QuestionStrategy {
+            target_dimension: dim.clone(),
+            rationale: rationale.clone(),
+            score: *score,
+        });
+    }
+
+    let mut missing_candidates: Vec<(Dimension, f32, String)> = Vec::new();
     for dim in &state.missing {
         let weight = dim.priority_weight();
         let info_gain = 1.0; // Full info gain for missing dims
         let dep_penalty = dependency_penalty(dim, state);
         let score = weight * info_gain * dep_penalty;
 
-        candidates.push((
+        missing_candidates.push((
             dim.clone(),
             score,
             format!(
@@ -124,44 +194,9 @@ pub fn select_target_dimension(state: &RequirementsBeliefState) -> Option<Questi
         ));
     }
 
-    // Score uncertain dimensions (lower info gain — we have a guess)
-    for (dim, (_val, confidence)) in &state.uncertain {
-        let weight = dim.priority_weight();
-        let info_gain = 1.0 - confidence; // Lower confidence → higher info gain
-        let dep_penalty = dependency_penalty(dim, state);
-        let score = weight * info_gain * dep_penalty;
+    missing_candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
-        candidates.push((
-            dim.clone(),
-            score,
-            format!(
-                "Uncertain (confidence={:.0}%, weight={:.2}, info_gain={:.2})",
-                confidence * 100.0,
-                weight,
-                info_gain
-            ),
-        ));
-    }
-
-    // Handle unresolved contradictions — these get top priority
-    for contradiction in &state.contradictions {
-        if !contradiction.resolved {
-            candidates.push((
-                contradiction.dimension_a.clone(),
-                2.0,
-                format!(
-                    "Unresolved contradiction: {} vs {}",
-                    contradiction.dimension_a.label(),
-                    contradiction.dimension_b.label()
-                ),
-            ));
-        }
-    }
-
-    // Sort by score descending
-    candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-
-    candidates
+    missing_candidates
         .first()
         .map(|(dim, score, rationale)| QuestionStrategy {
             target_dimension: dim.clone(),
@@ -225,10 +260,22 @@ async fn generate_question(
 ) -> StepResult<QuestionOutput> {
     let state_text = format_belief_state_for_llm(state);
     let history_text = format_conversation_history(conversation_history);
+    let verification_context = state
+        .uncertain
+        .get(&strategy.target_dimension)
+        .map(|(slot, confidence)| {
+            format!(
+                "## Existing Uncertain Candidate For This Dimension:\nCurrent candidate: {}\nConfidence: {:.0}%\nAsk the user to confirm, correct, or refine this candidate directly.\n\n",
+                slot.value,
+                confidence * 100.0
+            )
+        })
+        .unwrap_or_default();
 
     let user_prompt = format!(
-        "## Belief State:\n{}\n\n## Target Dimension: {} ({})\nRationale: {}\n\n## Constitution:\n{}\n\n## Conversation So Far:\n{}\n\nGenerate the next question.",
+        "## Belief State:\n{}\n\n{}## Target Dimension: {} ({})\nRationale: {}\n\n## Constitution:\n{}\n\n## Conversation So Far:\n{}\n\nGenerate the next question.",
         state_text,
+        verification_context,
         strategy.target_dimension.label(),
         serde_json::to_string(&strategy.target_dimension).unwrap_or_default(),
         strategy.rationale,
@@ -430,6 +477,24 @@ mod tests {
         assert!(strategy.is_some());
         // Contradictions have score 2.0, which should be highest
         assert_eq!(strategy.unwrap().target_dimension, Dimension::Auth);
+    }
+
+    #[test]
+    fn uncertain_dimensions_are_verified_before_new_missing_dimensions() {
+        let mut state = make_empty_state();
+        state.mark_uncertain(
+            Dimension::Performance,
+            SlotValue {
+                value: "Under 1 second".into(),
+                source_turn: 1,
+                source_quote: None,
+            },
+            0.5,
+        );
+
+        let strategy = select_target_dimension(&state);
+        assert!(strategy.is_some());
+        assert_eq!(strategy.unwrap().target_dimension, Dimension::Performance);
     }
 
     #[test]

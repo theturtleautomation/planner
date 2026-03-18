@@ -28,6 +28,7 @@ use crate::blueprint::BlueprintStore;
 use crate::cxdb::TurnStore;
 use crate::dtu::DtuRegistry;
 use crate::llm::providers::LlmRouter;
+use crate::observability::{EventSink, EventSource, PlannerEvent};
 use planner_schemas::*;
 
 use steps::ar;
@@ -58,6 +59,8 @@ pub struct PipelineConfig<'a, S: TurnStore> {
     /// Optional Blueprint store — if Some, pipeline steps emit architectural
     /// knowledge as Blueprint nodes and edges.
     pub blueprints: Option<&'a BlueprintStore>,
+    /// Optional structured event sink for session-visible pipeline progress.
+    pub event_sink: Option<&'a dyn EventSink>,
 }
 
 impl<'a, S: TurnStore> PipelineConfig<'a, S> {
@@ -68,6 +71,7 @@ impl<'a, S: TurnStore> PipelineConfig<'a, S> {
             store: None,
             dtu_registry: None,
             blueprints: None,
+            event_sink: None,
         }
     }
 
@@ -82,8 +86,160 @@ impl<'a, S: TurnStore> PipelineConfig<'a, S> {
                     turn.turn_id,
                     turn.type_id
                 );
+                self.emit_event(
+                    PlannerEvent::info(
+                        EventSource::Pipeline,
+                        "pipeline.artifact.persisted",
+                        format!("Persisted artifact '{}'", turn.type_id),
+                    )
+                    .with_metadata(serde_json::json!({
+                        "turn_id": turn.turn_id.to_string(),
+                        "run_id": turn.metadata.run_id.to_string(),
+                        "type_id": turn.type_id.as_str(),
+                        "produced_by": turn.metadata.produced_by.as_str(),
+                        "execution_id": turn.metadata.execution_id.as_str(),
+                    })),
+                );
             }
         }
+    }
+
+    pub fn emit_event(&self, event: PlannerEvent) {
+        if let Some(sink) = self.event_sink {
+            sink.emit(event);
+        }
+    }
+
+    pub fn emit_stage_started(
+        &self,
+        stage: &'static str,
+        message: impl Into<String>,
+        metadata: serde_json::Value,
+    ) {
+        self.emit_event(
+            PlannerEvent::info(
+                EventSource::Pipeline,
+                "pipeline.stage.started",
+                message.into(),
+            )
+            .with_metadata(serde_json::json!({
+                "stage": stage,
+                "terminal": false,
+                "details": metadata,
+            })),
+        );
+    }
+
+    pub fn emit_stage_completed(
+        &self,
+        stage: &'static str,
+        message: impl Into<String>,
+        metadata: serde_json::Value,
+    ) {
+        self.emit_event(
+            PlannerEvent::info(
+                EventSource::Pipeline,
+                "pipeline.stage.completed",
+                message.into(),
+            )
+            .with_metadata(serde_json::json!({
+                "stage": stage,
+                "terminal": false,
+                "details": metadata,
+            })),
+        );
+    }
+
+    pub fn emit_stage_failed(
+        &self,
+        stage: &'static str,
+        message: impl Into<String>,
+        terminal: bool,
+        retry_planned: bool,
+        metadata: serde_json::Value,
+    ) {
+        self.emit_event(
+            PlannerEvent::error(
+                EventSource::Pipeline,
+                "pipeline.stage.failed",
+                message.into(),
+            )
+            .with_metadata(serde_json::json!({
+                "stage": stage,
+                "terminal": terminal,
+                "retry_planned": retry_planned,
+                "details": metadata,
+            })),
+        );
+    }
+
+    pub fn emit_retry_started(
+        &self,
+        next_attempt: usize,
+        max_attempts: usize,
+        metadata: serde_json::Value,
+    ) {
+        self.emit_event(
+            PlannerEvent::warn(
+                EventSource::Pipeline,
+                "pipeline.retry.started",
+                format!(
+                    "Retrying pipeline validation loop (attempt {}/{})",
+                    next_attempt, max_attempts
+                ),
+            )
+            .with_metadata(serde_json::json!({
+                "next_attempt": next_attempt,
+                "max_attempts": max_attempts,
+                "details": metadata,
+            })),
+        );
+    }
+
+    pub fn emit_retry_feedback(&self, feedback_count: usize, metadata: serde_json::Value) {
+        self.emit_event(
+            PlannerEvent::warn(
+                EventSource::Pipeline,
+                "pipeline.retry.feedback",
+                format!(
+                    "Prepared {} generalized feedback item(s) for retry",
+                    feedback_count
+                ),
+            )
+            .with_metadata(serde_json::json!({
+                "feedback_count": feedback_count,
+                "details": metadata,
+            })),
+        );
+    }
+
+    pub fn emit_validation_completed(
+        &self,
+        gates_passed: bool,
+        attempt: usize,
+        passed_count: usize,
+        total_count: usize,
+    ) {
+        self.emit_event(
+            PlannerEvent::info(
+                EventSource::Pipeline,
+                "pipeline.validation.completed",
+                format!(
+                    "Validation attempt {} {} ({}/{})",
+                    attempt,
+                    if gates_passed { "passed" } else { "failed" },
+                    passed_count,
+                    total_count
+                ),
+            )
+            .with_metadata(serde_json::json!({
+                "stage": "Validate",
+                "attempt": attempt,
+                "gates_passed": gates_passed,
+                "passed_count": passed_count,
+                "total_count": total_count,
+            })),
+        );
     }
 
     /// Emit Blueprint nodes if a BlueprintStore is configured.
@@ -108,9 +264,14 @@ impl<'a, S: TurnStore> PipelineConfig<'a, S> {
     }
 
     /// Emit Blueprint nodes from factory output.
-    pub fn emit_factory_blueprint(&self, output: &FactoryOutputV1) {
+    pub fn emit_factory_blueprint(
+        &self,
+        output: &FactoryOutputV1,
+        project_id: Option<&str>,
+        project_name: Option<&str>,
+    ) {
         if let Some(bp) = self.blueprints {
-            blueprint_emitter::emit_from_factory(bp, output);
+            blueprint_emitter::emit_from_factory(bp, output, project_id, project_name);
         }
     }
 
@@ -509,8 +670,33 @@ pub async fn run_phase0_front_office_with_config<S: TurnStore>(
 
     // Step 1: Intake Gateway
     tracing::info!("Step 1: Intake Gateway");
-    let intake_result = intake::execute_intake(router, project_id, user_description).await?;
+    config.emit_stage_started(
+        "Intake",
+        "Intake stage started",
+        serde_json::json!({ "project_id": project_id.to_string() }),
+    );
+    let intake_result = match intake::execute_intake(router, project_id, user_description).await {
+        Ok(result) => result,
+        Err(error) => {
+            config.emit_stage_failed(
+                "Intake",
+                format!("Intake stage failed: {}", error),
+                true,
+                false,
+                serde_json::json!({ "error": error.to_string() }),
+            );
+            return Err(error);
+        }
+    };
     tracing::info!("  → IntakeV1 produced: {}", intake_result.project_name);
+    config.emit_stage_completed(
+        "Intake",
+        "Intake stage completed",
+        serde_json::json!({
+            "project_name": intake_result.project_name.clone(),
+            "feature_slug": intake_result.feature_slug.clone(),
+        }),
+    );
 
     // Persist intake as a Turn
     {
@@ -529,31 +715,97 @@ pub async fn run_phase0_front_office_with_config<S: TurnStore>(
 
     // Step 2: Chunk Planning
     tracing::info!("Step 2: Chunk Planner");
-    let chunk_plan = chunk_planner::plan_chunks(router, &intake_result, project_id).await?;
+    config.emit_stage_started(
+        "Chunk",
+        "Chunk planning stage started",
+        serde_json::json!({ "project_id": project_id.to_string() }),
+    );
+    let chunk_plan = match chunk_planner::plan_chunks(router, &intake_result, project_id).await {
+        Ok(plan) => plan,
+        Err(error) => {
+            config.emit_stage_failed(
+                "Chunk",
+                format!("Chunk planning failed: {}", error),
+                true,
+                false,
+                serde_json::json!({ "error": error.to_string() }),
+            );
+            return Err(error);
+        }
+    };
     tracing::info!(
         "  → ChunkPlan: {} chunk(s), multi_chunk={}",
         chunk_plan.chunks.len(),
         chunk_plan.is_multi_chunk,
     );
+    config.emit_stage_completed(
+        "Chunk",
+        "Chunk planning stage completed",
+        serde_json::json!({
+            "chunk_count": chunk_plan.chunks.len(),
+            "is_multi_chunk": chunk_plan.is_multi_chunk,
+        }),
+    );
 
     // Step 3: Compile Spec(s)
     tracing::info!("Step 3: Compile NLSpec(s)");
+    config.emit_stage_started(
+        "Compile",
+        "Specification compilation stage started",
+        serde_json::json!({
+            "is_multi_chunk": chunk_plan.is_multi_chunk,
+            "chunk_count": chunk_plan.chunks.len(),
+        }),
+    );
     let compile_blueprint_context = config.blueprint_context_for_intake(&intake_result);
     let mut specs = if chunk_plan.is_multi_chunk {
-        compile::compile_spec_multichunk(
+        match compile::compile_spec_multichunk(
             router,
             &intake_result,
             &chunk_plan,
             compile_blueprint_context.as_deref(),
         )
-        .await?
+        .await
+        {
+            Ok(specs) => specs,
+            Err(error) => {
+                config.emit_stage_failed(
+                    "Compile",
+                    format!("Specification compilation failed: {}", error),
+                    true,
+                    false,
+                    serde_json::json!({ "error": error.to_string() }),
+                );
+                return Err(error);
+            }
+        }
     } else {
-        vec![
-            compile::compile_spec(router, &intake_result, compile_blueprint_context.as_deref())
-                .await?,
-        ]
+        vec![match compile::compile_spec(
+            router,
+            &intake_result,
+            compile_blueprint_context.as_deref(),
+        )
+        .await
+        {
+            Ok(spec) => spec,
+            Err(error) => {
+                config.emit_stage_failed(
+                    "Compile",
+                    format!("Specification compilation failed: {}", error),
+                    true,
+                    false,
+                    serde_json::json!({ "error": error.to_string() }),
+                );
+                return Err(error);
+            }
+        }]
     };
     tracing::info!("  → {} NLSpecV1 chunk(s) produced", specs.len(),);
+    config.emit_stage_completed(
+        "Compile",
+        "Specification compilation stage completed",
+        serde_json::json!({ "chunk_count": specs.len() }),
+    );
 
     // Persist each NLSpecV1
     for spec in &specs {
@@ -590,6 +842,11 @@ pub async fn run_phase0_front_office_with_config<S: TurnStore>(
     // This prevents the pipeline from dying on fixable issues like
     // non-imperative FR language.
     tracing::info!("Step 4: Spec Linter");
+    config.emit_stage_started(
+        "Lint",
+        "Lint stage started",
+        serde_json::json!({ "max_repairs": 2 }),
+    );
     {
         const MAX_LINT_REPAIRS: usize = 2;
         let mut lint_attempt = 0usize;
@@ -620,6 +877,15 @@ pub async fn run_phase0_front_office_with_config<S: TurnStore>(
                             "  → {} lint violation(s) remain after {} repair attempts — aborting",
                             violations.len(),
                             MAX_LINT_REPAIRS
+                        );
+                        config.emit_stage_failed(
+                            "Lint",
+                            format!("Lint failed after {} repair attempt(s)", MAX_LINT_REPAIRS),
+                            true,
+                            false,
+                            serde_json::json!({
+                                "remaining_violations": violations.len(),
+                            }),
                         );
                         return Err(steps::StepError::LintFailure { violations });
                     }
@@ -735,14 +1001,31 @@ pub async fn run_phase0_front_office_with_config<S: TurnStore>(
                 }
                 Err(e) => {
                     // Non-lint error (unexpected) — propagate
+                    config.emit_stage_failed(
+                        "Lint",
+                        format!("Lint stage failed: {}", e),
+                        true,
+                        false,
+                        serde_json::json!({ "error": e.to_string() }),
+                    );
                     return Err(e);
                 }
             }
         }
     }
+    config.emit_stage_completed(
+        "Lint",
+        "Lint stage completed",
+        serde_json::json!({ "status": "passed" }),
+    );
 
     // Step 5: Adversarial Review
     tracing::info!("Step 5: Adversarial Review");
+    config.emit_stage_started(
+        "AR Review",
+        "Adversarial review stage started",
+        serde_json::json!({ "chunk_count": specs.len() }),
+    );
     let review_blueprint_context = config.blueprint_context_for_spec(&specs[0]);
     let mut ar_reports = if specs.len() > 1 {
         let mut reports = ar::execute_adversarial_review_set(
@@ -751,26 +1034,54 @@ pub async fn run_phase0_front_office_with_config<S: TurnStore>(
             project_id,
             review_blueprint_context.as_deref(),
         )
-        .await?;
+        .await
+        .map_err(|error| {
+            config.emit_stage_failed(
+                "AR Review",
+                format!("Adversarial review failed: {}", error),
+                true,
+                false,
+                serde_json::json!({ "error": error.to_string() }),
+            );
+            error
+        })?;
         let coherence = ar::execute_cross_chunk_coherence_review(
             router,
             &specs,
             project_id,
             review_blueprint_context.as_deref(),
         )
-        .await?;
+        .await
+        .map_err(|error| {
+            config.emit_stage_failed(
+                "AR Review",
+                format!("Cross-chunk coherence review failed: {}", error),
+                true,
+                false,
+                serde_json::json!({ "error": error.to_string() }),
+            );
+            error
+        })?;
         reports.push(coherence);
         reports
     } else {
-        vec![
-            ar::execute_adversarial_review(
-                router,
-                &specs[0],
-                project_id,
-                review_blueprint_context.as_deref(),
-            )
-            .await?,
-        ]
+        vec![ar::execute_adversarial_review(
+            router,
+            &specs[0],
+            project_id,
+            review_blueprint_context.as_deref(),
+        )
+        .await
+        .map_err(|error| {
+            config.emit_stage_failed(
+                "AR Review",
+                format!("Adversarial review failed: {}", error),
+                true,
+                false,
+                serde_json::json!({ "error": error.to_string() }),
+            );
+            error
+        })?]
     };
 
     let total_blocking: u32 = ar_reports.iter().map(|r| r.blocking_count).sum();
@@ -780,6 +1091,15 @@ pub async fn run_phase0_front_office_with_config<S: TurnStore>(
         total_blocking,
         total_advisory,
         ar_reports.len(),
+    );
+    config.emit_stage_completed(
+        "AR Review",
+        "Adversarial review stage completed",
+        serde_json::json!({
+            "report_count": ar_reports.len(),
+            "blocking_findings": total_blocking,
+            "advisory_findings": total_advisory,
+        }),
     );
 
     // Persist each ArReportV1
@@ -792,6 +1112,11 @@ pub async fn run_phase0_front_office_with_config<S: TurnStore>(
     config.emit_ar_blueprint(&ar_reports);
 
     // Step 6: AR Refinement — handle blocking findings
+    config.emit_stage_started(
+        "Refine",
+        "Refinement stage started",
+        serde_json::json!({ "blocking_findings": total_blocking }),
+    );
     if total_blocking > 0 {
         tracing::info!("Step 6: AR Refinement (blocking findings detected)");
         let report_count = ar_reports.len().min(specs.len());
@@ -802,7 +1127,17 @@ pub async fn run_phase0_front_office_with_config<S: TurnStore>(
             let spec = specs.remove(i);
             let refinement =
                 ar_refinement::execute_ar_refinement(router, spec, &ar_reports[i], project_id)
-                    .await?;
+                    .await
+                    .map_err(|error| {
+                        config.emit_stage_failed(
+                            "Refine",
+                            format!("AR refinement failed: {}", error),
+                            true,
+                            false,
+                            serde_json::json!({ "error": error.to_string() }),
+                        );
+                        error
+                    })?;
 
             specs.insert(i, refinement.spec);
             tracing::info!(
@@ -813,6 +1148,16 @@ pub async fn run_phase0_front_office_with_config<S: TurnStore>(
             );
 
             if !refinement.resolved {
+                config.emit_stage_failed(
+                    "Refine",
+                    "AR refinement exhausted before resolving blocking findings",
+                    true,
+                    false,
+                    serde_json::json!({
+                        "chunk_name": ar_reports[i].chunk_name.as_str(),
+                        "iterations": refinement.iterations,
+                    }),
+                );
                 return Err(steps::StepError::ArRefinementExhausted(
                     ar_refinement::MAX_REFINEMENT_ITERATIONS,
                 ));
@@ -846,26 +1191,54 @@ pub async fn run_phase0_front_office_with_config<S: TurnStore>(
                 project_id,
                 refined_review_blueprint_context.as_deref(),
             )
-            .await?;
+            .await
+            .map_err(|error| {
+                config.emit_stage_failed(
+                    "Refine",
+                    format!("Re-review after refinement failed: {}", error),
+                    true,
+                    false,
+                    serde_json::json!({ "error": error.to_string() }),
+                );
+                error
+            })?;
             let coherence = ar::execute_cross_chunk_coherence_review(
                 router,
                 &specs,
                 project_id,
                 refined_review_blueprint_context.as_deref(),
             )
-            .await?;
+            .await
+            .map_err(|error| {
+                config.emit_stage_failed(
+                    "Refine",
+                    format!("Cross-chunk re-review after refinement failed: {}", error),
+                    true,
+                    false,
+                    serde_json::json!({ "error": error.to_string() }),
+                );
+                error
+            })?;
             reports.push(coherence);
             reports
         } else {
-            vec![
-                ar::execute_adversarial_review(
-                    router,
-                    &specs[0],
-                    project_id,
-                    refined_review_blueprint_context.as_deref(),
-                )
-                .await?,
-            ]
+            vec![ar::execute_adversarial_review(
+                router,
+                &specs[0],
+                project_id,
+                refined_review_blueprint_context.as_deref(),
+            )
+            .await
+            .map_err(|error| {
+                config.emit_stage_failed(
+                    "Refine",
+                    format!("Re-review after refinement failed: {}", error),
+                    true,
+                    false,
+                    serde_json::json!({ "error": error.to_string() }),
+                );
+                error
+            })?]
         };
 
         let remaining_blocking: u32 = ar_reports.iter().map(|r| r.blocking_count).sum();
@@ -897,20 +1270,62 @@ pub async fn run_phase0_front_office_with_config<S: TurnStore>(
     } else {
         tracing::info!("Step 6: AR Refinement (skipped — no blocking findings)");
     }
+    config.emit_stage_completed(
+        "Refine",
+        "Refinement stage completed",
+        serde_json::json!({
+            "blocking_findings": total_blocking,
+        }),
+    );
 
     // Steps 7-9: GraphDot + Scenarios + AGENTS.md
     let root_spec = &specs[0];
 
     tracing::info!("Step 7: Compile graph.dot");
+    config.emit_stage_started(
+        "Graph",
+        "Graph compilation stage started",
+        serde_json::json!({ "chunk_count": specs.len() }),
+    );
     let graph_dot = if specs.len() > 1 {
-        compile::compile_graph_dot_multichunk(router, &specs).await?
+        compile::compile_graph_dot_multichunk(router, &specs)
+            .await
+            .map_err(|error| {
+                config.emit_stage_failed(
+                    "Graph",
+                    format!("Graph compilation failed: {}", error),
+                    true,
+                    false,
+                    serde_json::json!({ "error": error.to_string() }),
+                );
+                error
+            })?
     } else {
-        compile::compile_graph_dot(router, root_spec).await?
+        compile::compile_graph_dot(router, root_spec)
+            .await
+            .map_err(|error| {
+                config.emit_stage_failed(
+                    "Graph",
+                    format!("Graph compilation failed: {}", error),
+                    true,
+                    false,
+                    serde_json::json!({ "error": error.to_string() }),
+                );
+                error
+            })?
     };
     tracing::info!(
         "  → GraphDotV1 produced: {} nodes, ${:.2} estimated cost",
         graph_dot.node_count,
         graph_dot.estimated_cost_usd,
+    );
+    config.emit_stage_completed(
+        "Graph",
+        "Graph compilation stage completed",
+        serde_json::json!({
+            "node_count": graph_dot.node_count,
+            "estimated_cost_usd": graph_dot.estimated_cost_usd,
+        }),
     );
 
     // Persist GraphDotV1
@@ -920,10 +1335,31 @@ pub async fn run_phase0_front_office_with_config<S: TurnStore>(
     }
 
     tracing::info!("Step 8: Generate Scenarios");
-    let mut scenarios = compile::generate_scenarios(router, root_spec).await?;
+    config.emit_stage_started(
+        "Scenarios",
+        "Scenario generation stage started",
+        serde_json::json!({}),
+    );
+    let mut scenarios = compile::generate_scenarios(router, root_spec)
+        .await
+        .map_err(|error| {
+            config.emit_stage_failed(
+                "Scenarios",
+                format!("Scenario generation failed: {}", error),
+                true,
+                false,
+                serde_json::json!({ "error": error.to_string() }),
+            );
+            error
+        })?;
     tracing::info!(
         "  → ScenarioSetV1 produced: {} scenarios",
         scenarios.scenarios.len()
+    );
+    config.emit_stage_completed(
+        "Scenarios",
+        "Scenario generation stage completed",
+        serde_json::json!({ "scenario_count": scenarios.scenarios.len() }),
     );
 
     // Persist ScenarioSetV1
@@ -934,7 +1370,23 @@ pub async fn run_phase0_front_office_with_config<S: TurnStore>(
 
     // Step 8b: Ralph Loop
     tracing::info!("Step 8b: Ralph Loop");
-    let ralph_output = ralph::execute_ralph(router, root_spec, &scenarios, project_id).await?;
+    config.emit_stage_started(
+        "Ralph",
+        "Ralph advisory stage started",
+        serde_json::json!({ "scenario_count": scenarios.scenarios.len() }),
+    );
+    let ralph_output = ralph::execute_ralph(router, root_spec, &scenarios, project_id)
+        .await
+        .map_err(|error| {
+            config.emit_stage_failed(
+                "Ralph",
+                format!("Ralph advisory stage failed: {}", error),
+                true,
+                false,
+                serde_json::json!({ "error": error.to_string() }),
+            );
+            error
+        })?;
 
     if !ralph_output.augmented_scenarios.is_empty() {
         tracing::info!(
@@ -957,6 +1409,14 @@ pub async fn run_phase0_front_office_with_config<S: TurnStore>(
             config.persist(&turn);
         }
     }
+    config.emit_stage_completed(
+        "Ralph",
+        "Ralph advisory stage completed",
+        serde_json::json!({
+            "augmented_scenarios": scenarios.ralph_augmented,
+            "consequence_cards": ralph_output.consequence_cards.len(),
+        }),
+    );
 
     tracing::info!("Step 9: Generate AGENTS.md");
     let agents_manifest = compile::compile_agents_manifest(router, root_spec).await?;
@@ -1138,6 +1598,19 @@ pub async fn run_full_pipeline_with_run_id<S: TurnStore>(
             attempt,
             FACTORY_MAX_RETRIES + 1
         );
+        config.emit_stage_started(
+            "Factory",
+            format!(
+                "Factory stage started (attempt {}/{})",
+                attempt,
+                FACTORY_MAX_RETRIES + 1
+            ),
+            serde_json::json!({
+                "attempt": attempt,
+                "max_attempts": FACTORY_MAX_RETRIES + 1,
+                "retry_feedback_count": retry_feedback.len(),
+            }),
+        );
 
         let feedback_slice: Option<&[GeneralizedError]> = if retry_feedback.is_empty() {
             None
@@ -1167,12 +1640,43 @@ pub async fn run_full_pipeline_with_run_id<S: TurnStore>(
                     attempt,
                     msg,
                 );
+                config.emit_stage_failed(
+                    "Factory",
+                    format!("Factory stage blocked by policy on attempt {}", attempt),
+                    true,
+                    false,
+                    serde_json::json!({
+                        "attempt": attempt,
+                        "error": msg,
+                        "kind": "cyber_policy_blocked",
+                    }),
+                );
                 return Err(steps::StepError::CyberPolicyBlocked(msg.clone()));
             }
-            Err(e) => return Err(e),
+            Err(e) => {
+                config.emit_stage_failed(
+                    "Factory",
+                    format!("Factory stage failed on attempt {}: {}", attempt, e),
+                    true,
+                    false,
+                    serde_json::json!({
+                        "attempt": attempt,
+                        "error": e.to_string(),
+                    }),
+                );
+                return Err(e);
+            }
         };
 
         tracing::info!("  Factory: status={:?}", factory_output.build_status,);
+        config.emit_stage_completed(
+            "Factory",
+            format!("Factory stage completed on attempt {}", attempt),
+            serde_json::json!({
+                "attempt": attempt,
+                "build_status": format!("{:?}", factory_output.build_status),
+            }),
+        );
 
         // Persist FactoryOutputV1
         {
@@ -1187,7 +1691,12 @@ pub async fn run_full_pipeline_with_run_id<S: TurnStore>(
         }
 
         // Emit Blueprint nodes from factory output
-        config.emit_factory_blueprint(&factory_output);
+        let blueprint_project_id = front_office.intake.project_id.to_string();
+        config.emit_factory_blueprint(
+            &factory_output,
+            Some(&blueprint_project_id),
+            Some(&front_office.intake.project_name),
+        );
 
         // Track this output path for incremental retry on next attempt.
         previous_output_path = Some(factory_output.output_path.clone());
@@ -1199,13 +1708,31 @@ pub async fn run_full_pipeline_with_run_id<S: TurnStore>(
 
         // ---- Layer 3: Return Trip — Validate ----
         tracing::info!("─── Scenario Validator (attempt {}) ───", attempt);
+        config.emit_stage_started(
+            "Validate",
+            format!("Validation stage started (attempt {})", attempt),
+            serde_json::json!({ "attempt": attempt }),
+        );
         satisfaction = validate::execute_scenario_validation(
             router,
             &front_office.scenarios,
             &factory_output,
             config.dtu_registry,
         )
-        .await?;
+        .await
+        .map_err(|error| {
+            config.emit_stage_failed(
+                "Validate",
+                format!("Validation stage failed on attempt {}: {}", attempt, error),
+                true,
+                false,
+                serde_json::json!({
+                    "attempt": attempt,
+                    "error": error.to_string(),
+                }),
+            );
+            error
+        })?;
 
         // --- Best-of-N tracking (rejection sampling) ---
         // Compare this attempt's pass count against the best so far.
@@ -1226,6 +1753,12 @@ pub async fn run_full_pipeline_with_run_id<S: TurnStore>(
                     .count()
             })
             .unwrap_or(0);
+        config.emit_validation_completed(
+            satisfaction.gates_passed,
+            attempt,
+            current_pass_count,
+            satisfaction.scenario_results.len(),
+        );
 
         if current_pass_count > best_pass_count || best_satisfaction.is_none() {
             tracing::info!(
@@ -1256,6 +1789,16 @@ pub async fn run_full_pipeline_with_run_id<S: TurnStore>(
 
         if satisfaction.gates_passed {
             tracing::info!("  Gates PASSED on attempt {}", attempt);
+            config.emit_stage_completed(
+                "Validate",
+                format!("Validation stage completed on attempt {}", attempt),
+                serde_json::json!({
+                    "attempt": attempt,
+                    "passed_count": current_pass_count,
+                    "scenario_count": satisfaction.scenario_results.len(),
+                    "gates_passed": true,
+                }),
+            );
 
             // Persist SatisfactionResultV1
             {
@@ -1286,6 +1829,18 @@ pub async fn run_full_pipeline_with_run_id<S: TurnStore>(
 
         if attempt > FACTORY_MAX_RETRIES || !budget.can_proceed() {
             tracing::warn!("  Gates FAILED — no more retries");
+            config.emit_stage_failed(
+                "Validate",
+                format!("Validation gates failed on attempt {} with no retry budget left", attempt),
+                true,
+                false,
+                serde_json::json!({
+                    "attempt": attempt,
+                    "passed_count": current_pass_count,
+                    "scenario_count": satisfaction.scenario_results.len(),
+                    "budget_remaining_usd": (budget.hard_cap_usd - budget.current_spend_usd).max(0.0),
+                }),
+            );
             // Use best result instead of the last (possibly regressed) result.
             // This is the rejection sampling principle: keep the best survivor.
             if let (Some(best_fo), Some(best_sat)) =
@@ -1312,6 +1867,18 @@ pub async fn run_full_pipeline_with_run_id<S: TurnStore>(
             break;
         }
 
+        config.emit_stage_failed(
+            "Validate",
+            format!("Validation gates failed on attempt {} — retrying", attempt),
+            false,
+            true,
+            serde_json::json!({
+                "attempt": attempt,
+                "passed_count": current_pass_count,
+                "scenario_count": satisfaction.scenario_results.len(),
+            }),
+        );
+
         // Collect generalized errors from failed scenarios to feed back
         // to the factory on the next attempt.
         retry_feedback = satisfaction
@@ -1319,9 +1886,38 @@ pub async fn run_full_pipeline_with_run_id<S: TurnStore>(
             .iter()
             .filter_map(|r| r.generalized_error.clone())
             .collect();
+        let mut retry_categories: std::collections::BTreeMap<String, usize> =
+            std::collections::BTreeMap::new();
+        let mut retry_severities: std::collections::BTreeMap<String, usize> =
+            std::collections::BTreeMap::new();
+        for feedback in &retry_feedback {
+            *retry_categories
+                .entry(feedback.category.clone())
+                .or_insert(0) += 1;
+            *retry_severities
+                .entry(format!("{:?}", feedback.severity))
+                .or_insert(0) += 1;
+        }
         tracing::info!(
             "  Retry: {} generalized error(s) will be fed back to factory",
             retry_feedback.len(),
+        );
+        config.emit_retry_feedback(
+            retry_feedback.len(),
+            serde_json::json!({
+                "attempt": attempt,
+                "categories": retry_categories,
+                "severities": retry_severities,
+            }),
+        );
+        config.emit_retry_started(
+            attempt + 1,
+            FACTORY_MAX_RETRIES + 1,
+            serde_json::json!({
+                "from_attempt": attempt,
+                "to_attempt": attempt + 1,
+                "feedback_count": retry_feedback.len(),
+            }),
         );
     }
 
@@ -1363,13 +1959,31 @@ pub async fn run_full_pipeline_with_run_id<S: TurnStore>(
 
     // ---- Git Projection ----
     tracing::info!("─── Git Projection ───");
+    config.emit_stage_started("Git", "Git projection stage started", serde_json::json!({}));
     let git_result = git::execute_git_projection(
         &factory_output,
         project_id,
         &front_office.intake.project_name,
         &front_office.intake.feature_slug,
     )
-    .await?;
+    .await
+    .map_err(|error| {
+        config.emit_stage_failed(
+            "Git",
+            format!("Git projection stage failed: {}", error),
+            true,
+            false,
+            serde_json::json!({ "error": error.to_string() }),
+        );
+        error
+    })?;
+    config.emit_stage_completed(
+        "Git",
+        "Git projection stage completed",
+        serde_json::json!({
+            "commit_hash": git_result.commit.commit_hash.clone(),
+        }),
+    );
 
     // Persist GitCommitV1
     {

@@ -444,7 +444,7 @@ The system improves incrementally without waiting for a single large redesign.
   branch actions are available from the project-scoped surface.
 - Contextual deep-link parameters, scoped entry behavior, and back-navigation
   are live for the currently implemented source surfaces: Blueprint,
-  Discovery, and Event Timeline.
+  Discovery, Event Timeline, and Session workflow pages.
 - Project IA is split into overview, inventory, architecture, quality, and
   activity sections.
 - Activity includes durable blueprint mutation history, review queues, recent
@@ -458,18 +458,15 @@ The system improves incrementally without waiting for a single large redesign.
 
 #### Not complete yet
 
-- Legacy migration classifier, defer workflow, and telemetry for ambiguous or
-  unscoped records are not complete yet.
+- Scope-review workflow support is now in place for ambiguous and unscoped
+  records; remaining work is operational cleanup of the backlog itself.
 - Deep-link rollout beyond the currently implemented source surfaces
-  (Blueprint, Discovery, and Event Timeline) is not complete yet.
-- Legacy cleanup remains for archived-tag and override-tag compatibility. The
-  first-class lifecycle and override fields exist, but fallback migration logic
-  still remains during the migration window.
-- Export history is durable and server-backed, but dedicated export audit
-  filtering, retention, and redaction policy are not yet first-class product
-  capabilities.
-- CI contract validation is not yet in place for every surface that emits
-  `View related knowledge`.
+  (Blueprint, Discovery, Event Timeline, Session workflow pages, Sessions
+  board, and Admin observability drill-downs) is not complete yet.
+- The remaining named rollout target is report surfaces, but no dedicated
+  report route exists in the current web application yet.
+- Focused route-contract coverage exists for every current `View related
+  knowledge` emitter; future emitters still need to follow the same gate.
 
 ### Phase-By-Phase Detail
 
@@ -479,8 +476,12 @@ The system improves incrementally without waiting for a single large redesign.
   - project and secondary scope validation is enforced on create and update
   - shared knowledge can link into project views and is labeled distinctly
   - manual unscoped review and resolve actions exist in project views
-  - gap: suggested-scope classification, defer handling, and migration
-    telemetry are not yet first-class
+  - deferred scope-review metadata now persists required reason, owner, and due
+    date directly on unscoped records
+  - bulk acceptance now lets reviewers assign the current project scope to the
+    selected review set while excluding exceptions inline
+  - heuristic suggested-scope classification and review telemetry are now
+    first-class in the project quality queue
 - Phase 2 partial:
   - project landing page, project routes, search, sort, favorites, and explicit
     `All Knowledge` entry point are live
@@ -493,35 +494,47 @@ The system improves incrementally without waiting for a single large redesign.
     project-scoped surface
   - project activity includes durable export entries sourced from server-backed
     event history
-  - gap: export audit ergonomics are still general event-log based rather than a
-    dedicated project/scope export history API
+  - dedicated export history API now supports project and scope filtering for
+    durable export audit views
+  - actor, scope-context, retention, and redaction governance are now surfaced
+    directly in durable export audit views
 - Phase 4 partial:
   - canonical deep-link parameters and scoped entry behavior are live
   - back-navigation works when originating context is supplied
-  - current source surfaces are Blueprint, Discovery, and Event Timeline
+  - current source surfaces are Blueprint, Discovery, Event Timeline, and
+    Session workflow pages, Sessions board, and Admin observability drill-downs
+  - focused route-contract coverage exists for every current `View related
+    knowledge` emitter
   - gap: broader rollout to additional project surfaces is still incomplete
-  - gap: contract validation in CI for every `View related knowledge` emitter is
-    not yet in place
 - Phase 5 partial:
   - project IA is split into overview, inventory, architecture, quality, and
     activity sections
   - activity shows durable project event history, review queues, recent node
     changes, branch lineage, and durable export history
-  - gap: export history is not yet exposed through dedicated project/scope audit
-    APIs or retention policy surfaces
-- Phase 6 mostly complete:
+  - durable export history now uses a dedicated project/scope audit API rather
+    than general event-log mining
+  - export audit entries now surface actor, retention, and redaction state in
+    the project activity view
+- Phase 6 complete:
   - shared vs local scope visibility filters are live in project views
   - scope class and scope visibility badges are shown for each record
   - local override relation is defined via first-class `override_scope`
-  - gap: precedence documentation, richer lineage visibility, and legacy-tag
-    cleanup remain
+  - override source validation now rejects missing, non-shared, and
+    self-referential shared-source references
+  - legacy `overrides:<id>` tags now normalize into `override_scope` on
+    blueprint-store open
+  - node summaries, activity payloads, and list badges now source override
+    state from canonical `override_scope` metadata instead of parsing tags
+  - record details and activity now surface shared-source lineage plus explicit
+    precedence outcome for local overrides and shared defaults
 - Phase 7 partial:
   - type-aware completeness scoring, health metrics, and review queues are live
   - active vs archived filtering is present in project views, backed by the
     first-class lifecycle field
-  - gap: legacy archive-tag fallback remains during the migration window
-  - gap: export audit ergonomics remain broader event-log based rather than a
-    dedicated audit surface
+  - legacy `archived` tags now normalize into the lifecycle field on
+    blueprint-store open
+  - node summaries, project activity, and list/archive actions now source
+    archived state from the canonical lifecycle field only
 - Phase 8 mostly complete:
   - create flows auto-fill scope in project/contextual entry points
   - global create requires explicit scope selection unless shared knowledge is
@@ -534,22 +547,19 @@ The system improves incrementally without waiting for a single large redesign.
   - 9.3 deep links work from currently implemented source surfaces and disable
     with explicit messaging when scope identity is unavailable
   - 9.4 project IA sectioning is live
-  - gap: 9.5 is only partially complete because migration cleanup, broader
-    deep-link rollout, and richer export audit ergonomics are not yet complete
+  - gap: 9.5 is only partially complete because broader deep-link rollout and
+    operational backlog cleanup are not yet complete
   - scoped-view export and single-record export are live
 
 ## Latest Remaining Gaps
 
-- Suggested-scope classification, defer handling, and telemetry for ambiguous
-  or unscoped legacy records are not complete yet.
+- The review workflow for ambiguous and unscoped legacy records is now in
+  place; remaining effort is resolving the backlog through that workflow.
 - Deep-link rollout is still limited to the currently implemented source
-  surfaces: Blueprint, Discovery, and Event Timeline.
-- Legacy cleanup remains for archived-tag and override-tag compatibility during
-  the migration window.
-- Export history is durable and server-backed, but dedicated project/scope
-  audit filtering plus retention/redaction policy are not complete yet.
-- CI contract validation is not yet in place for every surface that emits
-  `View related knowledge`.
+  surfaces: Blueprint, Discovery, Event Timeline, Session workflow pages,
+  Sessions board, and Admin observability drill-downs.
+- The remaining named rollout target is report surfaces, but no dedicated
+  report route exists in the current web application yet.
 
 ## Gap Closure Plan (Finish Unfinished Areas)
 
@@ -579,6 +589,26 @@ are resolved through a repeatable product flow instead of ad hoc cleanup.
   - acceptance rate
   - defer reasons
 
+### Current status
+
+- Project activity already surfaces a `Needs Scope Review Workflow` for
+  unscoped records with concrete resolution actions:
+  - assign to current project
+  - mark intentionally global
+- A heuristic classifier now suggests project scope with confidence and
+  optional contextual carryover from the active project filters.
+- Deferred review metadata now persists directly on unscoped records with:
+  - required defer reason
+  - owner
+  - due date
+- Reviewers can now bulk-assign the selected unscoped queue items to the
+  current project while leaving unchecked exceptions behind for manual followup.
+- Review telemetry now shows unresolved, ready-to-accept, deferred, overdue,
+  acceptance-rate, and defer-reason summaries from the current queue and
+  durable event history.
+- Remaining Workstream A effort is operational rather than product-level:
+  working the backlog until no legacy records remain unresolved.
+
 ### Done when
 
 - No legacy record remains outside one of these states:
@@ -592,8 +622,9 @@ are resolved through a repeatable product flow instead of ad hoc cleanup.
 ### Goal
 
 Expand contextual entry beyond the currently implemented source surfaces
-(Blueprint, Discovery, and Event Timeline) to all major project surfaces that
-expose related knowledge actions.
+(Blueprint, Discovery, Event Timeline, Session workflow pages, Sessions board,
+and Admin observability drill-downs) to all major project surfaces that expose
+related knowledge actions.
 
 ### Deliverables
 
@@ -603,12 +634,10 @@ expose related knowledge actions.
   - return-navigation source
 - Roll out canonical scope identity contract to remaining surfaces in priority
   order:
-  - Planner board
-  - Session workflow pages
-  - Report pages
-  - Admin observability drill-downs
+  - Report pages, once they exist as concrete product surfaces
 - Add contract validation in CI for source surfaces emitting
-  `View related knowledge`.
+  `View related knowledge`, extending the current route-contract coverage to any
+  future emitters.
 - Add failure UX rules:
   - disable action when required identity fields are missing
   - show explicit reason
@@ -640,6 +669,14 @@ lifecycle model.
 - Remove tag-derived fallback logic after migration completion.
 - Expand API and UI tests around lifecycle transitions and migrated records.
 
+### Current status
+
+- Disk-backed blueprint store now normalizes persisted legacy `archived` tags
+  into `scope.lifecycle` on open and flushes migrated nodes back to disk.
+- The server now normalizes legacy archive markers in blueprint event payloads
+  before they reach the UI, and summary/list/activity surfaces source archived
+  state from `scope.lifecycle` only.
+
 ### Done when
 
 - Lifecycle state is sourced from persisted lifecycle field only.
@@ -664,6 +701,18 @@ tag fallbacks.
 - Surface override lineage and effective source in record details and activity.
 - Add validation to prevent circular or invalid override chains.
 - Remove legacy `overrides:<id>` tag fallback after migration completion.
+
+### Current status
+
+- Disk-backed blueprint store now normalizes persisted legacy
+  `overrides:<id>` tags into `scope.override_scope` on open and flushes
+  migrated nodes back to disk.
+- Summary, list, and activity surfaces now source override state from
+  `scope.override_scope` only.
+- Record details and activity now surface shared source, local override, and
+  precedence outcome from the same project view.
+- Workstream D is feature-complete; remaining related effort is operational
+  verification rather than product capability.
 
 ### Done when
 
@@ -692,6 +741,17 @@ filter, and govern.
 - Add export history API with project and scope filters.
 - Add retention and redaction policy for export audit payloads.
 
+### Current status
+
+- `GET /blueprint/export-history` now provides a dedicated export audit API
+  with project and scope filters backed by the durable export event stream.
+- Project activity now uses that dedicated API for durable export history
+  instead of filtering the general blueprint event log client-side.
+- Export audit entries now expose actor, sanitized scope context, retention
+  expiry, and redaction state without requiring raw payload inspection.
+- Workstream E is feature-complete; remaining related effort is broader admin
+  adoption rather than missing audit capability.
+
 ### Done when
 
 - Export history is visible to authorized users across devices.
@@ -701,22 +761,17 @@ filter, and govern.
 
 ### Closure Sequence
 
-1. Ship Workstream C (lifecycle migration cleanup) and Workstream D (override
-   cleanup and visibility) together to remove the remaining legacy tag
-   fallbacks.
-2. Ship Workstream A (legacy migration classifier, defer flow, and telemetry)
-   once lifecycle and override cleanup are stable.
-3. Complete Workstream B (deep-link rollout) progressively per source surface
+1. Complete Workstream B (deep-link rollout) progressively per source surface
    using CI contract validation gates.
-4. Ship Workstream E (export audit ergonomics and governance) alongside the
-   surfaces that need dedicated project/scope filtering.
+2. Work the remaining legacy backlog through the completed Workstream A review
+   workflow until no ambiguous record remains unresolved.
 
 ### Final Done Criteria For This Plan
 
 - All latest remaining gaps are implemented as first-class product flows with
   migration telemetry, CI guardrails, and dedicated audit ergonomics.
-- Phase 9.5 is complete with legacy-tag cleanup, broader deep-link rollout, and
-  export audit governance fully live.
+- Phase 9.5 is complete with broader deep-link rollout and the legacy-review
+  backlog cleared through the scoped review workflow.
 - Remaining gap list can be removed from this document without caveats.
 
 ## Recommended MVP

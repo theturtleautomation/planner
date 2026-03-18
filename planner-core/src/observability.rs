@@ -409,4 +409,25 @@ mod tests {
         assert!(events.is_empty());
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    #[test]
+    fn event_store_delete_session_events_removes_file() {
+        let dir = std::env::temp_dir().join(format!("planner_test_{}", Uuid::new_v4()));
+        let store = EventStore::new(&dir).unwrap();
+        let sid = Uuid::new_v4();
+        let events = vec![PlannerEvent::info(
+            EventSource::System,
+            "delete.test",
+            "Delete me",
+        )];
+
+        store.save_session_events(sid, &events).unwrap();
+        let path = dir.join("events").join(format!("{}.msgpack", sid));
+        assert!(path.exists());
+
+        store.delete_session_events(sid).unwrap();
+        assert!(!path.exists());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

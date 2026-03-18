@@ -3,11 +3,18 @@ import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import KnowledgeLibraryPage from '../KnowledgeLibraryPage.tsx';
-import type { BlueprintEventPayload, BlueprintNode, BlueprintResponse, NodeSummary } from '../../types/blueprint.ts';
+import type {
+  BlueprintEventPayload,
+  BlueprintExportHistoryEntry,
+  BlueprintNode,
+  BlueprintResponse,
+  NodeSummary,
+} from '../../types/blueprint.ts';
 
 const mockGetBlueprint = vi.fn();
 const mockGetBlueprintNode = vi.fn();
 const mockListBlueprintEvents = vi.fn();
+const mockListBlueprintExportHistory = vi.fn();
 const mockRecordBlueprintExport = vi.fn();
 const mockUpdateBlueprintNode = vi.fn();
 const mockCreateBlueprintNode = vi.fn();
@@ -18,6 +25,7 @@ vi.mock('../../api/client.ts', () => ({
     getBlueprint: mockGetBlueprint,
     getBlueprintNode: mockGetBlueprintNode,
     listBlueprintEvents: mockListBlueprintEvents,
+    listBlueprintExportHistory: mockListBlueprintExportHistory,
     recordBlueprintExport: mockRecordBlueprintExport,
     updateBlueprintNode: mockUpdateBlueprintNode,
     createBlueprintNode: mockCreateBlueprintNode,
@@ -191,6 +199,62 @@ function makeBlueprintWithUnscopedRecord(): BlueprintResponse {
   };
 }
 
+function makeBlueprintWithDeferredUnscopedRecord(): BlueprintResponse {
+  const blueprint = makeBlueprintWithUnscopedRecord();
+  return {
+    ...blueprint,
+    nodes: blueprint.nodes.map(node => (
+      node.id === 'legacy-unscoped'
+        ? {
+            ...node,
+            scope_review_deferred_reason: 'Need PM clarification',
+            scope_review_owner: 'alice',
+            scope_review_due_at: '2026-03-31',
+          }
+        : node
+    )),
+  };
+}
+
+function makeBlueprintWithMultipleUnscopedRecords(): BlueprintResponse {
+  const blueprint = makeBlueprintWithUnscopedRecord();
+  return {
+    ...blueprint,
+    nodes: [
+      ...blueprint.nodes,
+      makeNode({
+        id: 'legacy-unscoped-2',
+        name: 'Legacy Decision',
+        node_type: 'decision',
+        scope_class: 'unscoped',
+        scope_visibility: 'unscoped',
+        lifecycle: 'active',
+        project_id: undefined,
+        project_name: undefined,
+        secondary_scope: {},
+        linked_project_ids: [],
+        tags: ['legacy'],
+        updated_at: '2026-03-02T12:00:00Z',
+      }),
+      makeNode({
+        id: 'legacy-unscoped-3',
+        name: 'Legacy Constraint',
+        node_type: 'constraint',
+        scope_class: 'unscoped',
+        scope_visibility: 'unscoped',
+        lifecycle: 'active',
+        project_id: undefined,
+        project_name: undefined,
+        secondary_scope: {},
+        linked_project_ids: [],
+        tags: ['legacy'],
+        updated_at: '2026-03-01T12:00:00Z',
+      }),
+    ],
+    total_nodes: blueprint.total_nodes + 2,
+  };
+}
+
 function makeBlueprintNode(overrides: Partial<BlueprintNode> = {}): BlueprintNode {
   return {
     node_type: 'decision',
@@ -228,7 +292,19 @@ function makeProjectEvents(includeExport = false): BlueprintEventPayload[] {
       data: {
         node_id: 'alpha-local',
         before: makeBlueprintNode({ tags: ['platform', 'api', 'owner:Alice', 'team:Platform'] }),
-        after: makeBlueprintNode({ tags: ['platform', 'api', 'owner:Alice', 'team:Platform', 'archived'] }),
+        after: makeBlueprintNode({
+          tags: ['platform', 'api', 'owner:Alice', 'team:Platform'],
+          scope: {
+            scope_class: 'project',
+            project: {
+              project_id: 'proj-alpha',
+              project_name: 'Alpha Project',
+            },
+            secondary: {},
+            is_shared: false,
+            lifecycle: 'archived',
+          },
+        }),
       },
     },
   ];
@@ -250,6 +326,128 @@ function makeProjectEvents(includeExport = false): BlueprintEventPayload[] {
   }
 
   return events;
+}
+
+function makeOverrideProjectEvents(): BlueprintEventPayload[] {
+  return [
+    {
+      event_type: 'node_updated',
+      summary: "Updated decision 'alpha-local'",
+      timestamp: '2026-03-07T10:00:00Z',
+      data: {
+        node_id: 'alpha-local',
+        before: makeBlueprintNode(),
+        after: makeBlueprintNode({
+          scope: {
+            scope_class: 'project',
+            project: {
+              project_id: 'proj-alpha',
+              project_name: 'Alpha Project',
+            },
+            secondary: {},
+            is_shared: false,
+            lifecycle: 'active',
+            override_scope: {
+              shared_source_id: 'shared-guidance',
+              override_reason: 'Project-specific checkout flow',
+              effective_from: '2026-03-10',
+            },
+          },
+        }),
+      },
+    },
+  ];
+}
+
+function makeScopeReviewActionEvents(): BlueprintEventPayload[] {
+  return [
+    {
+      event_type: 'node_updated',
+      summary: "Assigned legacy record to project scope",
+      timestamp: '2026-03-07T10:00:00Z',
+      data: {
+        before: {
+          id: 'legacy-unscoped',
+          node_type: 'pattern',
+          name: 'Legacy Pattern',
+          tags: ['legacy'],
+          scope: {
+            scope_class: 'unscoped',
+          },
+        },
+        after: {
+          id: 'legacy-unscoped',
+          node_type: 'pattern',
+          name: 'Legacy Pattern',
+          tags: ['legacy'],
+          scope: {
+            scope_class: 'project',
+            project: {
+              project_id: 'proj-alpha',
+              project_name: 'Alpha Project',
+            },
+          },
+        },
+      },
+    },
+    {
+      event_type: 'node_updated',
+      summary: "Deferred legacy review",
+      timestamp: '2026-03-07T11:00:00Z',
+      data: {
+        before: {
+          id: 'legacy-unscoped-2',
+          node_type: 'decision',
+          name: 'Legacy Decision',
+          tags: ['legacy'],
+          scope: {
+            scope_class: 'unscoped',
+          },
+        },
+        after: {
+          id: 'legacy-unscoped-2',
+          node_type: 'decision',
+          name: 'Legacy Decision',
+          tags: ['legacy'],
+          scope: {
+            scope_class: 'unscoped',
+            scope_review: {
+              deferred_reason: 'Need PM clarification',
+              owner: 'alice',
+              due_at: '2026-03-31',
+            },
+          },
+        },
+      },
+    },
+  ];
+}
+
+function makeExportHistoryEntries(): BlueprintExportHistoryEntry[] {
+  return [
+    {
+      export_id: 'exp-knowledge',
+      kind: 'scoped_view',
+      actor: 'auth0|test-user',
+      node_count: 3,
+      edge_count: 1,
+      project_id: 'proj-alpha',
+      project_name: 'Alpha Project',
+      scope_snapshot: {
+        filters: {
+          scopeClass: 'project_contextual',
+          feature: 'task-tracker',
+          component: 'task-widget',
+        },
+        section: 'activity',
+      },
+      scope_snapshot_redacted: true,
+      scope_snapshot_redacted_fields: ['filters.owner', 'selected_node_id'],
+      retention_expires_at: '2026-06-05T11:00:00Z',
+      summary: 'Exported scoped view in project proj-alpha (3 nodes, 1 edges)',
+      timestamp: '2026-03-07T11:00:00Z',
+    },
+  ];
 }
 
 function renderPage(route: string) {
@@ -274,6 +472,7 @@ describe('KnowledgeLibraryPage phase 2 routing', () => {
     mockUpdateBlueprintNode.mockResolvedValue(makeBlueprintNode());
     mockCreateBlueprintNode.mockResolvedValue({ id: 'created-node', message: 'ok' });
     mockListBlueprintEvents.mockResolvedValue({ events: makeProjectEvents(), total: 1 });
+    mockListBlueprintExportHistory.mockResolvedValue({ entries: makeExportHistoryEntries(), total: 1 });
     mockRecordBlueprintExport.mockResolvedValue({
       export_id: 'exp-test',
       recorded_at: '2026-03-07T12:00:00Z',
@@ -424,7 +623,7 @@ describe('KnowledgeLibraryPage phase 2 routing', () => {
 
   it('shows durable export history entries sourced from project events', async () => {
     const user = userEvent.setup();
-    mockListBlueprintEvents.mockResolvedValueOnce({ events: makeProjectEvents(true), total: 2 });
+    mockListBlueprintExportHistory.mockResolvedValueOnce({ entries: makeExportHistoryEntries(), total: 1 });
 
     renderPage('/knowledge/projects/proj-alpha');
 
@@ -434,8 +633,30 @@ describe('KnowledgeLibraryPage phase 2 routing', () => {
 
     await user.click(screen.getByRole('button', { name: /activity/i }));
 
+    await waitFor(() => {
+      expect(mockListBlueprintExportHistory).toHaveBeenCalledWith({ projectId: 'proj-alpha', limit: 40 });
+    });
     expect(screen.getByText(/durable export history/i)).toBeInTheDocument();
     expect(screen.getByText(/exported scoped view \(3 records\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/actor auth0\|test-user/i)).toBeInTheDocument();
+    expect(screen.getByText(/retained until 2026-06-05/i)).toBeInTheDocument();
+    expect(screen.getByText(/snapshot redacted \(filters.owner, selected_node_id\)/i)).toBeInTheDocument();
+  });
+
+  it('surfaces override-specific activity summaries and lineage details', async () => {
+    const user = userEvent.setup();
+    mockListBlueprintEvents.mockResolvedValueOnce({ events: makeOverrideProjectEvents(), total: 1 });
+
+    renderPage('/knowledge/projects/proj-alpha');
+
+    await waitFor(() => {
+      expect(screen.getByText(/project: alpha project/i)).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: /activity/i }));
+
+    expect(await screen.findByText(/updated local override 'alpha decision'/i)).toBeInTheDocument();
+    expect(screen.getByText(/overrides shared-guidance · project-specific checkout flow/i)).toBeInTheDocument();
   });
 
   it('archives selected knowledge via the lifecycle field', async () => {
@@ -569,7 +790,7 @@ describe('KnowledgeLibraryPage phase 2 routing', () => {
 
   it('resolves unscoped records from the quality review workflow', async () => {
     const user = userEvent.setup();
-    mockGetBlueprint.mockResolvedValue(makeBlueprintWithUnscopedRecord());
+    mockGetBlueprint.mockResolvedValue(makeBlueprintWithDeferredUnscopedRecord());
 
     renderPage('/knowledge/projects/proj-alpha');
 
@@ -589,9 +810,107 @@ describe('KnowledgeLibraryPage phase 2 routing', () => {
             project: expect.objectContaining({
               project_id: 'proj-alpha',
             }),
+            scope_review: null,
           }),
         }),
       );
     });
+  });
+
+  it('defers unscoped records with reason owner and due date', async () => {
+    const user = userEvent.setup();
+    mockGetBlueprint.mockResolvedValue(makeBlueprintWithUnscopedRecord());
+
+    renderPage('/knowledge/projects/proj-alpha');
+
+    await waitFor(() => {
+      expect(screen.getByText(/project: alpha project/i)).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: /^quality$/i }));
+    await user.click(screen.getByRole('button', { name: /^defer$/i }));
+    await user.type(screen.getByLabelText(/deferred reason/i), 'Need PM clarification');
+    await user.type(screen.getByLabelText(/deferred owner/i), 'alice');
+    await user.type(screen.getByLabelText(/deferred due date/i), '2026-03-31');
+    await user.click(screen.getByRole('button', { name: /save defer/i }));
+
+    await waitFor(() => {
+      expect(mockUpdateBlueprintNode).toHaveBeenCalledWith(
+        'legacy-unscoped',
+        expect.objectContaining({
+          scope: expect.objectContaining({
+            scope_class: 'unscoped',
+            scope_review: expect.objectContaining({
+              deferred_reason: 'Need PM clarification',
+              owner: 'alice',
+              due_at: '2026-03-31',
+            }),
+          }),
+        }),
+      );
+    });
+  });
+
+  it('shows suggested scope hints and defer telemetry in the review queue', async () => {
+    const user = userEvent.setup();
+    mockGetBlueprint.mockResolvedValue(makeBlueprintWithDeferredUnscopedRecord());
+    mockListBlueprintEvents.mockResolvedValueOnce({ events: makeScopeReviewActionEvents(), total: 2 });
+
+    renderPage('/knowledge/projects/proj-alpha');
+
+    await waitFor(() => {
+      expect(screen.getByText(/project: alpha project/i)).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: /^quality$/i }));
+
+    expect(screen.getByText(/suggested scope: alpha project/i)).toBeInTheDocument();
+    expect(screen.getByText(/medium confidence/i)).toBeInTheDocument();
+    expect(screen.getByText(/top defer reasons: need pm clarification \(1\)/i)).toBeInTheDocument();
+    expect(screen.getByText('50%')).toBeInTheDocument();
+    expect(screen.getByText(/review actions: 1 accepted · 1 deferred\./i)).toBeInTheDocument();
+  });
+
+  it('bulk-assigns selected unscoped records while leaving excluded exceptions behind', async () => {
+    const user = userEvent.setup();
+    mockGetBlueprint.mockResolvedValue(makeBlueprintWithMultipleUnscopedRecords());
+
+    renderPage('/knowledge/projects/proj-alpha');
+
+    await waitFor(() => {
+      expect(screen.getByText(/project: alpha project/i)).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: /^quality$/i }));
+    await user.click(screen.getByRole('checkbox', { name: /include legacy decision in bulk accept/i }));
+    await user.click(screen.getByRole('button', { name: /assign selected to project \(2\)/i }));
+
+    await waitFor(() => {
+      expect(mockUpdateBlueprintNode).toHaveBeenCalledTimes(2);
+    });
+    expect(mockUpdateBlueprintNode).toHaveBeenCalledWith(
+      'legacy-unscoped',
+      expect.objectContaining({
+        scope: expect.objectContaining({
+          scope_class: 'project',
+          project: expect.objectContaining({ project_id: 'proj-alpha' }),
+          scope_review: null,
+        }),
+      }),
+    );
+    expect(mockUpdateBlueprintNode).toHaveBeenCalledWith(
+      'legacy-unscoped-3',
+      expect.objectContaining({
+        scope: expect.objectContaining({
+          scope_class: 'project',
+          project: expect.objectContaining({ project_id: 'proj-alpha' }),
+          scope_review: null,
+        }),
+      }),
+    );
+    expect(mockUpdateBlueprintNode).not.toHaveBeenCalledWith(
+      'legacy-unscoped-2',
+      expect.anything(),
+    );
   });
 });

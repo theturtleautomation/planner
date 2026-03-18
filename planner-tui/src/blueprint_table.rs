@@ -212,6 +212,7 @@ mod tests {
             id: NodeId::from_raw("comp-gamma"),
             name: "Gamma".into(),
             component_type: ComponentType::Module,
+            naming: None,
             description: "Gamma component".into(),
             provides: Vec::new(),
             consumes: Vec::new(),

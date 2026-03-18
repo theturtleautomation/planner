@@ -5,9 +5,98 @@ use planner_schemas::artifacts::blueprint::{
 pub const COMPONENT_NAMING_VERSION: u16 = 1;
 
 const BOILERPLATE_PATH_SEGMENTS: &[&str] = &["src", "crates", "packages", "app", "lib", "general"];
+const BOILERPLATE_FACTORY_SEGMENTS: &[&str] = &[
+    "opt",
+    "planner",
+    "data",
+    "worktree",
+    "worktrees",
+    "tmp",
+    "temp",
+    "run",
+];
 const GENERIC_SUBJECT_TOKENS: &[&str] = &[
-    "api", "core", "web", "ui", "lib", "store", "module", "component", "service", "project",
-    "workspace", "output", "dist", "build", "target", "factory", "internal", "shared", "common",
+    "api",
+    "core",
+    "web",
+    "ui",
+    "root",
+    "general",
+    "the",
+    "system",
+    "must",
+    "should",
+    "shall",
+    "allow",
+    "allows",
+    "support",
+    "supports",
+    "provide",
+    "provides",
+    "present",
+    "presents",
+    "enable",
+    "enables",
+    "this",
+    "that",
+    "these",
+    "those",
+    "with",
+    "when",
+    "while",
+    "into",
+    "from",
+    "during",
+    "through",
+    "their",
+    "there",
+    "here",
+    "user",
+    "users",
+    "new",
+    "single",
+    "full",
+    "distinct",
+    "individual",
+    "including",
+    "visible",
+    "between",
+    "only",
+    "using",
+    "used",
+    "use",
+    "all",
+    "can",
+    "will",
+    "would",
+    "could",
+    "task",
+    "tasks",
+    "one",
+    "two",
+    "three",
+    "four",
+    "five",
+    "six",
+    "seven",
+    "eight",
+    "nine",
+    "ten",
+    "lib",
+    "store",
+    "module",
+    "component",
+    "service",
+    "project",
+    "workspace",
+    "output",
+    "dist",
+    "build",
+    "target",
+    "factory",
+    "internal",
+    "shared",
+    "common",
 ];
 
 #[derive(Debug, Clone)]
@@ -80,7 +169,12 @@ pub fn generate_spec_name(input: SpecGroupNamingInput<'_>) -> GeneratedComponent
 
     let subject = best_subject(tokens, input.project_name, Some(input.group_token));
     let role = infer_role(input.component_type, &subject);
-    let name = finalize_name(subject, role, input.project_name, &tokens_from_string(input.group_token));
+    let name = finalize_name(
+        subject,
+        role,
+        input.project_name,
+        &tokens_from_string(input.group_token),
+    );
 
     let origin_key = format!(
         "spec:{}:{}:{}",
@@ -97,6 +191,35 @@ pub fn generate_spec_name(input: SpecGroupNamingInput<'_>) -> GeneratedComponent
     );
 
     GeneratedComponentName { name, naming }
+}
+
+pub fn derive_spec_group_key(group_token: &str, statements: &[String]) -> String {
+    let normalized_seed = normalize_origin_segment(group_token);
+    let seed_subject = normalize_subject(group_token);
+    let seed_is_numeric = !normalized_seed.is_empty()
+        && normalized_seed
+            .chars()
+            .all(|ch| ch.is_ascii_digit() || ch == '_');
+    if !normalized_seed.is_empty() && !seed_is_numeric && !is_generic_subject(&seed_subject) {
+        return normalized_seed;
+    }
+
+    let statement_tokens: Vec<String> = statements
+        .iter()
+        .flat_map(|statement| tokenize_text(statement))
+        .collect();
+    if let Some(subject) = first_non_generic_subject(&statement_tokens) {
+        let normalized = normalize_origin_segment(&subject);
+        if !normalized.is_empty() {
+            return normalized;
+        }
+    }
+
+    if !normalized_seed.is_empty() {
+        format!("group_{}", normalized_seed)
+    } else {
+        "project".into()
+    }
 }
 
 pub fn generate_directory_name(input: DirectoryNamingInput<'_>) -> GeneratedComponentName {
@@ -122,9 +245,14 @@ pub fn generate_directory_name(input: DirectoryNamingInput<'_>) -> GeneratedComp
         meaningful_segments = path_segments.clone();
     }
 
-    let leaf = meaningful_segments.last().cloned().unwrap_or_else(|| "component".into());
+    let leaf = meaningful_segments
+        .last()
+        .cloned()
+        .unwrap_or_else(|| "component".into());
     let parent = if meaningful_segments.len() >= 2 {
-        meaningful_segments.get(meaningful_segments.len() - 2).cloned()
+        meaningful_segments
+            .get(meaningful_segments.len() - 2)
+            .cloned()
     } else {
         None
     };
@@ -149,7 +277,10 @@ pub fn generate_directory_name(input: DirectoryNamingInput<'_>) -> GeneratedComp
 
         if let Some(parent_subject) = first_non_generic_subject(&parent_tokens) {
             subject = parent_subject;
-        } else if leaf_tokens.iter().any(|token| token == "web" || token == "ui") {
+        } else if leaf_tokens
+            .iter()
+            .any(|token| token == "web" || token == "ui")
+        {
             subject = "Web App".into();
         } else if leaf_tokens.iter().any(|token| token == "api") {
             subject = "Public".into();
@@ -171,6 +302,11 @@ pub fn generate_directory_name(input: DirectoryNamingInput<'_>) -> GeneratedComp
 
 pub fn generate_factory_name(input: FactoryNamingInput<'_>) -> GeneratedComponentName {
     let normalized_path = normalize_path(input.output_path);
+    let path_segments: Vec<String> = normalized_path
+        .split('/')
+        .filter(|segment| !segment.trim().is_empty())
+        .map(ToOwned::to_owned)
+        .collect();
     let basename = normalized_path
         .rsplit('/')
         .next()
@@ -185,7 +321,39 @@ pub fn generate_factory_name(input: FactoryNamingInput<'_>) -> GeneratedComponen
         )
     });
 
-    let subject = if let Some(subject) = first_non_generic_subject(&basename_tokens) {
+    let meaningful_segments: Vec<String> = path_segments
+        .iter()
+        .filter(|segment| {
+            let lower = segment.to_ascii_lowercase();
+            !BOILERPLATE_FACTORY_SEGMENTS
+                .iter()
+                .any(|boilerplate| *boilerplate == lower)
+        })
+        .cloned()
+        .collect();
+
+    let basename_subject = if looks_like_factory_uuid_basename(basename, &basename_tokens) {
+        None
+    } else {
+        first_non_generic_subject(&basename_tokens)
+    };
+
+    let parent_subject = meaningful_segments
+        .iter()
+        .rev()
+        .skip(1)
+        .find_map(|segment| {
+            let tokens = tokenize_identifier(segment);
+            if looks_like_factory_uuid_basename(segment, &tokens) {
+                None
+            } else {
+                first_non_generic_subject(&tokens)
+            }
+        });
+
+    let subject = if let Some(subject) = basename_subject {
+        subject
+    } else if let Some(subject) = parent_subject {
         subject
     } else if let Some(project) = cleaned_project_subject(input.project_name) {
         project
@@ -193,7 +361,11 @@ pub fn generate_factory_name(input: FactoryNamingInput<'_>) -> GeneratedComponen
         "Generated".into()
     };
 
-    let mut name = format!("{} Workspace", subject);
+    let mut name = if cleaned_project_subject(input.project_name).is_some() {
+        format!("{} Generated Workspace", subject)
+    } else {
+        format!("{} Workspace", subject)
+    };
     if is_weak_component_name(&name) {
         name = "Generated Workspace".into();
     }
@@ -219,12 +391,24 @@ pub fn is_weak_component_name(name: &str) -> bool {
         return true;
     }
 
+    if lower.ends_with(" workspace") {
+        let subject = lower.trim_end_matches(" workspace").trim();
+        let subject_tokens = tokenize_identifier(subject);
+        if subject.is_empty()
+            || subject == "generated"
+            || looks_like_factory_uuid_basename(subject, &subject_tokens)
+        {
+            return true;
+        }
+    }
+
     if lower.chars().all(|ch| ch.is_ascii_digit()) {
         return true;
     }
 
     let tokens: Vec<&str> = lower.split_whitespace().collect();
-    if tokens.len() == 2 && tokens[1] == "module" && tokens[0].chars().all(|ch| ch.is_ascii_digit()) {
+    if tokens.len() == 2 && tokens[1] == "module" && tokens[0].chars().all(|ch| ch.is_ascii_digit())
+    {
         return true;
     }
 
@@ -235,7 +419,10 @@ pub fn is_weak_component_name(name: &str) -> bool {
         )
 }
 
-pub fn merge_generated_component(existing: &Component, generated: &GeneratedComponentName) -> Component {
+pub fn merge_generated_component(
+    existing: &Component,
+    generated: &GeneratedComponentName,
+) -> Component {
     let mut next = existing.clone();
     let old_name = normalize_whitespace(&existing.name);
 
@@ -257,10 +444,13 @@ pub fn merge_generated_component(existing: &Component, generated: &GeneratedComp
     let should_update_name = match existing.naming.as_ref() {
         Some(meta) if meta.source == ComponentNameSource::Manual => false,
         Some(meta) if meta.source == ComponentNameSource::Generated => {
-            old_name == normalize_whitespace(&meta.generated_name) || is_weak_component_name(&old_name)
+            old_name == normalize_whitespace(&meta.generated_name)
+                || is_weak_component_name(&old_name)
         }
         Some(_) => false,
-        None => old_name == normalize_whitespace(&generated.name) || is_weak_component_name(&old_name),
+        None => {
+            old_name == normalize_whitespace(&generated.name) || is_weak_component_name(&old_name)
+        }
     };
 
     if should_update_name {
@@ -373,7 +563,10 @@ fn first_non_generic_subject(tokens: &[String]) -> Option<String> {
         if token.chars().all(|ch| ch.is_ascii_digit()) {
             continue;
         }
-        if GENERIC_SUBJECT_TOKENS.iter().any(|generic| *generic == token) {
+        if GENERIC_SUBJECT_TOKENS
+            .iter()
+            .any(|generic| *generic == token)
+        {
             continue;
         }
         words.push(format_token(token));
@@ -400,6 +593,17 @@ fn alias_subject(token: &str) -> Option<String> {
         "sync" => "Sync",
         "report" | "reporting" => "Reporting",
         "analytics" => "Analytics",
+        "input" => "Input",
+        "toggle" => "Toggle",
+        "review" => "Review",
+        "entry" => "Entry",
+        "edit" | "editing" => "Editing",
+        "delete" | "deletion" => "Deletion",
+        "persist" | "persistence" => "Persistence",
+        "reorder" | "reordering" => "Reordering",
+        "drag" => "Drag",
+        "drop" => "Drop",
+        "completion" | "complete" => "Completion",
         _ => return None,
     };
     Some(subject.into())
@@ -438,7 +642,22 @@ fn infer_role(component_type: ComponentType, subject: &str) -> Option<&'static s
         ComponentType::Module => {
             if lower.contains("api") || lower.contains("gateway") {
                 Some("API")
-            } else if lower.contains("ui") || lower.contains("dashboard") || lower.contains("web") {
+            } else if lower.contains("ui")
+                || lower.contains("dashboard")
+                || lower.contains("web")
+                || lower.contains("input")
+                || lower.contains("toggle")
+                || lower.contains("review")
+                || lower.contains("entry")
+                || lower.contains("edit")
+                || lower.contains("delete")
+                || lower.contains("drag")
+                || lower.contains("drop")
+                || lower.contains("form")
+                || lower.contains("button")
+                || lower.contains("list")
+                || lower.contains("widget")
+            {
                 Some("UI")
             } else if lower.contains("store") || lower.contains("cache") || lower.contains("data") {
                 Some("Data Store")
@@ -516,6 +735,7 @@ fn format_token(token: &str) -> String {
         "oauth" => "OAuth".into(),
         "http" => "HTTP".into(),
         "cli" => "CLI".into(),
+        "tui" => "TUI".into(),
         "llm" => "LLM".into(),
         value => {
             let mut chars = value.chars();
@@ -535,13 +755,38 @@ fn is_generic_subject(subject: &str) -> bool {
 
     let tokens: Vec<&str> = normalized.split_whitespace().collect();
     tokens.is_empty()
-        || tokens
-            .iter()
-            .all(|token| GENERIC_SUBJECT_TOKENS.iter().any(|candidate| token == candidate))
+        || tokens.iter().all(|token| {
+            GENERIC_SUBJECT_TOKENS
+                .iter()
+                .any(|candidate| token == candidate)
+        })
 }
 
 fn normalize_whitespace(value: &str) -> String {
     value.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn looks_like_factory_uuid_basename(value: &str, tokens: &[String]) -> bool {
+    let normalized = value.trim().trim_matches('/');
+    if normalized.is_empty() {
+        return false;
+    }
+
+    let compact: String = normalized
+        .chars()
+        .filter(|ch| ch.is_ascii_hexdigit())
+        .collect();
+    let hex_token_count = tokens
+        .iter()
+        .filter(|token| {
+            token.len() >= 4 && token.len() <= 16 && token.chars().all(|ch| ch.is_ascii_hexdigit())
+        })
+        .count();
+
+    compact.chars().all(|ch| ch.is_ascii_hexdigit())
+        && (compact.len() >= 24
+            && (normalized.contains('-') || normalized.contains('_') || hex_token_count >= 3)
+            || (hex_token_count >= 3 && compact.len() >= 12))
 }
 
 #[cfg(test)]
@@ -554,6 +799,7 @@ mod tests {
         assert!(is_weak_component_name("001 Module"));
         assert!(is_weak_component_name("Api"));
         assert!(is_weak_component_name("Factory Output"));
+        assert!(is_weak_component_name("F6873403 1e41 46fb Workspace"));
         assert!(!is_weak_component_name("Authentication Service"));
     }
 
@@ -577,6 +823,36 @@ mod tests {
         assert!(!generated.name.starts_with("001"));
         assert!(generated.name.contains("Authentication"));
         assert_eq!(generated.naming.origin_key, "spec:proj_1:root:001");
+    }
+
+    #[test]
+    fn spec_names_ignore_root_and_system_boilerplate() {
+        let statements = vec![
+            "The system must present two distinct modes: Quick Entry mode and Review mode"
+                .to_string(),
+        ];
+        let generated = generate_spec_name(SpecGroupNamingInput {
+            project_id: "proj-1",
+            project_name: None,
+            chunk_tag: "root",
+            group_token: "3",
+            statements: &statements,
+            component_type: ComponentType::Module,
+            timestamp: "2026-03-07T00:00:00Z",
+        });
+
+        assert!(!generated.name.contains("Root"));
+        assert!(!generated.name.contains("System"));
+        assert!(generated.name.contains("Review") || generated.name.contains("Entry"));
+    }
+
+    #[test]
+    fn derive_spec_group_key_promotes_semantic_group_for_numeric_ids() {
+        let statements = vec![
+            "The system must provide a text input that adds a new task to the list when the user presses Enter".to_string(),
+        ];
+
+        assert_eq!(derive_spec_group_key("001", &statements), "input");
     }
 
     #[test]
@@ -634,5 +910,36 @@ mod tests {
             merged.naming.map(|n| n.source),
             Some(ComponentNameSource::Manual)
         );
+    }
+
+    #[test]
+    fn factory_names_ignore_uuid_worktree_basenames() {
+        let generated = generate_factory_name(FactoryNamingInput {
+            output_path: "/opt/planner/data/worktrees/f6873403-1e41-46fb-8414-b61b90df9003",
+            project_name: None,
+            timestamp: "2026-03-16T00:00:00Z",
+        });
+
+        assert_eq!(generated.name, "Generated Workspace");
+        assert_eq!(
+            generated.naming.origin_key,
+            "factory:opt/planner/data/worktrees/f6873403_1e41_46fb_8414_b61b90df9003"
+        );
+    }
+
+    #[test]
+    fn factory_names_prefer_project_name_when_available() {
+        let generated = generate_factory_name(FactoryNamingInput {
+            output_path: "/opt/planner/data/worktrees/f6873403-1e41-46fb-8414-b61b90df9003",
+            project_name: Some("Task Widget"),
+            timestamp: "2026-03-16T00:00:00Z",
+        });
+
+        assert_eq!(generated.name, "Task Widget Generated Workspace");
+    }
+
+    #[test]
+    fn format_token_preserves_tui_acronym() {
+        assert_eq!(format_token("tui"), "TUI");
     }
 }

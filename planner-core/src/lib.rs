@@ -11,6 +11,7 @@ pub mod component_naming;
 pub mod cxdb;
 pub mod discovery;
 pub mod dtu;
+pub mod knowledge_naming;
 pub mod llm;
 pub mod observability;
 pub mod pipeline;

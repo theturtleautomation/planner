@@ -330,6 +330,46 @@ Longer-term note:
 - if a later phase decides that generated output is build evidence rather than
   a domain component, that node can be demoted or removed separately
 
+#### Factory worktree UUID follow-up
+
+Observed live failure after the first rollout:
+
+- factory-output components backed by
+  `/opt/planner/data/worktrees/<uuid>` were rendered as names like
+  `F6873403 1e41 46fb Workspace`
+- these names came from treating the worktree UUID basename as a meaningful
+  subject token
+- this is worse than a generic label because it looks specific while conveying
+  no user-meaningful architecture information
+
+Reanalysis result:
+
+- `FactoryOutputV1` currently does not carry `project_name`
+- the Blueprint factory emitter therefore cannot reliably derive a
+  project-specific workspace name during emission
+- the safe short-term fix is:
+  - detect UUID-like factory output basenames and treat them as non-semantic
+  - fall back to a stable generic label such as `Generated Workspace`
+  - migrate existing generated factory-output component names on store open
+- the next-step quality fix does not require a schema change:
+  - the full pipeline already has `front_office.intake.project_id` and
+    `front_office.intake.project_name` when it emits factory Blueprint nodes
+  - thread that project identity into the factory Blueprint emitter directly
+  - emit factory output components as project-scoped nodes attached to the
+    project root
+  - use the project name for future generated names, producing
+    `<Project> Workspace`
+- legacy recovery also needs one bounded backfill rule:
+  - some already-persisted factory components and patterns were emitted before
+    project scope was attached, so they remain `unscoped`
+  - if the Blueprint contains exactly one project root, store-open migration
+    may safely attach those legacy factory nodes to that project root
+  - once scoped, the existing factory naming migration can promote
+    `Generated Workspace` to `<Project> Workspace`
+- the future, higher-quality fix is to thread project identity into
+  `FactoryOutputV1` or the factory Blueprint emitter so names can become
+  `<Project> Generated Workspace`
+
 #### Manual creation and manual rename
 
 Manual component creation from `CreateNodeModal` should set:

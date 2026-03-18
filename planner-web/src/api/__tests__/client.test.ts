@@ -76,6 +76,67 @@ describe('createApiClient', () => {
     );
   });
 
+  it('listProjects sends include_archived query when requested', async () => {
+    fetchSpy.mockResolvedValue(makeFetchResponse({ projects: [] }));
+    const api = createApiClient(mockGetToken);
+    await api.listProjects({ includeArchived: true });
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/projects?include_archived=true',
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    );
+  });
+
+  it('updateProject sends archived true in patch body', async () => {
+    fetchSpy.mockResolvedValue(makeFetchResponse({ project: { id: 'p1' } }));
+    const api = createApiClient(mockGetToken);
+    await api.updateProject('project-a', { archived: true });
+    const callArgs = fetchSpy.mock.calls[0][1] as RequestInit;
+    expect(JSON.parse(callArgs.body as string)).toEqual(
+      expect.objectContaining({ archived: true }),
+    );
+  });
+
+  it('updateProject sends archived false in patch body', async () => {
+    fetchSpy.mockResolvedValue(makeFetchResponse({ project: { id: 'p1' } }));
+    const api = createApiClient(mockGetToken);
+    await api.updateProject('project-a', { archived: false });
+    const callArgs = fetchSpy.mock.calls[0][1] as RequestInit;
+    expect(JSON.parse(callArgs.body as string)).toEqual(
+      expect.objectContaining({ archived: false }),
+    );
+  });
+
+  it('deleteProject makes DELETE request to /api/projects/:projectRef', async () => {
+    fetchSpy.mockResolvedValue(makeFetchResponse({ project_id: 'p1' }));
+    const api = createApiClient(mockGetToken);
+    await api.deleteProject('project-a');
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/projects/project-a',
+      expect.objectContaining({ method: 'DELETE' }),
+    );
+  });
+
+  it('deleteProject returns delete summary payload', async () => {
+    const payload = {
+      project_id: 'p1',
+      project_name: 'Project A',
+      stopped_live_sessions: 1,
+      stopped_pipeline_sessions: 1,
+      deleted_sessions: 2,
+      deleted_session_event_files: 2,
+      deleted_cxdb_runs: 3,
+      deleted_blueprint_nodes: 4,
+      unlinked_shared_blueprint_nodes: 2,
+      deleted_project_record: true,
+      blueprint_events_pruned: 5,
+      blueprint_history_snapshots_pruned: 1,
+    };
+    fetchSpy.mockResolvedValue(makeFetchResponse(payload));
+    const api = createApiClient(mockGetToken);
+    const result = await api.deleteProject('project-a');
+    expect(result).toEqual(payload);
+  });
+
   it('sendMessage makes POST request with correct payload', async () => {
     const msgData = {
       user_message: { id: '1', role: 'user', content: 'Hi', timestamp: '' },

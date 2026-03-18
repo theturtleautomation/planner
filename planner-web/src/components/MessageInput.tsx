@@ -1,6 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import type { KeyboardEvent, ChangeEvent } from 'react';
-import QuickOptions from './QuickOptions.tsx';
 
 interface MessageInputProps {
   onSend: (content: string) => void;
@@ -8,15 +7,7 @@ interface MessageInputProps {
   pipelineRunning?: boolean;
   isLoading?: boolean;
   convergencePct?: number;
-  // Socratic props
   intakePhase?: 'waiting' | 'interviewing' | 'pipeline_running' | 'complete' | 'error';
-  currentQuestion?: {
-    text: string;
-    targetDimension?: string;
-    quickOptions?: { label: string; value: string }[];
-    allowSkip?: boolean;
-  } | null;
-  onSkip?: () => void;
   onDone?: () => void;
 }
 
@@ -27,8 +18,6 @@ export default function MessageInput({
   isLoading = false,
   convergencePct = 0,
   intakePhase,
-  currentQuestion,
-  onSkip,
   onDone,
 }: MessageInputProps) {
   const [value, setValue] = useState('');
@@ -43,8 +32,13 @@ export default function MessageInput({
     }
   }, [value]);
 
-  // Determine blocked state
-  // Blocked if: explicitly disabled, pipeline running (prop or phase), phase complete, or phase waiting
+  const buildSubmission = useCallback((): string => {
+    const trimmed = value.trim();
+    return trimmed;
+  }, [value]);
+
+  const hasPendingSubmission = Boolean(buildSubmission());
+
   const phaseBlocked =
     intakePhase === 'pipeline_running' ||
     intakePhase === 'complete' ||
@@ -54,16 +48,16 @@ export default function MessageInput({
   const isBlocked = disabled || pipelineRunning || isLoading || phaseBlocked;
 
   const send = useCallback((): void => {
-    const trimmed = value.trim();
-    if (!trimmed) return;
-    onSend(trimmed);
+    const submission = buildSubmission();
+    if (!submission) return;
+    onSend(submission);
     setValue('');
     // Reset height after clearing
     const el = textareaRef.current;
     if (el) {
       el.style.height = 'auto';
     }
-  }, [value, onSend]);
+  }, [buildSubmission, onSend]);
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -83,9 +77,7 @@ export default function MessageInput({
   if (intakePhase === 'waiting') {
     placeholder = 'Describe your planning brief above to begin…';
   } else if (intakePhase === 'interviewing') {
-    placeholder = currentQuestion?.targetDimension
-      ? `Answer about ${currentQuestion.targetDimension}…`
-      : 'Type your answer…';
+    placeholder = 'Type your answer…';
   } else if (intakePhase === 'pipeline_running' || pipelineRunning) {
     placeholder = 'Pipeline is running — please wait…';
   } else if (intakePhase === 'complete') {
@@ -96,13 +88,7 @@ export default function MessageInput({
     placeholder = 'Waiting for response…';
   }
 
-  const showInterviewingControls = intakePhase === 'interviewing';
-  const showSkip = showInterviewingControls && currentQuestion?.allowSkip && onSkip;
-  const showDone = showInterviewingControls && onDone;
-  const hasQuickOptions =
-    showInterviewingControls &&
-    currentQuestion?.quickOptions &&
-    currentQuestion.quickOptions.length > 0;
+  const showDone = intakePhase === 'interviewing' && onDone;
 
   return (
     <div style={{
@@ -111,15 +97,6 @@ export default function MessageInput({
       borderTop: '1px solid var(--color-border)',
       flexShrink: 0,
     }}>
-      {/* Quick options above the textarea */}
-      {hasQuickOptions && (
-        <QuickOptions
-          options={currentQuestion!.quickOptions!}
-          onSelect={(val) => onSend(val)}
-          disabled={isBlocked}
-        />
-      )}
-
       {/* Main input row */}
       <div style={{
         display: 'flex',
@@ -158,15 +135,15 @@ export default function MessageInput({
         />
         <button
           onClick={send}
-          disabled={isBlocked || !value.trim()}
+          disabled={isBlocked || !hasPendingSubmission}
           aria-label="Send message"
           style={{
-            background: isBlocked || !value.trim() ? 'transparent' : 'var(--color-primary)',
-            border: `1px solid ${isBlocked || !value.trim() ? 'var(--color-border)' : 'var(--color-primary)'}`,
-            color: isBlocked || !value.trim() ? 'var(--color-text-muted)' : 'var(--color-bg)',
+            background: isBlocked || !hasPendingSubmission ? 'transparent' : 'var(--color-primary)',
+            border: `1px solid ${isBlocked || !hasPendingSubmission ? 'var(--color-border)' : 'var(--color-primary)'}`,
+            color: isBlocked || !hasPendingSubmission ? 'var(--color-text-muted)' : 'var(--color-bg)',
             padding: '5px 14px',
             fontSize: '12px',
-            cursor: isBlocked || !value.trim() ? 'not-allowed' : 'pointer',
+            cursor: isBlocked || !hasPendingSubmission ? 'not-allowed' : 'pointer',
             borderRadius: '2px',
             fontFamily: 'inherit',
             fontWeight: 600,
@@ -178,68 +155,38 @@ export default function MessageInput({
         </button>
       </div>
 
-      {/* Skip / Done buttons row (interviewing only) */}
-      {(showSkip || showDone) && (
+      {/* Done button row (interviewing only) */}
+      {showDone && (
         <div style={{
           display: 'flex',
           gap: '8px',
           marginTop: '8px',
         }}>
-          {showSkip && (
-            <button
-              onClick={onSkip}
-              aria-label="Skip question"
-              style={{
-                background: 'transparent',
-                border: '1px solid var(--color-border)',
-                borderRadius: '3px',
-                color: 'var(--color-text-muted)',
-                fontSize: '11px',
-                fontFamily: 'inherit',
-                letterSpacing: '0.04em',
-                padding: '4px 12px',
-                cursor: 'pointer',
-                transition: 'border-color 0.15s ease, color 0.15s ease',
-              }}
-              onMouseEnter={(e) => {
-                (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--color-text-muted)';
-                (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-text)';
-              }}
-              onMouseLeave={(e) => {
-                (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--color-border)';
-                (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-text-muted)';
-              }}
-            >
-              Skip
-            </button>
-          )}
-          {showDone && (
-            <button
-              onClick={onDone}
-              className={convergencePct >= 80 ? 'done-btn-ready' : undefined}
-              aria-label="Done with interview"
-              style={{
-                background: 'transparent',
-                border: '1px solid var(--color-success)',
-                borderRadius: '3px',
-                color: 'var(--color-success)',
-                fontSize: '11px',
-                fontFamily: 'inherit',
-                letterSpacing: '0.04em',
-                padding: '4px 12px',
-                cursor: 'pointer',
-                transition: 'background 0.15s ease, color 0.15s ease',
-              }}
-              onMouseEnter={(e) => {
-                (e.currentTarget as HTMLButtonElement).style.background = 'rgba(0,255,136,0.08)';
-              }}
-              onMouseLeave={(e) => {
-                (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
-              }}
-            >
-              Done — start building
-            </button>
-          )}
+          <button
+            onClick={onDone}
+            className={convergencePct >= 80 ? 'done-btn-ready' : undefined}
+            aria-label="Done with interview"
+            style={{
+              background: 'transparent',
+              border: '1px solid var(--color-success)',
+              borderRadius: '3px',
+              color: 'var(--color-success)',
+              fontSize: '11px',
+              fontFamily: 'inherit',
+              letterSpacing: '0.04em',
+              padding: '4px 12px',
+              cursor: 'pointer',
+              transition: 'background 0.15s ease, color 0.15s ease',
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.background = 'rgba(0,255,136,0.08)';
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
+            }}
+          >
+            Done — start building
+          </button>
         </div>
       )}
 

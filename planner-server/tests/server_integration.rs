@@ -53,6 +53,7 @@ fn test_state_with_router_and_lease(router: LlmRouter, lease: Duration) -> Arc<A
         cxdb: None,
         llm_router: Arc::new(router),
         socratic_runtimes: planner_server::runtime::SessionRuntimeRegistry::new(lease),
+        pipeline_runtimes: planner_server::runtime::SessionPipelineRegistry::new(),
         started_at: std::time::Instant::now(),
         blueprints: planner_core::blueprint::BlueprintStore::new(),
         proposals: planner_core::discovery::ProposalStore::new(),
@@ -66,7 +67,51 @@ struct ResumeFlowMockLlm;
 impl LlmClient for ResumeFlowMockLlm {
     async fn complete(&self, request: CompletionRequest) -> Result<CompletionResponse, LlmError> {
         let system = request.system.as_deref().unwrap_or("");
-        let content = if system.contains("Belief State Verifier") {
+        let content = if system.contains("Belief State Adjudicator") {
+            let item_ids = request
+                .messages
+                .last()
+                .and_then(|message| {
+                    let marker = "## Prompt Answers To Adjudicate:\n";
+                    let start = message.content.find(marker)?;
+                    let payload_with_suffix = &message.content[start + marker.len()..];
+                    let end = payload_with_suffix.find("\n\nReturn JSON now.")?;
+                    let payload = &payload_with_suffix[..end];
+                    let parsed: serde_json::Value = serde_json::from_str(payload).ok()?;
+                    let items = parsed["items"].as_array()?;
+                    Some(
+                        items
+                            .iter()
+                            .filter_map(|item| item["item_id"].as_str().map(str::to_string))
+                            .collect::<Vec<_>>(),
+                    )
+                })
+                .filter(|ids| !ids.is_empty())
+                .unwrap_or_else(|| vec!["item-1".to_string()]);
+
+            serde_json::json!({
+                "items": item_ids
+                    .into_iter()
+                    .map(|item_id| {
+                        serde_json::json!({
+                            "item_id": item_id,
+                            "filled_updates": [
+                                {
+                                    "dimension": "goal",
+                                    "value": "Build a countdown timer for workouts",
+                                    "source_quote": "I want a countdown timer for workouts."
+                                }
+                            ],
+                            "uncertain_updates": [],
+                            "out_of_scope": [],
+                            "contradictions": [],
+                            "user_wants_to_stop": false
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .to_string()
+        } else if system.contains("Belief State Verifier") {
             r#"{
               "filled_updates": [
                 {
@@ -151,6 +196,82 @@ async fn wait_for_ws_message_type(
         if parsed["type"] == message_type {
             return parsed;
         }
+    }
+}
+
+fn checkpoint_question_prompt(
+    question: &str,
+    target_dimension: planner_schemas::Dimension,
+    allow_skip: bool,
+) -> planner_schemas::PromptEnvelope {
+    let item_id = "item-1".to_string();
+    planner_schemas::PromptEnvelope {
+        prompt_id: "prompt-question".into(),
+        kind: planner_schemas::PromptKind::QuestionBatch,
+        title: "Continue interview".into(),
+        instructions: None,
+        items: vec![planner_schemas::PromptItem {
+            item_id: item_id.clone(),
+            kind: planner_schemas::PromptItemKind::Discovery,
+            target_dimension: Some(target_dimension),
+            section_ref: None,
+            text: question.into(),
+            options: Vec::new(),
+            response_mode: planner_schemas::PromptResponseMode::SingleSelectWithCustomText,
+            required: !allow_skip,
+            priority: 100,
+            dependency_item_ids: Vec::new(),
+        }],
+        draft_snapshot: None,
+        required_item_ids: if allow_skip {
+            Vec::new()
+        } else {
+            vec![item_id]
+        },
+        allow_partial_submit: true,
+        ui_hints: planner_schemas::PromptUiHints {
+            preferred_layout: planner_schemas::PromptPreferredLayout::Cards,
+            show_draft_sidebar: false,
+        },
+        based_on_turn: 0,
+        created_at: "2026-03-08T00:00:00Z".into(),
+    }
+}
+
+fn checkpoint_draft_prompt(
+    draft: planner_schemas::SpeculativeDraft,
+) -> planner_schemas::PromptEnvelope {
+    planner_schemas::PromptEnvelope {
+        prompt_id: "prompt-draft".into(),
+        kind: planner_schemas::PromptKind::DraftReview,
+        title: "Review draft".into(),
+        instructions: Some(
+            "Confirm accurate sections and provide corrections where needed.".into(),
+        ),
+        items: vec![planner_schemas::PromptItem {
+            item_id: "item-draft-1".into(),
+            kind: planner_schemas::PromptItemKind::DraftSection,
+            target_dimension: None,
+            section_ref: draft
+                .sections
+                .first()
+                .map(|section| section.heading.clone()),
+            text: "Review this draft.".into(),
+            options: Vec::new(),
+            response_mode: planner_schemas::PromptResponseMode::SingleSelectWithCustomText,
+            required: false,
+            priority: 100,
+            dependency_item_ids: Vec::new(),
+        }],
+        draft_snapshot: Some(draft),
+        required_item_ids: Vec::new(),
+        allow_partial_submit: true,
+        ui_hints: planner_schemas::PromptUiHints {
+            preferred_layout: planner_schemas::PromptPreferredLayout::Review,
+            show_draft_sidebar: true,
+        },
+        based_on_turn: 0,
+        created_at: "2026-03-08T00:00:00Z".into(),
     }
 }
 
@@ -504,7 +625,7 @@ async fn tier2_session_capability_mapping() {
 /// Test 4b: Session payload exposes durable interview checkpoint fields.
 #[tokio::test]
 async fn tier2_session_exposes_interview_checkpoint_payload() {
-    use planner_schemas::{Dimension, DraftSection, QuestionOutput, SpeculativeDraft};
+    use planner_schemas::Dimension;
 
     let state = test_state();
     let session = state.sessions.create("dev|local");
@@ -515,21 +636,11 @@ async fn tier2_session_exposes_interview_checkpoint_payload() {
         s.intake_phase = "interviewing".into();
         s.socratic_run_id = Some(run_id);
         let checkpoint = s.ensure_checkpoint();
-        checkpoint.current_question = Some(QuestionOutput {
-            question: "What are the main user roles?".into(),
-            target_dimension: Dimension::Stakeholders,
-            quick_options: Vec::new(),
-            allow_skip: true,
-        });
-        checkpoint.pending_draft = Some(SpeculativeDraft {
-            sections: vec![DraftSection {
-                heading: "Goal".into(),
-                content: "Draft goal summary".into(),
-                dimensions: vec![Dimension::Goal],
-            }],
-            assumptions: Vec::new(),
-            not_discussed: Vec::new(),
-        });
+        checkpoint.current_prompt = Some(checkpoint_question_prompt(
+            "What are the main user roles?",
+            Dimension::Stakeholders,
+            true,
+        ));
         checkpoint.stale_turns = 1;
         checkpoint.touch();
     });
@@ -552,13 +663,10 @@ async fn tier2_session_exposes_interview_checkpoint_payload() {
         .as_bool()
         .unwrap_or(false));
     assert_eq!(
-        checkpoint["current_question"]["question"],
+        checkpoint["current_prompt"]["items"][0]["text"],
         "What are the main user roles?"
     );
-    assert_eq!(
-        checkpoint["pending_draft"]["sections"][0]["heading"],
-        "Goal"
-    );
+    assert_eq!(checkpoint["current_prompt"]["kind"], "question_batch");
     assert_eq!(checkpoint["stale_turns"], 1);
     assert!(checkpoint["last_checkpoint_at"].is_string());
 }
@@ -900,12 +1008,11 @@ async fn tier2_socratic_ws_reconnect_detached_interview_stays_detached() {
 }
 
 /// Test 10: Reconnecting to a checkpoint-resumable interview re-emits the
-/// pending question without requiring a new initial socratic_response.
+/// pending prompt without requiring a new initial prompt_response.
 #[tokio::test]
 async fn tier2_socratic_ws_reconnect_checkpoint_reemits_question() {
     use planner_schemas::{
-        ComplexityTier, Dimension, DomainClassification, ProjectType, QuestionOutput,
-        RequirementsBeliefState,
+        ComplexityTier, Dimension, DomainClassification, ProjectType, RequirementsBeliefState,
     };
 
     let state = test_state();
@@ -930,13 +1037,11 @@ async fn tier2_socratic_ws_reconnect_checkpoint_reemits_question() {
         let checkpoint = s.ensure_checkpoint();
         checkpoint.classification = Some(classification.clone());
         checkpoint.belief_state = Some(belief_state.clone());
-        checkpoint.current_question = Some(QuestionOutput {
-            question: "Who is the primary user?".into(),
-            target_dimension: Dimension::Stakeholders,
-            quick_options: Vec::new(),
-            allow_skip: true,
-        });
-        checkpoint.pending_draft = None;
+        checkpoint.current_prompt = Some(checkpoint_question_prompt(
+            "Who is the primary user?",
+            Dimension::Stakeholders,
+            true,
+        ));
         checkpoint.touch();
     });
 
@@ -945,8 +1050,11 @@ async fn tier2_socratic_ws_reconnect_checkpoint_reemits_question() {
     let ws_url = format!("ws://{}/sessions/{}/socratic/ws", addr, session_id);
 
     let (mut ws, _) = connect_async(ws_url).await.unwrap();
-    let question = wait_for_ws_message_type(&mut ws, "question").await;
-    assert_eq!(question["text"], "Who is the primary user?");
+    let prompt = wait_for_ws_message_type(&mut ws, "prompt").await;
+    assert_eq!(
+        prompt["prompt"]["items"][0]["text"],
+        "Who is the primary user?"
+    );
 
     let _ = ws.close(None).await;
     tokio::time::sleep(Duration::from_millis(250)).await;
@@ -992,8 +1100,7 @@ async fn tier2_socratic_ws_reconnect_checkpoint_reemits_draft() {
         let checkpoint = s.ensure_checkpoint();
         checkpoint.classification = Some(classification.clone());
         checkpoint.belief_state = Some(belief_state.clone());
-        checkpoint.current_question = None;
-        checkpoint.pending_draft = Some(SpeculativeDraft {
+        checkpoint.current_prompt = Some(checkpoint_draft_prompt(SpeculativeDraft {
             sections: vec![DraftSection {
                 heading: "Goal".into(),
                 content: "Build a timer app with presets.".into(),
@@ -1001,7 +1108,7 @@ async fn tier2_socratic_ws_reconnect_checkpoint_reemits_draft() {
             }],
             assumptions: Vec::new(),
             not_discussed: Vec::new(),
-        });
+        }));
         checkpoint.touch();
     });
 
@@ -1010,8 +1117,12 @@ async fn tier2_socratic_ws_reconnect_checkpoint_reemits_draft() {
     let ws_url = format!("ws://{}/sessions/{}/socratic/ws", addr, session_id);
 
     let (mut ws, _) = connect_async(ws_url).await.unwrap();
-    let draft = wait_for_ws_message_type(&mut ws, "speculative_draft").await;
-    assert_eq!(draft["sections"][0]["heading"], "Goal");
+    let prompt = wait_for_ws_message_type(&mut ws, "prompt").await;
+    assert_eq!(prompt["prompt"]["kind"], "draft_review");
+    assert_eq!(
+        prompt["prompt"]["draft_snapshot"]["sections"][0]["heading"],
+        "Goal"
+    );
 
     let _ = ws.close(None).await;
     tokio::time::sleep(Duration::from_millis(250)).await;
@@ -1031,8 +1142,7 @@ async fn tier2_socratic_ws_reconnect_checkpoint_reemits_draft() {
 #[tokio::test]
 async fn tier2_socratic_ws_resume_answer_progresses_to_next_question() {
     use planner_schemas::{
-        ComplexityTier, Dimension, DomainClassification, ProjectType, QuestionOutput,
-        RequirementsBeliefState,
+        ComplexityTier, Dimension, DomainClassification, ProjectType, RequirementsBeliefState,
     };
 
     let state = test_state_with_router(LlmRouter::with_mock(Box::new(ResumeFlowMockLlm)));
@@ -1056,13 +1166,11 @@ async fn tier2_socratic_ws_resume_answer_progresses_to_next_question() {
         let checkpoint = s.ensure_checkpoint();
         checkpoint.classification = Some(classification.clone());
         checkpoint.belief_state = Some(belief_state.clone());
-        checkpoint.current_question = Some(QuestionOutput {
-            question: "What is the main goal of this tool?".into(),
-            target_dimension: Dimension::Goal,
-            quick_options: Vec::new(),
-            allow_skip: false,
-        });
-        checkpoint.pending_draft = None;
+        checkpoint.current_prompt = Some(checkpoint_question_prompt(
+            "What is the main goal of this tool?",
+            Dimension::Goal,
+            false,
+        ));
         checkpoint.touch();
     });
 
@@ -1071,16 +1179,27 @@ async fn tier2_socratic_ws_resume_answer_progresses_to_next_question() {
     let ws_url = format!("ws://{}/sessions/{}/socratic/ws", addr, session_id);
 
     let (mut ws, _) = connect_async(ws_url).await.unwrap();
-    let resumed_question = wait_for_ws_message_type(&mut ws, "question").await;
+    let resumed_prompt = wait_for_ws_message_type(&mut ws, "prompt").await;
     assert_eq!(
-        resumed_question["text"],
+        resumed_prompt["prompt"]["items"][0]["text"],
         "What is the main goal of this tool?"
     );
+    let prompt_id = resumed_prompt["prompt"]["prompt_id"]
+        .as_str()
+        .expect("prompt id should be present");
+    let item_id = resumed_prompt["prompt"]["items"][0]["item_id"]
+        .as_str()
+        .expect("prompt item id should be present");
 
     ws.send(Message::Text(
         serde_json::json!({
-            "type": "socratic_response",
-            "content": "I want a countdown timer for workouts."
+            "type": "prompt_response",
+            "prompt_id": prompt_id,
+            "answers": [{
+                "item_id": item_id,
+                "custom_text": "I want a countdown timer for workouts."
+            }],
+            "submitted_at": "2026-03-08T00:00:00Z"
         })
         .to_string()
         .into(),
@@ -1088,17 +1207,7 @@ async fn tier2_socratic_ws_resume_answer_progresses_to_next_question() {
     .await
     .unwrap();
 
-    let belief_update = wait_for_ws_message_type(&mut ws, "belief_state_update").await;
-    assert_eq!(
-        belief_update["filled"]["Goal / Purpose"]["value"],
-        "Build a countdown timer for workouts"
-    );
-
-    let next_question = wait_for_ws_message_type(&mut ws, "question").await;
-    assert_eq!(
-        next_question["text"],
-        "What are the must-have features in the first version?"
-    );
+    tokio::time::sleep(Duration::from_millis(200)).await;
 
     tokio::time::sleep(Duration::from_millis(100)).await;
 
@@ -1124,13 +1233,18 @@ async fn tier2_socratic_ws_resume_answer_progresses_to_next_question() {
     );
     assert_eq!(
         checkpoint
-            .current_question
+            .current_prompt
             .as_ref()
-            .expect("next question should be checkpointed")
-            .question,
+            .and_then(|prompt| prompt.items.first())
+            .expect("next prompt item should be checkpointed")
+            .text,
         "What are the must-have features in the first version?"
     );
-    assert!(checkpoint.pending_draft.is_none());
+    assert!(checkpoint
+        .current_prompt
+        .as_ref()
+        .and_then(|prompt| prompt.draft_snapshot.as_ref())
+        .is_none());
 
     let _ = ws.close(None).await;
     tokio::time::sleep(Duration::from_millis(250)).await;
@@ -1143,8 +1257,7 @@ async fn tier2_socratic_ws_resume_answer_progresses_to_next_question() {
 #[tokio::test]
 async fn tier2_socratic_ws_live_runtime_reattach_within_lease() {
     use planner_schemas::{
-        ComplexityTier, Dimension, DomainClassification, ProjectType, QuestionOutput,
-        RequirementsBeliefState,
+        ComplexityTier, Dimension, DomainClassification, ProjectType, RequirementsBeliefState,
     };
 
     let state = test_state_with_router_and_lease(
@@ -1170,13 +1283,11 @@ async fn tier2_socratic_ws_live_runtime_reattach_within_lease() {
         let checkpoint = s.ensure_checkpoint();
         checkpoint.classification = Some(classification.clone());
         checkpoint.belief_state = Some(belief_state.clone());
-        checkpoint.current_question = Some(QuestionOutput {
-            question: "What is the main goal of this tool?".into(),
-            target_dimension: Dimension::Goal,
-            quick_options: Vec::new(),
-            allow_skip: false,
-        });
-        checkpoint.pending_draft = None;
+        checkpoint.current_prompt = Some(checkpoint_question_prompt(
+            "What is the main goal of this tool?",
+            Dimension::Goal,
+            false,
+        ));
         checkpoint.touch();
     });
 
@@ -1185,12 +1296,11 @@ async fn tier2_socratic_ws_live_runtime_reattach_within_lease() {
     let ws_url = format!("ws://{}/sessions/{}/socratic/ws", addr, session_id);
 
     let (mut ws1, _) = connect_async(&ws_url).await.unwrap();
-    let resumed_question = wait_for_ws_message_type(&mut ws1, "question").await;
+    let resumed_prompt = wait_for_ws_message_type(&mut ws1, "prompt").await;
     assert_eq!(
-        resumed_question["text"],
+        resumed_prompt["prompt"]["items"][0]["text"],
         "What is the main goal of this tool?"
     );
-
     let _ = ws1.close(None).await;
     tokio::time::sleep(Duration::from_millis(200)).await;
 
@@ -1202,11 +1312,23 @@ async fn tier2_socratic_ws_live_runtime_reattach_within_lease() {
     assert!(!detached.interview_live_attached);
 
     let (mut ws2, _) = connect_async(&ws_url).await.unwrap();
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    let replayed_prompt = wait_for_ws_message_type(&mut ws2, "prompt").await;
+    let prompt_id = replayed_prompt["prompt"]["prompt_id"]
+        .as_str()
+        .expect("prompt id should be present");
+    let item_id = replayed_prompt["prompt"]["items"][0]["item_id"]
+        .as_str()
+        .expect("prompt item id should be present");
+
     ws2.send(Message::Text(
         serde_json::json!({
-            "type": "socratic_response",
-            "content": "I want a countdown timer for workouts."
+            "type": "prompt_response",
+            "prompt_id": prompt_id,
+            "answers": [{
+                "item_id": item_id,
+                "custom_text": "I want a countdown timer for workouts."
+            }],
+            "submitted_at": "2026-03-08T00:00:00Z"
         })
         .to_string()
         .into(),
@@ -1214,16 +1336,7 @@ async fn tier2_socratic_ws_live_runtime_reattach_within_lease() {
     .await
     .unwrap();
 
-    let belief_update = wait_for_ws_message_type(&mut ws2, "belief_state_update").await;
-    assert_eq!(
-        belief_update["filled"]["Goal / Purpose"]["value"],
-        "Build a countdown timer for workouts"
-    );
-    let next_question = wait_for_ws_message_type(&mut ws2, "question").await;
-    assert_eq!(
-        next_question["text"],
-        "What are the must-have features in the first version?"
-    );
+    tokio::time::sleep(Duration::from_millis(200)).await;
 
     let attached_again = state.sessions.get(session_id).unwrap();
     assert_eq!(
@@ -1237,13 +1350,137 @@ async fn tier2_socratic_ws_live_runtime_reattach_within_lease() {
     handle.abort();
 }
 
+/// Test 13b: Reconnect-heavy attach/detach cycles keep prompt replay stable
+/// until an answer is submitted.
+#[tokio::test]
+async fn tier2_socratic_ws_reconnect_heavy_cycles_keep_prompt_replay_stable() {
+    use planner_schemas::{
+        ComplexityTier, Dimension, DomainClassification, ProjectType, RequirementsBeliefState,
+    };
+
+    let state = test_state_with_router_and_lease(
+        LlmRouter::with_mock(Box::new(ResumeFlowMockLlm)),
+        Duration::from_secs(5),
+    );
+    let session = state.sessions.create("dev|local");
+    let session_id = session.id;
+
+    let classification = DomainClassification {
+        project_type: ProjectType::WebApp,
+        complexity: ComplexityTier::Standard,
+        detected_signals: vec!["web".into()],
+        required_dimensions: Dimension::required_for(&ProjectType::WebApp),
+    };
+    let belief_state = RequirementsBeliefState::from_classification(&classification);
+
+    state.sessions.update(session_id, |s| {
+        s.intake_phase = "interviewing".into();
+        s.project_description = Some("Build a timer app".into());
+        s.classification = Some(classification.clone());
+        s.belief_state = Some(belief_state.clone());
+        let checkpoint = s.ensure_checkpoint();
+        checkpoint.classification = Some(classification.clone());
+        checkpoint.belief_state = Some(belief_state.clone());
+        checkpoint.current_prompt = Some(checkpoint_question_prompt(
+            "What is the main goal of this tool?",
+            Dimension::Goal,
+            false,
+        ));
+        checkpoint.touch();
+    });
+
+    let app = test_app(state.clone());
+    let (addr, handle) = spawn_test_server(app).await;
+    let ws_url = format!("ws://{}/sessions/{}/socratic/ws", addr, session_id);
+
+    let mut expected_prompt_id: Option<String> = None;
+    let mut expected_item_id: Option<String> = None;
+    for _ in 0..8 {
+        let (mut ws, _) = connect_async(&ws_url).await.unwrap();
+        let prompt = wait_for_ws_message_type(&mut ws, "prompt").await;
+        assert_eq!(
+            prompt["prompt"]["items"][0]["text"],
+            "What is the main goal of this tool?"
+        );
+        let prompt_id = prompt["prompt"]["prompt_id"]
+            .as_str()
+            .expect("prompt id should be present")
+            .to_string();
+        let item_id = prompt["prompt"]["items"][0]["item_id"]
+            .as_str()
+            .expect("prompt item id should be present")
+            .to_string();
+        if let Some(expected) = expected_prompt_id.as_ref() {
+            assert_eq!(prompt_id, *expected);
+        } else {
+            expected_prompt_id = Some(prompt_id);
+        }
+        if let Some(expected) = expected_item_id.as_ref() {
+            assert_eq!(item_id, *expected);
+        } else {
+            expected_item_id = Some(item_id);
+        }
+        let _ = ws.close(None).await;
+        tokio::time::sleep(Duration::from_millis(250)).await;
+        let detached = state.sessions.get(session_id).unwrap();
+        assert_eq!(detached.resume_status, ResumeStatus::LiveAttachAvailable);
+        assert!(detached.can_resume_live);
+    }
+
+    let (mut ws3, _) = connect_async(&ws_url).await.unwrap();
+    let prompt = wait_for_ws_message_type(&mut ws3, "prompt").await;
+    let prompt_id = prompt["prompt"]["prompt_id"]
+        .as_str()
+        .expect("prompt id should be present");
+    let item_id = prompt["prompt"]["items"][0]["item_id"]
+        .as_str()
+        .expect("prompt item id should be present");
+    assert_eq!(Some(prompt_id.to_string()), expected_prompt_id);
+    assert_eq!(Some(item_id.to_string()), expected_item_id);
+
+    ws3.send(Message::Text(
+        serde_json::json!({
+            "type": "prompt_response",
+            "prompt_id": prompt_id,
+            "answers": [{
+                "item_id": item_id,
+                "custom_text": "I want a countdown timer for workouts."
+            }],
+            "submitted_at": "2026-03-08T00:00:00Z"
+        })
+        .to_string()
+        .into(),
+    ))
+    .await
+    .unwrap();
+
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let after = state.sessions.get(session_id).unwrap();
+    let checkpoint = after
+        .checkpoint
+        .as_ref()
+        .expect("checkpoint should remain present");
+    let goal = checkpoint
+        .belief_state
+        .as_ref()
+        .and_then(|belief| belief.filled.get(&Dimension::Goal))
+        .map(|slot| slot.value.clone());
+    assert_eq!(
+        goal.as_deref(),
+        Some("Build a countdown timer for workouts")
+    );
+
+    let _ = ws3.close(None).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    handle.abort();
+}
+
 /// Test 14: When the live runtime lease expires, the session falls back to
 /// checkpoint-only resume and the next attach restores from checkpoint.
 #[tokio::test]
 async fn tier2_socratic_ws_live_runtime_lease_expiry_falls_back_to_checkpoint() {
     use planner_schemas::{
-        ComplexityTier, Dimension, DomainClassification, ProjectType, QuestionOutput,
-        RequirementsBeliefState,
+        ComplexityTier, Dimension, DomainClassification, ProjectType, RequirementsBeliefState,
     };
 
     let state = test_state_with_router_and_lease(
@@ -1269,13 +1506,11 @@ async fn tier2_socratic_ws_live_runtime_lease_expiry_falls_back_to_checkpoint() 
         let checkpoint = s.ensure_checkpoint();
         checkpoint.classification = Some(classification.clone());
         checkpoint.belief_state = Some(belief_state.clone());
-        checkpoint.current_question = Some(QuestionOutput {
-            question: "What is the main goal of this tool?".into(),
-            target_dimension: Dimension::Goal,
-            quick_options: Vec::new(),
-            allow_skip: false,
-        });
-        checkpoint.pending_draft = None;
+        checkpoint.current_prompt = Some(checkpoint_question_prompt(
+            "What is the main goal of this tool?",
+            Dimension::Goal,
+            false,
+        ));
         checkpoint.touch();
     });
 
@@ -1284,7 +1519,7 @@ async fn tier2_socratic_ws_live_runtime_lease_expiry_falls_back_to_checkpoint() 
     let ws_url = format!("ws://{}/sessions/{}/socratic/ws", addr, session_id);
 
     let (mut ws1, _) = connect_async(&ws_url).await.unwrap();
-    let _ = wait_for_ws_message_type(&mut ws1, "question").await;
+    let _ = wait_for_ws_message_type(&mut ws1, "prompt").await;
     let _ = ws1.close(None).await;
 
     tokio::time::sleep(Duration::from_millis(100)).await;
@@ -1301,9 +1536,9 @@ async fn tier2_socratic_ws_live_runtime_lease_expiry_falls_back_to_checkpoint() 
     assert!(!fallback.interview_live_attached);
 
     let (mut ws2, _) = connect_async(&ws_url).await.unwrap();
-    let resumed_question = wait_for_ws_message_type(&mut ws2, "question").await;
+    let resumed_prompt = wait_for_ws_message_type(&mut ws2, "prompt").await;
     assert_eq!(
-        resumed_question["text"],
+        resumed_prompt["prompt"]["items"][0]["text"],
         "What is the main goal of this tool?"
     );
 
@@ -1317,8 +1552,7 @@ async fn tier2_socratic_ws_live_runtime_lease_expiry_falls_back_to_checkpoint() 
 #[tokio::test]
 async fn tier2_socratic_ws_duplicate_live_attach_is_rejected() {
     use planner_schemas::{
-        ComplexityTier, Dimension, DomainClassification, ProjectType, QuestionOutput,
-        RequirementsBeliefState,
+        ComplexityTier, Dimension, DomainClassification, ProjectType, RequirementsBeliefState,
     };
 
     let state = test_state_with_router_and_lease(
@@ -1344,13 +1578,11 @@ async fn tier2_socratic_ws_duplicate_live_attach_is_rejected() {
         let checkpoint = s.ensure_checkpoint();
         checkpoint.classification = Some(classification.clone());
         checkpoint.belief_state = Some(belief_state.clone());
-        checkpoint.current_question = Some(QuestionOutput {
-            question: "What is the main goal of this tool?".into(),
-            target_dimension: Dimension::Goal,
-            quick_options: Vec::new(),
-            allow_skip: false,
-        });
-        checkpoint.pending_draft = None;
+        checkpoint.current_prompt = Some(checkpoint_question_prompt(
+            "What is the main goal of this tool?",
+            Dimension::Goal,
+            false,
+        ));
         checkpoint.touch();
     });
 
@@ -1359,7 +1591,15 @@ async fn tier2_socratic_ws_duplicate_live_attach_is_rejected() {
     let ws_url = format!("ws://{}/sessions/{}/socratic/ws", addr, session_id);
 
     let (mut ws1, _) = connect_async(&ws_url).await.unwrap();
-    let _ = wait_for_ws_message_type(&mut ws1, "question").await;
+    let prompt = wait_for_ws_message_type(&mut ws1, "prompt").await;
+    let prompt_id = prompt["prompt"]["prompt_id"]
+        .as_str()
+        .expect("prompt id should be present")
+        .to_string();
+    let item_id = prompt["prompt"]["items"][0]["item_id"]
+        .as_str()
+        .expect("prompt item id should be present")
+        .to_string();
 
     let (mut ws2, _) = connect_async(&ws_url).await.unwrap();
     let error = wait_for_ws_message_type(&mut ws2, "error").await;
@@ -1370,22 +1610,504 @@ async fn tier2_socratic_ws_duplicate_live_attach_is_rejected() {
 
     ws1.send(Message::Text(
         serde_json::json!({
-            "type": "socratic_response",
-            "content": "I want a countdown timer for workouts."
+            "type": "prompt_response",
+            "prompt_id": prompt_id,
+            "answers": [{
+                "item_id": item_id,
+                "custom_text": "I want a countdown timer for workouts."
+            }],
+            "submitted_at": "2026-03-08T00:00:00Z"
         })
         .to_string()
         .into(),
     ))
     .await
     .unwrap();
-    let belief_update = wait_for_ws_message_type(&mut ws1, "belief_state_update").await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let after = state.sessions.get(session_id).unwrap();
+    let checkpoint = after
+        .checkpoint
+        .as_ref()
+        .expect("checkpoint should remain present");
+    let goal = checkpoint
+        .belief_state
+        .as_ref()
+        .and_then(|belief| belief.filled.get(&Dimension::Goal))
+        .map(|slot| slot.value.clone());
     assert_eq!(
-        belief_update["filled"]["Goal / Purpose"]["value"],
-        "Build a countdown timer for workouts"
+        goal.as_deref(),
+        Some("Build a countdown timer for workouts")
     );
 
     let _ = ws2.close(None).await;
     let _ = ws1.close(None).await;
     tokio::time::sleep(Duration::from_millis(200)).await;
     handle.abort();
+}
+
+#[tokio::test]
+async fn tier2_archive_project() {
+    let state = test_state();
+    let project = state.projects.create(
+        "dev|local",
+        "Archive Integration",
+        None,
+        None,
+        Vec::new(),
+        None,
+    );
+    let app = test_app(state);
+
+    let req = Request::builder()
+        .method("PATCH")
+        .uri(format!("/projects/{}", project.slug))
+        .header("content-type", "application/json")
+        .body(Body::from(
+            serde_json::json!({ "archived": true }).to_string(),
+        ))
+        .unwrap();
+
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let payload: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert!(payload["project"]["archived_at"].is_string());
+}
+
+#[tokio::test]
+async fn tier2_unarchive_project() {
+    let state = test_state();
+    let project = state.projects.create(
+        "dev|local",
+        "Unarchive Integration",
+        None,
+        None,
+        Vec::new(),
+        None,
+    );
+    let _ = state.projects.set_archived(project.id, true).unwrap();
+    let app = test_app(state);
+
+    let req = Request::builder()
+        .method("PATCH")
+        .uri(format!("/projects/{}", project.slug))
+        .header("content-type", "application/json")
+        .body(Body::from(
+            serde_json::json!({ "archived": false }).to_string(),
+        ))
+        .unwrap();
+
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let payload: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert!(payload["project"]["archived_at"].is_null());
+}
+
+#[tokio::test]
+async fn tier2_delete_project_with_no_sessions() {
+    let state = test_state();
+    let project = state.projects.create(
+        "dev|local",
+        "Delete No Sessions",
+        None,
+        None,
+        Vec::new(),
+        None,
+    );
+    let app = test_app(state.clone());
+
+    let req = Request::builder()
+        .method("DELETE")
+        .uri(format!("/projects/{}", project.slug))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert!(state.projects.resolve_ref(&project.slug).is_none());
+}
+
+#[tokio::test]
+async fn tier2_delete_project_with_multiple_sessions() {
+    let state = test_state();
+    let project = state.projects.create(
+        "dev|local",
+        "Delete Multi Sessions",
+        None,
+        None,
+        Vec::new(),
+        None,
+    );
+    let s1 = state.sessions.create("dev|local");
+    let s2 = state.sessions.create("dev|local");
+    state
+        .sessions
+        .update(s1.id, |s| s.project_id = Some(project.id));
+    state
+        .sessions
+        .update(s2.id, |s| s.project_id = Some(project.id));
+    let app = test_app(state.clone());
+
+    let req = Request::builder()
+        .method("DELETE")
+        .uri(format!("/projects/{}", project.slug))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert!(state.sessions.get(s1.id).is_none());
+    assert!(state.sessions.get(s2.id).is_none());
+}
+
+#[tokio::test]
+async fn tier2_delete_project_with_active_pipeline_work() {
+    let state = test_state();
+    let project = state.projects.create(
+        "dev|local",
+        "Delete Active Pipeline",
+        None,
+        None,
+        Vec::new(),
+        None,
+    );
+    let session = state.sessions.create("dev|local");
+    state.sessions.update(session.id, |s| {
+        s.project_id = Some(project.id);
+        s.project_slug = Some(project.slug.clone());
+        s.project_name = Some(project.name.clone());
+        s.pipeline_running = true;
+        s.intake_phase = "pipeline_running".into();
+        s.project_description = Some("Active pipeline".into());
+    });
+    let app = test_app(state.clone());
+
+    // Transition through the public API path that starts pipeline runtime work.
+    state.sessions.update(session.id, |s| {
+        s.pipeline_running = false;
+        s.intake_phase = "waiting".into();
+    });
+    let start_req = Request::builder()
+        .method("POST")
+        .uri(format!("/sessions/{}/message", session.id))
+        .header("content-type", "application/json")
+        .body(Body::from(
+            serde_json::json!({ "content": "Active pipeline" }).to_string(),
+        ))
+        .unwrap();
+    let start_resp = app.clone().oneshot(start_req).await.unwrap();
+    assert_eq!(start_resp.status(), StatusCode::OK);
+    assert!(state.pipeline_runtimes.get(session.id).is_some());
+
+    let req = Request::builder()
+        .method("DELETE")
+        .uri(format!("/projects/{}", project.slug))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert!(state.pipeline_runtimes.get(session.id).is_none());
+}
+
+#[tokio::test]
+async fn tier2_delete_project_with_active_interview_runtime() {
+    let state = test_state();
+    let project = state.projects.create(
+        "dev|local",
+        "Delete Active Interview",
+        None,
+        None,
+        Vec::new(),
+        None,
+    );
+    let session = state.sessions.create("dev|local");
+    state.sessions.update(session.id, |s| {
+        s.project_id = Some(project.id);
+        s.project_slug = Some(project.slug.clone());
+        s.project_name = Some(project.name.clone());
+        s.project_description = Some("Active interview".into());
+        s.intake_phase = "interviewing".into();
+        s.interview_runtime_active = true;
+        s.interview_live_attached = true;
+    });
+    let (runtime, _input_rx) = planner_server::runtime::SessionRuntime::new();
+    assert!(state
+        .socratic_runtimes
+        .try_insert(session.id, runtime)
+        .is_ok());
+    assert!(state.socratic_runtimes.get(session.id).is_some());
+    let app = test_app(state.clone());
+
+    let req = Request::builder()
+        .method("DELETE")
+        .uri(format!("/projects/{}", project.slug))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let summary: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(summary["stopped_live_sessions"], 1);
+    assert!(state.socratic_runtimes.get(session.id).is_none());
+}
+
+#[tokio::test]
+async fn tier2_delete_project_removes_event_files() {
+    let data_dir = std::env::temp_dir().join(format!("planner_tier2_events_{}", Uuid::new_v4()));
+    let state = Arc::new(AppState {
+        sessions: SessionStore::new(),
+        auth_config: None,
+        event_store: Some(planner_core::observability::EventStore::new(&data_dir).unwrap()),
+        cxdb: None,
+        llm_router: Arc::new(LlmRouter::from_env()),
+        socratic_runtimes: planner_server::runtime::SessionRuntimeRegistry::new(
+            Duration::from_secs(30),
+        ),
+        pipeline_runtimes: planner_server::runtime::SessionPipelineRegistry::new(),
+        started_at: std::time::Instant::now(),
+        blueprints: planner_core::blueprint::BlueprintStore::new(),
+        proposals: planner_core::discovery::ProposalStore::new(),
+        projects: planner_server::project::ProjectStore::new(),
+    });
+
+    let project = state.projects.create(
+        "dev|local",
+        "Delete Event Files",
+        None,
+        None,
+        Vec::new(),
+        None,
+    );
+    let session = state.sessions.create("dev|local");
+    state
+        .sessions
+        .update(session.id, |s| s.project_id = Some(project.id));
+    let event_store = state.event_store.as_ref().unwrap();
+    let events = vec![planner_core::observability::PlannerEvent::info(
+        planner_core::observability::EventSource::System,
+        "tier2.delete",
+        "remove events",
+    )];
+    event_store
+        .save_session_events(session.id, &events)
+        .unwrap();
+    let event_path = data_dir
+        .join("events")
+        .join(format!("{}.msgpack", session.id));
+    assert!(event_path.exists());
+    let app = test_app(state.clone());
+
+    let req = Request::builder()
+        .method("DELETE")
+        .uri(format!("/projects/{}", project.slug))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert!(!event_path.exists());
+    let _ = std::fs::remove_dir_all(&data_dir);
+}
+
+#[tokio::test]
+async fn tier2_delete_project_removes_cxdb_data() {
+    let data_dir = std::env::temp_dir().join(format!("planner_tier2_cxdb_{}", Uuid::new_v4()));
+    let cxdb = planner_core::cxdb::durable::DurableCxdbEngine::open(data_dir.join("cxdb")).unwrap();
+    let state = Arc::new(AppState {
+        sessions: SessionStore::new(),
+        auth_config: None,
+        event_store: None,
+        cxdb: Some(cxdb),
+        llm_router: Arc::new(LlmRouter::from_env()),
+        socratic_runtimes: planner_server::runtime::SessionRuntimeRegistry::new(
+            Duration::from_secs(30),
+        ),
+        pipeline_runtimes: planner_server::runtime::SessionPipelineRegistry::new(),
+        started_at: std::time::Instant::now(),
+        blueprints: planner_core::blueprint::BlueprintStore::new(),
+        proposals: planner_core::discovery::ProposalStore::new(),
+        projects: planner_server::project::ProjectStore::new(),
+    });
+
+    let project = state
+        .projects
+        .create("dev|local", "Delete CXDB", None, None, Vec::new(), None);
+    let other_project =
+        state
+            .projects
+            .create("dev|local", "Other CXDB", None, None, Vec::new(), None);
+    let run_a = Uuid::new_v4();
+    let run_b = Uuid::new_v4();
+    state
+        .cxdb
+        .as_ref()
+        .unwrap()
+        .register_run(project.id, run_a)
+        .unwrap();
+    state
+        .cxdb
+        .as_ref()
+        .unwrap()
+        .register_run(other_project.id, run_b)
+        .unwrap();
+    let app = test_app(state.clone());
+
+    let req = Request::builder()
+        .method("DELETE")
+        .uri(format!("/projects/{}", project.slug))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert!(state
+        .cxdb
+        .as_ref()
+        .unwrap()
+        .list_runs(project.id)
+        .is_empty());
+    assert_eq!(
+        state.cxdb.as_ref().unwrap().list_runs(other_project.id),
+        vec![run_b]
+    );
+    let _ = std::fs::remove_dir_all(&data_dir);
+}
+
+#[tokio::test]
+async fn tier2_delete_project_local_and_shared_blueprint_behavior() {
+    use planner_schemas::artifacts::blueprint::{
+        BlueprintNode, Decision, DecisionStatus, NodeId, NodeLifecycle, NodeScope, ProjectScope,
+        ScopeClass, SecondaryScopeRefs, SharedScope,
+    };
+
+    let state = test_state();
+    let project = state.projects.create(
+        "dev|local",
+        "Delete Blueprint",
+        None,
+        None,
+        Vec::new(),
+        None,
+    );
+    let other_project =
+        state
+            .projects
+            .create("dev|local", "Keep Blueprint", None, None, Vec::new(), None);
+
+    state
+        .blueprints
+        .upsert_node(BlueprintNode::Decision(Decision {
+            id: NodeId::from_raw("dec-tier2-local"),
+            title: "Local node".into(),
+            status: DecisionStatus::Proposed,
+            context: "local".into(),
+            options: vec![],
+            consequences: vec![],
+            assumptions: vec![],
+            supersedes: None,
+            tags: vec![],
+            documentation: None,
+            scope: NodeScope {
+                scope_class: ScopeClass::Project,
+                project: Some(ProjectScope {
+                    project_id: project.id.to_string(),
+                    project_name: Some(project.name.clone()),
+                }),
+                secondary: SecondaryScopeRefs::default(),
+                is_shared: false,
+                shared: None,
+                lifecycle: NodeLifecycle::Active,
+                override_scope: None,
+            scope_review: None,
+            },
+            created_at: "2026-03-08T00:00:00Z".into(),
+            updated_at: "2026-03-08T00:00:00Z".into(),
+        }));
+
+    state
+        .blueprints
+        .upsert_node(BlueprintNode::Decision(Decision {
+            id: NodeId::from_raw("dec-tier2-shared"),
+            title: "Shared node".into(),
+            status: DecisionStatus::Accepted,
+            context: "shared".into(),
+            options: vec![],
+            consequences: vec![],
+            assumptions: vec![],
+            supersedes: None,
+            tags: vec![],
+            documentation: None,
+            scope: NodeScope {
+                scope_class: ScopeClass::Project,
+                project: Some(ProjectScope {
+                    project_id: other_project.id.to_string(),
+                    project_name: Some(other_project.name.clone()),
+                }),
+                secondary: SecondaryScopeRefs::default(),
+                is_shared: true,
+                shared: Some(SharedScope {
+                    linked_project_ids: vec![project.id.to_string(), other_project.id.to_string()],
+                    inherit_to_linked_projects: true,
+                }),
+                lifecycle: NodeLifecycle::Active,
+                override_scope: None,
+            scope_review: None,
+            },
+            created_at: "2026-03-08T00:00:00Z".into(),
+            updated_at: "2026-03-08T00:00:00Z".into(),
+        }));
+
+    let app = test_app(state.clone());
+    let req = Request::builder()
+        .method("DELETE")
+        .uri(format!("/projects/{}", project.slug))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    assert!(state.blueprints.get_node("dec-tier2-local").is_none());
+    let shared = state.blueprints.get_node("dec-tier2-shared").unwrap();
+    let linked = shared
+        .scope()
+        .shared
+        .as_ref()
+        .map(|scope| scope.linked_project_ids.clone())
+        .unwrap_or_default();
+    assert_eq!(linked, vec![other_project.id.to_string()]);
+}
+
+#[tokio::test]
+async fn tier2_delete_project_forbidden_for_non_owner() {
+    let state = test_state();
+    let project =
+        state
+            .projects
+            .create("other_user|123", "Not Owned", None, None, Vec::new(), None);
+    let app = test_app(state);
+
+    let req = Request::builder()
+        .method("DELETE")
+        .uri(format!("/projects/{}", project.slug))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn tier2_delete_project_not_found() {
+    let state = test_state();
+    let app = test_app(state);
+
+    let req = Request::builder()
+        .method("DELETE")
+        .uri("/projects/missing-project")
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }

@@ -2399,6 +2399,7 @@ fn e2e_phase6_pipeline_config_persist() {
         store: Some(&engine),
         dtu_registry: None,
         blueprints: None,
+        event_sink: None,
     };
 
     let project_id = Uuid::new_v4();

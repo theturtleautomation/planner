@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import SessionPage from '../SessionPage';
 import type { Session } from '../../types';
 import { useSocraticWebSocket } from '../../hooks/useSocraticWebSocket';
@@ -84,12 +84,23 @@ function makeSession(overrides: Partial<Session>): Session {
   };
 }
 
+function LocationSnapshot() {
+  const location = useLocation();
+  return (
+    <div>
+      <div data-testid="location-path">{location.pathname}</div>
+      <div data-testid="location-search">{location.search}</div>
+    </div>
+  );
+}
+
 function renderSessionPage(path = '/session/abc') {
   render(
     <MemoryRouter initialEntries={[path]}>
       <Routes>
         <Route path="/session/:id" element={<SessionPage />} />
         <Route path="/session/new" element={<SessionPage />} />
+        <Route path="/knowledge/projects/:projectId" element={<LocationSnapshot />} />
       </Routes>
     </MemoryRouter>,
   );
@@ -111,7 +122,7 @@ describe('SessionPage resume behavior', () => {
       classification: null,
       beliefState: null,
       convergencePct: 0,
-      currentQuestion: null,
+      currentPrompt: null,
       speculativeDraft: null,
       confirmedSections: new Set(),
       contradictions: [],
@@ -122,10 +133,8 @@ describe('SessionPage resume behavior', () => {
       currentStep: null,
       attach: mockAttach,
       sendDescription: mockSendDescription,
-      sendResponse: vi.fn(),
-      skipQuestion: vi.fn(),
+      submitPromptAnswers: vi.fn(),
       sendDone: vi.fn(),
-      sendDraftReaction: vi.fn(),
       sendDimensionEdit: vi.fn(),
     });
     mockGetSessionEvents.mockResolvedValue({ session_id: 'abc', events: [], count: 0 });
@@ -175,6 +184,30 @@ describe('SessionPage resume behavior', () => {
     });
 
     expect(mockAttach).not.toHaveBeenCalled();
+  });
+
+  it('opens project-scoped knowledge from the session header action', async () => {
+    const user = userEvent.setup();
+    const session = makeSession({
+      project_id: 'proj-task-tracker',
+      project_slug: 'task-tracker',
+      project_name: 'Task Tracker',
+    });
+    mockGetSession.mockResolvedValue({ session });
+
+    renderSessionPage('/session/abc');
+
+    await waitFor(() => {
+      expect(mockGetSession).toHaveBeenCalledWith('abc');
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Knowledge' }));
+
+    expect(await screen.findByTestId('location-path')).toHaveTextContent('/knowledge/projects/proj-task-tracker');
+    const params = new URLSearchParams(screen.getByTestId('location-search').textContent ?? '');
+    expect(params.get('project')).toBe('proj-task-tracker');
+    expect(params.get('from')).toBe('/session/abc');
+    expect(params.get('from_label')).toBe('Session');
   });
 
   it('attaches for detached interviewing sessions when a live runtime is available', async () => {
@@ -246,16 +279,36 @@ describe('SessionPage resume behavior', () => {
         socratic_run_id: '11111111-1111-1111-1111-111111111111',
         classification: null,
         belief_state: null,
-        current_question: {
-          question: 'What are the core user roles?',
-          target_dimension: 'Stakeholders',
-          quick_options: [],
-          allow_skip: true,
-        },
-        pending_draft: {
-          sections: [{ heading: 'Goal', content: 'Draft goal section' }],
-          assumptions: [],
-          not_discussed: [],
+        current_prompt: {
+          prompt_id: 'prompt-1',
+          kind: 'draft_review',
+          title: 'Review draft',
+          instructions: null,
+          items: [{
+            item_id: 'item-1',
+            kind: 'draft_section',
+            target_dimension: 'Stakeholders',
+            section_ref: 'Goal',
+            text: 'What are the core user roles?',
+            options: [],
+            response_mode: 'single_select_with_custom_text',
+            required: false,
+            priority: 100,
+            dependency_item_ids: [],
+          }],
+          draft_snapshot: {
+            sections: [{ heading: 'Goal', content: 'Draft goal section' }],
+            assumptions: [],
+            not_discussed: [],
+          },
+          required_item_ids: [],
+          allow_partial_submit: true,
+          ui_hints: {
+            preferred_layout: 'review',
+            show_draft_sidebar: true,
+          },
+          based_on_turn: 2,
+          created_at: '2026-03-06T12:00:00Z',
         },
         contradictions: [],
         stale_turns: 1,
@@ -272,8 +325,8 @@ describe('SessionPage resume behavior', () => {
     });
 
     expect(screen.getByText(/saved interview checkpoint/i)).toBeInTheDocument();
-    expect(screen.getByText(/current question: what are the core user roles\?/i)).toBeInTheDocument();
-    expect(screen.getByText(/pending draft: goal/i)).toBeInTheDocument();
+    expect(screen.getByText(/target dimension: stakeholders/i)).toBeInTheDocument();
+    expect(screen.getByText(/pending draft review: goal/i)).toBeInTheDocument();
   });
 
   it('renders workflow actions from backend capabilities', async () => {
@@ -502,7 +555,7 @@ describe('SessionPage resume behavior', () => {
       classification: null,
       beliefState: null,
       convergencePct: 0.8,
-      currentQuestion: null,
+      currentPrompt: null,
       speculativeDraft: null,
       confirmedSections: new Set(),
       contradictions: [],
@@ -522,10 +575,8 @@ describe('SessionPage resume behavior', () => {
       currentStep: 'pipeline.wait',
       attach: mockAttach,
       sendDescription: mockSendDescription,
-      sendResponse: vi.fn(),
-      skipQuestion: vi.fn(),
+      submitPromptAnswers: vi.fn(),
       sendDone: vi.fn(),
-      sendDraftReaction: vi.fn(),
       sendDimensionEdit: vi.fn(),
     });
 
@@ -541,6 +592,136 @@ describe('SessionPage resume behavior', () => {
 
     await user.click(screen.getByRole('button', { name: /events 1/i }));
     expect(screen.getByText(/pipeline waiting for retry/i)).toBeInTheDocument();
+  });
+
+  it('auto-foregrounds the Events feed when pipeline execution is active', async () => {
+    const session = makeSession({
+      intake_phase: 'pipeline_running',
+      pipeline_running: true,
+      can_resume_live: true,
+      resume_status: 'live_attach_available',
+    });
+    mockGetSession.mockResolvedValue({ session });
+    vi.mocked(useSocraticWebSocket).mockReturnValue({
+      isConnected: true,
+      reconnectFailed: false,
+      intakePhase: 'pipeline_running',
+      messages: [],
+      classification: null,
+      beliefState: null,
+      convergencePct: 0.8,
+      currentPrompt: null,
+      speculativeDraft: null,
+      confirmedSections: new Set(),
+      contradictions: [],
+      stages: [],
+      pipelineComplete: false,
+      pipelineSummary: null,
+      events: [
+        {
+          id: 'evt-live',
+          timestamp: new Date().toISOString(),
+          level: 'info',
+          source: 'pipeline',
+          message: 'Factory stage started',
+          metadata: { stage: 'Factory' },
+        },
+      ],
+      currentStep: 'pipeline.stage.started',
+      attach: mockAttach,
+      sendDescription: mockSendDescription,
+      submitPromptAnswers: vi.fn(),
+      sendDone: vi.fn(),
+      sendDimensionEdit: vi.fn(),
+    });
+
+    renderSessionPage('/session/abc');
+
+    await waitFor(() => {
+      expect(mockGetSession).toHaveBeenCalledWith('abc');
+    });
+
+    expect(screen.getByText(/factory stage started/i)).toBeInTheDocument();
+  });
+
+  it('shows first-class retry and artifact summaries in the Events pane', async () => {
+    const session = makeSession({
+      intake_phase: 'pipeline_running',
+      pipeline_running: true,
+      can_resume_live: true,
+      resume_status: 'live_attach_available',
+    });
+    mockGetSession.mockResolvedValue({ session });
+    vi.mocked(useSocraticWebSocket).mockReturnValue({
+      isConnected: true,
+      reconnectFailed: false,
+      intakePhase: 'pipeline_running',
+      messages: [],
+      classification: null,
+      beliefState: null,
+      convergencePct: 0.8,
+      currentPrompt: null,
+      speculativeDraft: null,
+      confirmedSections: new Set(),
+      contradictions: [],
+      stages: [],
+      pipelineComplete: false,
+      pipelineSummary: null,
+      events: [
+        {
+          id: 'evt-retry',
+          timestamp: new Date().toISOString(),
+          level: 'warn',
+          source: 'pipeline',
+          step: 'pipeline.retry.feedback',
+          message: 'Retry feedback prepared',
+          metadata: {
+            feedback_count: 2,
+            details: {
+              attempt: 2,
+              categories: { runtime: 1, contract: 1 },
+              severities: { High: 1, Medium: 1 },
+            },
+          },
+        },
+        {
+          id: 'evt-artifact-1',
+          timestamp: new Date().toISOString(),
+          level: 'info',
+          source: 'pipeline',
+          step: 'pipeline.artifact.persisted',
+          message: 'Persisted artifact',
+          metadata: { type_id: 'nlspec-v1' },
+        },
+        {
+          id: 'evt-artifact-2',
+          timestamp: new Date().toISOString(),
+          level: 'info',
+          source: 'pipeline',
+          step: 'pipeline.artifact.persisted',
+          message: 'Persisted artifact',
+          metadata: { type_id: 'satisfaction' },
+        },
+      ],
+      currentStep: 'pipeline.retry.feedback',
+      attach: mockAttach,
+      sendDescription: mockSendDescription,
+      submitPromptAnswers: vi.fn(),
+      sendDone: vi.fn(),
+      sendDimensionEdit: vi.fn(),
+    });
+
+    renderSessionPage('/session/abc');
+
+    await waitFor(() => {
+      expect(mockGetSession).toHaveBeenCalledWith('abc');
+    });
+
+    expect(screen.getByLabelText(/retry feedback summary/i)).toBeInTheDocument();
+    expect(screen.getByText(/2 categorized items \(attempt 2\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/runtime: 1/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/artifact persistence summary/i)).toBeInTheDocument();
+    expect(screen.getByText(/2 artifacts persisted/i)).toBeInTheDocument();
   });
 
   it('keeps legacy event-role chat messages out of the conversation pane', async () => {
@@ -560,7 +741,7 @@ describe('SessionPage resume behavior', () => {
       classification: null,
       beliefState: null,
       convergencePct: 0.8,
-      currentQuestion: null,
+      currentPrompt: null,
       speculativeDraft: null,
       confirmedSections: new Set(),
       contradictions: [],
@@ -571,10 +752,8 @@ describe('SessionPage resume behavior', () => {
       currentStep: 'pipeline.wait',
       attach: mockAttach,
       sendDescription: mockSendDescription,
-      sendResponse: vi.fn(),
-      skipQuestion: vi.fn(),
+      submitPromptAnswers: vi.fn(),
       sendDone: vi.fn(),
-      sendDraftReaction: vi.fn(),
       sendDimensionEdit: vi.fn(),
     });
 

@@ -3,20 +3,26 @@ import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import DiscoveryPage from '../DiscoveryPage.tsx';
-import type { ProposedNode } from '../../types/blueprint.ts';
+import type { ProposedNode, ProposedEdge } from '../../types/blueprint.ts';
 
 const mockListProposedNodes = vi.fn();
+const mockListProposedEdges = vi.fn();
 const mockRunDiscoveryScan = vi.fn();
 const mockAcceptProposal = vi.fn();
 const mockRejectProposal = vi.fn();
+const mockAcceptEdgeProposal = vi.fn();
+const mockRejectEdgeProposal = vi.fn();
 const mockGetAccessToken = vi.fn().mockResolvedValue('mock-token');
 
 vi.mock('../../api/client.ts', () => ({
   createApiClient: vi.fn(() => ({
     listProposedNodes: mockListProposedNodes,
+    listProposedEdges: mockListProposedEdges,
     runDiscoveryScan: mockRunDiscoveryScan,
     acceptProposal: mockAcceptProposal,
     rejectProposal: mockRejectProposal,
+    acceptEdgeProposal: mockAcceptEdgeProposal,
+    rejectEdgeProposal: mockRejectEdgeProposal,
   })),
 }));
 
@@ -67,6 +73,24 @@ function makeProposal(): ProposedNode {
   };
 }
 
+function makeEdgeProposal(): ProposedEdge {
+  return {
+    id: 'edge-proposal-1',
+    edge: {
+      source: 'comp-review-controls',
+      target: 'comp-task-list',
+      edge_type: 'depends_on',
+      metadata: 'import graph',
+    },
+    source: 'code_graph_context',
+    reason: 'Review controls imports task-list reordering helpers.',
+    status: 'pending',
+    proposed_at: '2026-03-07T00:00:00Z',
+    confidence: 0.87,
+    source_artifact: 'codegraph:task-tracker',
+  };
+}
+
 function LocationSnapshot() {
   const location = useLocation();
   const params = Object.fromEntries(new URLSearchParams(location.search).entries());
@@ -82,11 +106,17 @@ describe('DiscoveryPage Phase 4 contextual links', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetAccessToken.mockResolvedValue('mock-token');
-    mockRunDiscoveryScan.mockResolvedValue({ results: [], total_proposed: 0 });
+    mockRunDiscoveryScan.mockResolvedValue({ results: [], total_proposed: 0, total_edge_proposed: 0 });
     mockAcceptProposal.mockResolvedValue({});
     mockRejectProposal.mockResolvedValue({});
+    mockAcceptEdgeProposal.mockResolvedValue({});
+    mockRejectEdgeProposal.mockResolvedValue({});
     mockListProposedNodes.mockResolvedValue({
       proposals: [makeProposal()],
+      total: 1,
+    });
+    mockListProposedEdges.mockResolvedValue({
+      proposals: [makeEdgeProposal()],
       total: 1,
     });
   });
@@ -183,5 +213,32 @@ describe('DiscoveryPage Phase 4 contextual links', () => {
         },
       },
     });
+  });
+
+  it('loads edge proposals and accepts a pending edge', async () => {
+    const user = userEvent.setup();
+
+    render(
+      <MemoryRouter initialEntries={['/discovery']}>
+        <Routes>
+          <Route path="/discovery" element={<DiscoveryPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(mockListProposedNodes).toHaveBeenCalledTimes(1);
+    });
+
+    await user.click(screen.getByRole('button', { name: /edge proposals/i }));
+
+    await waitFor(() => {
+      expect(mockListProposedEdges).toHaveBeenCalledTimes(1);
+    });
+
+    await user.click(await screen.findByText('comp-review-controls -> comp-task-list'));
+    await user.click(await screen.findByRole('button', { name: /accept edge/i }));
+
+    expect(mockAcceptEdgeProposal).toHaveBeenCalledWith('edge-proposal-1');
   });
 });

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout.tsx';
+import CreateProjectModal from '../components/CreateProjectModal.tsx';
 import { createApiClient } from '../api/client.ts';
 import { useGetAccessToken } from '../auth/useAuthenticatedFetch.ts';
 import { AUTH0_ENABLED } from '../config.ts';
@@ -37,7 +38,7 @@ export default function HomeHubPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [prompt, setPrompt] = useState('');
-  const [creatingProject, setCreatingProject] = useState(false);
+  const [createModalOpen, setCreateModalOpen] = useState(false);
 
   const loadProjects = useCallback(async () => {
     setLoading(true);
@@ -61,27 +62,16 @@ export default function HomeHubPage() {
 
   const recentProjects = useMemo(() => projects.slice(0, 6), [projects]);
 
-  const createProject = useCallback(async () => {
-    const name = window.prompt('Project name');
-    if (name === null) return;
-    const trimmed = name.trim();
-    if (!trimmed) return;
-
-    const description = window.prompt('Optional short description') ?? undefined;
-    setCreatingProject(true);
-    setError(null);
-
+  const handleCreateProject = useCallback(async (name: string, description?: string) => {
     try {
       const response = await api.createProject({
-        name: trimmed,
-        description: description?.trim() || undefined,
+        name,
+        description,
       });
       await loadProjects();
       void navigate(projectSessionsPath(response.project.slug));
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setCreatingProject(false);
+      throw err; // Let the modal handle it
     }
   }, [api, loadProjects, navigate]);
 
@@ -105,7 +95,6 @@ export default function HomeHubPage() {
       'open sessions': '/sessions',
       discovery: '/discovery',
       blueprint: '/blueprint',
-      'legacy blueprint': '/blueprint',
     };
 
     const directRoute = exactIntentRoutes[normalized];
@@ -130,12 +119,12 @@ export default function HomeHubPage() {
 
   const quickActions: Array<{ label: string; onClick: () => void; primary?: boolean }> = [
     { label: 'Open Projects', onClick: () => { void navigate('/projects'); }, primary: true },
-    { label: creatingProject ? 'Creating…' : 'New Project', onClick: () => { void createProject(); }, primary: true },
+    { label: 'New Project', onClick: () => { setCreateModalOpen(true); }, primary: true },
     { label: 'Knowledge Library', onClick: () => { void navigate('/knowledge'); }, primary: true },
     { label: 'Events', onClick: () => { void navigate('/events'); }, primary: true },
     { label: 'Admin', onClick: () => { void navigate('/admin'); }, primary: true },
     { label: 'Open Sessions', onClick: () => { void navigate('/sessions'); } },
-    { label: 'Legacy Blueprint', onClick: () => { void navigate('/blueprint'); } },
+    { label: 'Blueprint', onClick: () => { void navigate('/blueprint'); } },
     { label: 'Discovery', onClick: () => { void navigate('/discovery'); } },
   ];
 
@@ -225,10 +214,6 @@ export default function HomeHubPage() {
                 key={action.label}
                 className={action.primary ? 'btn btn-outline' : 'btn'}
                 onClick={action.onClick}
-                disabled={creatingProject && action.label.startsWith('New Project')}
-                style={{
-                  opacity: creatingProject && action.label.startsWith('New Project') ? 0.75 : 1,
-                }}
               >
                 {action.label}
               </button>
@@ -282,7 +267,7 @@ export default function HomeHubPage() {
               <span style={{ color: 'var(--color-text)', fontWeight: 600 }}>No projects yet</span>
               <span>Sessions now live inside projects. Create a project to begin.</span>
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                <button className="btn btn-primary" onClick={() => { void createProject(); }}>
+                <button className="btn btn-primary" onClick={() => { setCreateModalOpen(true); }}>
                   Create your first project
                 </button>
                 <button className="btn btn-outline" onClick={() => { void navigate('/knowledge'); }}>
@@ -330,6 +315,11 @@ export default function HomeHubPage() {
           )}
         </section>
       </div>
+      <CreateProjectModal
+        isOpen={createModalOpen}
+        onClose={() => setCreateModalOpen(false)}
+        onCreate={handleCreateProject}
+      />
     </Layout>
   );
 }

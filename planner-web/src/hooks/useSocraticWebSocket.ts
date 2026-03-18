@@ -11,21 +11,24 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { WS_PROTOCOL } from '../config.ts';
 import { uuidv4 } from '../lib/uuid.ts';
+import {
+  buildUiCapabilities,
+  sameUiCapabilities,
+} from './uiCapabilities.ts';
 import type {
   BeliefState,
   ChatMessage,
   Classification,
   ClientWsMessage,
   Contradiction,
-  DraftAssumption,
-  DraftSection,
   EventLevel,
   EventSourceType,
   IntakePhase,
   PipelineStage,
   PipelineStageName,
   PlannerEvent,
-  QuickOption,
+  PromptAnswer,
+  PromptEnvelope,
   ServerWsMessage,
   Session,
   SpeculativeDraft,
@@ -55,6 +58,23 @@ function normalizeDimensionLabel(value: unknown): string {
     }
   }
   return JSON.stringify(value);
+}
+
+function hydrateDraftFromPrompt(prompt: PromptEnvelope | null): SpeculativeDraft | null {
+  if (!prompt) return null;
+  const draft = prompt.draft_snapshot;
+  if (!draft) return null;
+  return {
+    sections: draft.sections.map((section) => ({
+      heading: section.heading,
+      content: section.content,
+    })),
+    assumptions: draft.assumptions.map((assumption) => ({
+      dimension: normalizeDimensionLabel((assumption as { dimension?: unknown }).dimension),
+      assumption: assumption.assumption,
+    })),
+    not_discussed: (draft.not_discussed ?? []).map(normalizeDimensionLabel),
+  };
 }
 
 function buildInitialSessionSignature(
@@ -88,15 +108,181 @@ function dedupeEventsById(events: PlannerEvent[]): PlannerEvent[] {
   return deduped;
 }
 
-type GetTokenFn = () => Promise<string>;
-
-/** The current question being posed to the user, if any. */
-export interface CurrentQuestion {
-  text: string;
-  targetDimension: string;
-  quickOptions: QuickOption[];
-  allowSkip: boolean;
+function isPipelineStageName(value: unknown): value is PipelineStageName {
+  return typeof value === 'string' && PIPELINE_STAGE_NAMES.includes(value as PipelineStageName);
 }
+
+function toRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function normalizePipelineStageName(raw: string): PipelineStageName | null {
+  const normalized = raw.trim().toLowerCase();
+  switch (normalized) {
+    case 'intake':
+      return 'Intake';
+    case 'chunk':
+    case 'chunk planning':
+      return 'Chunk';
+    case 'compile':
+    case 'specification compilation':
+      return 'Compile';
+    case 'lint':
+      return 'Lint';
+    case 'ar review':
+    case 'adversarial review':
+      return 'AR Review';
+    case 'refine':
+    case 'refinement':
+      return 'Refine';
+    case 'scenarios':
+    case 'scenario generation':
+      return 'Scenarios';
+    case 'ralph':
+    case 'ralph advisory':
+      return 'Ralph';
+    case 'graph':
+    case 'graph compilation':
+      return 'Graph';
+    case 'factory':
+      return 'Factory';
+    case 'validate':
+    case 'validation':
+      return 'Validate';
+    case 'git':
+    case 'git projection':
+      return 'Git';
+    default:
+      return null;
+  }
+}
+
+function getPipelineStageFromMetadata(metadata: Record<string, unknown>): PipelineStageName | null {
+  if (typeof metadata.stage === 'string') {
+    const normalized = normalizePipelineStageName(metadata.stage);
+    if (normalized) return normalized;
+  }
+  if (typeof metadata.stage_name === 'string') {
+    const normalized = normalizePipelineStageName(metadata.stage_name);
+    if (normalized) return normalized;
+  }
+  if (typeof metadata.pipeline_stage === 'string') {
+    const normalized = normalizePipelineStageName(metadata.pipeline_stage);
+    if (normalized) return normalized;
+  }
+  if (isPipelineStageName(metadata.stage)) return metadata.stage;
+  const details = toRecord(metadata.details);
+  if (details) {
+    const detailStage = details.stage;
+    const detailStageName = details.stage_name;
+    if (typeof detailStage === 'string') {
+      const normalized = normalizePipelineStageName(detailStage);
+      if (normalized) return normalized;
+    }
+    if (typeof detailStageName === 'string') {
+      const normalized = normalizePipelineStageName(detailStageName);
+      if (normalized) return normalized;
+    }
+    if (isPipelineStageName(details.stage)) return details.stage;
+  }
+  return null;
+}
+
+function inferPipelineStageFromText(text: string | undefined): PipelineStageName | null {
+  if (!text) return null;
+  const lower = text.toLowerCase();
+  const patterns: Array<[string, PipelineStageName]> = [
+    ['intake stage', 'Intake'],
+    ['chunk planning stage', 'Chunk'],
+    ['chunk stage', 'Chunk'],
+    ['specification compilation stage', 'Compile'],
+    ['compile stage', 'Compile'],
+    ['lint stage', 'Lint'],
+    ['adversarial review stage', 'AR Review'],
+    ['ar review stage', 'AR Review'],
+    ['refinement stage', 'Refine'],
+    ['refine stage', 'Refine'],
+    ['scenario generation stage', 'Scenarios'],
+    ['scenarios stage', 'Scenarios'],
+    ['ralph advisory stage', 'Ralph'],
+    ['graph compilation stage', 'Graph'],
+    ['factory stage', 'Factory'],
+    ['validation stage', 'Validate'],
+    ['git projection stage', 'Git'],
+  ];
+  const match = patterns.find(([needle]) => lower.includes(needle));
+  return match ? match[1] : null;
+}
+
+function soleRunningStage(stages: PipelineStage[]): PipelineStageName | null {
+  const running = stages.filter((stage) => stage.status === 'running');
+  if (running.length !== 1) return null;
+  return running[0].name;
+}
+
+function getBooleanMetadata(metadata: Record<string, unknown>, key: string): boolean | null {
+  if (typeof metadata[key] === 'boolean') return metadata[key] as boolean;
+  const details = toRecord(metadata.details);
+  if (details && typeof details[key] === 'boolean') return details[key] as boolean;
+  return null;
+}
+
+function applyPipelineEventToStages(
+  stages: PipelineStage[],
+  step: string | undefined,
+  metadata: Record<string, unknown>,
+  message?: string,
+): PipelineStage[] {
+  if (!step) return stages;
+
+  const stage =
+    getPipelineStageFromMetadata(metadata)
+    ?? inferPipelineStageFromText(message);
+
+  switch (step) {
+    case 'pipeline.stage.started': {
+      if (!stage) return stages;
+      return stages.map((entry) => (
+        entry.name === stage ? { ...entry, status: 'running' } : entry
+      ));
+    }
+    case 'pipeline.stage.completed': {
+      const completedStage = stage ?? soleRunningStage(stages);
+      if (!completedStage) return stages;
+      return stages.map((entry) => (
+        entry.name === completedStage ? { ...entry, status: 'complete' } : entry
+      ));
+    }
+    case 'pipeline.stage.failed': {
+      const failedStage = stage ?? soleRunningStage(stages);
+      if (!failedStage) return stages;
+      return stages.map((entry) => (
+        entry.name === failedStage ? { ...entry, status: 'failed' } : entry
+      ));
+    }
+    case 'pipeline.retry.started': {
+      const retryStage: PipelineStageName = stage ?? soleRunningStage(stages) ?? 'Factory';
+      return stages.map((entry) => (
+        entry.name === retryStage ? { ...entry, status: 'running' } : entry
+      ));
+    }
+    case 'pipeline.validation.completed': {
+      const validationStage: PipelineStageName = stage ?? 'Validate';
+      const gatesPassed = getBooleanMetadata(metadata, 'gates_passed');
+      if (gatesPassed === null) return stages;
+      return stages.map((entry) => (
+        entry.name === validationStage
+          ? { ...entry, status: gatesPassed ? 'complete' : 'failed' }
+          : entry
+      ));
+    }
+    default:
+      return stages;
+  }
+}
+
+type GetTokenFn = () => Promise<string>;
 
 export interface UseSocraticWebSocketOptions {
   sessionId: string | null;
@@ -119,7 +305,7 @@ export interface UseSocraticWebSocketResult {
   classification: Classification | null;
   beliefState: BeliefState | null;
   convergencePct: number;
-  currentQuestion: CurrentQuestion | null;
+  currentPrompt: PromptEnvelope | null;
   speculativeDraft: SpeculativeDraft | null;
   confirmedSections: Set<string>;
   contradictions: Contradiction[];
@@ -136,10 +322,8 @@ export interface UseSocraticWebSocketResult {
   // Actions
   attach: () => void;
   sendDescription: (description: string) => void;
-  sendResponse: (content: string) => void;
-  skipQuestion: () => void;
+  submitPromptAnswers: (answers: PromptAnswer[]) => void;
   sendDone: () => void;
-  sendDraftReaction: (target: string, action: string, correction?: string) => void;
   sendDimensionEdit: (dimension: string, newValue: string) => void;
 }
 
@@ -173,7 +357,7 @@ export function useSocraticWebSocket({
   const [classification, setClassification] = useState<Classification | null>(null);
   const [beliefState, setBeliefState] = useState<BeliefState | null>(null);
   const [convergencePct, setConvergencePct] = useState(0);
-  const [currentQuestion, setCurrentQuestion] = useState<CurrentQuestion | null>(null);
+  const [currentPrompt, setCurrentPrompt] = useState<PromptEnvelope | null>(null);
   const [speculativeDraft, setSpeculativeDraft] = useState<SpeculativeDraft | null>(null);
   const [contradictions, setContradictions] = useState<Contradiction[]>([]);
 
@@ -196,9 +380,13 @@ export function useSocraticWebSocket({
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
   const sessionIdRef = useRef(sessionId);
+  const currentPromptRef = useRef<PromptEnvelope | null>(null);
+  const uiCapabilitiesRef = useRef(buildUiCapabilities());
+  const lastSentUiCapabilitiesRef = useRef<typeof uiCapabilitiesRef.current | null>(null);
   const hydratedSnapshotRef = useRef<string | null>(null);
 
   useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
+  useEffect(() => { currentPromptRef.current = currentPrompt; }, [currentPrompt]);
 
   const clearRetryTimer = (): void => {
     if (retryTimerRef.current !== null) {
@@ -243,41 +431,28 @@ export function useSocraticWebSocket({
         break;
       }
 
-      case 'question': {
-        setCurrentQuestion({
-          text: msg.text,
-          targetDimension: msg.target_dimension,
-          quickOptions: msg.quick_options ?? [],
-          allowSkip: msg.allow_skip,
-        });
-        // Also add the question text as a planner chat message
-        setMessages((prev) => [...prev, {
-          id: uuidv4(),
-          role: 'planner',
-          content: msg.text,
-          timestamp: new Date().toISOString(),
-        }]);
-        break;
-      }
+      case 'prompt': {
+        const prompt = msg.prompt;
+        setCurrentPrompt(prompt);
+        setSpeculativeDraft(hydrateDraftFromPrompt(prompt));
 
-      case 'speculative_draft': {
-        setSpeculativeDraft({
-          sections: msg.sections as DraftSection[],
-          assumptions: msg.assumptions as DraftAssumption[],
-          not_discussed: msg.not_discussed,
-        });
-        setMessages((prev) => [...prev, {
-          id: uuidv4(),
-          role: 'planner',
-          content: 'Here\'s a speculative draft based on what I know so far. Review it in the right panel.',
-          timestamp: new Date().toISOString(),
-        }]);
+        const promptSummary = prompt.items?.length === 1
+          ? prompt.items[0].text
+          : `${prompt.title} (${prompt.items.length} items)`;
+        if (promptSummary) {
+          setMessages((prev) => [...prev, {
+            id: uuidv4(),
+            role: 'planner',
+            content: promptSummary,
+            timestamp: new Date().toISOString(),
+          }]);
+        }
         break;
       }
 
       case 'converged': {
         setConvergencePct(msg.convergence_pct);
-        setCurrentQuestion(null);
+        setCurrentPrompt(null);
         setIntakePhase('pipeline_running');
         setMessages((prev) => [...prev, {
           id: uuidv4(),
@@ -303,18 +478,6 @@ export function useSocraticWebSocket({
           content: `\u26a0 Contradiction detected: ${msg.dimension_a} ("${msg.value_a}") conflicts with ${msg.dimension_b} ("${msg.value_b}") \u2014 ${msg.explanation}`,
           timestamp: new Date().toISOString(),
         }]);
-        break;
-      }
-
-      case 'draft_reaction_ack': {
-        // Server confirmed it received our draft reaction.
-        // Mark the target as confirmed (idempotent — optimistic update already added it).
-        setConfirmedSections((prev) => {
-          if (prev.has(msg.target)) return prev;
-          const next = new Set(prev);
-          next.add(msg.target);
-          return next;
-        });
         break;
       }
 
@@ -386,6 +549,7 @@ export function useSocraticWebSocket({
         if (msg.step) {
           setCurrentStep(msg.step);
         }
+        setStages((prev) => applyPipelineEventToStages(prev, msg.step, msg.metadata ?? {}, msg.message));
         break;
       }
     }
@@ -427,6 +591,12 @@ export function useSocraticWebSocket({
       if (token) {
         ws.send(JSON.stringify({ type: 'auth', token }));
       }
+      const capabilities = uiCapabilitiesRef.current;
+      ws.send(JSON.stringify({
+        type: 'ui_capabilities',
+        ...capabilities,
+      } satisfies ClientWsMessage));
+      lastSentUiCapabilitiesRef.current = capabilities;
     };
 
     ws.onmessage = (event: MessageEvent): void => {
@@ -464,6 +634,37 @@ export function useSocraticWebSocket({
     };
   }, [getToken, handleServerMessage]);
 
+  useEffect(() => {
+    const pushUiCapabilitiesIfNeeded = (): void => {
+      const nextCapabilities = buildUiCapabilities();
+      if (sameUiCapabilities(uiCapabilitiesRef.current, nextCapabilities)) {
+        return;
+      }
+
+      uiCapabilitiesRef.current = nextCapabilities;
+
+      const ws = wsRef.current;
+      if (ws?.readyState !== WebSocket.OPEN) {
+        return;
+      }
+
+      if (sameUiCapabilities(lastSentUiCapabilitiesRef.current, nextCapabilities)) {
+        return;
+      }
+
+      ws.send(JSON.stringify({
+        type: 'ui_capabilities',
+        ...nextCapabilities,
+      } satisfies ClientWsMessage));
+      lastSentUiCapabilitiesRef.current = nextCapabilities;
+    };
+
+    window.addEventListener('resize', pushUiCapabilitiesIfNeeded);
+    return () => {
+      window.removeEventListener('resize', pushUiCapabilitiesIfNeeded);
+    };
+  }, []);
+
   // -------------------------------------------------------------------------
   // Lifecycle
   // -------------------------------------------------------------------------
@@ -472,6 +673,8 @@ export function useSocraticWebSocket({
     mountedRef.current = true;
     retryCountRef.current = 0;
     hydratedSnapshotRef.current = null;
+    uiCapabilitiesRef.current = buildUiCapabilities();
+    lastSentUiCapabilitiesRef.current = null;
 
     // Reset all state when session changes
     setIsConnected(false);
@@ -481,7 +684,7 @@ export function useSocraticWebSocket({
     setClassification(null);
     setBeliefState(null);
     setConvergencePct(0);
-    setCurrentQuestion(null);
+    setCurrentPrompt(null);
     setSpeculativeDraft(null);
     setConfirmedSections(new Set());
     setStages(buildInitialStages());
@@ -513,31 +716,9 @@ export function useSocraticWebSocket({
 
     const checkpoint = initialSession.checkpoint ?? null;
     const checkpointBeliefState = checkpoint?.belief_state ?? null;
-    const checkpointQuestion = checkpoint?.current_question ?? null;
-    const checkpointDraft = checkpoint?.pending_draft ?? null;
+    const checkpointPrompt = checkpoint?.current_prompt ?? null;
 
-    const hydratedQuestion: CurrentQuestion | null = checkpointQuestion
-      ? {
-          text: checkpointQuestion.question,
-          targetDimension: normalizeDimensionLabel(checkpointQuestion.target_dimension),
-          quickOptions: checkpointQuestion.quick_options ?? [],
-          allowSkip: checkpointQuestion.allow_skip,
-        }
-      : null;
-
-    const hydratedDraft: SpeculativeDraft | null = checkpointDraft
-      ? {
-          sections: checkpointDraft.sections.map((section) => ({
-            heading: section.heading,
-            content: section.content,
-          })),
-          assumptions: checkpointDraft.assumptions.map((assumption) => ({
-            dimension: normalizeDimensionLabel(assumption.dimension),
-            assumption: assumption.assumption,
-          })),
-          not_discussed: (checkpointDraft.not_discussed ?? []).map(normalizeDimensionLabel),
-        }
-      : null;
+    const hydratedDraft: SpeculativeDraft | null = hydrateDraftFromPrompt(checkpointPrompt);
 
     const hydratedContradictions: Contradiction[] = (checkpoint?.contradictions ?? []).map(
       (entry) => ({
@@ -557,7 +738,7 @@ export function useSocraticWebSocket({
     setEvents(dedupeEventsById(initialSession.events ?? []));
     setCurrentStep(initialSession.current_step ?? null);
     setConvergencePct((initialSession.belief_state ?? checkpointBeliefState)?.convergence_pct ?? 0);
-    setCurrentQuestion(hydratedQuestion);
+    setCurrentPrompt(checkpointPrompt);
     setSpeculativeDraft(hydratedDraft);
     setConfirmedSections(new Set());
     setContradictions(hydratedContradictions);
@@ -584,6 +765,36 @@ export function useSocraticWebSocket({
     void connect();
   }, [connect]);
 
+  const sendPromptResponse = useCallback((promptId: string, answers: PromptAnswer[]): void => {
+    const capabilities = uiCapabilitiesRef.current;
+    sendRaw({
+      type: 'prompt_response',
+      prompt_id: promptId,
+      answers,
+      submitted_at: new Date().toISOString(),
+      client_context: {
+        viewport_class: capabilities.viewport_class,
+      },
+    });
+  }, [sendRaw]);
+
+  const submitPromptAnswers = useCallback((answers: PromptAnswer[]): void => {
+    const prompt = currentPromptRef.current;
+    if (!prompt) return;
+
+    const normalizedAnswers = answers
+      .map((answer) => ({
+        item_id: answer.item_id,
+        selected_option_id: answer.selected_option_id?.trim() || undefined,
+        custom_text: answer.custom_text?.trim() || undefined,
+        skipped: answer.skipped,
+      }))
+      .filter((answer) => answer.selected_option_id || answer.custom_text || answer.skipped);
+
+    if (normalizedAnswers.length === 0) return;
+    sendPromptResponse(prompt.prompt_id, normalizedAnswers);
+  }, [sendPromptResponse]);
+
   /** Send the initial project description — this starts the interview. */
   const sendDescription = useCallback((description: string): void => {
     // Connect the WS first if not already connected
@@ -606,71 +817,24 @@ export function useSocraticWebSocket({
           };
           setTimeout(resolve, 5000);
         });
-        sendRaw({ type: 'socratic_response', content: description });
+        sendPromptResponse('initial_description', [{
+          item_id: 'initial_description',
+          custom_text: description,
+        }]);
         setIntakePhase('interviewing');
       })();
     } else {
-      sendRaw({ type: 'socratic_response', content: description });
+      sendPromptResponse('initial_description', [{
+        item_id: 'initial_description',
+        custom_text: description,
+      }]);
       setIntakePhase('interviewing');
     }
-  }, [connect, sendRaw]);
-
-  /** Send a user response during the interview. */
-  const sendResponse = useCallback((content: string): void => {
-    setMessages((prev) => [...prev, {
-      id: uuidv4(),
-      role: 'user',
-      content,
-      timestamp: new Date().toISOString(),
-    }]);
-    setCurrentQuestion(null);
-    sendRaw({ type: 'socratic_response', content });
-  }, [sendRaw]);
-
-  /** Skip the current question. */
-  const skipQuestion = useCallback((): void => {
-    setCurrentQuestion(null);
-    setMessages((prev) => [...prev, {
-      id: uuidv4(),
-      role: 'system',
-      content: '(Question skipped)',
-      timestamp: new Date().toISOString(),
-    }]);
-    sendRaw({ type: 'skip_question' });
-  }, [sendRaw]);
+  }, [connect, sendPromptResponse]);
 
   /** Signal "done, start building." */
   const sendDone = useCallback((): void => {
-    setMessages((prev) => [...prev, {
-      id: uuidv4(),
-      role: 'system',
-      content: '(Done — starting pipeline)',
-      timestamp: new Date().toISOString(),
-    }]);
     sendRaw({ type: 'done' });
-  }, [sendRaw]);
-
-  /** Send a reaction to a speculative draft section or assumptions. */
-  const sendDraftReaction = useCallback((target: string, action: string, correction?: string): void => {
-    const msg: ClientWsMessage = correction !== undefined
-      ? { type: 'draft_reaction', target, action, correction }
-      : { type: 'draft_reaction', target, action };
-    sendRaw(msg);
-
-    // Optimistic update: immediately mark as confirmed so the UI reflects
-    // the action without waiting for the server round-trip.
-    setConfirmedSections((prev) => {
-      const next = new Set(prev);
-      next.add(target);
-      return next;
-    });
-
-    setMessages((prev) => [...prev, {
-      id: uuidv4(),
-      role: 'user',
-      content: `[Draft feedback] ${action} section "${target}"${correction ? `: ${correction}` : ''}`,
-      timestamp: new Date().toISOString(),
-    }]);
   }, [sendRaw]);
 
   /** Send a dimension value edit from the belief state panel. */
@@ -692,7 +856,7 @@ export function useSocraticWebSocket({
     classification,
     beliefState,
     convergencePct,
-    currentQuestion,
+    currentPrompt,
     speculativeDraft,
     confirmedSections,
     contradictions,
@@ -703,10 +867,8 @@ export function useSocraticWebSocket({
     currentStep,
     attach,
     sendDescription,
-    sendResponse,
-    skipQuestion,
+    submitPromptAnswers,
     sendDone,
-    sendDraftReaction,
     sendDimensionEdit,
   };
 }

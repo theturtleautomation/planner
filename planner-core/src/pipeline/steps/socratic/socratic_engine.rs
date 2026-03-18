@@ -28,7 +28,9 @@ use super::belief_state;
 use super::constitution;
 use super::convergence;
 use super::domain_classifier;
-use super::question_planner;
+use super::prompt_batch_planner;
+use super::prompt_protocol;
+use super::prompt_response_adjudicator;
 use super::speculative_draft;
 
 // ---------------------------------------------------------------------------
@@ -45,14 +47,11 @@ pub trait SocraticIO: Send + Sync {
     /// Send a system message (informational, not a question).
     async fn send_message(&self, content: &str);
 
-    /// Send a question with optional quick-select options.
-    async fn send_question(&self, output: &QuestionOutput);
+    /// Send a prompt envelope.
+    async fn send_prompt(&self, prompt: &PromptEnvelope);
 
     /// Send a belief state update (for the right-pane display).
     async fn send_belief_state(&self, state: &RequirementsBeliefState);
-
-    /// Send a speculative draft for review.
-    async fn send_draft(&self, draft: &SpeculativeDraft);
 
     /// Send a convergence notification.
     async fn send_convergence(&self, result: &ConvergenceResult);
@@ -60,9 +59,18 @@ pub trait SocraticIO: Send + Sync {
     /// Send the domain classification.
     async fn send_classification(&self, classification: &DomainClassification);
 
-    /// Receive user input. Returns the user's text response.
+    /// Receive a structured prompt response.
     /// Returns None if the user disconnected or quit.
-    async fn receive_input(&self) -> Option<String>;
+    async fn receive_prompt_response(&self, prompt: &PromptEnvelope) -> Option<PromptResponse>;
+
+    /// Current UI capabilities used for prompt batch planning.
+    fn current_ui_capabilities(&self) -> UiCapabilities {
+        UiCapabilities {
+            viewport_class: ViewportClass::Desktop,
+            max_visible_items: 3,
+            supports_split_draft_view: true,
+        }
+    }
 
     /// Send an event (for structured consumers like WebSocket).
     async fn send_event(&self, event: &SocraticEvent);
@@ -81,9 +89,8 @@ pub struct SocraticEngineState {
 
 /// Pending prompt restored from a durable checkpoint.
 #[derive(Debug, Clone)]
-pub enum ResumePendingPrompt {
-    Question(QuestionOutput),
-    Draft(SpeculativeDraft),
+pub struct ResumePendingPrompt {
+    pub prompt: PromptEnvelope,
 }
 
 /// Input state required to resume an interview from a saved checkpoint.
@@ -185,285 +192,35 @@ pub async fn run_interview<IO: SocraticIO, S: TurnStore>(
         let _ = belief_state::persist_to_cxdb(store, run_id, &belief_state);
     }
 
-    // --- Phase 4: Interview Loop ---
-    #[allow(unused_assignments)]
-    let mut last_question: Option<String> = None;
-
-    loop {
-        // Check convergence
+    if verifier_output.user_wants_to_stop {
         let conv_result = convergence::check_convergence(
             &belief_state,
             &constitution,
-            verifier_output.user_wants_to_stop,
+            true,
             engine_state.stale_turns,
         );
-
-        if conv_result.is_done {
-            io.send_convergence(&conv_result).await;
-            io.send_event(&SocraticEvent::Converged {
-                result: conv_result.clone(),
-            })
-            .await;
-
-            engine_state.session.is_complete = true;
-            engine_state.session.convergence_result = Some(conv_result);
-            engine_state.session.belief_state = belief_state;
-            return Ok(engine_state.session);
-        }
-
-        // Check if we should show a speculative draft
-        let draft_already_shown = engine_state
-            .draft_shown_at_turn
-            .map(|t| belief_state.turn_count - t < 3)
-            .unwrap_or(false);
-
-        let last_msg_len = engine_state
-            .session
-            .conversation
-            .last()
-            .map(|t| t.content.len())
-            .unwrap_or(0);
-
-        if speculative_draft::should_trigger_draft(&belief_state, last_msg_len, draft_already_shown)
-        {
-            match speculative_draft::generate_draft(router, &belief_state).await {
-                Ok(draft) => {
-                    io.send_draft(&draft).await;
-                    io.send_event(&SocraticEvent::SpeculativeDraftReady {
-                        draft: draft.clone(),
-                    })
-                    .await;
-                    engine_state.draft_shown_at_turn = Some(belief_state.turn_count);
-
-                    // Wait for user reaction to the draft
-                    if let Some(reaction) = io.receive_input().await {
-                        // Process draft reaction through verifier
-                        let pre_filled = belief_state.filled.len();
-                        let pre_confs: Vec<f32> =
-                            belief_state.uncertain.values().map(|(_, c)| *c).collect();
-
-                        let verifier_output = belief_state::verify_and_update(
-                            router,
-                            &mut belief_state,
-                            &reaction,
-                            Some("Review the speculative draft above and correct anything that's wrong."),
-                        ).await?;
-
-                        let post_confs: Vec<f32> =
-                            belief_state.uncertain.values().map(|(_, c)| *c).collect();
-
-                        if convergence::is_stale_turn(
-                            pre_filled,
-                            belief_state.filled.len(),
-                            &pre_confs,
-                            &post_confs,
-                        ) {
-                            engine_state.stale_turns += 1;
-                        } else {
-                            engine_state.stale_turns = 0;
-                        }
-
-                        engine_state.session.conversation.push(SocraticTurn {
-                            turn_number: belief_state.turn_count,
-                            role: SocraticRole::User,
-                            content: reaction,
-                            target_dimension: None,
-                            slots_updated: verifier_output
-                                .filled_updates
-                                .iter()
-                                .filter_map(|u| belief_state::parse_dimension(&u.dimension))
-                                .collect(),
-                            timestamp: Utc::now().to_rfc3339(),
-                        });
-
-                        io.send_belief_state(&belief_state).await;
-                        io.send_event(&SocraticEvent::BeliefStateUpdate {
-                            state: belief_state.clone(),
-                        })
-                        .await;
-
-                        if let Some(store) = store {
-                            let _ = belief_state::persist_to_cxdb(store, run_id, &belief_state);
-                        }
-
-                        // Check convergence again after draft reaction
-                        if verifier_output.user_wants_to_stop {
-                            let conv_result = convergence::check_convergence(
-                                &belief_state,
-                                &constitution,
-                                true,
-                                engine_state.stale_turns,
-                            );
-                            io.send_convergence(&conv_result).await;
-                            engine_state.session.is_complete = true;
-                            engine_state.session.convergence_result = Some(conv_result);
-                            engine_state.session.belief_state = belief_state;
-                            return Ok(engine_state.session);
-                        }
-
-                        continue; // Back to top of loop
-                    } else {
-                        // User disconnected
-                        engine_state.session.belief_state = belief_state;
-                        return Ok(engine_state.session);
-                    }
-                }
-                Err(e) => {
-                    // Draft generation failed — not fatal, continue with questions
-                    io.send_message(&format!("(Draft generation skipped: {})", e))
-                        .await;
-                }
-            }
-        }
-
-        // Generate the next question
-        let question_output = question_planner::plan_next_question(
-            router,
-            &belief_state,
-            &constitution,
-            &engine_state.session.conversation,
-        )
-        .await?;
-
-        let question_output = match question_output {
-            Some(q) => q,
-            None => {
-                // No more questions — converge
-                let conv_result = ConvergenceResult {
-                    is_done: true,
-                    reason: StoppingReason::CompletenessGate,
-                    convergence_pct: belief_state.convergence_pct(),
-                };
-                io.send_convergence(&conv_result).await;
-                engine_state.session.is_complete = true;
-                engine_state.session.convergence_result = Some(conv_result);
-                engine_state.session.belief_state = belief_state;
-                return Ok(engine_state.session);
-            }
-        };
-
-        // Send the question
-        io.send_question(&question_output).await;
-        io.send_event(&SocraticEvent::Question {
-            output: question_output.clone(),
+        io.send_convergence(&conv_result).await;
+        io.send_event(&SocraticEvent::Converged {
+            result: conv_result.clone(),
         })
         .await;
-
-        last_question = Some(question_output.question.clone());
-
-        // Record interviewer turn
-        engine_state.session.conversation.push(SocraticTurn {
-            turn_number: belief_state.turn_count + 1,
-            role: SocraticRole::Interviewer,
-            content: question_output.question.clone(),
-            target_dimension: Some(question_output.target_dimension.clone()),
-            slots_updated: vec![],
-            timestamp: Utc::now().to_rfc3339(),
-        });
-
-        // Wait for user response
-        let user_response = match io.receive_input().await {
-            Some(r) => r,
-            None => {
-                // User disconnected
-                engine_state.session.belief_state = belief_state;
-                return Ok(engine_state.session);
-            }
-        };
-
-        // Check for skip signal
-        let trimmed = user_response.trim().to_lowercase();
-        if trimmed == "skip" || trimmed == "next" || trimmed == "pass" {
-            engine_state.session.conversation.push(SocraticTurn {
-                turn_number: belief_state.turn_count + 1,
-                role: SocraticRole::User,
-                content: user_response.clone(),
-                target_dimension: None,
-                slots_updated: vec![],
-                timestamp: Utc::now().to_rfc3339(),
-            });
-            belief_state.turn_count += 1;
-            engine_state.stale_turns += 1;
-            continue;
-        }
-
-        // Process user response through verifier
-        let pre_filled = belief_state.filled.len();
-        let pre_confs: Vec<f32> = belief_state.uncertain.values().map(|(_, c)| *c).collect();
-
-        let verifier_output = belief_state::verify_and_update(
-            router,
-            &mut belief_state,
-            &user_response,
-            last_question.as_deref(),
-        )
-        .await?;
-
-        let post_confs: Vec<f32> = belief_state.uncertain.values().map(|(_, c)| *c).collect();
-
-        // Track staleness
-        if convergence::is_stale_turn(
-            pre_filled,
-            belief_state.filled.len(),
-            &pre_confs,
-            &post_confs,
-        ) {
-            engine_state.stale_turns += 1;
-        } else {
-            engine_state.stale_turns = 0;
-        }
-
-        // Record user turn
-        engine_state.session.conversation.push(SocraticTurn {
-            turn_number: belief_state.turn_count,
-            role: SocraticRole::User,
-            content: user_response,
-            target_dimension: Some(question_output.target_dimension),
-            slots_updated: verifier_output
-                .filled_updates
-                .iter()
-                .filter_map(|u| belief_state::parse_dimension(&u.dimension))
-                .collect(),
-            timestamp: Utc::now().to_rfc3339(),
-        });
-
-        // Send updated belief state
-        io.send_belief_state(&belief_state).await;
-        io.send_event(&SocraticEvent::BeliefStateUpdate {
-            state: belief_state.clone(),
-        })
-        .await;
-
-        // Send contradiction alerts
-        for contradiction in &belief_state.contradictions {
-            if !contradiction.resolved {
-                io.send_event(&SocraticEvent::ContradictionDetected {
-                    contradiction: contradiction.clone(),
-                })
-                .await;
-            }
-        }
-
-        // Persist
-        if let Some(store) = store {
-            let _ = belief_state::persist_to_cxdb(store, run_id, &belief_state);
-        }
-
-        // Check if user wants to stop (detected by verifier)
-        if verifier_output.user_wants_to_stop {
-            let conv_result = convergence::check_convergence(
-                &belief_state,
-                &constitution,
-                true,
-                engine_state.stale_turns,
-            );
-            io.send_convergence(&conv_result).await;
-            engine_state.session.is_complete = true;
-            engine_state.session.convergence_result = Some(conv_result);
-            engine_state.session.belief_state = belief_state;
-            return Ok(engine_state.session);
-        }
+        engine_state.session.is_complete = true;
+        engine_state.session.convergence_result = Some(conv_result);
+        engine_state.session.belief_state = belief_state;
+        return Ok(engine_state.session);
     }
+
+    run_prompt_loop(
+        router,
+        io,
+        store,
+        run_id,
+        &mut belief_state,
+        &constitution,
+        &mut engine_state,
+        None,
+    )
+    .await
 }
 
 /// Resume an in-progress Socratic interview from a persisted checkpoint.
@@ -478,12 +235,6 @@ pub async fn run_interview_from_checkpoint<IO: SocraticIO, S: TurnStore>(
     run_id: Uuid,
     resume_state: CheckpointResumeState,
 ) -> StepResult<SocraticSession> {
-    #[derive(Debug, Clone)]
-    enum AwaitingPrompt {
-        Question(QuestionOutput),
-        Draft,
-    }
-
     let mut belief_state = resume_state.belief_state;
     if belief_state.classification.is_none() {
         belief_state.classification = resume_state.classification.clone();
@@ -524,96 +275,108 @@ pub async fn run_interview_from_checkpoint<IO: SocraticIO, S: TurnStore>(
         let _ = belief_state::persist_to_cxdb(store, run_id, &belief_state);
     }
 
-    let mut awaiting_prompt = match resume_state.pending_prompt {
-        Some(ResumePendingPrompt::Question(output)) => {
-            io.send_question(&output).await;
-            io.send_event(&SocraticEvent::Question {
-                output: output.clone(),
-            })
+    let pending_prompt = resume_state.pending_prompt.map(|pending| pending.prompt);
+    if pending_prompt.is_none() {
+        io.send_message("Checkpoint restored. Regenerating the next prompt...")
             .await;
-            Some(AwaitingPrompt::Question(output))
-        }
-        Some(ResumePendingPrompt::Draft(draft)) => {
-            io.send_draft(&draft).await;
-            io.send_event(&SocraticEvent::SpeculativeDraftReady {
-                draft: draft.clone(),
-            })
-            .await;
-            Some(AwaitingPrompt::Draft)
-        }
-        None => {
-            io.send_message("Checkpoint restored. Regenerating the next prompt...")
-                .await;
-            None
-        }
-    };
+    }
+
+    run_prompt_loop(
+        router,
+        io,
+        store,
+        run_id,
+        &mut belief_state,
+        &constitution,
+        &mut engine_state,
+        pending_prompt,
+    )
+    .await
+}
+
+async fn run_prompt_loop<IO: SocraticIO, S: TurnStore>(
+    router: &LlmRouter,
+    io: &IO,
+    store: Option<&S>,
+    run_id: Uuid,
+    belief_state: &mut RequirementsBeliefState,
+    constitution: &InterviewerConstitution,
+    engine_state: &mut SocraticEngineState,
+    mut pending_prompt: Option<PromptEnvelope>,
+) -> StepResult<SocraticSession> {
+    if let Some(prompt) = pending_prompt.as_ref() {
+        emit_prompt(io, engine_state, belief_state, prompt).await;
+    }
 
     loop {
-        if awaiting_prompt.is_none() {
+        if pending_prompt.is_none() {
             let conv_result = convergence::check_convergence(
-                &belief_state,
-                &constitution,
+                belief_state,
+                constitution,
                 false,
                 engine_state.stale_turns,
             );
-
             if conv_result.is_done {
                 io.send_convergence(&conv_result).await;
                 io.send_event(&SocraticEvent::Converged {
                     result: conv_result.clone(),
                 })
                 .await;
-
                 engine_state.session.is_complete = true;
                 engine_state.session.convergence_result = Some(conv_result);
-                engine_state.session.belief_state = belief_state;
-                return Ok(engine_state.session);
+                engine_state.session.belief_state = belief_state.clone();
+                return Ok(engine_state.session.clone());
             }
 
             let draft_already_shown = engine_state
                 .draft_shown_at_turn
-                .map(|t| belief_state.turn_count.saturating_sub(t) < 3)
+                .map(|turn| belief_state.turn_count.saturating_sub(turn) < 3)
                 .unwrap_or(false);
-
             let last_msg_len = engine_state
                 .session
                 .conversation
                 .last()
-                .map(|t| t.content.len())
+                .map(|turn| turn.content.len())
                 .unwrap_or(0);
 
+            let mut draft_for_planner: Option<SpeculativeDraft> = None;
             if speculative_draft::should_trigger_draft(
-                &belief_state,
+                belief_state,
                 last_msg_len,
                 draft_already_shown,
             ) {
-                match speculative_draft::generate_draft(router, &belief_state).await {
+                match speculative_draft::generate_draft(router, belief_state).await {
                     Ok(draft) => {
-                        io.send_draft(&draft).await;
-                        io.send_event(&SocraticEvent::SpeculativeDraftReady {
-                            draft: draft.clone(),
-                        })
-                        .await;
-                        engine_state.draft_shown_at_turn = Some(belief_state.turn_count);
-                        awaiting_prompt = Some(AwaitingPrompt::Draft);
-                        continue;
+                        draft_for_planner = Some(draft);
                     }
-                    Err(e) => {
-                        io.send_message(&format!("(Draft generation skipped: {})", e))
+                    Err(error) => {
+                        io.send_message(&format!("(Draft generation skipped: {})", error))
                             .await;
                     }
                 }
             }
 
-            let question_output = question_planner::plan_next_question(
-                router,
-                &belief_state,
-                &constitution,
-                &engine_state.session.conversation,
-            )
-            .await?;
+            if pending_prompt.is_none() {
+                let ui_capabilities = io.current_ui_capabilities();
+                pending_prompt = prompt_batch_planner::plan_prompt_batch(
+                    router,
+                    belief_state,
+                    constitution,
+                    &engine_state.session.conversation,
+                    ui_capabilities.max_visible_items,
+                    draft_for_planner.as_ref(),
+                )
+                .await?;
+                if pending_prompt
+                    .as_ref()
+                    .and_then(|prompt| prompt.draft_snapshot.as_ref())
+                    .is_some()
+                {
+                    engine_state.draft_shown_at_turn = Some(belief_state.turn_count);
+                }
+            }
 
-            let Some(question_output) = question_output else {
+            let Some(prompt) = pending_prompt.as_ref() else {
                 let conv_result = ConvergenceResult {
                     is_done: true,
                     reason: StoppingReason::CompletenessGate,
@@ -626,185 +389,126 @@ pub async fn run_interview_from_checkpoint<IO: SocraticIO, S: TurnStore>(
                 .await;
                 engine_state.session.is_complete = true;
                 engine_state.session.convergence_result = Some(conv_result);
-                engine_state.session.belief_state = belief_state;
-                return Ok(engine_state.session);
+                engine_state.session.belief_state = belief_state.clone();
+                return Ok(engine_state.session.clone());
             };
 
-            io.send_question(&question_output).await;
-            io.send_event(&SocraticEvent::Question {
-                output: question_output.clone(),
+            emit_prompt(io, engine_state, belief_state, prompt).await;
+        }
+
+        let active_prompt = pending_prompt
+            .clone()
+            .expect("pending prompt should be present before waiting for response");
+        let response = match io.receive_prompt_response(&active_prompt).await {
+            Some(response) => response,
+            None => {
+                engine_state.session.belief_state = belief_state.clone();
+                return Ok(engine_state.session.clone());
+            }
+        };
+
+        let answered_items = prompt_protocol::ordered_answered_items(&active_prompt, &response);
+        if answered_items.is_empty() {
+            engine_state.stale_turns = engine_state.stale_turns.saturating_add(1);
+            pending_prompt = None;
+            continue;
+        }
+
+        let pre_filled = belief_state.filled.len();
+        let pre_confs: Vec<f32> = belief_state.uncertain.values().map(|(_, c)| *c).collect();
+        let adjudication = prompt_response_adjudicator::adjudicate_prompt_response(
+            router,
+            belief_state,
+            &active_prompt,
+            &response,
+        )
+        .await?;
+        let user_wants_to_stop = adjudication.user_wants_to_stop;
+
+        for applied_answer in adjudication.applied_answers {
+            engine_state.session.conversation.push(SocraticTurn {
+                turn_number: applied_answer.turn_number,
+                role: SocraticRole::User,
+                content: applied_answer.content,
+                target_dimension: applied_answer.target_dimension,
+                slots_updated: applied_answer.slots_updated,
+                timestamp: Utc::now().to_rfc3339(),
+            });
+        }
+
+        let post_confs: Vec<f32> = belief_state.uncertain.values().map(|(_, c)| *c).collect();
+        if convergence::is_stale_turn(
+            pre_filled,
+            belief_state.filled.len(),
+            &pre_confs,
+            &post_confs,
+        ) {
+            engine_state.stale_turns = engine_state.stale_turns.saturating_add(1);
+        } else {
+            engine_state.stale_turns = 0;
+        }
+
+        io.send_belief_state(belief_state).await;
+        io.send_event(&SocraticEvent::BeliefStateUpdate {
+            state: belief_state.clone(),
+        })
+        .await;
+        for contradiction in &belief_state.contradictions {
+            if !contradiction.resolved {
+                io.send_event(&SocraticEvent::ContradictionDetected {
+                    contradiction: contradiction.clone(),
+                })
+                .await;
+            }
+        }
+
+        if let Some(store) = store {
+            let _ = belief_state::persist_to_cxdb(store, run_id, belief_state);
+        }
+
+        if user_wants_to_stop {
+            let conv_result = convergence::check_convergence(
+                belief_state,
+                constitution,
+                true,
+                engine_state.stale_turns,
+            );
+            io.send_convergence(&conv_result).await;
+            io.send_event(&SocraticEvent::Converged {
+                result: conv_result.clone(),
             })
             .await;
-            awaiting_prompt = Some(AwaitingPrompt::Question(question_output));
-            continue;
+            engine_state.session.is_complete = true;
+            engine_state.session.convergence_result = Some(conv_result);
+            engine_state.session.belief_state = belief_state.clone();
+            return Ok(engine_state.session.clone());
         }
 
-        let user_response = match io.receive_input().await {
-            Some(r) => r,
-            None => {
-                engine_state.session.belief_state = belief_state;
-                return Ok(engine_state.session);
-            }
-        };
+        pending_prompt = None;
+    }
+}
 
-        let Some(prompt) = awaiting_prompt.take() else {
-            continue;
-        };
+async fn emit_prompt<IO: SocraticIO>(
+    io: &IO,
+    engine_state: &mut SocraticEngineState,
+    belief_state: &RequirementsBeliefState,
+    prompt: &PromptEnvelope,
+) {
+    io.send_prompt(prompt).await;
+    io.send_event(&SocraticEvent::PromptGenerated {
+        prompt: prompt.clone(),
+    })
+    .await;
 
-        match prompt {
-            AwaitingPrompt::Question(question_output) => {
-                let trimmed = user_response.trim().to_lowercase();
-                if trimmed == "skip" || trimmed == "next" || trimmed == "pass" {
-                    engine_state.session.conversation.push(SocraticTurn {
-                        turn_number: belief_state.turn_count + 1,
-                        role: SocraticRole::User,
-                        content: user_response,
-                        target_dimension: None,
-                        slots_updated: vec![],
-                        timestamp: Utc::now().to_rfc3339(),
-                    });
-                    belief_state.turn_count += 1;
-                    engine_state.stale_turns += 1;
-                    continue;
-                }
-
-                let pre_filled = belief_state.filled.len();
-                let pre_confs: Vec<f32> =
-                    belief_state.uncertain.values().map(|(_, c)| *c).collect();
-
-                let verifier_output = belief_state::verify_and_update(
-                    router,
-                    &mut belief_state,
-                    &user_response,
-                    Some(&question_output.question),
-                )
-                .await?;
-
-                let post_confs: Vec<f32> =
-                    belief_state.uncertain.values().map(|(_, c)| *c).collect();
-
-                if convergence::is_stale_turn(
-                    pre_filled,
-                    belief_state.filled.len(),
-                    &pre_confs,
-                    &post_confs,
-                ) {
-                    engine_state.stale_turns += 1;
-                } else {
-                    engine_state.stale_turns = 0;
-                }
-
-                engine_state.session.conversation.push(SocraticTurn {
-                    turn_number: belief_state.turn_count,
-                    role: SocraticRole::User,
-                    content: user_response,
-                    target_dimension: Some(question_output.target_dimension),
-                    slots_updated: verifier_output
-                        .filled_updates
-                        .iter()
-                        .filter_map(|u| belief_state::parse_dimension(&u.dimension))
-                        .collect(),
-                    timestamp: Utc::now().to_rfc3339(),
-                });
-
-                io.send_belief_state(&belief_state).await;
-                io.send_event(&SocraticEvent::BeliefStateUpdate {
-                    state: belief_state.clone(),
-                })
-                .await;
-
-                for contradiction in &belief_state.contradictions {
-                    if !contradiction.resolved {
-                        io.send_event(&SocraticEvent::ContradictionDetected {
-                            contradiction: contradiction.clone(),
-                        })
-                        .await;
-                    }
-                }
-
-                if let Some(store) = store {
-                    let _ = belief_state::persist_to_cxdb(store, run_id, &belief_state);
-                }
-
-                if verifier_output.user_wants_to_stop {
-                    let conv_result = convergence::check_convergence(
-                        &belief_state,
-                        &constitution,
-                        true,
-                        engine_state.stale_turns,
-                    );
-                    io.send_convergence(&conv_result).await;
-                    engine_state.session.is_complete = true;
-                    engine_state.session.convergence_result = Some(conv_result);
-                    engine_state.session.belief_state = belief_state;
-                    return Ok(engine_state.session);
-                }
-            }
-            AwaitingPrompt::Draft => {
-                let pre_filled = belief_state.filled.len();
-                let pre_confs: Vec<f32> =
-                    belief_state.uncertain.values().map(|(_, c)| *c).collect();
-
-                let verifier_output = belief_state::verify_and_update(
-                    router,
-                    &mut belief_state,
-                    &user_response,
-                    Some("Review the speculative draft above and correct anything that's wrong."),
-                )
-                .await?;
-
-                let post_confs: Vec<f32> =
-                    belief_state.uncertain.values().map(|(_, c)| *c).collect();
-
-                if convergence::is_stale_turn(
-                    pre_filled,
-                    belief_state.filled.len(),
-                    &pre_confs,
-                    &post_confs,
-                ) {
-                    engine_state.stale_turns += 1;
-                } else {
-                    engine_state.stale_turns = 0;
-                }
-
-                engine_state.session.conversation.push(SocraticTurn {
-                    turn_number: belief_state.turn_count,
-                    role: SocraticRole::User,
-                    content: user_response,
-                    target_dimension: None,
-                    slots_updated: verifier_output
-                        .filled_updates
-                        .iter()
-                        .filter_map(|u| belief_state::parse_dimension(&u.dimension))
-                        .collect(),
-                    timestamp: Utc::now().to_rfc3339(),
-                });
-
-                io.send_belief_state(&belief_state).await;
-                io.send_event(&SocraticEvent::BeliefStateUpdate {
-                    state: belief_state.clone(),
-                })
-                .await;
-
-                if let Some(store) = store {
-                    let _ = belief_state::persist_to_cxdb(store, run_id, &belief_state);
-                }
-
-                if verifier_output.user_wants_to_stop {
-                    let conv_result = convergence::check_convergence(
-                        &belief_state,
-                        &constitution,
-                        true,
-                        engine_state.stale_turns,
-                    );
-                    io.send_convergence(&conv_result).await;
-                    engine_state.session.is_complete = true;
-                    engine_state.session.convergence_result = Some(conv_result);
-                    engine_state.session.belief_state = belief_state;
-                    return Ok(engine_state.session);
-                }
-            }
-        }
+    for item in &prompt.items {
+        engine_state.session.conversation.push(SocraticTurn {
+            turn_number: belief_state.turn_count.saturating_add(1),
+            role: SocraticRole::Interviewer,
+            content: item.text.clone(),
+            target_dimension: item.target_dimension.clone(),
+            slots_updated: Vec::new(),
+            timestamp: Utc::now().to_rfc3339(),
+        });
     }
 }
 
@@ -962,6 +666,16 @@ pub fn session_to_intake(session: &SocraticSession, project_id: Uuid) -> IntakeV
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, Mutex,
+    };
+
+    use async_trait::async_trait;
+
+    use crate::llm::{CompletionRequest, CompletionResponse, LlmClient, LlmError};
+
     use super::*;
 
     fn make_complete_session() -> SocraticSession {
@@ -1037,5 +751,210 @@ mod tests {
 
         assert_eq!(intake.conversation_log[0].role, "user");
         assert!(intake.conversation_log[0].content.contains("task tracker"));
+    }
+
+    struct RecordingIo {
+        next_response: Mutex<Option<PromptResponse>>,
+        convergence_calls: AtomicUsize,
+    }
+
+    impl RecordingIo {
+        fn new(response: PromptResponse) -> Self {
+            Self {
+                next_response: Mutex::new(Some(response)),
+                convergence_calls: AtomicUsize::new(0),
+            }
+        }
+
+        fn convergence_calls(&self) -> usize {
+            self.convergence_calls.load(Ordering::SeqCst)
+        }
+    }
+
+    #[async_trait]
+    impl SocraticIO for RecordingIo {
+        async fn send_message(&self, _content: &str) {}
+
+        async fn send_prompt(&self, _prompt: &PromptEnvelope) {}
+
+        async fn send_belief_state(&self, _state: &RequirementsBeliefState) {}
+
+        async fn send_convergence(&self, _result: &ConvergenceResult) {
+            self.convergence_calls.fetch_add(1, Ordering::SeqCst);
+        }
+
+        async fn send_classification(&self, _classification: &DomainClassification) {}
+
+        async fn receive_prompt_response(
+            &self,
+            _prompt: &PromptEnvelope,
+        ) -> Option<PromptResponse> {
+            self.next_response
+                .lock()
+                .expect("response mutex should not be poisoned")
+                .take()
+        }
+
+        async fn send_event(&self, _event: &SocraticEvent) {}
+    }
+
+    struct CountingMockClient {
+        calls: Arc<AtomicUsize>,
+        response_content: String,
+    }
+
+    #[async_trait]
+    impl LlmClient for CountingMockClient {
+        async fn complete(
+            &self,
+            request: CompletionRequest,
+        ) -> Result<CompletionResponse, LlmError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Ok(CompletionResponse {
+                content: self.response_content.clone(),
+                model: request.model,
+                input_tokens: 10,
+                output_tokens: 10,
+                estimated_cost_usd: 0.0,
+            })
+        }
+
+        fn provider_name(&self) -> &str {
+            "mock"
+        }
+    }
+
+    #[tokio::test]
+    async fn prompt_submission_runs_batch_adjudication_and_convergence_once() {
+        let llm_calls = Arc::new(AtomicUsize::new(0));
+        let router = LlmRouter::with_mock(Box::new(CountingMockClient {
+            calls: llm_calls.clone(),
+            response_content: r#"{
+              "items": [
+                {
+                  "item_id": "item-goal",
+                  "filled_updates": [{"dimension": "goal", "value": "Team planning workspace", "source_quote": null}],
+                  "uncertain_updates": [],
+                  "out_of_scope": [],
+                  "contradictions": [],
+                  "user_wants_to_stop": false
+                },
+                {
+                  "item_id": "item-features",
+                  "filled_updates": [{"dimension": "core_features", "value": "Boards, assignments, and status tracking", "source_quote": null}],
+                  "uncertain_updates": [],
+                  "out_of_scope": [],
+                  "contradictions": [],
+                  "user_wants_to_stop": false
+                }
+              ]
+            }"#
+            .into(),
+        }));
+
+        let prompt = PromptEnvelope {
+            prompt_id: "prompt-test".into(),
+            kind: PromptKind::QuestionBatch,
+            title: "Prompt".into(),
+            instructions: None,
+            items: vec![
+                PromptItem {
+                    item_id: "item-goal".into(),
+                    kind: PromptItemKind::Discovery,
+                    target_dimension: Some(Dimension::Goal),
+                    section_ref: None,
+                    text: "What's the core goal?".into(),
+                    options: vec![PromptOption {
+                        option_id: "opt-goal".into(),
+                        label: "Goal option".into(),
+                        semantic_value: "Goal option".into(),
+                        direct_effect: None,
+                    }],
+                    response_mode: PromptResponseMode::SingleSelectWithCustomText,
+                    required: false,
+                    priority: 100,
+                    dependency_item_ids: Vec::new(),
+                },
+                PromptItem {
+                    item_id: "item-features".into(),
+                    kind: PromptItemKind::Discovery,
+                    target_dimension: Some(Dimension::CoreFeatures),
+                    section_ref: None,
+                    text: "What features matter most?".into(),
+                    options: vec![PromptOption {
+                        option_id: "opt-features".into(),
+                        label: "Feature option".into(),
+                        semantic_value: "Feature option".into(),
+                        direct_effect: None,
+                    }],
+                    response_mode: PromptResponseMode::SingleSelectWithCustomText,
+                    required: false,
+                    priority: 90,
+                    dependency_item_ids: Vec::new(),
+                },
+            ],
+            draft_snapshot: None,
+            required_item_ids: Vec::new(),
+            allow_partial_submit: true,
+            ui_hints: PromptUiHints {
+                preferred_layout: PromptPreferredLayout::Cards,
+                show_draft_sidebar: false,
+            },
+            based_on_turn: 0,
+            created_at: "2026-03-08T00:00:00Z".into(),
+        };
+
+        let response = PromptResponse {
+            prompt_id: prompt.prompt_id.clone(),
+            answers: vec![
+                PromptAnswer {
+                    item_id: "item-goal".into(),
+                    selected_option_id: Some("opt-goal".into()),
+                    custom_text: Some("Need a shared planning workspace".into()),
+                    skipped: false,
+                },
+                PromptAnswer {
+                    item_id: "item-features".into(),
+                    selected_option_id: Some("opt-features".into()),
+                    custom_text: Some("Need boards, assignments, and status".into()),
+                    skipped: false,
+                },
+            ],
+            submitted_at: "2026-03-08T00:00:01Z".into(),
+            client_context: None,
+        };
+
+        let io = RecordingIo::new(response);
+
+        let resume_state = CheckpointResumeState {
+            belief_state: RequirementsBeliefState {
+                filled: HashMap::new(),
+                uncertain: HashMap::new(),
+                missing: vec![Dimension::Goal, Dimension::CoreFeatures],
+                out_of_scope: Vec::new(),
+                contradictions: Vec::new(),
+                required_dimensions: vec![Dimension::Goal, Dimension::CoreFeatures],
+                turn_count: 0,
+                classification: None,
+            },
+            classification: None,
+            stale_turns: 0,
+            draft_shown_at_turn: None,
+            pending_prompt: Some(ResumePendingPrompt { prompt }),
+        };
+
+        let session = run_interview_from_checkpoint::<_, crate::cxdb::CxdbEngine>(
+            &router,
+            &io,
+            None::<&crate::cxdb::CxdbEngine>,
+            Uuid::new_v4(),
+            resume_state,
+        )
+        .await
+        .expect("checkpoint resume interview should succeed");
+
+        assert!(session.is_complete);
+        assert_eq!(llm_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(io.convergence_calls(), 1);
     }
 }

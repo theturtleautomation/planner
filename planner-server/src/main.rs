@@ -16,6 +16,7 @@
 //! - GET  /*                   — Static file serving (React frontend)
 
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use axum::Router;
@@ -27,6 +28,53 @@ use planner_server::project::{self, ProjectStore};
 use planner_server::rate_limit;
 use planner_server::session::SessionStore;
 use planner_server::AppState;
+
+fn env_flag(name: &str, default: bool) -> bool {
+    match std::env::var(name) {
+        Ok(value) => matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        ),
+        Err(_) => default,
+    }
+}
+
+fn run_cgc_discovery_scan_once(state: Arc<AppState>, scan_root: PathBuf) {
+    if !scan_root.exists() || !scan_root.is_dir() {
+        tracing::warn!(
+            "Daily CGC proposal scan skipped: scan root is invalid ({})",
+            scan_root.display()
+        );
+        return;
+    }
+
+    match planner_core::discovery::collect_code_graph_edge_proposals(&scan_root, &state.blueprints)
+    {
+        Ok(imports) => match planner_core::discovery::import_edge_proposals(
+            &state.proposals,
+            &state.blueprints,
+            imports,
+        ) {
+            Ok(result) => {
+                tracing::info!(
+                    "Daily CGC proposal scan complete: {} proposals inserted, {} skipped, {} validation errors",
+                    result.inserted,
+                    result.skipped,
+                    result.errors.len()
+                );
+                for error in result.errors {
+                    tracing::warn!("Daily CGC proposal scan validation error: {}", error);
+                }
+            }
+            Err(err) => {
+                tracing::warn!("Daily CGC proposal scan import failed: {}", err);
+            }
+        },
+        Err(err) => {
+            tracing::warn!("Daily CGC proposal scan failed: {}", err);
+        }
+    }
+}
 
 #[tokio::main]
 async fn main() {
@@ -221,6 +269,7 @@ async fn main() {
         socratic_runtimes: planner_server::runtime::SessionRuntimeRegistry::new(
             std::time::Duration::from_secs(live_runtime_lease_secs),
         ),
+        pipeline_runtimes: planner_server::runtime::SessionPipelineRegistry::new(),
         started_at: std::time::Instant::now(),
     });
 
@@ -308,6 +357,63 @@ async fn main() {
                 planner_server::ws_socratic::expire_detached_runtimes(&runtime_state);
             }
         });
+    }
+
+    // Start daily proposal-only CGC discovery task when configured.
+    {
+        let cgc_scan_command_configured = planner_core::discovery::code_graph_context_available();
+        let daily_enabled = env_flag("PLANNER_CGC_DAILY_SCAN_ENABLED", true);
+        if cgc_scan_command_configured && daily_enabled {
+            let interval_secs = std::env::var("PLANNER_CGC_DAILY_SCAN_INTERVAL_SECS")
+                .ok()
+                .and_then(|value| value.parse::<u64>().ok())
+                .map(|value| value.max(60))
+                .unwrap_or(86_400);
+            let run_on_startup = env_flag("PLANNER_CGC_DAILY_SCAN_RUN_ON_STARTUP", false);
+            let scan_root = std::env::var("PLANNER_CGC_DAILY_SCAN_ROOT")
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| PathBuf::from("/opt/planner"));
+
+            tracing::info!(
+                "Daily CGC proposal-only discovery enabled: every {}s, root={}, auto-merge=false",
+                interval_secs,
+                scan_root.display()
+            );
+
+            let schedule_state = state.clone();
+            tokio::spawn(async move {
+                if run_on_startup {
+                    let state = schedule_state.clone();
+                    let root = scan_root.clone();
+                    let _ = tokio::task::spawn_blocking(move || {
+                        run_cgc_discovery_scan_once(state, root)
+                    })
+                    .await;
+                }
+
+                let mut interval = tokio::time::interval_at(
+                    tokio::time::Instant::now() + std::time::Duration::from_secs(interval_secs),
+                    std::time::Duration::from_secs(interval_secs),
+                );
+                loop {
+                    interval.tick().await;
+                    let state = schedule_state.clone();
+                    let root = scan_root.clone();
+                    let _ = tokio::task::spawn_blocking(move || {
+                        run_cgc_discovery_scan_once(state, root)
+                    })
+                    .await;
+                }
+            });
+        } else if !cgc_scan_command_configured {
+            tracing::info!(
+                "Daily CGC proposal-only discovery disabled: CodeGraphContext is not available"
+            );
+        } else {
+            tracing::info!(
+                "Daily CGC proposal-only discovery disabled by PLANNER_CGC_DAILY_SCAN_ENABLED"
+            );
+        }
     }
 
     // Add static file serving if directory exists

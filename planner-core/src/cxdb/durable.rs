@@ -254,6 +254,72 @@ impl DurableCxdbEngine {
             .collect()
     }
 
+    /// Delete all run metadata for a project.
+    ///
+    /// This removes:
+    /// - the project run-index file under `projects/`
+    /// - run metadata directories under `turns/<run_id>/`
+    /// - matching in-memory cache/index entries
+    ///
+    /// Blob-level garbage collection is intentionally deferred. Blobs are
+    /// content-addressed and may still be referenced by other runs.
+    pub fn delete_project(
+        &self,
+        project_id: Uuid,
+    ) -> Result<DeletedProjectRunReport, StorageError> {
+        let _write = self.write_lock.write().unwrap();
+
+        let runs = self.list_runs(project_id);
+        let run_set: std::collections::HashSet<Uuid> = runs.iter().copied().collect();
+        let run_str_set: std::collections::HashSet<String> =
+            runs.iter().map(|run| run.to_string()).collect();
+
+        {
+            let mut index = self.run_type_index.write().unwrap();
+            index.retain(|(run_id, _), _| !run_set.contains(run_id));
+        }
+
+        let turn_records_removed = {
+            let mut cache = self.turn_cache.write().unwrap();
+            let before = cache.len();
+            cache.retain(|_, record| !run_str_set.contains(&record.run_id));
+            before - cache.len()
+        };
+
+        let mut run_directories_deleted = 0usize;
+        for run_id in &runs {
+            let run_dir = self.root.join("turns").join(run_id.to_string());
+            if run_dir.exists() {
+                fs::remove_dir_all(&run_dir).map_err(|e| {
+                    StorageError::Serialization(format!(
+                        "Delete run metadata directory {}: {}",
+                        run_id, e
+                    ))
+                })?;
+                run_directories_deleted += 1;
+            }
+        }
+
+        let project_index_path = self
+            .root
+            .join("projects")
+            .join(format!("{}.msgpack", project_id));
+        if project_index_path.exists() {
+            fs::remove_file(&project_index_path).map_err(|e| {
+                StorageError::Serialization(format!(
+                    "Delete project run index {}: {}",
+                    project_id, e
+                ))
+            })?;
+        }
+
+        Ok(DeletedProjectRunReport {
+            runs_deleted: runs.len(),
+            run_directories_deleted,
+            turn_records_removed,
+        })
+    }
+
     // -----------------------------------------------------------------------
     // Index rebuild (startup)
     // -----------------------------------------------------------------------
@@ -457,6 +523,13 @@ pub struct TurnMetadataView {
     pub type_id: String,
     pub timestamp: String,
     pub produced_by: String,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct DeletedProjectRunReport {
+    pub runs_deleted: usize,
+    pub run_directories_deleted: usize,
+    pub turn_records_removed: usize,
 }
 
 // ---------------------------------------------------------------------------
@@ -737,6 +810,90 @@ mod tests {
         assert_eq!(engine.list_runs(project_a).len(), 2);
         assert_eq!(engine.list_runs(project_b).len(), 1);
         assert_eq!(engine.list_runs(Uuid::new_v4()).len(), 0);
+
+        let _ = fs::remove_dir_all(engine.root_path());
+    }
+
+    #[test]
+    fn delete_project_removes_project_run_index() {
+        let engine = DurableCxdbEngine::open_temp().unwrap();
+        let project_id = Uuid::new_v4();
+        let run_id = Uuid::new_v4();
+        engine.register_run(project_id, run_id).unwrap();
+
+        let project_index = engine
+            .root_path()
+            .join("projects")
+            .join(format!("{}.msgpack", project_id));
+        assert!(project_index.exists());
+
+        let report = engine.delete_project(project_id).unwrap();
+        assert_eq!(report.runs_deleted, 1);
+        assert!(!project_index.exists());
+        assert!(engine.list_runs(project_id).is_empty());
+
+        let _ = fs::remove_dir_all(engine.root_path());
+    }
+
+    #[test]
+    fn delete_project_removes_run_metadata_directories() {
+        let engine = DurableCxdbEngine::open_temp().unwrap();
+        let project_id = Uuid::new_v4();
+        let run_id = Uuid::new_v4();
+        engine.register_run(project_id, run_id).unwrap();
+
+        let intake = make_test_intake("Delete run metadata");
+        let turn = Turn::new(intake, None, run_id, "delete-project", "exec-1");
+        engine.store_turn(&turn).unwrap();
+
+        let run_dir = engine.root_path().join("turns").join(run_id.to_string());
+        assert!(run_dir.exists());
+
+        let report = engine.delete_project(project_id).unwrap();
+        assert_eq!(report.run_directories_deleted, 1);
+        assert!(!run_dir.exists());
+
+        let _ = fs::remove_dir_all(engine.root_path());
+    }
+
+    #[test]
+    fn delete_project_preserves_other_project_runs() {
+        let engine = DurableCxdbEngine::open_temp().unwrap();
+        let project_a = Uuid::new_v4();
+        let project_b = Uuid::new_v4();
+        let run_a = Uuid::new_v4();
+        let run_b = Uuid::new_v4();
+
+        engine.register_run(project_a, run_a).unwrap();
+        engine.register_run(project_b, run_b).unwrap();
+
+        let turn_a = Turn::new(
+            make_test_intake("Project A"),
+            None,
+            run_a,
+            "delete-project",
+            "exec-a",
+        );
+        let turn_b = Turn::new(
+            make_test_intake("Project B"),
+            None,
+            run_b,
+            "delete-project",
+            "exec-b",
+        );
+        engine.store_turn(&turn_a).unwrap();
+        engine.store_turn(&turn_b).unwrap();
+
+        let report = engine.delete_project(project_a).unwrap();
+        assert_eq!(report.runs_deleted, 1);
+        assert!(engine.list_runs(project_a).is_empty());
+
+        let runs_b = engine.list_runs(project_b);
+        assert_eq!(runs_b.len(), 1);
+        assert_eq!(runs_b[0], run_b);
+
+        let run_b_dir = engine.root_path().join("turns").join(run_b.to_string());
+        assert!(run_b_dir.exists());
 
         let _ = fs::remove_dir_all(engine.root_path());
     }

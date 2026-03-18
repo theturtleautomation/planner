@@ -21,17 +21,25 @@ vi.mock('../../components/Layout.tsx', () => ({
   default: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
 
-vi.mock('../../components/BlueprintGraph.tsx', () => ({
-  default: ({ onSelectNode }: { onSelectNode: (nodeId: string | null) => void }) => (
+vi.mock('../../components/BlueprintOverview.tsx', () => ({
+  default: ({ onSelectNode }: { onSelectNode: (nodeId: string) => void }) => (
     <button type="button" onClick={() => onSelectNode('node-task')}>Select task node</button>
   ),
+}));
+
+vi.mock('../../components/BlueprintGraph.tsx', () => ({
+  default: () => null,
 }));
 
 vi.mock('../../components/TableView.tsx', () => ({
   default: () => null,
 }));
 
-vi.mock('../../components/RadarView.tsx', () => ({
+vi.mock('../../components/TraceabilityView.tsx', () => ({
+  default: () => null,
+}));
+
+vi.mock('../../components/DependenciesView.tsx', () => ({
   default: () => null,
 }));
 
@@ -113,6 +121,24 @@ describe('BlueprintPage Phase 4 contextual links', () => {
     mockGetBlueprint.mockResolvedValue(makeBlueprint());
   });
 
+  it('honors project_id from the URL when loading the blueprint', async () => {
+    render(
+      <MemoryRouter initialEntries={['/blueprint?project_id=proj-task-tracker']}>
+        <Routes>
+          <Route path="/blueprint" element={<BlueprintPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(mockGetBlueprint).toHaveBeenCalledWith({
+        projectId: 'proj-task-tracker',
+        includeShared: true,
+        includeGlobal: false,
+      });
+    });
+  });
+
   it('opens project-scoped related knowledge from selected task-tracker widget context', async () => {
     const user = userEvent.setup();
     render(
@@ -140,5 +166,21 @@ describe('BlueprintPage Phase 4 contextual links', () => {
     expect(params.component).toBe('task-widget');
     expect(params.from).toBe('/blueprint');
     expect(params.from_label).toBe('Blueprint');
+  });
+
+  it('defaults to the overview-first navigation model', async () => {
+    render(
+      <MemoryRouter initialEntries={['/blueprint']}>
+        <Routes>
+          <Route path="/blueprint" element={<BlueprintPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole('button', { name: /^overview$/i })).toHaveClass('active');
+    expect(screen.getByRole('button', { name: /^traceability$/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^dependencies$/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^map$/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^inventory$/i })).toBeInTheDocument();
   });
 });

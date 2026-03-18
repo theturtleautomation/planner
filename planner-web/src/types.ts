@@ -112,21 +112,83 @@ export interface SpeculativeDraft {
   not_discussed: string[];
 }
 
-export interface CheckpointQuestion {
-  question: string;
-  target_dimension: string | Record<string, unknown>;
-  quick_options: QuickOption[];
-  allow_skip: boolean;
+export type PromptKind =
+  | 'question_batch'
+  | 'verification_batch'
+  | 'contradiction_batch'
+  | 'draft_review';
+
+export type PromptItemKind = 'discovery' | 'verification' | 'contradiction' | 'draft_section';
+
+export type PromptResponseMode = 'single_select_with_custom_text';
+
+export type ViewportClass = 'mobile' | 'tablet' | 'desktop';
+
+export interface PromptDirectEffect {
+  type: 'set_dimension_value' | 'mark_dimension_uncertain' | 'mark_dimension_out_of_scope';
+  dimension: string | Record<string, unknown>;
+  value?: string;
 }
 
-export interface CheckpointDraft {
-  sections: Array<{ heading: string; content: string }>;
-  assumptions: Array<{
-    dimension: string | Record<string, unknown>;
-    assumption: string;
-    confidence: number;
-  }>;
-  not_discussed: Array<string | Record<string, unknown>>;
+export interface PromptOption {
+  option_id: string;
+  label: string;
+  semantic_value: string;
+  direct_effect?: PromptDirectEffect | null;
+}
+
+export interface PromptItem {
+  item_id: string;
+  kind: PromptItemKind;
+  target_dimension?: string | Record<string, unknown> | null;
+  section_ref?: string | null;
+  text: string;
+  options: PromptOption[];
+  response_mode: PromptResponseMode;
+  required: boolean;
+  priority: number;
+  dependency_item_ids: string[];
+}
+
+export interface PromptUiHints {
+  preferred_layout: 'cards' | 'review';
+  show_draft_sidebar: boolean;
+}
+
+export interface PromptEnvelope {
+  prompt_id: string;
+  kind: PromptKind;
+  title: string;
+  instructions?: string | null;
+  items: PromptItem[];
+  draft_snapshot?: SpeculativeDraft | null;
+  required_item_ids: string[];
+  allow_partial_submit: boolean;
+  ui_hints: PromptUiHints;
+  based_on_turn: number;
+  created_at: string;
+}
+
+export interface PromptAnswer {
+  item_id: string;
+  selected_option_id?: string | null;
+  custom_text?: string | null;
+  skipped?: boolean;
+}
+
+export interface PromptResponse {
+  prompt_id: string;
+  answers: PromptAnswer[];
+  submitted_at: string;
+  client_context?: {
+    viewport_class?: ViewportClass;
+  };
+}
+
+export interface UiCapabilities {
+  viewport_class: ViewportClass;
+  max_visible_items: number;
+  supports_split_draft_view: boolean;
 }
 
 export interface CheckpointContradiction {
@@ -142,8 +204,7 @@ export interface InterviewCheckpoint {
   socratic_run_id: string;
   classification?: Classification | null;
   belief_state?: BeliefState | null;
-  current_question?: CheckpointQuestion | null;
-  pending_draft?: CheckpointDraft | null;
+  current_prompt?: PromptEnvelope | null;
   contradictions: CheckpointContradiction[];
   stale_turns: number;
   draft_shown_at_turn?: number | null;
@@ -285,6 +346,21 @@ export interface ListProjectsResponse {
   projects: Project[];
 }
 
+export interface DeleteProjectResponse {
+  project_id: string;
+  project_name: string;
+  stopped_live_sessions: number;
+  stopped_pipeline_sessions: number;
+  deleted_sessions: number;
+  deleted_session_event_files: number;
+  deleted_cxdb_runs: number;
+  deleted_blueprint_nodes: number;
+  unlinked_shared_blueprint_nodes: number;
+  deleted_project_record: boolean;
+  blueprint_events_pruned: number;
+  blueprint_history_snapshots_pruned: number;
+}
+
 export interface SendMessageResponse {
   user_message: ChatMessage;
   planner_message: ChatMessage;
@@ -334,6 +410,8 @@ export interface AdminEventEntry {
   level: string;
   source: string;
   session_id?: string;
+  project_id?: string;
+  project_name?: string;
   step?: string;
   message: string;
   duration_ms?: number;
@@ -358,13 +436,10 @@ export type ServerWsMessage =
   // Socratic interview messages
   | { type: 'classified'; project_type: string; complexity: string }
   | { type: 'belief_state_update'; filled: Record<string, unknown>; uncertain: Record<string, unknown>; missing: string[]; out_of_scope: string[]; convergence_pct: number }
-  | { type: 'question'; text: string; target_dimension: string; quick_options: QuickOption[]; allow_skip: boolean }
-  | { type: 'speculative_draft'; sections: DraftSection[]; assumptions: DraftAssumption[]; not_discussed: string[] }
+  | { type: 'prompt'; prompt: PromptEnvelope }
   | { type: 'converged'; reason: string; convergence_pct: number }
   // Contradiction detection
   | { type: 'contradiction_detected'; dimension_a: string; value_a: string; dimension_b: string; value_b: string; explanation: string }
-  // Draft reaction acknowledgment
-  | { type: 'draft_reaction_ack'; target: string; action: string }
   // Observability
   | { type: 'planner_event'; id: string; timestamp: string; level: string; source: string; step?: string; message: string; duration_ms?: number; metadata: Record<string, unknown> };
 
@@ -375,10 +450,19 @@ export type ClientWsMessage =
   | { type: 'user_message'; content: string }
   | { type: 'start_pipeline'; description: string }
   // Socratic interview messages
-  | { type: 'socratic_response'; content: string }
-  | { type: 'skip_question' }
+  | {
+    type: 'prompt_response';
+    prompt_id: string;
+    answers: PromptAnswer[];
+    submitted_at: string;
+    client_context?: { viewport_class?: ViewportClass };
+  }
+  | {
+    type: 'ui_capabilities';
+    viewport_class: ViewportClass;
+    max_visible_items: number;
+    supports_split_draft_view: boolean;
+  }
   | { type: 'done' }
-  // Draft reactions
-  | { type: 'draft_reaction'; target: string; action: string; correction?: string }
   // Dimension editing
   | { type: 'dimension_edit'; dimension: string; new_value: string };

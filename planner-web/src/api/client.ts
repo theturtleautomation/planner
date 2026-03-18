@@ -15,6 +15,7 @@ import type {
   AdminEventsResponse,
   ProjectResponse,
   ListProjectsResponse,
+  DeleteProjectResponse,
 } from '../types.ts';
 import type {
   BlueprintResponse,
@@ -22,11 +23,15 @@ import type {
   BlueprintNode,
   ImpactReport,
   BlueprintEventsResponse,
+  BlueprintExportHistoryResponse,
   ReconvergenceRequest,
   ReconvergenceResult,
   DiscoveryScanRequest,
   DiscoveryRunResponse,
   ProposedNodesResponse,
+  ProposedEdgesResponse,
+  ImportedEdgeProposal,
+  EdgeImportResult,
   ScopeClass,
   ScopeVisibility,
   NodeLifecycle,
@@ -123,8 +128,11 @@ export function createApiClient(getToken: GetTokenFn) {
       });
     },
 
-    listProjects(): Promise<ListProjectsResponse> {
-      return apiFetch<ListProjectsResponse>(getToken, '/projects');
+    listProjects(params?: { includeArchived?: boolean }): Promise<ListProjectsResponse> {
+      const qs = new URLSearchParams();
+      if (params?.includeArchived) qs.set('include_archived', 'true');
+      const query = qs.toString() ? `?${qs.toString()}` : '';
+      return apiFetch<ListProjectsResponse>(getToken, `/projects${query}`);
     },
 
     createProject(payload: {
@@ -158,6 +166,7 @@ export function createApiClient(getToken: GetTokenFn) {
         description?: string;
         teamLabel?: string;
         legacyScopeKeys?: string[];
+        archived?: boolean;
       },
     ): Promise<ProjectResponse> {
       return apiFetch<ProjectResponse>(getToken, `/projects/${encodeURIComponent(projectRef)}`, {
@@ -168,7 +177,14 @@ export function createApiClient(getToken: GetTokenFn) {
           description: patch.description,
           team_label: patch.teamLabel,
           legacy_scope_keys: patch.legacyScopeKeys,
+          archived: patch.archived,
         }),
+      });
+    },
+
+    deleteProject(projectRef: string): Promise<DeleteProjectResponse> {
+      return apiFetch<DeleteProjectResponse>(getToken, `/projects/${encodeURIComponent(projectRef)}`, {
+        method: 'DELETE',
       });
     },
 
@@ -411,6 +427,28 @@ export function createApiClient(getToken: GetTokenFn) {
       return apiFetch<BlueprintEventsResponse>(getToken, `/blueprint/events${query}`);
     },
 
+    /** GET /blueprint/export-history — List durable export history with project/scope filters. */
+    listBlueprintExportHistory(params?: {
+      projectId?: string;
+      scopeClass?: ScopeClass;
+      feature?: string;
+      widget?: string;
+      artifact?: string;
+      component?: string;
+      limit?: number;
+    }): Promise<BlueprintExportHistoryResponse> {
+      const qs = new URLSearchParams();
+      if (params?.projectId) qs.set('project_id', params.projectId);
+      if (params?.scopeClass) qs.set('scope_class', params.scopeClass);
+      if (params?.feature) qs.set('feature', params.feature);
+      if (params?.widget) qs.set('widget', params.widget);
+      if (params?.artifact) qs.set('artifact', params.artifact);
+      if (params?.component) qs.set('component', params.component);
+      if (params?.limit !== undefined) qs.set('limit', String(params.limit));
+      const query = qs.toString() ? `?${qs.toString()}` : '';
+      return apiFetch<BlueprintExportHistoryResponse>(getToken, `/blueprint/export-history${query}`);
+    },
+
     /** POST /blueprint/exports — Record a durable export event. */
     recordBlueprintExport(payload: {
       kind: BlueprintExportKind;
@@ -508,6 +546,35 @@ export function createApiClient(getToken: GetTokenFn) {
     listProposedNodes(status?: string): Promise<ProposedNodesResponse> {
       const qs = status ? `?status=${encodeURIComponent(status)}` : '';
       return apiFetch<ProposedNodesResponse>(getToken, `/blueprint/discovery/proposals${qs}`);
+    },
+
+    /** GET /blueprint/discovery/edge-proposals — List proposed relationship edges. */
+    listProposedEdges(status?: string): Promise<ProposedEdgesResponse> {
+      const qs = status ? `?status=${encodeURIComponent(status)}` : '';
+      return apiFetch<ProposedEdgesResponse>(getToken, `/blueprint/discovery/edge-proposals${qs}`);
+    },
+
+    /** POST /blueprint/discovery/edge-proposals/import — Import proposed edges from code-graph tooling. */
+    importEdgeProposals(proposals: ImportedEdgeProposal[]): Promise<EdgeImportResult> {
+      return apiFetch<EdgeImportResult>(getToken, '/blueprint/discovery/edge-proposals/import', {
+        method: 'POST',
+        body: JSON.stringify({ proposals }),
+      });
+    },
+
+    /** POST /blueprint/discovery/edge-proposals/:id/accept — Accept a proposed edge into blueprint. */
+    acceptEdgeProposal(proposalId: string): Promise<{ edge: unknown; message: string }> {
+      return apiFetch<{ edge: unknown; message: string }>(getToken, `/blueprint/discovery/edge-proposals/${encodeURIComponent(proposalId)}/accept`, {
+        method: 'POST',
+      });
+    },
+
+    /** POST /blueprint/discovery/edge-proposals/:id/reject — Reject a proposed edge. */
+    rejectEdgeProposal(proposalId: string, reason?: string): Promise<{ message: string }> {
+      return apiFetch<{ message: string }>(getToken, `/blueprint/discovery/edge-proposals/${encodeURIComponent(proposalId)}/reject`, {
+        method: 'POST',
+        body: JSON.stringify({ reason }),
+      });
     },
 
     /** POST /blueprint/discovery/proposals/:id/accept — Accept a proposed node into blueprint. */

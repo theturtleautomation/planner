@@ -241,15 +241,49 @@ impl ProjectStore {
         self.projects_dir.is_some()
     }
 
-    pub fn list_for_user(&self, user_id: &str) -> Vec<Project> {
+    pub fn list_for_user(&self, user_id: &str, include_archived: bool) -> Vec<Project> {
         self.projects
             .read()
             .values()
             .filter(|project| {
-                project.owner_user_id == user_id || project.owner_user_id == MIGRATION_OWNER_USER_ID
+                (project.owner_user_id == user_id
+                    || project.owner_user_id == MIGRATION_OWNER_USER_ID)
+                    && (include_archived || project.archived_at.is_none())
             })
             .cloned()
             .collect()
+    }
+
+    pub fn set_archived(&self, id: Uuid, archived: bool) -> Option<Project> {
+        self.update(id, |project| {
+            project.archived_at = if archived {
+                Some(Utc::now().to_rfc3339())
+            } else {
+                None
+            };
+        })
+    }
+
+    pub fn delete(&self, id: Uuid) -> std::io::Result<bool> {
+        if !self.projects.read().contains_key(&id) {
+            return Ok(false);
+        }
+
+        if let Some(projects_dir) = &self.projects_dir {
+            let path = projects_dir.join(format!("{}.msgpack", id));
+            if path.exists() {
+                std::fs::remove_file(&path)?;
+            }
+
+            let tmp = projects_dir.join(format!("{}.msgpack.tmp", id));
+            if tmp.exists() {
+                std::fs::remove_file(&tmp)?;
+            }
+        }
+
+        self.projects.write().remove(&id);
+        self.dirty.write().remove(&id);
+        Ok(true)
     }
 
     pub fn get(&self, id: Uuid) -> Option<Project> {
@@ -493,6 +527,9 @@ fn normalize_node_scope_to_canonical(
         node: &mut planner_schemas::artifacts::blueprint::BlueprintNode,
     ) -> &mut planner_schemas::artifacts::blueprint::NodeScope {
         match node {
+            planner_schemas::artifacts::blueprint::BlueprintNode::Project(inner) => {
+                &mut inner.scope
+            }
             planner_schemas::artifacts::blueprint::BlueprintNode::Decision(inner) => {
                 &mut inner.scope
             }
@@ -801,6 +838,84 @@ mod tests {
             .legacy_scope_keys
             .iter()
             .any(|entry| entry == "proj-ops-console"));
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    fn project_store_archive_sets_archived_at() {
+        let store = ProjectStore::new();
+        let created = store.create("dev|local", "Archive Me", None, None, Vec::new(), None);
+
+        let archived = store.set_archived(created.id, true).unwrap();
+        assert!(archived.archived_at.is_some());
+
+        let loaded = store.get(created.id).unwrap();
+        assert!(loaded.archived_at.is_some());
+    }
+
+    #[test]
+    fn project_store_unarchive_clears_archived_at() {
+        let store = ProjectStore::new();
+        let created = store.create("dev|local", "Restore Me", None, None, Vec::new(), None);
+        let _ = store.set_archived(created.id, true).unwrap();
+
+        let unarchived = store.set_archived(created.id, false).unwrap();
+        assert!(unarchived.archived_at.is_none());
+
+        let loaded = store.get(created.id).unwrap();
+        assert!(loaded.archived_at.is_none());
+    }
+
+    #[test]
+    fn project_store_list_for_user_excludes_archived_when_requested() {
+        let store = ProjectStore::new();
+        let active = store.create("dev|local", "Active", None, None, Vec::new(), None);
+        let archived = store.create("dev|local", "Archived", None, None, Vec::new(), None);
+        let _ = store.set_archived(archived.id, true).unwrap();
+
+        let active_only = store.list_for_user("dev|local", false);
+        assert_eq!(active_only.len(), 1);
+        assert_eq!(active_only[0].id, active.id);
+
+        let including_archived = store.list_for_user("dev|local", true);
+        assert_eq!(including_archived.len(), 2);
+        assert!(including_archived
+            .iter()
+            .any(|project| project.id == archived.id));
+    }
+
+    #[test]
+    fn project_store_delete_removes_project() {
+        let store = ProjectStore::new();
+        let project = store.create("dev|local", "Delete Me", None, None, Vec::new(), None);
+        assert!(store.get(project.id).is_some());
+
+        let deleted = store.delete(project.id).unwrap();
+        assert!(deleted);
+        assert!(store.get(project.id).is_none());
+        assert!(store.resolve_ref(&project.slug).is_none());
+    }
+
+    #[test]
+    fn project_store_delete_errors_when_disk_removal_fails() {
+        let data_dir =
+            std::env::temp_dir().join(format!("planner_project_delete_err_{}", Uuid::new_v4()));
+        let store = ProjectStore::open(&data_dir).unwrap();
+        let project = store.create("dev|local", "Delete Err", None, None, Vec::new(), None);
+        let (flushed, errors) = store.flush_dirty();
+        assert_eq!(flushed, 1);
+        assert_eq!(errors, 0);
+
+        let project_path = data_dir
+            .join("projects")
+            .join(format!("{}.msgpack", project.id));
+        std::fs::remove_file(&project_path).unwrap();
+        std::fs::create_dir_all(&project_path).unwrap();
+
+        let error = store.delete(project.id).unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::IsADirectory);
+        assert!(store.get(project.id).is_some());
 
         let _ = std::fs::remove_dir_all(&data_dir);
     }

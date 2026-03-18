@@ -37,6 +37,7 @@ interface CreateNodeModalProps {
 }
 
 const NODE_TYPE_OPTIONS: { value: NodeType; label: string }[] = [
+  { value: 'project', label: 'Project' },
   { value: 'decision', label: 'Decision' },
   { value: 'technology', label: 'Technology' },
   { value: 'component', label: 'Component' },
@@ -48,7 +49,7 @@ const NODE_TYPE_OPTIONS: { value: NodeType; label: string }[] = [
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function generateId(type: NodeType, name: string): string {
-  const prefix = type === 'quality_requirement' ? 'qr' : type.slice(0, 3);
+  const prefix = type === 'quality_requirement' ? 'qr' : type === 'project' ? 'proj' : type.slice(0, 3);
   const slug = name
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
@@ -284,6 +285,19 @@ export default function CreateNodeModal({
 
     try {
       switch (nodeType) {
+        case 'project':
+          node = {
+            node_type: 'project',
+            id: generateId('project', name),
+            name: name.trim(),
+            description: description.trim() || context.trim() || 'Project root',
+            tags: parsedTags,
+            scope,
+            created_at: now,
+            updated_at: now,
+          };
+          break;
+
         case 'decision':
           node = {
             node_type: 'decision',
@@ -381,6 +395,7 @@ export default function CreateNodeModal({
             node_type: 'quality_requirement',
             id: generateId('quality_requirement', name),
             attribute,
+            label: name.trim() || undefined,
             scenario: scenario.trim() || name.trim(),
             priority,
             tags: parsedTags,

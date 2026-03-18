@@ -93,23 +93,22 @@ impl planner_core::pipeline::steps::socratic::SocraticIO for TuiSocraticIO {
         });
     }
 
-    async fn send_question(&self, output: &planner_schemas::QuestionOutput) {
-        let _ = self.event_tx.send(SocraticEvent::Question {
-            output: output.clone(),
+    async fn send_prompt(&self, prompt: &planner_schemas::PromptEnvelope) {
+        let _ = self.event_tx.send(SocraticEvent::PromptGenerated {
+            prompt: prompt.clone(),
         });
+
         self.event_sink.emit(
             PlannerEvent::info(
                 EventSource::SocraticEngine,
-                "socratic.question.generated",
-                format!(
-                    "Question generated for dimension '{}'",
-                    output.target_dimension.label()
-                ),
+                "socratic.prompt.generated",
+                format!("Prompt generated with {} item(s)", prompt.items.len()),
             )
             .with_session(self.session_id)
             .with_metadata(serde_json::json!({
-                "target_dimension": output.target_dimension.label(),
-                "allow_skip": output.allow_skip,
+                "prompt_id": prompt.prompt_id.clone(),
+                "kind": prompt.kind.clone(),
+                "item_count": prompt.items.len(),
             })),
         );
     }
@@ -139,12 +138,6 @@ impl planner_core::pipeline::steps::socratic::SocraticIO for TuiSocraticIO {
                 "missing_count": state.missing.len(),
             })),
         );
-    }
-
-    async fn send_draft(&self, draft: &planner_schemas::SpeculativeDraft) {
-        let _ = self.event_tx.send(SocraticEvent::SpeculativeDraftReady {
-            draft: draft.clone(),
-        });
     }
 
     async fn send_convergence(&self, result: &planner_schemas::ConvergenceResult) {
@@ -200,9 +193,31 @@ impl planner_core::pipeline::steps::socratic::SocraticIO for TuiSocraticIO {
     }
 
     /// Block until the TUI sends a reply (or the sender is dropped → None).
-    async fn receive_input(&self) -> Option<String> {
+    async fn receive_prompt_response(
+        &self,
+        prompt: &planner_schemas::PromptEnvelope,
+    ) -> Option<planner_schemas::PromptResponse> {
         let mut rx = self.input_rx.lock().await;
-        rx.recv().await
+        let raw = rx.recv().await?;
+        if let Ok(response) = serde_json::from_str::<planner_schemas::PromptResponse>(&raw) {
+            return Some(response);
+        }
+
+        let first_item = prompt.items.first()?;
+        let trimmed = raw.trim().to_string();
+        let is_skip = matches!(trimmed.to_lowercase().as_str(), "skip" | "next" | "pass");
+
+        Some(planner_schemas::PromptResponse {
+            prompt_id: prompt.prompt_id.clone(),
+            answers: vec![planner_schemas::PromptAnswer {
+                item_id: first_item.item_id.clone(),
+                selected_option_id: None,
+                custom_text: (!trimmed.is_empty() && !is_skip).then_some(trimmed),
+                skipped: is_skip,
+            }],
+            submitted_at: chrono::Utc::now().to_rfc3339(),
+            client_context: None,
+        })
     }
 
     async fn send_event(&self, event: &SocraticEvent) {
@@ -214,8 +229,8 @@ impl planner_core::pipeline::steps::socratic::SocraticIO for TuiSocraticIO {
             SocraticEvent::ContradictionDetected { .. } => {
                 let _ = self.event_tx.send(event.clone());
             }
-            // All other variants are already forwarded by the typed methods
-            // (send_question, send_belief_state, etc.) — skip to avoid duplicates.
+            // All other variants are already forwarded by typed methods
+            // (send_prompt, send_belief_state, etc.) — skip to avoid duplicates.
             _ => {}
         }
     }
@@ -382,6 +397,7 @@ pub fn spawn_pipeline(
                     store: Some(engine),
                     dtu_registry: None,
                     blueprints: blueprints.as_deref(),
+                    event_sink: None,
                 };
                 planner_core::pipeline::run_full_pipeline(
                     &config,
@@ -398,6 +414,7 @@ pub fn spawn_pipeline(
                         store: None,
                         dtu_registry: None,
                         blueprints: blueprints.as_deref(),
+                        event_sink: None,
                     };
                 planner_core::pipeline::run_full_pipeline(
                     &config,

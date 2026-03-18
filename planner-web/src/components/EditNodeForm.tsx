@@ -698,6 +698,9 @@ function EditQualityRequirement({ node, onChange }: { node: QualityRequirementNo
 
   return (
     <>
+      <label className="field-label">Label</label>
+      <input className="field-input" value={node.label ?? ''} onChange={e => setField('label', e.target.value || undefined)} />
+
       <label className="field-label">Quality Attribute</label>
       <select className="field-input" value={node.attribute} onChange={e => setField('attribute', e.target.value as QualityAttribute)}>
         {(['performance', 'reliability', 'security', 'usability', 'maintainability'] as const).map(a => (

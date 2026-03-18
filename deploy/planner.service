@@ -3,6 +3,8 @@ Description=Planner — Socratic project intake server
 Documentation=https://github.com/theturtleautomation/planner
 After=network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -32,7 +34,7 @@ SyslogIdentifier=planner
 # Hardening
 NoNewPrivileges=yes
 ProtectSystem=strict
-ProtectHome=yes
+ProtectHome=read-only
 PrivateTmp=yes
 ReadWritePaths=/opt/planner/data /opt/planner/cli-home /opt/planner/cli-sandbox /tmp/planner-worktrees
 ProtectKernelTunables=yes
@@ -48,8 +50,6 @@ LimitNOFILE=65536
 # Restart policy
 Restart=on-failure
 RestartSec=5
-StartLimitIntervalSec=60
-StartLimitBurst=5
 
 [Install]
 WantedBy=multi-user.target

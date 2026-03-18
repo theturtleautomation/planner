@@ -2,6 +2,10 @@
 
 This document covers everything needed to run Planner v2 in local development and production environments.
 
+For the blueprint project-root model, discovery edge-proposal API, and the
+isolated `gemini-cgc` CodeGraphContext profile, see
+[docs/blueprint-project-root-codegraph-integration.md](./docs/blueprint-project-root-codegraph-integration.md).
+
 ---
 
 ## Table of Contents
@@ -278,7 +282,7 @@ Requires a Claude Max or Claude Pro subscription.
 
 2. Authenticate:
    ```bash
-   claude login
+   sudo -u planner /bin/bash --noprofile --norc -lc 'cd /opt/planner && HOME=/opt/planner/cli-home/claude /opt/planner/bin/claude login'
    ```
 
 3. Verify:
@@ -302,14 +306,25 @@ Requires a Google account with Gemini Advanced/Pro access.
 
 2. Authenticate:
    ```bash
-   gemini login
-   # Or: gcloud auth login (if using the Google Cloud path)
+   sudo -u planner /bin/bash --noprofile --norc -lc 'cd /opt/planner && HOME=/opt/planner/cli-home/gemini /opt/planner/bin/gemini'
    ```
+   Then choose `Login with Google` when prompted, or run `/auth` inside the interactive session.
+
+   If you are using CodeGraphContext with a dedicated Gemini profile, use:
+   ```bash
+   sudo -u planner /bin/bash --noprofile --norc -lc 'cd /opt/planner && /opt/planner/bin/gemini-cgc'
+   ```
+   That wrapper uses `/opt/planner/cli-home/gemini-codegraph`, shares the main
+   Gemini OAuth files, and loads only the CGC MCP profile.
+   For automated CGC edge ingestion via `POST /api/blueprint/discovery/scan`,
+   set `PLANNER_CGC_SCAN_COMMAND` in `/etc/planner/planner.env`.
+   Daily background ingestion is controlled by `PLANNER_CGC_DAILY_SCAN_*`
+   variables in the same env file.
 
 3. Verify:
    ```bash
    gemini --version
-   echo "hello" | gemini
+   gemini -p "hello"
    ```
 
 ### `codex` — OpenAI Codex CLI
@@ -324,7 +339,7 @@ Requires a ChatGPT Pro subscription.
 
 2. Authenticate:
    ```bash
-   codex login
+   sudo -u planner /bin/bash --noprofile --norc -lc 'cd /opt/planner && HOME=/opt/planner/cli-home/codex CODEX_HOME=/opt/planner/cli-home/codex/.codex /opt/planner/bin/codex login'
    ```
 
 3. Verify:

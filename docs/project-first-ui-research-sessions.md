@@ -103,6 +103,7 @@ Recommended execution order:
 3. Phase 3: Component Naming Strategy
 4. Phase 4: Knowledge Filter Bar Redesign
 5. Phase 5: Session Lobby And Events Table
+6. Phase 6: Project Archive And Delete
 
 Rationale:
 
@@ -121,6 +122,7 @@ Rationale:
 | 3 | Component Naming Strategy | Component names like `1 module`, `2 module` are not useful | blueprint emitter, discovery, node naming and rename strategy | `docs/phase-03-component-naming-implementation.md` |
 | 4 | Knowledge Filter Bar Redesign | Knowledge filters should become a single horizontal list with dropdowns | knowledge library filters, persistence, responsive behavior | `docs/phase-04-knowledge-filter-bar-implementation.md` |
 | 5 | Session Lobby And Events Table | Events should not render in the main display box; use an events table inside the lobby | websocket event flow, session layout, event log rendering | `docs/phase-05-session-lobby-events-implementation.md` |
+| 6 | Project Archive And Delete | Projects need reversible archive plus true delete with session stop/removal and shared-knowledge unlinking | project lifecycle API, session/runtime stop semantics, CXDB purge, blueprint purge and unlink, destructive UI flows | `docs/phase-06-project-archive-delete-implementation.md` |
 
 ## Phase 0: Project Ownership Model
 
@@ -420,3 +422,61 @@ Reason:
 - it resolves the core mismatch behind "two projects but one session"
 - it determines whether the rest of the UI changes are mostly routing work or a
   deeper product model refactor
+
+## Phase 6: Project Archive And Delete
+
+### Goal
+
+Add explicit `Archive` and `Delete` project lifecycle actions, where archive is
+reversible and delete is a true destructive operation that stops and removes
+project-owned work while preserving shared knowledge by unlinking it.
+
+### Why This Needs Its Own Research Phase
+
+This is not a button-only change. It spans canonical project lifecycle, active
+runtime shutdown, durable session cleanup, CXDB project-run deletion, blueprint
+local-versus-shared ownership rules, and destructive confirmation UX.
+
+### Current Code Anchors
+
+- `planner-server/src/api.rs`
+- `planner-server/src/project.rs`
+- `planner-server/src/session.rs`
+- `planner-server/src/runtime.rs`
+- `planner-server/src/ws.rs`
+- `planner-server/src/ws_socratic.rs`
+- `planner-core/src/observability.rs`
+- `planner-core/src/cxdb/durable.rs`
+- `planner-core/src/blueprint.rs`
+- `planner-web/src/api/client.ts`
+- `planner-web/src/pages/ProjectsPage.tsx`
+
+### Research Tasks
+
+- define archive semantics, filtering rules, and restore behavior
+- define true delete semantics and the exact cascade for sessions, events,
+  blueprint data, and CXDB data
+- define how active interview runtimes and active pipeline jobs are stopped
+- define shared knowledge unlink behavior versus owned knowledge deletion
+- define delete confirmation UX and post-delete navigation behavior
+- define whether blueprint event and history persistence must be compacted to
+  honor true delete
+
+### User Q&A To Run During Research
+
+- Should delete be a true hard delete or a trash/soft-delete flow?
+- Should shared blueprint records be deleted or just unlinked from the project?
+- Should delete explicitly warn users that active sessions will be stopped and
+  removed?
+- Should archive hide projects by default while keeping them directly
+  navigable?
+
+### Unique Output
+
+- `docs/phase-06-project-archive-delete-implementation.md`
+
+### Done When
+
+- archive and true delete are defined clearly enough that backend storage,
+  runtime stop behavior, UI confirmation, and test work can be implemented
+  without guessing

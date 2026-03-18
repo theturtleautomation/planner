@@ -23,6 +23,9 @@ pub mod belief_state;
 pub mod constitution;
 pub mod convergence;
 pub mod domain_classifier;
+pub mod prompt_batch_planner;
+pub mod prompt_protocol;
+pub mod prompt_response_adjudicator;
 pub mod question_planner;
 pub mod socratic_engine;
 pub mod speculative_draft;
@@ -34,6 +37,9 @@ pub use belief_state::{
 pub use constitution::{check_coverage, evaluate_question, load_constitution};
 pub use convergence::check_convergence;
 pub use domain_classifier::classify_domain;
+pub use prompt_batch_planner::plan_prompt_batch;
+pub use prompt_protocol::{answer_to_input_text, ordered_answered_items, unanswered_item_ids};
+pub use prompt_response_adjudicator::{adjudicate_prompt_response, PromptAdjudicationResult};
 pub use question_planner::{plan_next_question, select_target_dimension};
 pub use socratic_engine::{
     run_interview, run_interview_from_checkpoint, session_to_intake, CheckpointResumeState,

@@ -57,13 +57,10 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 const STALE_THRESHOLD_DAYS = 30;
-const LEGACY_ARCHIVED_TAG = 'archived';
 const LINEAGE_BRANCH_PREFIX = 'lineage:branch-of:';
-const OVERRIDE_PREFIX = 'overrides:';
 
 function isArchivedNode(node: NodeSummary): boolean {
-  if (node.lifecycle === 'archived') return true;
-  return node.tags.some(tag => tag.trim().toLowerCase() === LEGACY_ARCHIVED_TAG);
+  return node.lifecycle === 'archived';
 }
 
 function branchLineageSource(node: NodeSummary): string | null {
@@ -77,14 +74,7 @@ function branchLineageSource(node: NodeSummary): string | null {
 }
 
 function overrideSource(node: NodeSummary): string | null {
-  if (node.override_source_id?.trim()) return node.override_source_id.trim();
-  for (const rawTag of node.tags) {
-    const lower = rawTag.trim().toLowerCase();
-    if (!lower.startsWith(OVERRIDE_PREFIX)) continue;
-    const source = rawTag.trim().slice(OVERRIDE_PREFIX.length).trim();
-    if (source.length > 0) return source;
-  }
-  return null;
+  return node.override_source_id?.trim() || null;
 }
 
 function defaultColumns(edges: EdgePayload[]): ColumnDef[] {
@@ -96,7 +86,7 @@ function defaultColumns(edges: EdgePayload[]): ColumnDef[] {
         // Stale detection: node not updated in STALE_THRESHOLD_DAYS
         const updatedMs = new Date(n.updated_at).getTime();
         const isStale = !isNaN(updatedMs) && (Date.now() - updatedMs) > STALE_THRESHOLD_DAYS * 86400000;
-        // Orphan detection: node with no edges
+        // Unlinked detection: node with no explicit edges
         const isOrphan = !edgeList.some(e => e.source === n.id || e.target === n.id);
         const lineageSource = branchLineageSource(n);
         const override = overrideSource(n);
@@ -129,8 +119,8 @@ function defaultColumns(edges: EdgePayload[]): ColumnDef[] {
               </span>
             )}
             {isOrphan && (
-              <span className="health-badge health-orphan" title="No edges — isolated node">
-                orphan
+              <span className="health-badge health-orphan" title="No explicit relationships">
+                unlinked
               </span>
             )}
           </span>

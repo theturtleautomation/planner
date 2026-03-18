@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import Dashboard from '../Dashboard';
 import type { SessionSummary } from '../../types';
 
@@ -54,10 +54,23 @@ function makeSessionSummary(overrides: Partial<SessionSummary>): SessionSummary 
   };
 }
 
+function LocationSnapshot() {
+  const location = useLocation();
+  return (
+    <div>
+      <div data-testid="location-path">{location.pathname}</div>
+      <div data-testid="location-search">{location.search}</div>
+    </div>
+  );
+}
+
 function renderDashboard() {
   render(
-    <MemoryRouter>
-      <Dashboard />
+    <MemoryRouter initialEntries={['/sessions']}>
+      <Routes>
+        <Route path="/sessions" element={<Dashboard />} />
+        <Route path="/knowledge/projects/:projectId" element={<LocationSnapshot />} />
+      </Routes>
     </MemoryRouter>,
   );
 }
@@ -210,5 +223,34 @@ describe('Dashboard workflow visibility', () => {
       expect(mockListSessions).toHaveBeenLastCalledWith({ includeArchived: true });
     });
     expect(await screen.findByText('Archived session')).toBeInTheDocument();
+  });
+
+  it('opens project-scoped knowledge from the sessions board when project identity is available', async () => {
+    const user = userEvent.setup();
+    mockListSessions.mockResolvedValue({
+      sessions: [
+        makeSessionSummary({
+          id: 'sess-knowledge',
+          title: 'Knowledge Session',
+          project_id: 'proj-sessions-board',
+          project_slug: 'sessions-board',
+          project_name: 'Sessions Board',
+        }),
+      ],
+    });
+
+    renderDashboard();
+
+    await waitFor(() => {
+      expect(mockListSessions).toHaveBeenCalledTimes(1);
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Open knowledge for session sess-knowledge' }));
+
+    expect(await screen.findByTestId('location-path')).toHaveTextContent('/knowledge/projects/proj-sessions-board');
+    const params = new URLSearchParams(screen.getByTestId('location-search').textContent ?? '');
+    expect(params.get('project')).toBe('proj-sessions-board');
+    expect(params.get('from')).toBe('/sessions');
+    expect(params.get('from_label')).toBe('Sessions');
   });
 });

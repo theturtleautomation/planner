@@ -52,6 +52,10 @@ journalctl -u planner -f
 
 The installer builds the Rust workspace and frontend, installs `planner-server`, deploys the web assets, writes the `systemd` unit and default env file, and prepares isolated LLM CLI homes under `/opt/planner/cli-home/`.
 
+For the blueprint project-root model, discovery edge-proposal contract, and
+the dedicated `gemini-cgc` profile, see
+[docs/blueprint-project-root-codegraph-integration.md](./docs/blueprint-project-root-codegraph-integration.md).
+
 ### Source build / local development
 
 ```bash
@@ -224,14 +228,20 @@ All configuration lives in `/etc/planner/planner.env`. The file is preserved acr
 - **Authentication** — Auth0 JWT (optional; omit for dev mode)
 - **LLM Providers** — No API keys needed; authenticate CLIs as the service user:
   ```bash
-  sudo -u planner HOME=/opt/planner/cli-home/claude /opt/planner/bin/claude login
-  sudo -u planner HOME=/opt/planner/cli-home/gemini /opt/planner/bin/gemini auth login
-  sudo -u planner HOME=/opt/planner/cli-home/codex CODEX_HOME=/opt/planner/cli-home/codex/.codex /opt/planner/bin/codex login
+  sudo -u planner /bin/bash --noprofile --norc -lc 'cd /opt/planner && HOME=/opt/planner/cli-home/claude /opt/planner/bin/claude login'
+  sudo -u planner /bin/bash --noprofile --norc -lc 'cd /opt/planner && HOME=/opt/planner/cli-home/gemini /opt/planner/bin/gemini'
+  sudo -u planner /bin/bash --noprofile --norc -lc 'cd /opt/planner && HOME=/opt/planner/cli-home/codex CODEX_HOME=/opt/planner/cli-home/codex/.codex /opt/planner/bin/codex login'
   ```
+  For Gemini CLI `0.33.1+`, choose `Login with Google` when prompted, or run `/auth` inside the interactive session. `gemini auth login` is no longer a supported top-level command.
+  A dedicated CGC-enabled Gemini wrapper is also installed at `/opt/planner/bin/gemini-cgc`. It uses `/opt/planner/cli-home/gemini-codegraph`, reuses the main Gemini OAuth files via symlinks, and loads only the CodeGraphContext MCP profile.
+  To enable automated code-graph edge ingestion during discovery scans, set `PLANNER_CGC_SCAN_COMMAND` in `/etc/planner/planner.env`. Daily background ingestion is controlled with `PLANNER_CGC_DAILY_SCAN_*` variables.
 - **Factory Worker** — Worktree root, sandbox mode
 - **Vault Integration** — HashiCorp Vault Agent, systemd LoadCredential, SOPS
 
 See `deploy/planner.env` for the fully documented template.
+
+For the current blueprint/code-graph integration behavior, see
+[docs/blueprint-project-root-codegraph-integration.md](./docs/blueprint-project-root-codegraph-integration.md).
 
 ---
 

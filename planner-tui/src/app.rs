@@ -417,6 +417,64 @@ impl App {
         });
     }
 
+    fn apply_prompt_generated(&mut self, prompt: &planner_schemas::PromptEnvelope) {
+        self.status_message = format!(
+            "Answering — {} prompt item(s) available",
+            prompt.items.len()
+        );
+
+        if let Some(item) = prompt.items.first() {
+            self.add_planner_message(&item.text);
+
+            self.current_question = item.target_dimension.clone().map(|target_dimension| {
+                let quick_options = item
+                    .options
+                    .iter()
+                    .map(|option| planner_schemas::QuickOption {
+                        label: option.label.clone(),
+                        value: option.semantic_value.clone(),
+                    })
+                    .collect();
+
+                QuestionOutput {
+                    question: item.text.clone(),
+                    target_dimension,
+                    quick_options,
+                    allow_skip: !item.required,
+                }
+            });
+        } else {
+            self.current_question = None;
+        }
+
+        if let Some(draft) = prompt.draft_snapshot.clone() {
+            let mut text =
+                String::from("Here's a speculative draft based on what I know so far:\n");
+            for section in &draft.sections {
+                text.push_str(&format!("\n**{}**\n{}\n", section.heading, section.content));
+            }
+            if !draft.not_discussed.is_empty() {
+                text.push_str("\nStill to clarify:\n");
+                for dimension in &draft.not_discussed {
+                    text.push_str(&format!("  • {}\n", dimension.label()));
+                }
+            }
+            self.add_planner_message(&text);
+            self.speculative_draft = Some(draft);
+        }
+
+        if self
+            .current_question
+            .as_ref()
+            .map(|question| !question.quick_options.is_empty())
+            .unwrap_or(false)
+        {
+            self.status_message = "Answering — [Esc] Skip  [Ctrl+D] Done  [1-9] Quick pick".into();
+        } else {
+            self.status_message = "Answering — [Esc] Skip  [Ctrl+D] Done".into();
+        }
+    }
+
     // -----------------------------------------------------------------------
     // Observability helpers
     // -----------------------------------------------------------------------
@@ -1015,28 +1073,8 @@ impl App {
                 self.belief_state = Some(state);
             }
 
-            SocraticEvent::Question { output } => {
-                self.add_planner_message(&output.question.clone());
-                self.current_question = Some(output);
-                self.status_message =
-                    "Answering — [Esc] Skip  [Ctrl+D] Done  [1-9] Quick pick".into();
-            }
-
-            SocraticEvent::SpeculativeDraftReady { draft } => {
-                // Render draft sections as a planner message for the chat pane
-                let mut text =
-                    String::from("Here's a speculative draft based on what I know so far:\n");
-                for section in &draft.sections {
-                    text.push_str(&format!("\n**{}**\n{}\n", section.heading, section.content));
-                }
-                if !draft.assumptions.is_empty() {
-                    text.push_str("\nAssumptions (please correct if wrong):\n");
-                    for a in &draft.assumptions {
-                        text.push_str(&format!("  • {} — {}\n", a.dimension.label(), a.assumption));
-                    }
-                }
-                self.add_planner_message(&text);
-                self.speculative_draft = Some(draft);
+            SocraticEvent::PromptGenerated { prompt } => {
+                self.apply_prompt_generated(&prompt);
             }
 
             SocraticEvent::ContradictionDetected { contradiction } => {
@@ -1528,7 +1566,10 @@ mod tests {
 
     #[tokio::test]
     async fn tick_socratic_question_event() {
-        use planner_schemas::{Dimension, QuestionOutput, QuickOption};
+        use planner_schemas::{
+            Dimension, PromptEnvelope, PromptItem, PromptItemKind, PromptKind, PromptOption,
+            PromptPreferredLayout, PromptResponseMode, PromptUiHints,
+        };
 
         let mut app = App::new();
         app.intake_phase = IntakePhase::Interviewing;
@@ -1536,18 +1577,41 @@ mod tests {
         let (tx, rx) = mpsc::unbounded_channel::<SocraticEvent>();
         app.socratic_events_rx = Some(rx);
 
-        let question = QuestionOutput {
-            question: "What is the main goal of your project?".into(),
-            target_dimension: Dimension::Goal,
-            quick_options: vec![QuickOption {
-                label: "Productivity".into(),
-                value: "Improve productivity".into(),
+        let prompt = PromptEnvelope {
+            prompt_id: "prompt-1".into(),
+            kind: PromptKind::QuestionBatch,
+            title: "Continue".into(),
+            instructions: None,
+            items: vec![PromptItem {
+                item_id: "item-goal".into(),
+                kind: PromptItemKind::Discovery,
+                target_dimension: Some(Dimension::Goal),
+                section_ref: None,
+                text: "What is the main goal of your project?".into(),
+                options: vec![PromptOption {
+                    option_id: "opt-productivity".into(),
+                    label: "Productivity".into(),
+                    semantic_value: "Improve productivity".into(),
+                    direct_effect: None,
+                }],
+                response_mode: PromptResponseMode::SingleSelectWithCustomText,
+                required: false,
+                priority: 100,
+                dependency_item_ids: Vec::new(),
             }],
-            allow_skip: true,
+            draft_snapshot: None,
+            required_item_ids: Vec::new(),
+            allow_partial_submit: true,
+            ui_hints: PromptUiHints {
+                preferred_layout: PromptPreferredLayout::Cards,
+                show_draft_sidebar: false,
+            },
+            based_on_turn: 0,
+            created_at: "2026-03-08T00:00:00Z".into(),
         };
 
-        tx.send(SocraticEvent::Question {
-            output: question.clone(),
+        tx.send(SocraticEvent::PromptGenerated {
+            prompt: prompt.clone(),
         })
         .unwrap();
         app.tick_socratic();
@@ -1555,12 +1619,16 @@ mod tests {
         assert!(app.current_question.is_some());
         assert_eq!(
             app.current_question.as_ref().unwrap().question,
-            question.question
+            prompt.items[0].text
+        );
+        assert_eq!(
+            app.current_question.as_ref().unwrap().quick_options.len(),
+            1
         );
         // A planner message should have been added
         let last = app.messages.last().unwrap();
         assert_eq!(last.role, MessageRole::Planner);
-        assert!(last.content.contains("goal"));
+        assert!(last.content.contains("main goal"));
     }
 
     #[tokio::test]

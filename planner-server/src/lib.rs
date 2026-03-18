@@ -38,6 +38,8 @@ pub struct AppState {
     pub llm_router: std::sync::Arc<planner_core::llm::providers::LlmRouter>,
     /// Live Socratic interview runtimes that survive short disconnects.
     pub socratic_runtimes: runtime::SessionRuntimeRegistry,
+    /// Live pipeline task runtimes keyed by session ID.
+    pub pipeline_runtimes: runtime::SessionPipelineRegistry,
     /// Server start time for uptime calculation.
     pub started_at: std::time::Instant,
 }

@@ -4,6 +4,7 @@ import Layout from '../components/Layout.tsx';
 import { createApiClient } from '../api/client.ts';
 import { useGetAccessToken } from '../auth/useAuthenticatedFetch.ts';
 import type { AdminStatusResponse, AdminEventsResponse, AdminEventEntry } from '../types.ts';
+import { buildKnowledgeDeepLink } from '../lib/knowledgeDeepLinks.ts';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -154,6 +155,14 @@ function FilterBtn({ label, active, color, onClick }: FilterBtnProps) {
 
 interface EventRowProps { event: AdminEventEntry }
 function EventRow({ event }: EventRowProps) {
+  const relatedKnowledgeLink = event.project_id
+    ? buildKnowledgeDeepLink({
+        projectId: event.project_id,
+        originPath: '/admin',
+        originLabel: 'Admin',
+      })
+    : null;
+
   return (
     <div style={{
       display: 'flex',
@@ -201,6 +210,27 @@ function EventRow({ event }: EventRowProps) {
           onMouseLeave={(e) => { (e.currentTarget as HTMLAnchorElement).style.opacity = '0.8'; }}
         >
           {event.session_id.slice(0, 8)}
+        </Link>
+      )}
+
+      {relatedKnowledgeLink && (
+        <Link
+          to={relatedKnowledgeLink}
+          title={event.project_name ? `Open Knowledge for ${event.project_name}` : 'Open project knowledge'}
+          style={{
+            color: 'var(--color-primary)',
+            fontSize: '11px',
+            fontFamily: 'monospace',
+            textDecoration: 'none',
+            whiteSpace: 'nowrap',
+            flexShrink: 0,
+            paddingTop: '1px',
+            opacity: 0.8,
+          }}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLAnchorElement).style.opacity = '1'; }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLAnchorElement).style.opacity = '0.8'; }}
+        >
+          Knowledge
         </Link>
       )}
 
