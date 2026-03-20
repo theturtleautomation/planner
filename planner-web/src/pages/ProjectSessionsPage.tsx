@@ -265,6 +265,22 @@ export default function ProjectSessionsPage() {
     }
   }, [api, loadImportHistory, projectSlug]);
 
+  const handleRestoreImportHistoryEntryForReview = useCallback(async (jobId: string) => {
+    if (!projectSlug) return;
+    setRestorePendingJobId(jobId);
+    setRestoreError(null);
+    try {
+      const response = await api.restoreProjectImportHistoryEntryForReview(projectSlug, jobId);
+      setImportState(response);
+      setImportReview(response);
+      setImportHistory(await loadImportHistory());
+    } catch (err) {
+      setRestoreError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRestorePendingJobId(null);
+    }
+  }, [api, loadImportHistory, projectSlug]);
+
   const handleRestoreImportReviewDraft = useCallback(async (jobId: string) => {
     if (!projectSlug) return;
     setRestorePendingJobId(jobId);
@@ -775,6 +791,13 @@ export default function ProjectSessionsPage() {
                     && !restoreBlockedByPendingReview
                     && entry.import_job.id !== importState?.import_job.id && (
                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      <button
+                        className="btn btn-outline"
+                        onClick={() => { void handleRestoreImportHistoryEntryForReview(entry.import_job.id); }}
+                        disabled={restorePendingJobId === entry.import_job.id}
+                      >
+                        {restorePendingJobId === entry.import_job.id ? 'Restoring For Review…' : 'Restore For Review'}
+                      </button>
                       <button
                         className="btn btn-outline"
                         onClick={() => { void handleRestoreImportHistoryEntry(entry.import_job.id); }}

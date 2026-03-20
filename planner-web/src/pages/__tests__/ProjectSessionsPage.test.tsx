@@ -14,6 +14,7 @@ const {
   mockUpdateProjectImportReviewSelection,
   mockApplyProjectImportReview,
   mockRestoreProjectImportHistoryEntry,
+  mockRestoreProjectImportHistoryEntryForReview,
   mockRestoreProjectImportReviewDraft,
   mockReimportProject,
   mockGetToken,
@@ -27,6 +28,7 @@ const {
   mockUpdateProjectImportReviewSelection: vi.fn(),
   mockApplyProjectImportReview: vi.fn(),
   mockRestoreProjectImportHistoryEntry: vi.fn(),
+  mockRestoreProjectImportHistoryEntryForReview: vi.fn(),
   mockRestoreProjectImportReviewDraft: vi.fn(),
   mockReimportProject: vi.fn(),
   mockGetToken: vi.fn().mockResolvedValue('mock-token'),
@@ -52,6 +54,7 @@ vi.mock('../../api/client.ts', () => ({
     updateProjectImportReviewSelection: mockUpdateProjectImportReviewSelection,
     applyProjectImportReview: mockApplyProjectImportReview,
     restoreProjectImportHistoryEntry: mockRestoreProjectImportHistoryEntry,
+    restoreProjectImportHistoryEntryForReview: mockRestoreProjectImportHistoryEntryForReview,
     restoreProjectImportReviewDraft: mockRestoreProjectImportReviewDraft,
     reimportProject: mockReimportProject,
   })),
@@ -94,6 +97,7 @@ describe('ProjectSessionsPage import review', () => {
       updateProjectImportReviewSelection: mockUpdateProjectImportReviewSelection,
       applyProjectImportReview: mockApplyProjectImportReview,
       restoreProjectImportHistoryEntry: mockRestoreProjectImportHistoryEntry,
+      restoreProjectImportHistoryEntryForReview: mockRestoreProjectImportHistoryEntryForReview,
       restoreProjectImportReviewDraft: mockRestoreProjectImportReviewDraft,
       reimportProject: mockReimportProject,
     }));
@@ -1125,6 +1129,7 @@ describe('ProjectSessionsPage import review', () => {
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Restore This Import' })).toBeInTheDocument();
     });
+    expect(screen.getByRole('button', { name: 'Restore For Review' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Restore This Import' }));
 
@@ -1134,6 +1139,322 @@ describe('ProjectSessionsPage import review', () => {
 
     expect(screen.getByText('Historical import restored to canonical blueprint')).toBeInTheDocument();
     expect(screen.getByText(/Restored from import job-0/i)).toBeInTheDocument();
+  });
+
+  it('reopens an older applied import into the current review slot', async () => {
+    const user = userEvent.setup();
+    mockGetProjectImportState.mockResolvedValueOnce({
+      project: {
+        id: 'proj-1',
+        slug: 'task-tracker',
+        name: 'Task Tracker',
+        description: 'Import review workspace',
+        owner_user_id: 'dev|local',
+        created_at: '2026-03-20T00:00:00Z',
+        updated_at: '2026-03-20T00:00:00Z',
+        archived_at: null,
+        legacy_scope_keys: [],
+      },
+      import_job: {
+        id: 'job-1',
+        project_id: 'proj-1',
+        provider: 'github',
+        requested_ref: 'https://github.com/example/task-tracker',
+        status: 'applied',
+        restored_from_job_id: null,
+        seed_session_id: 'seed-1',
+        analysis_summary: 'Imported draft for Task Tracker from GitHub.',
+        progress_message: 'Import draft applied and reconciled against the canonical project blueprint.',
+        error_message: null,
+        created_at: '2026-03-20T00:00:00Z',
+        updated_at: '2026-03-20T00:02:00Z',
+      },
+      source_binding: {
+        project_id: 'proj-1',
+        provider: 'github',
+        canonical_ref: 'https://github.com/example/task-tracker',
+        default_branch: 'main',
+        head_revision: 'deadbeef',
+        local_root: '/tmp/imports/task-tracker',
+        managed_checkout: true,
+        created_at: '2026-03-20T00:00:00Z',
+        updated_at: '2026-03-20T00:02:00Z',
+      },
+      import_draft: null,
+    });
+    mockGetProjectImportReview.mockResolvedValueOnce({
+      project: {
+        id: 'proj-1',
+        slug: 'task-tracker',
+        name: 'Task Tracker',
+        description: 'Import review workspace',
+        owner_user_id: 'dev|local',
+        created_at: '2026-03-20T00:00:00Z',
+        updated_at: '2026-03-20T00:00:00Z',
+        archived_at: null,
+        legacy_scope_keys: [],
+      },
+      import_job: {
+        id: 'job-1',
+        project_id: 'proj-1',
+        provider: 'github',
+        requested_ref: 'https://github.com/example/task-tracker',
+        status: 'applied',
+        restored_from_job_id: null,
+        seed_session_id: 'seed-1',
+        analysis_summary: 'Imported draft for Task Tracker from GitHub.',
+        progress_message: 'Import draft applied and reconciled against the canonical project blueprint.',
+        error_message: null,
+        created_at: '2026-03-20T00:00:00Z',
+        updated_at: '2026-03-20T00:02:00Z',
+      },
+      source_binding: {
+        project_id: 'proj-1',
+        provider: 'github',
+        canonical_ref: 'https://github.com/example/task-tracker',
+        default_branch: 'main',
+        head_revision: 'deadbeef',
+        local_root: '/tmp/imports/task-tracker',
+        managed_checkout: true,
+        created_at: '2026-03-20T00:00:00Z',
+        updated_at: '2026-03-20T00:02:00Z',
+      },
+      import_draft: null,
+    });
+    mockGetProjectImportHistory
+      .mockResolvedValueOnce({
+        project: {
+          id: 'proj-1',
+          slug: 'task-tracker',
+          name: 'Task Tracker',
+          description: 'Import review workspace',
+          owner_user_id: 'dev|local',
+          created_at: '2026-03-20T00:00:00Z',
+          updated_at: '2026-03-20T00:00:00Z',
+          archived_at: null,
+          legacy_scope_keys: [],
+        },
+        source_binding: {
+          project_id: 'proj-1',
+          provider: 'github',
+          canonical_ref: 'https://github.com/example/task-tracker',
+          default_branch: 'main',
+          head_revision: 'deadbeef',
+          local_root: '/tmp/imports/task-tracker',
+          managed_checkout: true,
+          created_at: '2026-03-20T00:00:00Z',
+          updated_at: '2026-03-20T00:02:00Z',
+        },
+        history: [
+          {
+            import_job: {
+              id: 'job-1',
+              project_id: 'proj-1',
+              provider: 'github',
+              requested_ref: 'https://github.com/example/task-tracker',
+              status: 'applied',
+              restored_from_job_id: null,
+              seed_session_id: 'seed-1',
+              analysis_summary: 'Imported draft for Task Tracker from GitHub.',
+              progress_message: 'Import draft applied and reconciled against the canonical project blueprint.',
+              error_message: null,
+              created_at: '2026-03-20T00:00:00Z',
+              updated_at: '2026-03-20T00:02:00Z',
+            },
+            source_metadata: {
+              provider: 'github',
+              canonical_ref: 'https://github.com/example/task-tracker',
+              local_root: '/tmp/imports/task-tracker',
+              default_branch: 'main',
+              head_revision: 'deadbeef',
+            },
+            discovered_node_count: 2,
+          },
+          {
+            import_job: {
+              id: 'job-0',
+              project_id: 'proj-1',
+              provider: 'github',
+              requested_ref: 'https://github.com/example/task-tracker',
+              status: 'applied',
+              restored_from_job_id: null,
+              seed_session_id: 'seed-0',
+              analysis_summary: 'Earlier import draft for Task Tracker from GitHub.',
+              progress_message: 'Import draft applied and reconciled against the canonical project blueprint.',
+              error_message: null,
+              created_at: '2026-03-19T23:00:00Z',
+              updated_at: '2026-03-19T23:10:00Z',
+            },
+            source_metadata: {
+              provider: 'github',
+              canonical_ref: 'https://github.com/example/task-tracker',
+              local_root: '/tmp/imports/task-tracker',
+              default_branch: 'main',
+              head_revision: 'cafebabe',
+            },
+            discovered_node_count: 1,
+          },
+        ],
+        diff_summary: null,
+      })
+      .mockResolvedValueOnce({
+        project: {
+          id: 'proj-1',
+          slug: 'task-tracker',
+          name: 'Task Tracker',
+          description: 'Import review workspace',
+          owner_user_id: 'dev|local',
+          created_at: '2026-03-20T00:00:00Z',
+          updated_at: '2026-03-20T00:00:00Z',
+          archived_at: null,
+          legacy_scope_keys: [],
+        },
+        source_binding: {
+          project_id: 'proj-1',
+          provider: 'github',
+          canonical_ref: 'https://github.com/example/task-tracker',
+          default_branch: 'main',
+          head_revision: 'cafebabe',
+          local_root: '/tmp/imports/task-tracker',
+          managed_checkout: true,
+          created_at: '2026-03-20T00:00:00Z',
+          updated_at: '2026-03-20T00:05:00Z',
+        },
+        history: [
+          {
+            import_job: {
+              id: 'job-restored-review',
+              project_id: 'proj-1',
+              provider: 'github',
+              requested_ref: 'https://github.com/example/task-tracker',
+              status: 'review_pending',
+              restored_from_job_id: 'job-0',
+              seed_session_id: 'seed-0',
+              analysis_summary: 'Earlier import draft for Task Tracker from GitHub.',
+              progress_message: 'Historical review draft restored from import job-0. Review and apply when ready.',
+              error_message: null,
+              created_at: '2026-03-20T00:05:00Z',
+              updated_at: '2026-03-20T00:05:00Z',
+            },
+            source_metadata: {
+              provider: 'github',
+              canonical_ref: 'https://github.com/example/task-tracker',
+              local_root: '/tmp/imports/task-tracker',
+              default_branch: 'main',
+              head_revision: 'cafebabe',
+            },
+            discovered_node_count: 1,
+          },
+          {
+            import_job: {
+              id: 'job-1',
+              project_id: 'proj-1',
+              provider: 'github',
+              requested_ref: 'https://github.com/example/task-tracker',
+              status: 'applied',
+              restored_from_job_id: null,
+              seed_session_id: 'seed-1',
+              analysis_summary: 'Imported draft for Task Tracker from GitHub.',
+              progress_message: 'Import draft applied and reconciled against the canonical project blueprint.',
+              error_message: null,
+              created_at: '2026-03-20T00:00:00Z',
+              updated_at: '2026-03-20T00:02:00Z',
+            },
+            source_metadata: {
+              provider: 'github',
+              canonical_ref: 'https://github.com/example/task-tracker',
+              local_root: '/tmp/imports/task-tracker',
+              default_branch: 'main',
+              head_revision: 'deadbeef',
+            },
+            discovered_node_count: 2,
+          },
+        ],
+        diff_summary: null,
+      });
+    mockRestoreProjectImportHistoryEntryForReview.mockResolvedValueOnce({
+      project: {
+        id: 'proj-1',
+        slug: 'task-tracker',
+        name: 'Task Tracker',
+        description: 'Import review workspace',
+        owner_user_id: 'dev|local',
+        created_at: '2026-03-20T00:00:00Z',
+        updated_at: '2026-03-20T00:00:00Z',
+        archived_at: null,
+        legacy_scope_keys: [],
+      },
+      import_job: {
+        id: 'job-restored-review',
+        project_id: 'proj-1',
+        provider: 'github',
+        requested_ref: 'https://github.com/example/task-tracker',
+        status: 'review_pending',
+        restored_from_job_id: 'job-0',
+        seed_session_id: 'seed-0',
+        analysis_summary: 'Earlier import draft for Task Tracker from GitHub.',
+        progress_message: 'Historical review draft restored from import job-0. Review and apply when ready.',
+        error_message: null,
+        created_at: '2026-03-20T00:05:00Z',
+        updated_at: '2026-03-20T00:05:00Z',
+      },
+      source_binding: {
+        project_id: 'proj-1',
+        provider: 'github',
+        canonical_ref: 'https://github.com/example/task-tracker',
+        default_branch: 'main',
+        head_revision: 'cafebabe',
+        local_root: '/tmp/imports/task-tracker',
+        managed_checkout: true,
+        created_at: '2026-03-20T00:00:00Z',
+        updated_at: '2026-03-20T00:05:00Z',
+      },
+      import_draft: {
+        job_id: 'job-restored-review',
+        project_id: 'proj-1',
+        analysis_summary: 'Earlier import draft for Task Tracker from GitHub.',
+        source_metadata: {
+          provider: 'github',
+          canonical_ref: 'https://github.com/example/task-tracker',
+          local_root: '/tmp/imports/task-tracker',
+          default_branch: 'main',
+          head_revision: 'cafebabe',
+        },
+        discovered_nodes: [{ id: 'comp-auth-a1' }],
+        created_at: '2026-03-20T00:05:00Z',
+        updated_at: '2026-03-20T00:05:00Z',
+      },
+      import_review_selection: {
+        job_id: 'job-restored-review',
+        excluded_node_ids: [],
+        included_node_count: 1,
+        excluded_node_count: 0,
+      },
+      review_nodes: [
+        {
+          node_id: 'comp-auth-a1',
+          node_name: 'Auth Service',
+          node_type: 'component',
+          included: true,
+        },
+      ],
+    });
+
+    renderProjectSessions();
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Restore For Review' })).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Restore For Review' }));
+
+    await waitFor(() => {
+      expect(mockRestoreProjectImportHistoryEntryForReview).toHaveBeenCalledWith('task-tracker', 'job-0');
+    });
+
+    expect(screen.getByText('Historical draft restored for review')).toBeInTheDocument();
+    expect(screen.getByText(/Included: 1/)).toBeInTheDocument();
+    expect(screen.queryByText(/Excluded:/)).not.toBeInTheDocument();
   });
 
   it('reopens an older historical review draft into the current review slot', async () => {

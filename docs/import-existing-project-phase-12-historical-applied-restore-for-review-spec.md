@@ -1,6 +1,6 @@
 # Import Existing Project Phase 12 Historical Applied Restore For Review Spec
 
-**Status:** Ready for implementation  
+**Status:** Implemented  
 **Date:** 2026-03-20  
 **Parent:** [Project Plan](/home/thetu/planner/docs/project-plan.md)  
 **Source Research:** [Import Existing Project Plan](/home/thetu/planner/docs/import-existing-project-plan.md)  
@@ -38,6 +38,38 @@ After this slice:
 
 The user still does **not** get free-form time travel, compare-any-two history
 entries, or per-edge historical editing.
+
+## Implementation Notes
+
+Implemented on 2026-03-20 in the bounded Phase 12 delivery slice.
+
+Execution landed in:
+
+- `planner-server/src/api.rs`
+- `planner-web/src/api/client.ts`
+- `planner-web/src/api/__tests__/client.test.ts`
+- `planner-web/src/pages/ProjectSessionsPage.tsx`
+- `planner-web/src/pages/__tests__/ProjectSessionsPage.test.tsx`
+
+Delivered behavior:
+
+- `POST /projects/{projectRef}/import-history/{jobId}/restore-for-review` now
+  reopens an older historical `applied` import as a fresh latest
+  `review_pending` job
+- restore-for-review reuses the persisted historical draft payload and does not
+  mutate canonical blueprint state directly
+- the reopened historical applied draft now defaults to all nodes included
+  under the existing Phase 11 review selection model
+- `ProjectSessionsPage` now exposes both `Restore This Import` and
+  `Restore For Review` on eligible historical applied entries
+- the existing direct applied-history restore path remains available alongside
+  the new review-first path
+
+Verification completed:
+
+- `cargo test -p planner-server restore_project_import_history_entry_for_review -- --nocapture`
+- `cargo test -p planner-server restore_project_import_review_draft -- --nocapture`
+- `npm --prefix planner-web test -- --run src/api/__tests__/client.test.ts src/pages/__tests__/ProjectSessionsPage.test.tsx`
 
 ## Locked Decisions For This Slice
 
@@ -201,4 +233,4 @@ arbitrary multi-version merge tooling, stop and split that into a later spec.
 
 ## Open Questions
 
-None. The slice is ready for bounded implementation.
+None. The slice is implemented and verified.

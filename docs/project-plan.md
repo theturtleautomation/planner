@@ -36,6 +36,7 @@ These are the main planning documents currently shaping the repo:
 - [Import Existing Project Phase 10 Historical Review Draft Restore Spec](/home/thetu/planner/docs/import-existing-project-phase-10-historical-review-draft-restore-spec.md)
 - [Import Existing Project Phase 11 Selective Apply Merge Controls Spec](/home/thetu/planner/docs/import-existing-project-phase-11-selective-apply-merge-controls-spec.md)
 - [Import Existing Project Phase 12 Historical Applied Restore For Review Spec](/home/thetu/planner/docs/import-existing-project-phase-12-historical-applied-restore-for-review-spec.md)
+- [Import Existing Project Phase 13 Historical Entry Comparison Spec](/home/thetu/planner/docs/import-existing-project-phase-13-historical-entry-comparison-spec.md)
 - [Planning Status Audit Remediation Spec](/home/thetu/planner/docs/planning-status-audit-remediation-spec.md)
 
 ## Current Active Thread
@@ -89,6 +90,8 @@ Current completed slice:
 - selective apply merge controls on the current review draft are implemented
   and verified in
   [Import Existing Project Phase 11 Selective Apply Merge Controls Spec](/home/thetu/planner/docs/import-existing-project-phase-11-selective-apply-merge-controls-spec.md)
+- historical applied import restore-for-review is implemented and verified in
+  [Import Existing Project Phase 12 Historical Applied Restore For Review Spec](/home/thetu/planner/docs/import-existing-project-phase-12-historical-applied-restore-for-review-spec.md)
 
 Current agreed product constraints:
 
@@ -106,9 +109,8 @@ Current agreed product constraints:
 
 Current next bounded slice:
 
-- broader historical reconciliation is now bounded to historical applied
-  restore-for-review in
-  [Import Existing Project Phase 12 Historical Applied Restore For Review Spec](/home/thetu/planner/docs/import-existing-project-phase-12-historical-applied-restore-for-review-spec.md)
+- broader history comparison is now bounded to selected-entry comparison in
+  [Import Existing Project Phase 13 Historical Entry Comparison Spec](/home/thetu/planner/docs/import-existing-project-phase-13-historical-entry-comparison-spec.md)
 - later history work should stay phased behind follow-on specs after this slice
   is implemented and verified
 
@@ -139,13 +141,12 @@ unplanned implementation.
 The next move is:
 
 - use `delivery-cycle` to implement
-  [Import Existing Project Phase 12 Historical Applied Restore For Review Spec](/home/thetu/planner/docs/import-existing-project-phase-12-historical-applied-restore-for-review-spec.md)
+  [Import Existing Project Phase 13 Historical Entry Comparison Spec](/home/thetu/planner/docs/import-existing-project-phase-13-historical-entry-comparison-spec.md)
 
 After that, keep later import work phased behind follow-on specs for:
 
-- broader historical reconciliation behavior beyond bounded applied-import
-  direct restore, review-draft restore, current-draft selective apply, and
-  historical applied restore-for-review
+- broader historical reconciliation and history comparison behavior beyond
+  selected-entry comparison and the current restore-first flows
 
 Use
 [Import Existing Project Plan](/home/thetu/planner/docs/import-existing-project-plan.md)

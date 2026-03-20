@@ -64,7 +64,14 @@
 > [Import Existing Project Phase 12 Historical Applied Restore For Review Spec](/home/thetu/planner/docs/import-existing-project-phase-12-historical-applied-restore-for-review-spec.md),
 > which scopes reopening a historical `applied` import into the current review
 > slot so the user can use merge controls before apply, without yet reopening
-> generalized history comparison or multi-version merge tooling.
+> generalized history comparison or multi-version merge tooling. That slice is
+> now implemented. Remaining work should be promoted through a later bounded
+> spec for broader historical reconciliation or history comparison rather than
+> reopening completed Phase 12 work. The next ready execution artifact is now
+> [Import Existing Project Phase 13 Historical Entry Comparison Spec](/home/thetu/planner/docs/import-existing-project-phase-13-historical-entry-comparison-spec.md),
+> which scopes comparing one selected historical import entry against the
+> current import state before restore, without yet reopening arbitrary
+> history-to-history comparison or graph-level diff tooling.
 
 ## Findings
 
