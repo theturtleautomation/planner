@@ -33,6 +33,7 @@ These are the main planning documents currently shaping the repo:
 - [Import Existing Project Phase 7 History And Draft Diff Spec](/home/thetu/planner/docs/import-existing-project-phase-7-history-and-draft-diff-spec.md)
 - [Import Existing Project Phase 8 Canonical Reconciliation Spec](/home/thetu/planner/docs/import-existing-project-phase-8-canonical-reconciliation-spec.md)
 - [Import Existing Project Phase 9 Historical Restore Spec](/home/thetu/planner/docs/import-existing-project-phase-9-historical-restore-spec.md)
+- [Import Existing Project Phase 10 Historical Review Draft Restore Spec](/home/thetu/planner/docs/import-existing-project-phase-10-historical-review-draft-restore-spec.md)
 - [Planning Status Audit Remediation Spec](/home/thetu/planner/docs/planning-status-audit-remediation-spec.md)
 
 ## Current Active Thread
@@ -80,6 +81,9 @@ Current completed slice:
 - project-scoped restore to a historical applied import is implemented and
   verified in
   [Import Existing Project Phase 9 Historical Restore Spec](/home/thetu/planner/docs/import-existing-project-phase-9-historical-restore-spec.md)
+- reopening an older historical `review_pending` draft into the current review
+  slot is implemented and verified in
+  [Import Existing Project Phase 10 Historical Review Draft Restore Spec](/home/thetu/planner/docs/import-existing-project-phase-10-historical-review-draft-restore-spec.md)
 
 Current agreed product constraints:
 
@@ -98,9 +102,9 @@ Current agreed product constraints:
 Current next bounded slice:
 
 - the next bounded import slice is not yet promoted
-- remaining work should be split through a follow-on spec focused on broader
-  historical reconciliation beyond applied-import restore, such as richer
-  restore semantics for pending drafts or more advanced merge controls
+- remaining work should be split through a follow-on spec focused on more
+  advanced merge controls and broader historical reconciliation beyond bounded
+  applied-import and review-draft restore
 
 ## Immediate Bounded Closeout Slice
 
@@ -128,13 +132,13 @@ unplanned implementation.
 
 The next move is:
 
-- use `spec-lifecycle` to promote the next bounded import spec focused on
-  broader historical reconciliation beyond applied-import restore
+- use `spec-lifecycle` to promote the next bounded import spec focused on more
+  advanced merge controls and broader historical reconciliation
 
 After that, keep later import work phased behind follow-on specs for:
 
-- broader historical reconciliation behavior beyond bounded applied-import
-  restore
+- more advanced merge controls and broader historical reconciliation behavior
+  beyond bounded applied-import and review-draft restore
 
 Use
 [Import Existing Project Plan](/home/thetu/planner/docs/import-existing-project-plan.md)

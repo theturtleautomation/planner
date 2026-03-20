@@ -46,7 +46,14 @@
 > time-travel semantics. That slice is now implemented. Remaining work should
 > be promoted through a later bounded spec for broader historical
 > reconciliation beyond applied-import restore rather than reopening completed
-> Phase 9 work.
+> Phase 9 work. The next ready execution artifact is now
+> [Import Existing Project Phase 10 Historical Review Draft Restore Spec](/home/thetu/planner/docs/import-existing-project-phase-10-historical-review-draft-restore-spec.md),
+> which scopes reopening an older historical `review_pending` draft into the
+> current review slot without yet introducing merge controls or direct blueprint
+> mutation at restore time. That slice is now implemented. Remaining work
+> should be promoted through a later bounded spec for more advanced merge
+> controls and broader historical reconciliation rather than reopening
+> completed Phase 10 work.
 
 ## Findings
 

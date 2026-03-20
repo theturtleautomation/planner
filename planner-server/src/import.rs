@@ -338,6 +338,42 @@ impl ProjectImportStore {
         Ok((job, binding))
     }
 
+    pub fn create_restore_review_job(
+        &self,
+        project_id: Uuid,
+        restored_from_job_id: Uuid,
+        analysis_summary: Option<String>,
+        seed_session_id: Option<Uuid>,
+    ) -> std::io::Result<(ProjectImportJob, ProjectSourceBinding)> {
+        let binding = self.get_binding(project_id).ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("import binding not found for project: {project_id}"),
+            )
+        })?;
+        let now = now_rfc3339();
+        let job = ProjectImportJob {
+            id: Uuid::new_v4(),
+            project_id,
+            provider: binding.provider,
+            requested_ref: binding.canonical_ref.clone(),
+            status: ImportStatus::ReviewPending,
+            restored_from_job_id: Some(restored_from_job_id),
+            seed_session_id,
+            analysis_summary,
+            progress_message: Some(format!(
+                "Historical review draft restored from import {}. Review and apply when ready.",
+                restored_from_job_id
+            )),
+            error_message: None,
+            created_at: now.clone(),
+            updated_at: now,
+        };
+        self.persist_job(&job)?;
+        self.jobs.write().insert(job.id, job.clone());
+        Ok((job, binding))
+    }
+
     pub fn get_job(&self, id: Uuid) -> Option<ProjectImportJob> {
         self.jobs.read().get(&id).cloned()
     }

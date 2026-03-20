@@ -214,6 +214,17 @@ export function createApiClient(getToken: GetTokenFn) {
       );
     },
 
+    restoreProjectImportReviewDraft(projectRef: string, jobId: string): Promise<ProjectImportResponse> {
+      return apiFetch<ProjectImportResponse>(
+        getToken,
+        `/projects/${encodeURIComponent(projectRef)}/import-history/${encodeURIComponent(jobId)}/restore-review-draft`,
+        {
+          method: 'POST',
+          body: '{}',
+        },
+      );
+    },
+
     applyProjectImportReview(projectRef: string): Promise<ProjectImportResponse> {
       return apiFetch<ProjectImportResponse>(
         getToken,

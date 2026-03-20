@@ -698,6 +698,10 @@ pub fn routes(state: Arc<AppState>) -> Router {
             "/projects/{projectRef}/import-history/{jobId}/restore",
             post(restore_project_import_history_entry),
         )
+        .route(
+            "/projects/{projectRef}/import-history/{jobId}/restore-review-draft",
+            post(restore_project_import_review_draft),
+        )
         .route("/projects/{projectRef}/reimport", post(reimport_project))
         .route(
             "/projects/{projectRef}/sessions",
@@ -2188,6 +2192,122 @@ async fn restore_project_import_history_entry(
                 "PROJECT_IMPORT_RESTORE_STATUS_FAILED",
             )
         })?;
+
+    Ok(Json(build_project_import_response(
+        &state,
+        project,
+        restored_job,
+        source_binding,
+    )))
+}
+
+async fn restore_project_import_review_draft(
+    State(state): State<Arc<AppState>>,
+    claims: Claims,
+    Path((project_ref, job_id)): Path<(String, uuid::Uuid)>,
+) -> Result<Json<ProjectImportResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let project = resolve_project_for_user(&state, &claims, &project_ref)?;
+    if state
+        .imports
+        .latest_review_job_for_project(project.id)
+        .is_some_and(|job| matches!(job.status, ImportStatus::ReviewPending))
+    {
+        return Err(import_restore_pending_review_response(&project_ref));
+    }
+
+    let historical_job = state.imports.get_job(job_id).ok_or_else(|| {
+        (
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: format!("Import history entry not found for project {}", project_ref),
+                code: Some("PROJECT_IMPORT_HISTORY_ENTRY_NOT_FOUND".into()),
+            }),
+        )
+    })?;
+    if historical_job.project_id != project.id {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: format!("Import history entry not found for project {}", project_ref),
+                code: Some("PROJECT_IMPORT_HISTORY_ENTRY_NOT_FOUND".into()),
+            }),
+        ));
+    }
+    if !matches!(historical_job.status, ImportStatus::ReviewPending) {
+        return Err((
+            StatusCode::CONFLICT,
+            Json(ErrorResponse {
+                error: format!(
+                    "Import history entry {} is not eligible for review draft restore",
+                    historical_job.id
+                ),
+                code: Some("PROJECT_IMPORT_HISTORY_ENTRY_NOT_REVIEW_RESTORABLE".into()),
+            }),
+        ));
+    }
+
+    let historical_draft = state.imports.get_draft(historical_job.id).ok_or_else(|| {
+        internal_error_response(
+            format!(
+                "Historical review draft {} is missing draft payload",
+                historical_job.id
+            ),
+            "PROJECT_IMPORT_HISTORY_DRAFT_MISSING",
+        )
+    })?;
+    let (restore_job, source_binding) = state
+        .imports
+        .create_restore_review_job(
+            project.id,
+            historical_job.id,
+            historical_job.analysis_summary.clone(),
+            historical_job.seed_session_id,
+        )
+        .map_err(|error| {
+            internal_error_response(
+                format!(
+                    "Failed to persist restore-review job for historical import {}: {}",
+                    historical_job.id, error
+                ),
+                "PROJECT_IMPORT_REVIEW_RESTORE_PERSIST_FAILED",
+            )
+        })?;
+
+    let now = chrono::Utc::now().to_rfc3339();
+    state
+        .imports
+        .save_draft(ProjectImportDraft {
+            job_id: restore_job.id,
+            project_id: project.id,
+            analysis_summary: historical_draft.analysis_summary.clone(),
+            source_metadata: historical_draft.source_metadata.clone(),
+            discovered_nodes: historical_draft.discovered_nodes.clone(),
+            created_at: now.clone(),
+            updated_at: now,
+        })
+        .map_err(|error| {
+            let _ = state.imports.mark_job_failed(
+                restore_job.id,
+                format!(
+                    "Historical review draft restore failed while cloning draft from {}: {}",
+                    historical_job.id, error
+                ),
+            );
+            internal_error_response(
+                format!(
+                    "Failed to persist restored review draft for historical import {}: {}",
+                    historical_job.id, error
+                ),
+                "PROJECT_IMPORT_REVIEW_RESTORE_DRAFT_PERSIST_FAILED",
+            )
+        })?;
+
+    let restored_job = state.imports.get_job(restore_job.id).ok_or_else(|| {
+        internal_error_response(
+            format!("Restored review draft job {} disappeared", restore_job.id),
+            "PROJECT_IMPORT_REVIEW_RESTORE_JOB_MISSING",
+        )
+    })?;
 
     Ok(Json(build_project_import_response(
         &state,
@@ -7330,6 +7450,249 @@ mod tests {
             .method("POST")
             .uri(format!(
                 "/projects/{}/import-history/{}/restore",
+                project.slug, applied_job.id
+            ))
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(restore_req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::CONFLICT);
+    }
+
+    #[tokio::test]
+    async fn test_restore_project_import_review_draft_reopens_historical_review_pending_job() {
+        let state = test_state();
+        let project =
+            state
+                .projects
+                .create("dev|local", "Imported Repo", None, None, Vec::new(), None);
+        let (_initial_job, _) = state
+            .imports
+            .create(
+                project.id,
+                ImportProvider::GitHub,
+                "https://github.com/example/imported-repo".into(),
+                "https://github.com/example/imported-repo".into(),
+                true,
+            )
+            .unwrap();
+        state
+            .imports
+            .update_binding_source_metadata(
+                project.id,
+                Some("main".into()),
+                Some("deadbeef".into()),
+                format!("/tmp/imports/{}", project.slug),
+            )
+            .unwrap();
+
+        let seeded_session = state.sessions.create("dev|local");
+        let (historical_job, _) = state.imports.create_reimport_job(project.id).unwrap();
+        let historical_draft = state
+            .imports
+            .save_draft(ProjectImportDraft {
+                job_id: historical_job.id,
+                project_id: project.id,
+                analysis_summary: "Historical review draft.".into(),
+                source_metadata: crate::import::ImportDraftSourceMetadata {
+                    provider: ImportProvider::GitHub,
+                    canonical_ref: "https://github.com/example/imported-repo".into(),
+                    local_root: format!("/tmp/imports/{}", project.slug),
+                    default_branch: Some("main".into()),
+                    head_revision: Some("cafebabe".into()),
+                },
+                discovered_nodes: vec![serde_json::from_value(sample_component_json()).unwrap()],
+                created_at: chrono::Utc::now().to_rfc3339(),
+                updated_at: chrono::Utc::now().to_rfc3339(),
+            })
+            .unwrap();
+        let historical_job = state
+            .imports
+            .mark_job_review_pending(
+                historical_job.id,
+                "Import draft ready. Review imported context in the seeded session.",
+                historical_draft.analysis_summary.clone(),
+                seeded_session.id,
+            )
+            .unwrap();
+
+        let (latest_applied_job, _) = state.imports.create_reimport_job(project.id).unwrap();
+        let latest_applied_job = state
+            .imports
+            .mark_job_applied(
+                latest_applied_job.id,
+                "Import draft applied and reconciled against the canonical project blueprint.",
+                None,
+            )
+            .unwrap();
+
+        let counts_before = state.blueprints.counts();
+        let app = routes(state.clone());
+        let restore_req = Request::builder()
+            .method("POST")
+            .uri(format!(
+                "/projects/{}/import-history/{}/restore-review-draft",
+                project.slug, historical_job.id
+            ))
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(restore_req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let payload: ProjectImportResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(
+            payload.import_job.status,
+            crate::import::ImportStatus::ReviewPending
+        );
+        assert_eq!(
+            payload.import_job.restored_from_job_id,
+            Some(historical_job.id)
+        );
+        assert_eq!(
+            payload.import_job.seed_session_id,
+            historical_job.seed_session_id
+        );
+        assert_eq!(
+            payload
+                .import_draft
+                .as_ref()
+                .map(|draft| draft.analysis_summary.as_str()),
+            Some("Historical review draft.")
+        );
+        assert_eq!(state.blueprints.counts(), counts_before);
+        assert_eq!(
+            state
+                .imports
+                .latest_job_for_project(project.id)
+                .map(|job| job.id),
+            Some(payload.import_job.id)
+        );
+        assert_eq!(
+            state
+                .imports
+                .latest_review_job_for_project(project.id)
+                .map(|job| job.id),
+            Some(payload.import_job.id)
+        );
+        assert_eq!(
+            state
+                .imports
+                .get_job(latest_applied_job.id)
+                .map(|job| job.status),
+            Some(crate::import::ImportStatus::Applied)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_restore_project_import_review_draft_is_blocked_by_current_pending_review() {
+        let state = test_state();
+        let project =
+            state
+                .projects
+                .create("dev|local", "Imported Repo", None, None, Vec::new(), None);
+        let (_initial_job, _) = state
+            .imports
+            .create(
+                project.id,
+                ImportProvider::GitHub,
+                "https://github.com/example/imported-repo".into(),
+                "https://github.com/example/imported-repo".into(),
+                true,
+            )
+            .unwrap();
+
+        let seeded_session = state.sessions.create("dev|local");
+        let (historical_job, _) = state.imports.create_reimport_job(project.id).unwrap();
+        let historical_draft = state
+            .imports
+            .save_draft(ProjectImportDraft {
+                job_id: historical_job.id,
+                project_id: project.id,
+                analysis_summary: "Historical review draft.".into(),
+                source_metadata: crate::import::ImportDraftSourceMetadata {
+                    provider: ImportProvider::GitHub,
+                    canonical_ref: "https://github.com/example/imported-repo".into(),
+                    local_root: format!("/tmp/imports/{}", project.slug),
+                    default_branch: Some("main".into()),
+                    head_revision: Some("cafebabe".into()),
+                },
+                discovered_nodes: vec![serde_json::from_value(sample_component_json()).unwrap()],
+                created_at: chrono::Utc::now().to_rfc3339(),
+                updated_at: chrono::Utc::now().to_rfc3339(),
+            })
+            .unwrap();
+        state
+            .imports
+            .mark_job_review_pending(
+                historical_job.id,
+                "Import draft ready. Review imported context in the seeded session.",
+                historical_draft.analysis_summary.clone(),
+                seeded_session.id,
+            )
+            .unwrap();
+
+        let current_seeded_session = state.sessions.create("dev|local");
+        let (current_job, _) = state.imports.create_reimport_job(project.id).unwrap();
+        let current_draft = state
+            .imports
+            .save_draft(ProjectImportDraft {
+                job_id: current_job.id,
+                project_id: project.id,
+                analysis_summary: "Current review draft.".into(),
+                source_metadata: crate::import::ImportDraftSourceMetadata {
+                    provider: ImportProvider::GitHub,
+                    canonical_ref: "https://github.com/example/imported-repo".into(),
+                    local_root: format!("/tmp/imports/{}", project.slug),
+                    default_branch: Some("main".into()),
+                    head_revision: Some("feedface".into()),
+                },
+                discovered_nodes: vec![serde_json::from_value(sample_component_json()).unwrap()],
+                created_at: chrono::Utc::now().to_rfc3339(),
+                updated_at: chrono::Utc::now().to_rfc3339(),
+            })
+            .unwrap();
+        state
+            .imports
+            .mark_job_review_pending(
+                current_job.id,
+                "Import draft ready. Review imported context in the seeded session.",
+                current_draft.analysis_summary.clone(),
+                current_seeded_session.id,
+            )
+            .unwrap();
+
+        let app = routes(state.clone());
+        let restore_req = Request::builder()
+            .method("POST")
+            .uri(format!(
+                "/projects/{}/import-history/{}/restore-review-draft",
+                project.slug, historical_job.id
+            ))
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(restore_req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::CONFLICT);
+    }
+
+    #[tokio::test]
+    async fn test_restore_project_import_review_draft_rejects_applied_job_target() {
+        let state = test_state();
+        let (project, applied_job, _draft) = seed_review_pending_import(&state, "Imported Repo");
+        let app = routes(state.clone());
+
+        let apply_req = Request::builder()
+            .method("POST")
+            .uri(format!("/projects/{}/import-review", project.slug))
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.clone().oneshot(apply_req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let restore_req = Request::builder()
+            .method("POST")
+            .uri(format!(
+                "/projects/{}/import-history/{}/restore-review-draft",
                 project.slug, applied_job.id
             ))
             .body(Body::empty())
