@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { NavLink, useNavigate, useParams } from 'react-router-dom';
 import Layout from '../components/Layout.tsx';
-import { createApiClient } from '../api/client.ts';
+import { ApiError, createApiClient } from '../api/client.ts';
 import { useGetAccessToken } from '../auth/useAuthenticatedFetch.ts';
-import type { Project, SessionSummary } from '../types.ts';
+import type {
+  Project,
+  ProjectImportHistoryResponse,
+  ProjectImportResponse,
+  SessionSummary,
+} from '../types.ts';
 
 function formatRelativeTime(iso: string): string {
   const parsed = new Date(iso);
@@ -40,6 +45,15 @@ function phaseLabel(phase: SessionSummary['intake_phase']): string {
   return phase;
 }
 
+function importStatusLabel(status: string): string {
+  switch (status) {
+    case 'review_pending':
+      return 'review pending';
+    default:
+      return status.replace(/_/g, ' ');
+  }
+}
+
 export default function ProjectSessionsPage() {
   const navigate = useNavigate();
   const params = useParams<{ projectSlug: string }>();
@@ -50,38 +64,134 @@ export default function ProjectSessionsPage() {
 
   const [project, setProject] = useState<Project | null>(null);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [importState, setImportState] = useState<ProjectImportResponse | null>(null);
+  const [importReview, setImportReview] = useState<ProjectImportResponse | null>(null);
+  const [importHistory, setImportHistory] = useState<ProjectImportHistoryResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [applyPending, setApplyPending] = useState(false);
+  const [applyError, setApplyError] = useState<string | null>(null);
+  const [reimportPending, setReimportPending] = useState(false);
+  const [reimportError, setReimportError] = useState<string | null>(null);
+
+  const loadImportHistory = useCallback(async () => {
+    if (!projectSlug) return null;
+    try {
+      return await api.getProjectImportHistory(projectSlug);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) {
+        return null;
+      }
+      throw err;
+    }
+  }, [api, projectSlug]);
 
   const loadData = useCallback(async () => {
     if (!projectSlug) {
       setError('Missing project slug.');
+      setLoading(false);
       return;
     }
 
     setLoading(true);
     setError(null);
     try {
-      const [projectResponse, sessionsResponse] = await Promise.all([
+      const [
+        projectResponse,
+        sessionsResponse,
+        importStateResponse,
+        importReviewResponse,
+        importHistoryResponse,
+      ] = await Promise.all([
         api.getProject(projectSlug),
         api.listProjectSessions(projectSlug),
+        api.getProjectImportState(projectSlug).catch((err: unknown) => {
+          if (err instanceof ApiError && err.status === 404) {
+            return null;
+          }
+          throw err;
+        }),
+        api.getProjectImportReview(projectSlug).catch((err: unknown) => {
+          if (err instanceof ApiError && err.status === 404) {
+            return null;
+          }
+          throw err;
+        }),
+        loadImportHistory(),
       ]);
       setProject(projectResponse.project);
       setSessions([...sessionsResponse.sessions].sort((left, right) => (
         new Date(right.last_activity_at).getTime() - new Date(left.last_activity_at).getTime()
       )));
+      setImportState(importStateResponse);
+      setImportReview(importReviewResponse);
+      setImportHistory(importHistoryResponse);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
-  }, [api, projectSlug]);
+  }, [api, loadImportHistory, projectSlug]);
 
   useEffect(() => {
     void loadData();
   }, [loadData]);
 
+  useEffect(() => {
+    if (!importState) return undefined;
+    if (
+      importState.import_job.status === 'review_pending'
+      || importState.import_job.status === 'applied'
+      || importState.import_job.status === 'failed'
+    ) {
+      return undefined;
+    }
+
+    let cancelled = false;
+    let timer: number | undefined;
+
+    const refresh = async () => {
+      try {
+        const response = await api.getProjectImportState(projectSlug);
+        if (cancelled) return;
+        setImportState(response);
+        if (response.import_job.status === 'review_pending' || response.import_job.status === 'applied') {
+          setImportReview(response);
+        }
+        if (
+          response.import_job.status === 'review_pending'
+          || response.import_job.status === 'applied'
+          || response.import_job.status === 'failed'
+        ) {
+          const historyResponse = await loadImportHistory();
+          if (!cancelled) {
+            setImportHistory(historyResponse);
+          }
+        }
+        if (
+          response.import_job.status === 'queued'
+          || response.import_job.status === 'cloning'
+          || response.import_job.status === 'analyzing'
+        ) {
+          timer = window.setTimeout(refresh, 400);
+        }
+      } catch (err) {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    };
+
+    timer = window.setTimeout(refresh, 0);
+    return () => {
+      cancelled = true;
+      if (timer) {
+        window.clearTimeout(timer);
+      }
+    };
+  }, [api, importState, loadImportHistory, projectSlug]);
+
   const projectPath = `/projects/${encodeURIComponent(projectSlug)}`;
+  const blueprintPath = `${projectPath}/blueprint`;
 
   const tabs = [
     { label: 'Sessions', to: `${projectPath}/sessions` },
@@ -89,6 +199,68 @@ export default function ProjectSessionsPage() {
     { label: 'Knowledge', to: `${projectPath}/knowledge` },
     { label: 'Events', to: `${projectPath}/events` },
   ];
+
+  const handleApplyImportDraft = useCallback(async () => {
+    if (!projectSlug) return;
+    setApplyPending(true);
+    setApplyError(null);
+    try {
+      const response = await api.applyProjectImportReview(projectSlug);
+      setImportState(response);
+      setImportReview(response);
+      setImportHistory(await loadImportHistory());
+    } catch (err) {
+      setApplyError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setApplyPending(false);
+    }
+  }, [api, loadImportHistory, projectSlug]);
+
+  const handleReimport = useCallback(async () => {
+    if (!projectSlug) return;
+    setReimportPending(true);
+    setReimportError(null);
+    try {
+      const response = await api.reimportProject(projectSlug);
+      setImportState(response);
+      setImportHistory(await loadImportHistory());
+    } catch (err) {
+      setReimportError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setReimportPending(false);
+    }
+  }, [api, loadImportHistory, projectSlug]);
+
+  const importDraftCount = importReview?.import_draft?.discovered_nodes.length ?? 0;
+  const importSource = importReview?.import_draft?.source_metadata ?? null;
+  const importStatus = importReview?.import_job.status ?? null;
+  const importHeadline = importStatus === 'applied'
+    ? 'Import draft applied and reconciled to canonical blueprint'
+    : 'Import draft ready for project review';
+  const importDetails = importReview?.import_job.analysis_summary
+    ?? importReview?.import_job.progress_message
+    ?? null;
+  const importReviewNote = importStatus === 'review_pending'
+    ? 'Applying this draft will reconcile import-owned project blueprint state with the latest import result.'
+    : null;
+  const importStateStatus = importState?.import_job.status ?? null;
+  const importStateSource = importState?.source_binding ?? null;
+  const importStateHeadline = importStateStatus === 'failed'
+    ? 'Latest import attempt failed'
+    : importStateStatus === 'review_pending'
+      ? 'Latest import draft is ready for review'
+      : importStateStatus === 'applied'
+        ? 'Latest import draft was applied'
+        : 'Imported source is attached to this project';
+  const importStateDetails = importState?.import_job.analysis_summary
+    ?? importState?.import_job.progress_message
+    ?? importState?.import_job.error_message
+    ?? null;
+  const importStateBusy = importStateStatus === 'queued'
+    || importStateStatus === 'cloning'
+    || importStateStatus === 'analyzing';
+  const importHistoryEntries = importHistory?.history ?? [];
+  const importDiffSummary = importHistory?.diff_summary ?? null;
 
   return (
     <Layout>
@@ -160,6 +332,294 @@ export default function ProjectSessionsPage() {
           <div style={{ color: 'var(--color-error)', fontSize: '13px' }}>
             Failed to load project sessions: {error}
           </div>
+        )}
+
+        {!loading && !error && importReview && (
+          <>
+            {importState && (
+              <section
+                style={{
+                  border: '1px solid var(--color-border)',
+                  borderRadius: '10px',
+                  background: 'var(--color-surface)',
+                  padding: '16px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '10px',
+                }}
+              >
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <span style={{ color: 'var(--color-text)', fontWeight: 700 }}>{importStateHeadline}</span>
+                  {importStateDetails && (
+                    <span style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>
+                      {importStateDetails}
+                    </span>
+                  )}
+                </div>
+
+                {importStateSource && (
+                  <div style={{ color: 'var(--color-text-muted)', fontSize: '12px', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                    <span>{importStateSource.provider.toUpperCase()} source: {importStateSource.canonical_ref}</span>
+                    {importStateSource.default_branch && <span>Branch: {importStateSource.default_branch}</span>}
+                    {importStateSource.head_revision && <span>Revision: {importStateSource.head_revision.slice(0, 8)}</span>}
+                  </div>
+                )}
+
+                {reimportError && (
+                  <div style={{ color: 'var(--color-error)', fontSize: '12px' }}>
+                    Failed to re-import project: {reimportError}
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <button
+                    className="btn btn-outline"
+                    onClick={() => { void handleReimport(); }}
+                    disabled={reimportPending || importStateBusy}
+                  >
+                    {reimportPending || importStateBusy ? 'Re-importing…' : 'Re-import'}
+                  </button>
+                  {importState.import_job.seed_session_id && (
+                    <button
+                      className="btn btn-outline"
+                      onClick={() => { void navigate(`/session/${encodeURIComponent(importState.import_job.seed_session_id!)}`); }}
+                    >
+                      Open Latest Seeded Session
+                    </button>
+                  )}
+                </div>
+              </section>
+            )}
+
+          <section
+            style={{
+              border: '1px solid var(--color-border)',
+              borderRadius: '10px',
+              background: 'var(--color-surface)',
+              padding: '16px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '10px',
+            }}
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <span style={{ color: 'var(--color-text)', fontWeight: 700 }}>{importHeadline}</span>
+              {importDetails && (
+                <span style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>
+                  {importDetails}
+                </span>
+              )}
+              {importReviewNote && (
+                <span style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>
+                  {importReviewNote}
+                </span>
+              )}
+            </div>
+
+            {importSource && (
+              <div style={{ color: 'var(--color-text-muted)', fontSize: '12px', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                <span>{importSource.provider.toUpperCase()} source: {importSource.canonical_ref}</span>
+                {importSource.default_branch && <span>Branch: {importSource.default_branch}</span>}
+                {importSource.head_revision && <span>Revision: {importSource.head_revision.slice(0, 8)}</span>}
+                <span>Draft records: {importDraftCount}</span>
+              </div>
+            )}
+
+            {applyError && (
+              <div style={{ color: 'var(--color-error)', fontSize: '12px' }}>
+                Failed to apply import draft: {applyError}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              {importReview.import_job.seed_session_id && (
+                <button
+                  className="btn btn-outline"
+                  onClick={() => { void navigate(`/session/${encodeURIComponent(importReview.import_job.seed_session_id!)}`); }}
+                >
+                  Open Seeded Session
+                </button>
+              )}
+              {importStatus === 'review_pending' && (
+                <button
+                  className="btn btn-primary"
+                  onClick={() => { void handleApplyImportDraft(); }}
+                  disabled={applyPending}
+                >
+                  {applyPending ? 'Applying Import Draft…' : 'Apply Import Draft'}
+                </button>
+              )}
+              {importStatus === 'applied' && (
+                <button
+                  className="btn btn-primary"
+                  onClick={() => { void navigate(blueprintPath); }}
+                >
+                  Open Blueprint
+                </button>
+              )}
+            </div>
+          </section>
+          </>
+        )}
+
+        {!loading && !error && !importReview && importState && (
+          <section
+            style={{
+              border: '1px solid var(--color-border)',
+              borderRadius: '10px',
+              background: 'var(--color-surface)',
+              padding: '16px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '10px',
+            }}
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <span style={{ color: 'var(--color-text)', fontWeight: 700 }}>{importStateHeadline}</span>
+              {importStateDetails && (
+                <span style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>
+                  {importStateDetails}
+                </span>
+              )}
+            </div>
+
+            {importStateSource && (
+              <div style={{ color: 'var(--color-text-muted)', fontSize: '12px', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                <span>{importStateSource.provider.toUpperCase()} source: {importStateSource.canonical_ref}</span>
+                {importStateSource.default_branch && <span>Branch: {importStateSource.default_branch}</span>}
+                {importStateSource.head_revision && <span>Revision: {importStateSource.head_revision.slice(0, 8)}</span>}
+              </div>
+            )}
+
+            {reimportError && (
+              <div style={{ color: 'var(--color-error)', fontSize: '12px' }}>
+                Failed to re-import project: {reimportError}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <button
+                className="btn btn-outline"
+                onClick={() => { void handleReimport(); }}
+                disabled={reimportPending || importStateBusy}
+              >
+                {reimportPending || importStateBusy ? 'Re-importing…' : 'Re-import'}
+              </button>
+              {importState.import_job.seed_session_id && (
+                <button
+                  className="btn btn-outline"
+                  onClick={() => { void navigate(`/session/${encodeURIComponent(importState.import_job.seed_session_id!)}`); }}
+                >
+                  Open Latest Seeded Session
+                </button>
+              )}
+            </div>
+          </section>
+        )}
+
+        {!loading && !error && importHistory && importHistoryEntries.length > 0 && (
+          <section
+            style={{
+              border: '1px solid var(--color-border)',
+              borderRadius: '10px',
+              background: 'var(--color-surface)',
+              padding: '16px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '12px',
+            }}
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <span style={{ color: 'var(--color-text)', fontWeight: 700 }}>Import History</span>
+              <span style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>
+                Recent project-scoped import attempts for this source binding.
+              </span>
+            </div>
+
+            {importDiffSummary && (
+              <div
+                style={{
+                  border: '1px solid var(--color-border)',
+                  borderRadius: '8px',
+                  padding: '12px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '6px',
+                }}
+              >
+                <span style={{ color: 'var(--color-text)', fontWeight: 600 }}>
+                  Changes Since Last Applied Import
+                </span>
+                <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>
+                  {importDiffSummary.added_nodes.length} added, {importDiffSummary.removed_nodes.length} removed
+                </span>
+                <div style={{ color: 'var(--color-text-muted)', fontSize: '12px', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                  {importDiffSummary.current_head_revision && (
+                    <span>Current revision: {importDiffSummary.current_head_revision.slice(0, 8)}</span>
+                  )}
+                  {importDiffSummary.compared_head_revision && (
+                    <span>Previous revision: {importDiffSummary.compared_head_revision.slice(0, 8)}</span>
+                  )}
+                </div>
+                {importDiffSummary.added_node_types.length > 0 && (
+                  <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>
+                    Added types: {importDiffSummary.added_node_types.map((entry) => `${entry.node_type} (${entry.count})`).join(', ')}
+                  </span>
+                )}
+                {importDiffSummary.removed_node_types.length > 0 && (
+                  <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>
+                    Removed types: {importDiffSummary.removed_node_types.map((entry) => `${entry.node_type} (${entry.count})`).join(', ')}
+                  </span>
+                )}
+                {importDiffSummary.added_nodes.length > 0 && (
+                  <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>
+                    Added nodes: {importDiffSummary.added_nodes.map((node) => node.node_name).join(', ')}
+                  </span>
+                )}
+                {importDiffSummary.removed_nodes.length > 0 && (
+                  <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>
+                    Removed nodes: {importDiffSummary.removed_nodes.map((node) => node.node_name).join(', ')}
+                  </span>
+                )}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {importHistoryEntries.map((entry) => (
+                <article
+                  key={entry.import_job.id}
+                  style={{
+                    border: '1px solid var(--color-border)',
+                    borderRadius: '8px',
+                    padding: '12px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '6px',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+                    <span style={{ color: 'var(--color-text)', fontWeight: 600 }}>
+                      {entry.import_job.provider.toUpperCase()} · {importStatusLabel(entry.import_job.status)}
+                    </span>
+                    <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>
+                      {formatRelativeTime(entry.import_job.updated_at)}
+                    </span>
+                  </div>
+                  <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>
+                    Source: {entry.import_job.requested_ref}
+                  </span>
+                  <div style={{ color: 'var(--color-text-muted)', fontSize: '12px', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                    {entry.source_metadata?.head_revision && (
+                      <span>Revision: {entry.source_metadata.head_revision.slice(0, 8)}</span>
+                    )}
+                    {entry.discovered_node_count !== null && entry.discovered_node_count !== undefined && (
+                      <span>Draft nodes: {entry.discovered_node_count}</span>
+                    )}
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
         )}
 
         {!loading && !error && sessions.length === 0 && (

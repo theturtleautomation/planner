@@ -1410,7 +1410,7 @@ mod tests {
                 }),
                 lifecycle: NodeLifecycle::Active,
                 override_scope: None,
-            scope_review: None,
+                scope_review: None,
             },
             created_at: "2026-03-01T00:00:00Z".into(),
             updated_at: "2026-03-02T00:00:00Z".into(),
@@ -1449,10 +1449,7 @@ mod tests {
         let summary = NodeSummary::from(&node);
         assert_eq!(summary.lifecycle, NodeLifecycle::Active);
         assert_eq!(summary.override_source_id, None);
-        assert_eq!(
-            summary.tags,
-            vec!["archived", "overrides:shared-guidance"]
-        );
+        assert_eq!(summary.tags, vec!["archived", "overrides:shared-guidance"]);
     }
 
     #[test]
@@ -1518,7 +1515,7 @@ mod tests {
                 shared: None,
                 lifecycle: NodeLifecycle::Active,
                 override_scope: None,
-            scope_review: None,
+                scope_review: None,
             },
             created_at: "2026-03-01T00:00:00Z".into(),
             updated_at: "2026-03-01T00:00:00Z".into(),

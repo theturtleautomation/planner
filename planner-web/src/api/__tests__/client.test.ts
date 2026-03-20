@@ -86,6 +86,117 @@ describe('createApiClient', () => {
     );
   });
 
+  it('createProjectImport sends provider and source_ref payload', async () => {
+    fetchSpy.mockResolvedValue(makeFetchResponse({
+      project: { id: 'p1' },
+      import_job: { id: 'job-1' },
+      source_binding: { project_id: 'p1' },
+    }));
+    const api = createApiClient(mockGetToken);
+    await api.createProjectImport({
+      provider: 'github',
+      sourceRef: 'https://github.com/example/repo',
+    });
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/projects/imports',
+      expect.objectContaining({ method: 'POST' }),
+    );
+    const callArgs = fetchSpy.mock.calls[0][1] as RequestInit;
+    expect(JSON.parse(callArgs.body as string)).toEqual({
+      provider: 'github',
+      source_ref: 'https://github.com/example/repo',
+    });
+  });
+
+  it('getProjectImport makes GET request to /api/projects/imports/:jobId', async () => {
+    fetchSpy.mockResolvedValue(makeFetchResponse({
+      project: { id: 'p1' },
+      import_job: { id: 'job-1' },
+      source_binding: { project_id: 'p1' },
+    }));
+    const api = createApiClient(mockGetToken);
+    await api.getProjectImport('job-1');
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/projects/imports/job-1',
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    );
+  });
+
+  it('getProjectImportReview makes GET request to /api/projects/:projectRef/import-review', async () => {
+    fetchSpy.mockResolvedValue(makeFetchResponse({
+      project: { id: 'p1' },
+      import_job: { id: 'job-1' },
+      source_binding: { project_id: 'p1' },
+    }));
+    const api = createApiClient(mockGetToken);
+    await api.getProjectImportReview('task-tracker');
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/projects/task-tracker/import-review',
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    );
+  });
+
+  it('getProjectImportState makes GET request to /api/projects/:projectRef/import-state', async () => {
+    fetchSpy.mockResolvedValue(makeFetchResponse({
+      project: { id: 'p1' },
+      import_job: { id: 'job-1' },
+      source_binding: { project_id: 'p1' },
+    }));
+    const api = createApiClient(mockGetToken);
+    await api.getProjectImportState('task-tracker');
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/projects/task-tracker/import-state',
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    );
+  });
+
+  it('getProjectImportHistory makes GET request to /api/projects/:projectRef/import-history', async () => {
+    fetchSpy.mockResolvedValue(makeFetchResponse({
+      project: { id: 'p1' },
+      source_binding: { project_id: 'p1' },
+      history: [],
+      diff_summary: null,
+    }));
+    const api = createApiClient(mockGetToken);
+    await api.getProjectImportHistory('task-tracker');
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/projects/task-tracker/import-history',
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    );
+  });
+
+  it('applyProjectImportReview makes POST request to /api/projects/:projectRef/import-review', async () => {
+    fetchSpy.mockResolvedValue(makeFetchResponse({
+      project: { id: 'p1' },
+      import_job: { id: 'job-1' },
+      source_binding: { project_id: 'p1' },
+    }));
+    const api = createApiClient(mockGetToken);
+    await api.applyProjectImportReview('task-tracker');
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/projects/task-tracker/import-review',
+      expect.objectContaining({ method: 'POST' }),
+    );
+    const callArgs = fetchSpy.mock.calls[0][1] as RequestInit;
+    expect(callArgs.body).toBe('{}');
+  });
+
+  it('reimportProject makes POST request to /api/projects/:projectRef/reimport', async () => {
+    fetchSpy.mockResolvedValue(makeFetchResponse({
+      project: { id: 'p1' },
+      import_job: { id: 'job-2' },
+      source_binding: { project_id: 'p1' },
+    }));
+    const api = createApiClient(mockGetToken);
+    await api.reimportProject('task-tracker');
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/projects/task-tracker/reimport',
+      expect.objectContaining({ method: 'POST' }),
+    );
+    const callArgs = fetchSpy.mock.calls[0][1] as RequestInit;
+    expect(callArgs.body).toBe('{}');
+  });
+
   it('updateProject sends archived true in patch body', async () => {
     fetchSpy.mockResolvedValue(makeFetchResponse({ project: { id: 'p1' } }));
     const api = createApiClient(mockGetToken);
@@ -130,11 +241,27 @@ describe('createApiClient', () => {
       deleted_project_record: true,
       blueprint_events_pruned: 5,
       blueprint_history_snapshots_pruned: 1,
+      deleted_import_jobs: 1,
+      deleted_import_drafts: 1,
+      deleted_import_managed_roots: 1,
     };
     fetchSpy.mockResolvedValue(makeFetchResponse(payload));
     const api = createApiClient(mockGetToken);
     const result = await api.deleteProject('project-a');
     expect(result).toEqual(payload);
+  });
+
+  it('attaches parsed JSON error details to ApiError', async () => {
+    fetchSpy.mockResolvedValue(makeFetchResponse({ code: 'CONFLICT' }, 409));
+    const api = createApiClient(mockGetToken);
+
+    await expect(api.createProjectImport({
+      provider: 'github',
+      sourceRef: 'https://github.com/example/repo',
+    })).rejects.toMatchObject({
+      status: 409,
+      details: { code: 'CONFLICT' },
+    });
   });
 
   it('sendMessage makes POST request with correct payload', async () => {

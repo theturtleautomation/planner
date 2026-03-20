@@ -2,10 +2,12 @@
 
 export class ApiError extends Error {
   status: number;
-  constructor(message: string, status: number) {
+  details?: unknown;
+  constructor(message: string, status: number, details?: unknown) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
+    this.details = details;
   }
 }
 
@@ -359,6 +361,104 @@ export interface DeleteProjectResponse {
   deleted_project_record: boolean;
   blueprint_events_pruned: number;
   blueprint_history_snapshots_pruned: number;
+  deleted_import_jobs: number;
+  deleted_import_drafts: number;
+  deleted_import_managed_roots: number;
+}
+
+export type ImportProvider = 'github' | 'local';
+export type ImportStatus = 'queued' | 'cloning' | 'analyzing' | 'review_pending' | 'applied' | 'failed';
+
+export interface ProjectSourceBinding {
+  project_id: string;
+  provider: ImportProvider;
+  canonical_ref: string;
+  default_branch?: string | null;
+  head_revision?: string | null;
+  local_root?: string | null;
+  managed_checkout: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectImportJob {
+  id: string;
+  project_id: string;
+  provider: ImportProvider;
+  requested_ref: string;
+  status: ImportStatus;
+  seed_session_id?: string | null;
+  analysis_summary?: string | null;
+  progress_message?: string | null;
+  error_message?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ImportDraftSourceMetadata {
+  provider: ImportProvider;
+  canonical_ref: string;
+  local_root: string;
+  default_branch?: string | null;
+  head_revision?: string | null;
+}
+
+export interface ProjectImportDraft {
+  job_id: string;
+  project_id: string;
+  analysis_summary: string;
+  source_metadata: ImportDraftSourceMetadata;
+  discovered_nodes: unknown[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectImportResponse {
+  project: Project;
+  import_job: ProjectImportJob;
+  source_binding: ProjectSourceBinding;
+  import_draft?: ProjectImportDraft | null;
+}
+
+export interface ProjectImportConflictResponse {
+  message: string;
+  project: Project;
+  source_binding: ProjectSourceBinding;
+}
+
+export interface ProjectImportHistoryEntry {
+  import_job: ProjectImportJob;
+  source_metadata?: ImportDraftSourceMetadata | null;
+  discovered_node_count?: number | null;
+}
+
+export interface ProjectImportDiffNodeSummary {
+  node_id: string;
+  node_name: string;
+  node_type: string;
+}
+
+export interface ProjectImportNodeTypeCount {
+  node_type: string;
+  count: number;
+}
+
+export interface ProjectImportDiffSummary {
+  current_job_id: string;
+  compared_to_job_id: string;
+  added_nodes: ProjectImportDiffNodeSummary[];
+  removed_nodes: ProjectImportDiffNodeSummary[];
+  added_node_types: ProjectImportNodeTypeCount[];
+  removed_node_types: ProjectImportNodeTypeCount[];
+  current_head_revision?: string | null;
+  compared_head_revision?: string | null;
+}
+
+export interface ProjectImportHistoryResponse {
+  project: Project;
+  source_binding: ProjectSourceBinding;
+  history: ProjectImportHistoryEntry[];
+  diff_summary?: ProjectImportDiffSummary | null;
 }
 
 export interface SendMessageResponse {

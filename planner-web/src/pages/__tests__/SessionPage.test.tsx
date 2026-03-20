@@ -210,6 +210,27 @@ describe('SessionPage resume behavior', () => {
     expect(params.get('from_label')).toBe('Session');
   });
 
+  it('prefills the planning brief textarea for seeded import sessions', async () => {
+    const session = makeSession({
+      intake_phase: 'waiting',
+      project_description: 'Imported planning brief for Task Tracker.\n\nRepository brief: Track work across teams.',
+      project_id: 'proj-task-tracker',
+      project_slug: 'task-tracker',
+      project_name: 'Task Tracker',
+    });
+    mockGetSession.mockResolvedValue({ session });
+
+    renderSessionPage('/session/abc');
+
+    await waitFor(() => {
+      expect(mockGetSession).toHaveBeenCalledWith('abc');
+    });
+
+    expect(screen.getByRole('textbox', { name: 'Planning brief' })).toHaveValue(
+      'Imported planning brief for Task Tracker.\n\nRepository brief: Track work across teams.',
+    );
+  });
+
   it('attaches for detached interviewing sessions when a live runtime is available', async () => {
     const session = makeSession({
       intake_phase: 'interviewing',

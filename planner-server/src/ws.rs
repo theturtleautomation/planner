@@ -324,6 +324,9 @@ mod tests {
             blueprints: planner_core::blueprint::BlueprintStore::new(),
             proposals: planner_core::discovery::ProposalStore::new(),
             projects: crate::project::ProjectStore::new(),
+            imports: crate::import::ProjectImportStore::new(),
+            import_acquirer: crate::import::default_import_acquirer(),
+            import_analyzer: crate::import::default_import_analyzer(),
         })
     }
 

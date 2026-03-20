@@ -58,6 +58,9 @@ fn test_state_with_router_and_lease(router: LlmRouter, lease: Duration) -> Arc<A
         blueprints: planner_core::blueprint::BlueprintStore::new(),
         proposals: planner_core::discovery::ProposalStore::new(),
         projects: planner_server::project::ProjectStore::new(),
+        imports: planner_server::import::ProjectImportStore::new(),
+        import_acquirer: planner_server::import::default_import_acquirer(),
+        import_analyzer: planner_server::import::default_import_analyzer(),
     })
 }
 
@@ -1873,6 +1876,9 @@ async fn tier2_delete_project_removes_event_files() {
         blueprints: planner_core::blueprint::BlueprintStore::new(),
         proposals: planner_core::discovery::ProposalStore::new(),
         projects: planner_server::project::ProjectStore::new(),
+        imports: planner_server::import::ProjectImportStore::new(),
+        import_acquirer: planner_server::import::default_import_acquirer(),
+        import_analyzer: planner_server::import::default_import_analyzer(),
     });
 
     let project = state.projects.create(
@@ -1931,6 +1937,9 @@ async fn tier2_delete_project_removes_cxdb_data() {
         blueprints: planner_core::blueprint::BlueprintStore::new(),
         proposals: planner_core::discovery::ProposalStore::new(),
         projects: planner_server::project::ProjectStore::new(),
+        imports: planner_server::import::ProjectImportStore::new(),
+        import_acquirer: planner_server::import::default_import_acquirer(),
+        import_analyzer: planner_server::import::default_import_analyzer(),
     });
 
     let project = state
@@ -2021,7 +2030,7 @@ async fn tier2_delete_project_local_and_shared_blueprint_behavior() {
                 shared: None,
                 lifecycle: NodeLifecycle::Active,
                 override_scope: None,
-            scope_review: None,
+                scope_review: None,
             },
             created_at: "2026-03-08T00:00:00Z".into(),
             updated_at: "2026-03-08T00:00:00Z".into(),
@@ -2054,7 +2063,7 @@ async fn tier2_delete_project_local_and_shared_blueprint_behavior() {
                 }),
                 lifecycle: NodeLifecycle::Active,
                 override_scope: None,
-            scope_review: None,
+                scope_review: None,
             },
             created_at: "2026-03-08T00:00:00Z".into(),
             updated_at: "2026-03-08T00:00:00Z".into(),

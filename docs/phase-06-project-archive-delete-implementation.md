@@ -1,17 +1,23 @@
 # Phase 06 Project Archive And Delete Implementation
 
-**Status:** Implemented — focused validation green; manual regression/signoff still pending  
+**Status:** Implemented and validated; residual manual regression remains release signoff work  
 **Date:** 2026-03-08
 
-> Update (2026-03-18): The Phase 06 lifecycle work is now implemented in code
-> across server, core, and web. Focused validation passed via:
+> Update (2026-03-18): The Phase 06 lifecycle work is implemented in code
+> across server, core, and web. Focused automated validation passed via:
 > `cargo test -p planner-server archive_project -- --nocapture`,
 > `cargo test -p planner-server delete_project -- --nocapture`,
 > `cargo test -p planner-core purge_project -- --nocapture`, and
 > `npm --prefix planner-web test -- --run src/api/__tests__/client.test.ts src/pages/__tests__/ProjectsPage.test.tsx`.
-> The phased plan below is retained as the implementation record; use
-> `phase-06f-project-lifecycle-hardening-execution-checklist.md` for the
-> current closure status and any remaining manual regression notes.
+> The phased plan below is retained as the implementation record. Use
+> `phase-06f-project-lifecycle-hardening-execution-checklist.md` for current
+> release-signoff notes and any remaining manual regression points.
+>
+> Update (2026-03-20): import-owned delete cleanup now rides on the same
+> project delete contract through
+> `planner-server/src/api.rs` and `planner-server/src/import.rs`. Project
+> delete now purges import jobs, import drafts, and managed GitHub checkout
+> directories while preserving external local roots.
 
 ## Objective
 

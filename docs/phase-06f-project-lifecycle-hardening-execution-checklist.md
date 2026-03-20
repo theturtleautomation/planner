@@ -1,6 +1,6 @@
 # Phase 6F Project Lifecycle Hardening Execution Checklist
 
-**Status:** Implemented — focused validation green; manual regression/signoff pending  
+**Status:** Implemented and hardened; focused validation green; residual manual regression remains release signoff work  
 **Date:** 2026-03-08
 
 ## Objective
@@ -74,7 +74,17 @@ Focused validation passed:
 - `cargo test -p planner-core purge_project -- --nocapture`
 - `npm --prefix planner-web test -- --run src/api/__tests__/client.test.ts src/pages/__tests__/ProjectsPage.test.tsx`
 
+Follow-on validation update (2026-03-20):
+
+- project delete coverage now also verifies import-owned cleanup for import
+  jobs, import drafts, and managed GitHub checkout directories
+- delete coverage also verifies that external local import roots are preserved
+  during project delete
+
 Residual manual signoff still pending:
+
+These checks are release-confidence verification tasks. They are not open
+implementation gaps in the lifecycle feature itself.
 
 - archive a project manually and confirm it disappears from the default list
 - enable `Show archived` and restore it

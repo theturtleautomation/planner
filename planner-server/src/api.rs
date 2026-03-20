@@ -8,7 +8,7 @@ use axum::{
         Path, Query, State, WebSocketUpgrade,
     },
     http::StatusCode,
-    response::{IntoResponse, Json},
+    response::{IntoResponse, Json, Response},
     routing::{get, post},
     Router,
 };
@@ -18,6 +18,10 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::auth::{auth_middleware, Claims};
+use crate::import::{
+    inspect_local_import_source, ImportAnalysisRequest, ImportDraftSourceMetadata, ImportProvider,
+    ImportStatus, ProjectImportDraft, ProjectImportJob, ProjectSourceBinding,
+};
 use crate::project::Project;
 use crate::session::Session;
 use crate::ws;
@@ -108,6 +112,73 @@ pub struct ListProjectsResponse {
     pub projects: Vec<Project>,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+pub struct CreateProjectImportRequest {
+    pub provider: ImportProvider,
+    pub source_ref: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ProjectImportResponse {
+    pub project: Project,
+    pub import_job: ProjectImportJob,
+    pub source_binding: ProjectSourceBinding,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub import_draft: Option<ProjectImportDraft>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ProjectImportConflictResponse {
+    pub message: String,
+    pub project: Project,
+    pub source_binding: ProjectSourceBinding,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectImportHistoryEntry {
+    pub import_job: ProjectImportJob,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_metadata: Option<ImportDraftSourceMetadata>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub discovered_node_count: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectImportDiffNodeSummary {
+    pub node_id: String,
+    pub node_name: String,
+    pub node_type: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectImportNodeTypeCount {
+    pub node_type: String,
+    pub count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectImportDiffSummary {
+    pub current_job_id: String,
+    pub compared_to_job_id: String,
+    pub added_nodes: Vec<ProjectImportDiffNodeSummary>,
+    pub removed_nodes: Vec<ProjectImportDiffNodeSummary>,
+    pub added_node_types: Vec<ProjectImportNodeTypeCount>,
+    pub removed_node_types: Vec<ProjectImportNodeTypeCount>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_head_revision: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compared_head_revision: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ProjectImportHistoryResponse {
+    pub project: Project,
+    pub source_binding: ProjectSourceBinding,
+    pub history: Vec<ProjectImportHistoryEntry>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diff_summary: Option<ProjectImportDiffSummary>,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DeleteProjectResponse {
     pub project_id: String,
@@ -124,6 +195,12 @@ pub struct DeleteProjectResponse {
     pub blueprint_events_pruned: usize,
     #[serde(default)]
     pub blueprint_history_snapshots_pruned: usize,
+    #[serde(default)]
+    pub deleted_import_jobs: usize,
+    #[serde(default)]
+    pub deleted_import_drafts: usize,
+    #[serde(default)]
+    pub deleted_import_managed_roots: usize,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -596,6 +673,8 @@ pub fn routes(state: Arc<AppState>) -> Router {
 
     let protected = Router::new()
         .route("/models", get(models))
+        .route("/projects/imports", post(create_project_import))
+        .route("/projects/imports/{jobId}", get(get_project_import))
         .route("/projects", get(list_projects).post(create_project))
         .route(
             "/projects/{projectRef}",
@@ -603,6 +682,19 @@ pub fn routes(state: Arc<AppState>) -> Router {
                 .patch(update_project)
                 .delete(delete_project),
         )
+        .route(
+            "/projects/{projectRef}/import-review",
+            get(get_project_import_review).post(apply_project_import_review),
+        )
+        .route(
+            "/projects/{projectRef}/import-state",
+            get(get_project_import_state),
+        )
+        .route(
+            "/projects/{projectRef}/import-history",
+            get(get_project_import_history),
+        )
+        .route("/projects/{projectRef}/reimport", post(reimport_project))
         .route(
             "/projects/{projectRef}/sessions",
             get(list_project_sessions).post(create_project_session),
@@ -644,7 +736,10 @@ pub fn routes(state: Arc<AppState>) -> Router {
         )
         .route("/blueprint/history", get(list_blueprint_history))
         .route("/blueprint/events", get(list_blueprint_events))
-        .route("/blueprint/export-history", get(list_blueprint_export_history))
+        .route(
+            "/blueprint/export-history",
+            get(list_blueprint_export_history),
+        )
         .route("/blueprint/exports", post(record_blueprint_export))
         .route("/blueprint/impact-preview", post(impact_preview))
         .route("/blueprint/reconverge", post(reconverge_blueprint))
@@ -1022,6 +1117,1006 @@ async fn list_projects(
     Json(ListProjectsResponse { projects })
 }
 
+fn normalize_import_source_ref(
+    provider: ImportProvider,
+    raw: &str,
+) -> Result<(String, bool), (StatusCode, Json<ErrorResponse>)> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "source_ref is required".into(),
+                code: Some("IMPORT_SOURCE_REQUIRED".into()),
+            }),
+        ));
+    }
+
+    match provider {
+        ImportProvider::GitHub => {
+            let normalized = trimmed
+                .trim_end_matches('/')
+                .trim_end_matches(".git")
+                .replace("http://github.com/", "https://github.com/");
+            let Some(path) = normalized.strip_prefix("https://github.com/") else {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrorResponse {
+                        error: "GitHub imports require an https://github.com/... URL".into(),
+                        code: Some("INVALID_GITHUB_IMPORT_REF".into()),
+                    }),
+                ));
+            };
+            let segments = path
+                .split('/')
+                .filter(|segment| !segment.trim().is_empty())
+                .collect::<Vec<_>>();
+            if segments.len() != 2 {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrorResponse {
+                        error: "GitHub imports require a repository URL like https://github.com/org/repo".into(),
+                        code: Some("INVALID_GITHUB_IMPORT_REF".into()),
+                    }),
+                ));
+            }
+            let normalized = format!("https://github.com/{}/{}", segments[0], segments[1]);
+            Ok((normalized, true))
+        }
+        ImportProvider::Local => {
+            let path = PathBuf::from(trimmed);
+            if !path.is_absolute() {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrorResponse {
+                        error: "Local imports require an absolute path".into(),
+                        code: Some("INVALID_LOCAL_IMPORT_REF".into()),
+                    }),
+                ));
+            }
+            Ok((path.to_string_lossy().to_string(), false))
+        }
+    }
+}
+
+fn derive_import_project_name(provider: ImportProvider, canonical_ref: &str) -> String {
+    let seed = match provider {
+        ImportProvider::GitHub => canonical_ref
+            .trim_end_matches('/')
+            .rsplit('/')
+            .next()
+            .unwrap_or("Imported Project"),
+        ImportProvider::Local => std::path::Path::new(canonical_ref)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("Imported Project"),
+    };
+    crate::project::derive_project_name(seed.trim_end_matches(".git"))
+}
+
+fn should_start_import_processing(provider: ImportProvider) -> bool {
+    matches!(provider, ImportProvider::GitHub | ImportProvider::Local)
+}
+
+fn build_project_import_response(
+    state: &Arc<AppState>,
+    project: Project,
+    import_job: ProjectImportJob,
+    source_binding: ProjectSourceBinding,
+) -> ProjectImportResponse {
+    let import_draft = state.imports.get_draft(import_job.id);
+    ProjectImportResponse {
+        project,
+        import_job,
+        source_binding,
+        import_draft,
+    }
+}
+
+fn seeded_import_session_description(project_name: &str, analysis_summary: &str) -> String {
+    format!(
+        "Imported planning brief for {}.\n\n{}",
+        project_name, analysis_summary
+    )
+}
+
+fn import_review_not_found_response(project_ref: &str) -> (StatusCode, Json<ErrorResponse>) {
+    (
+        StatusCode::NOT_FOUND,
+        Json(ErrorResponse {
+            error: format!(
+                "No reviewable import draft found for project {}",
+                project_ref
+            ),
+            code: Some("PROJECT_IMPORT_REVIEW_NOT_FOUND".into()),
+        }),
+    )
+}
+
+fn import_state_not_found_response(project_ref: &str) -> (StatusCode, Json<ErrorResponse>) {
+    (
+        StatusCode::NOT_FOUND,
+        Json(ErrorResponse {
+            error: format!("No import state found for project {}", project_ref),
+            code: Some("PROJECT_IMPORT_STATE_NOT_FOUND".into()),
+        }),
+    )
+}
+
+fn import_history_not_found_response(project_ref: &str) -> (StatusCode, Json<ErrorResponse>) {
+    (
+        StatusCode::NOT_FOUND,
+        Json(ErrorResponse {
+            error: format!("No import history found for project {}", project_ref),
+            code: Some("PROJECT_IMPORT_HISTORY_NOT_FOUND".into()),
+        }),
+    )
+}
+
+fn summarize_import_diff_node(
+    node: &planner_schemas::artifacts::blueprint::BlueprintNode,
+) -> ProjectImportDiffNodeSummary {
+    ProjectImportDiffNodeSummary {
+        node_id: node.id().to_string(),
+        node_name: node.name().to_string(),
+        node_type: node.type_name().to_string(),
+    }
+}
+
+fn summarize_node_types(nodes: &[ProjectImportDiffNodeSummary]) -> Vec<ProjectImportNodeTypeCount> {
+    let mut counts = std::collections::BTreeMap::<String, usize>::new();
+    for node in nodes {
+        *counts.entry(node.node_type.clone()).or_default() += 1;
+    }
+    counts
+        .into_iter()
+        .map(|(node_type, count)| ProjectImportNodeTypeCount { node_type, count })
+        .collect()
+}
+
+fn build_import_draft_diff_summary(
+    current_draft: &ProjectImportDraft,
+    compared_draft: &ProjectImportDraft,
+) -> ProjectImportDiffSummary {
+    let compared_nodes = compared_draft
+        .discovered_nodes
+        .iter()
+        .map(|node| (node.id().to_string(), summarize_import_diff_node(node)))
+        .collect::<std::collections::HashMap<_, _>>();
+    let current_nodes = current_draft
+        .discovered_nodes
+        .iter()
+        .map(|node| (node.id().to_string(), summarize_import_diff_node(node)))
+        .collect::<std::collections::HashMap<_, _>>();
+
+    let mut added_nodes = current_nodes
+        .iter()
+        .filter(|(node_id, _)| !compared_nodes.contains_key(*node_id))
+        .map(|(_, summary)| (*summary).clone())
+        .collect::<Vec<_>>();
+    let mut removed_nodes = compared_nodes
+        .iter()
+        .filter(|(node_id, _)| !current_nodes.contains_key(*node_id))
+        .map(|(_, summary)| (*summary).clone())
+        .collect::<Vec<_>>();
+
+    added_nodes.sort_by(|left, right| left.node_name.cmp(&right.node_name));
+    removed_nodes.sort_by(|left, right| left.node_name.cmp(&right.node_name));
+
+    ProjectImportDiffSummary {
+        current_job_id: current_draft.job_id.to_string(),
+        compared_to_job_id: compared_draft.job_id.to_string(),
+        added_node_types: summarize_node_types(&added_nodes),
+        removed_node_types: summarize_node_types(&removed_nodes),
+        added_nodes,
+        removed_nodes,
+        current_head_revision: current_draft.source_metadata.head_revision.clone(),
+        compared_head_revision: compared_draft.source_metadata.head_revision.clone(),
+    }
+}
+
+fn build_project_import_history_response(
+    state: &Arc<AppState>,
+    project: Project,
+    source_binding: ProjectSourceBinding,
+) -> Option<ProjectImportHistoryResponse> {
+    let history = state.imports.history_for_project(project.id);
+    if history.is_empty() {
+        return None;
+    }
+
+    let entries = history
+        .iter()
+        .map(|entry| ProjectImportHistoryEntry {
+            import_job: entry.job.clone(),
+            source_metadata: entry
+                .draft
+                .as_ref()
+                .map(|draft| draft.source_metadata.clone()),
+            discovered_node_count: entry
+                .draft
+                .as_ref()
+                .map(|draft| draft.discovered_nodes.len()),
+        })
+        .collect::<Vec<_>>();
+
+    let latest_pending_draft = history.iter().find_map(|entry| {
+        if matches!(entry.job.status, ImportStatus::ReviewPending) {
+            entry.draft.clone()
+        } else {
+            None
+        }
+    });
+    let latest_applied_draft = history.iter().find_map(|entry| {
+        if matches!(entry.job.status, ImportStatus::Applied) {
+            entry.draft.clone()
+        } else {
+            None
+        }
+    });
+    let diff_summary = match (latest_pending_draft.as_ref(), latest_applied_draft.as_ref()) {
+        (Some(current_draft), Some(compared_draft))
+            if current_draft.job_id != compared_draft.job_id =>
+        {
+            Some(build_import_draft_diff_summary(
+                current_draft,
+                compared_draft,
+            ))
+        }
+        _ => None,
+    };
+
+    Some(ProjectImportHistoryResponse {
+        project,
+        source_binding,
+        history: entries,
+        diff_summary,
+    })
+}
+
+const IMPORT_DRAFT_OWNED_TAG: &str = "import-draft-owned";
+const IMPORT_REVIEW_METADATA_PREFIX: &str = "import-review:";
+
+fn import_project_root_node_id(project_id: &str) -> planner_schemas::artifacts::blueprint::NodeId {
+    let slug = project_id
+        .to_ascii_lowercase()
+        .replace(|c: char| !c.is_ascii_alphanumeric() && c != '-', "-")
+        .trim_matches('-')
+        .to_string();
+    planner_schemas::artifacts::blueprint::NodeId::from_raw(format!("proj-{}", slug))
+}
+
+fn project_blueprint_scope(project: &Project) -> planner_schemas::artifacts::blueprint::NodeScope {
+    planner_schemas::artifacts::blueprint::NodeScope {
+        scope_class: planner_schemas::artifacts::blueprint::ScopeClass::Project,
+        project: Some(planner_schemas::artifacts::blueprint::ProjectScope {
+            project_id: project.id.to_string(),
+            project_name: Some(project.name.clone()),
+        }),
+        secondary: planner_schemas::artifacts::blueprint::SecondaryScopeRefs::default(),
+        is_shared: false,
+        shared: None,
+        lifecycle: planner_schemas::artifacts::blueprint::NodeLifecycle::Active,
+        override_scope: None,
+        scope_review: None,
+    }
+}
+
+fn ensure_project_root_blueprint_node(
+    state: &Arc<AppState>,
+    project: &Project,
+) -> planner_schemas::artifacts::blueprint::NodeId {
+    let root_id = import_project_root_node_id(&project.id.to_string());
+    let now = chrono::Utc::now().to_rfc3339();
+    state.blueprints.upsert_node(
+        planner_schemas::artifacts::blueprint::BlueprintNode::Project(
+            planner_schemas::artifacts::blueprint::Project {
+                id: root_id.clone(),
+                name: project.name.clone(),
+                description: format!("Blueprint root for project {}", project.slug),
+                tags: vec!["project-root".into(), "import-owned".into()],
+                documentation: None,
+                scope: project_blueprint_scope(project),
+                created_at: now.clone(),
+                updated_at: now,
+            },
+        ),
+    );
+    root_id
+}
+
+fn node_tags(node: &planner_schemas::artifacts::blueprint::BlueprintNode) -> &[String] {
+    use planner_schemas::artifacts::blueprint::BlueprintNode;
+    match node {
+        BlueprintNode::Project(n) => &n.tags,
+        BlueprintNode::Decision(n) => &n.tags,
+        BlueprintNode::Technology(n) => &n.tags,
+        BlueprintNode::Component(n) => &n.tags,
+        BlueprintNode::Constraint(n) => &n.tags,
+        BlueprintNode::Pattern(n) => &n.tags,
+        BlueprintNode::QualityRequirement(n) => &n.tags,
+    }
+}
+
+fn node_updated_at_mut(
+    node: &mut planner_schemas::artifacts::blueprint::BlueprintNode,
+) -> &mut String {
+    use planner_schemas::artifacts::blueprint::BlueprintNode;
+    match node {
+        BlueprintNode::Project(n) => &mut n.updated_at,
+        BlueprintNode::Decision(n) => &mut n.updated_at,
+        BlueprintNode::Technology(n) => &mut n.updated_at,
+        BlueprintNode::Component(n) => &mut n.updated_at,
+        BlueprintNode::Constraint(n) => &mut n.updated_at,
+        BlueprintNode::Pattern(n) => &mut n.updated_at,
+        BlueprintNode::QualityRequirement(n) => &mut n.updated_at,
+    }
+}
+
+fn import_review_metadata(job_id: uuid::Uuid) -> String {
+    format!("{IMPORT_REVIEW_METADATA_PREFIX}{job_id}")
+}
+
+fn add_tag_if_missing(tags: &mut Vec<String>, tag: &str) {
+    if !tags
+        .iter()
+        .any(|existing| existing.eq_ignore_ascii_case(tag))
+    {
+        tags.push(tag.to_string());
+    }
+}
+
+fn is_import_review_membership_edge(
+    edge: &planner_schemas::artifacts::blueprint::Edge,
+    root_id: &planner_schemas::artifacts::blueprint::NodeId,
+) -> bool {
+    edge.source == *root_id
+        && matches!(
+            edge.edge_type,
+            planner_schemas::artifacts::blueprint::EdgeType::Contains
+        )
+        && edge
+            .metadata
+            .as_deref()
+            .map(|value| value.starts_with(IMPORT_REVIEW_METADATA_PREFIX))
+            .unwrap_or(false)
+}
+
+fn is_project_local_import_draft_owned_node(
+    node: &planner_schemas::artifacts::blueprint::BlueprintNode,
+    project_id: &str,
+) -> bool {
+    node.scope().is_project_local_to(project_id)
+        && node_tags(node)
+            .iter()
+            .any(|tag| tag.eq_ignore_ascii_case(IMPORT_DRAFT_OWNED_TAG))
+}
+
+fn stamp_import_draft_provenance(
+    node: &mut planner_schemas::artifacts::blueprint::BlueprintNode,
+    job_id: uuid::Uuid,
+) {
+    let tags = node_tags_mut(node);
+    tags.retain(|tag| {
+        !tag.trim()
+            .to_ascii_lowercase()
+            .starts_with(IMPORT_REVIEW_METADATA_PREFIX)
+    });
+    add_tag_if_missing(tags, IMPORT_DRAFT_OWNED_TAG);
+    add_tag_if_missing(tags, &import_review_metadata(job_id));
+}
+
+fn preserve_import_draft_provenance(
+    node: &mut planner_schemas::artifacts::blueprint::BlueprintNode,
+) {
+    let tags = node_tags_mut(node);
+    add_tag_if_missing(tags, IMPORT_DRAFT_OWNED_TAG);
+}
+
+fn promote_import_draft_to_blueprint(
+    state: &Arc<AppState>,
+    project: &Project,
+    draft: &ProjectImportDraft,
+) -> Result<(), String> {
+    use planner_schemas::artifacts::blueprint::{Edge, EdgeType, NodeLifecycle};
+
+    let project_scope = project_blueprint_scope(project);
+    let root_id = ensure_project_root_blueprint_node(state, project);
+    let project_id = project.id.to_string();
+    let current_node_ids = draft
+        .discovered_nodes
+        .iter()
+        .map(|node| node.id().to_string())
+        .collect::<std::collections::HashSet<_>>();
+    let snapshot = state.blueprints.snapshot();
+    let mut prior_import_owned_node_ids = snapshot
+        .edges
+        .iter()
+        .filter(|edge| is_import_review_membership_edge(edge, &root_id))
+        .map(|edge| edge.target.to_string())
+        .collect::<std::collections::HashSet<_>>();
+    prior_import_owned_node_ids.extend(
+        snapshot
+            .nodes
+            .values()
+            .filter(|node| is_project_local_import_draft_owned_node(node, &project_id))
+            .map(|node| node.id().to_string()),
+    );
+    let stale_import_owned_node_ids = prior_import_owned_node_ids
+        .into_iter()
+        .filter(|node_id| !current_node_ids.contains(node_id))
+        .collect::<Vec<_>>();
+    let archived_at = chrono::Utc::now().to_rfc3339();
+
+    for node_id in stale_import_owned_node_ids {
+        state.blueprints.update_node(&node_id, |node| {
+            preserve_import_draft_provenance(node);
+            node_scope_mut(node).lifecycle = NodeLifecycle::Archived;
+            *node_updated_at_mut(node) = archived_at.clone();
+        });
+    }
+
+    state
+        .blueprints
+        .remove_edges_where(|edge| is_import_review_membership_edge(edge, &root_id));
+
+    for draft_node in &draft.discovered_nodes {
+        let mut node = draft_node.clone();
+        *node_scope_mut(&mut node) = project_scope.clone();
+        node_scope_mut(&mut node).lifecycle = NodeLifecycle::Active;
+        stamp_import_draft_provenance(&mut node, draft.job_id);
+        normalize_blueprint_node_metadata(&mut node);
+        validate_blueprint_node_scope(&node)?;
+        state.blueprints.upsert_node(node.clone());
+        state.blueprints.add_edge(Edge {
+            source: root_id.clone(),
+            target: node.id().clone(),
+            edge_type: EdgeType::Contains,
+            metadata: Some(import_review_metadata(draft.job_id)),
+        });
+    }
+
+    state.blueprints.flush().map_err(|error| {
+        format!(
+            "Failed to flush blueprint store after applying import draft {}: {}",
+            draft.job_id, error
+        )
+    })?;
+    Ok(())
+}
+
+fn create_seeded_import_session(
+    state: &Arc<AppState>,
+    project: &Project,
+    user_id: &str,
+    analysis_summary: &str,
+) -> Result<Session, String> {
+    let seeded_description = seeded_import_session_description(&project.name, analysis_summary);
+    let session = state.sessions.create(user_id);
+    state
+        .sessions
+        .update(session.id, |draft| {
+            draft.project_id = Some(project.id);
+            draft.project_slug = Some(project.slug.clone());
+            draft.project_name = Some(project.name.clone());
+            draft.cxdb_project_id = Some(project.id);
+            draft.project_description = Some(seeded_description.clone());
+            draft.ensure_title_from_description();
+        })
+        .ok_or_else(|| format!("failed to update seeded session {}", session.id))
+}
+
+fn validate_local_import_root(local_root: &std::path::Path) -> Result<(), String> {
+    if !local_root.is_absolute() {
+        return Err(format!(
+            "local import root must remain absolute: {}",
+            local_root.display()
+        ));
+    }
+    let metadata = std::fs::metadata(local_root).map_err(|error| {
+        format!(
+            "local import root is unavailable at {}: {}",
+            local_root.display(),
+            error
+        )
+    })?;
+    if !metadata.is_dir() {
+        return Err(format!(
+            "local import root is not a directory: {}",
+            local_root.display()
+        ));
+    }
+    std::fs::read_dir(local_root).map_err(|error| {
+        format!(
+            "local import root is not readable at {}: {}",
+            local_root.display(),
+            error
+        )
+    })?;
+    Ok(())
+}
+
+fn spawn_project_import_processing(state: Arc<AppState>, import_job_id: Uuid) {
+    tokio::spawn(async move {
+        if let Err(error) = run_project_import_processing(state.clone(), import_job_id).await {
+            tracing::warn!(
+                "project import processing failed for {}: {}",
+                import_job_id,
+                error
+            );
+            let _ = state.imports.mark_job_failed(import_job_id, error);
+        }
+    });
+}
+
+async fn run_project_import_processing(
+    state: Arc<AppState>,
+    import_job_id: Uuid,
+) -> Result<(), String> {
+    let import_job = state
+        .imports
+        .get_job(import_job_id)
+        .ok_or_else(|| format!("import job not found: {}", import_job_id))?;
+    let source_binding = state
+        .imports
+        .get_binding(import_job.project_id)
+        .ok_or_else(|| format!("import binding not found for {}", import_job.project_id))?;
+    let project = state
+        .projects
+        .get(import_job.project_id)
+        .ok_or_else(|| format!("project not found for import {}", import_job.project_id))?;
+
+    let (local_root, default_branch, head_revision, analyzing_message) = match import_job.provider {
+        ImportProvider::GitHub => {
+            state
+                .imports
+                .mark_job_cloning(import_job_id, "Cloning default branch into managed storage")
+                .map_err(|err| format!("failed to mark import job cloning: {}", err))?;
+
+            let checkout_path = state
+                .imports
+                .managed_checkout_path(import_job.project_id, import_job.provider);
+            let acquired = match state
+                .import_acquirer
+                .acquire_github(&source_binding.canonical_ref, &checkout_path)
+                .await
+            {
+                Ok(acquired) => acquired,
+                Err(error) => {
+                    if checkout_path.exists() {
+                        let _ = std::fs::remove_dir_all(&checkout_path);
+                    }
+                    return Err(error);
+                }
+            };
+
+            if !checkout_path.exists() {
+                std::fs::create_dir_all(&checkout_path).map_err(|err| {
+                    format!(
+                        "failed to materialize managed checkout {}: {}",
+                        checkout_path.display(),
+                        err
+                    )
+                })?;
+            }
+
+            state
+                .imports
+                .update_binding_source_metadata(
+                    import_job.project_id,
+                    Some(acquired.default_branch.clone()),
+                    Some(acquired.head_revision.clone()),
+                    checkout_path.to_string_lossy().to_string(),
+                )
+                .map_err(|err| format!("failed to persist checkout metadata: {}", err))?;
+
+            (
+                checkout_path,
+                Some(acquired.default_branch),
+                Some(acquired.head_revision),
+                "Analyzing checkout and seeding planning session",
+            )
+        }
+        ImportProvider::Local => {
+            let local_root = PathBuf::from(&source_binding.canonical_ref);
+            validate_local_import_root(&local_root)?;
+            let metadata = inspect_local_import_source(&local_root).await?;
+            state
+                .imports
+                .update_binding_source_metadata(
+                    import_job.project_id,
+                    metadata.default_branch.clone(),
+                    metadata.head_revision.clone(),
+                    local_root.to_string_lossy().to_string(),
+                )
+                .map_err(|err| format!("failed to persist local source metadata: {}", err))?;
+            (
+                local_root,
+                metadata.default_branch,
+                metadata.head_revision,
+                "Analyzing local source and seeding planning session",
+            )
+        }
+    };
+
+    state
+        .imports
+        .mark_job_analyzing(import_job_id, analyzing_message)
+        .map_err(|err| format!("failed to mark import job analyzing: {}", err))?;
+
+    let analysis = state
+        .import_analyzer
+        .analyze(ImportAnalysisRequest {
+            project_id: project.id,
+            project_name: project.name.clone(),
+            provider: import_job.provider,
+            canonical_ref: source_binding.canonical_ref.clone(),
+            local_root: local_root.clone(),
+            default_branch: default_branch.clone(),
+            head_revision: head_revision.clone(),
+        })
+        .await?;
+
+    state
+        .imports
+        .save_draft(crate::import::ProjectImportDraft {
+            job_id: import_job_id,
+            project_id: project.id,
+            analysis_summary: analysis.analysis_summary.clone(),
+            source_metadata: crate::import::ImportDraftSourceMetadata {
+                provider: import_job.provider,
+                canonical_ref: source_binding.canonical_ref.clone(),
+                local_root: local_root.to_string_lossy().to_string(),
+                default_branch: default_branch.clone(),
+                head_revision: head_revision.clone(),
+            },
+            discovered_nodes: analysis.discovered_nodes.clone(),
+            created_at: chrono::Utc::now().to_rfc3339(),
+            updated_at: chrono::Utc::now().to_rfc3339(),
+        })
+        .map_err(|err| format!("failed to persist import draft: {}", err))?;
+
+    let seeded_session = create_seeded_import_session(
+        &state,
+        &project,
+        &project.owner_user_id,
+        &analysis.analysis_summary,
+    )?;
+
+    state
+        .imports
+        .mark_job_review_pending(
+            import_job_id,
+            "Import draft ready. Review imported context in the seeded session.",
+            analysis.analysis_summary,
+            seeded_session.id,
+        )
+        .map_err(|err| format!("failed to mark import job review_pending: {}", err))?;
+    Ok(())
+}
+
+async fn create_project_import(
+    State(state): State<Arc<AppState>>,
+    claims: Claims,
+    Json(req): Json<CreateProjectImportRequest>,
+) -> Result<Response, (StatusCode, Json<ErrorResponse>)> {
+    let (canonical_ref, managed_checkout) =
+        normalize_import_source_ref(req.provider, &req.source_ref)?;
+    if let Some(source_binding) = state
+        .imports
+        .find_binding_by_source(req.provider, &canonical_ref)
+    {
+        let project = state
+            .projects
+            .get(source_binding.project_id)
+            .ok_or_else(|| {
+                internal_error_response(
+                    format!(
+                        "Import binding for {} points to missing project {}",
+                        source_binding.canonical_ref, source_binding.project_id
+                    ),
+                    "PROJECT_IMPORT_BOUND_PROJECT_MISSING",
+                )
+            })?;
+        if project_visible_to_user(&project, &claims) {
+            return Ok((
+                StatusCode::CONFLICT,
+                Json(ProjectImportConflictResponse {
+                    message: format!(
+                        "Source {} is already bound to project {}. Open that project and use re-import instead.",
+                        source_binding.canonical_ref, project.slug
+                    ),
+                    project,
+                    source_binding,
+                }),
+            )
+                .into_response());
+        }
+    }
+
+    let project_name = derive_import_project_name(req.provider, &canonical_ref);
+    let project = state
+        .projects
+        .create(&claims.sub, &project_name, None, None, Vec::new(), None);
+    let (import_job, source_binding) = state
+        .imports
+        .create(
+            project.id,
+            req.provider,
+            req.source_ref.clone(),
+            canonical_ref,
+            managed_checkout,
+        )
+        .map_err(|error| {
+            internal_error_response(
+                format!(
+                    "Failed to persist import records for {}: {}",
+                    project.id, error
+                ),
+                "PROJECT_IMPORT_PERSIST_FAILED",
+            )
+        })?;
+
+    if should_start_import_processing(req.provider) {
+        spawn_project_import_processing(state.clone(), import_job.id);
+    }
+
+    Ok((
+        StatusCode::CREATED,
+        Json(build_project_import_response(
+            &state,
+            project,
+            import_job,
+            source_binding,
+        )),
+    )
+        .into_response())
+}
+
+async fn get_project_import(
+    State(state): State<Arc<AppState>>,
+    claims: Claims,
+    Path(job_id): Path<Uuid>,
+) -> Result<Json<ProjectImportResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let Some(import_job) = state.imports.get_job(job_id) else {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: format!("Import job not found: {}", job_id),
+                code: Some("PROJECT_IMPORT_NOT_FOUND".into()),
+            }),
+        ));
+    };
+
+    let Some(project) = state.projects.get(import_job.project_id) else {
+        return Err(internal_error_response(
+            format!(
+                "Import job {} references missing project {}",
+                import_job.id, import_job.project_id
+            ),
+            "PROJECT_IMPORT_PROJECT_MISSING",
+        ));
+    };
+
+    if !project_visible_to_user(&project, &claims) {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(ErrorResponse {
+                error: "Forbidden".into(),
+                code: Some("FORBIDDEN".into()),
+            }),
+        ));
+    }
+
+    let Some(source_binding) = state.imports.get_binding(project.id) else {
+        return Err(internal_error_response(
+            format!(
+                "Import job {} has no source binding for {}",
+                import_job.id, project.id
+            ),
+            "PROJECT_IMPORT_BINDING_MISSING",
+        ));
+    };
+
+    Ok(Json(build_project_import_response(
+        &state,
+        project,
+        import_job,
+        source_binding,
+    )))
+}
+
+async fn get_project_import_state(
+    State(state): State<Arc<AppState>>,
+    claims: Claims,
+    Path(project_ref): Path<String>,
+) -> Result<Json<ProjectImportResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let project = resolve_project_for_user(&state, &claims, &project_ref)?;
+    let import_job = state
+        .imports
+        .latest_job_for_project(project.id)
+        .ok_or_else(|| import_state_not_found_response(&project_ref))?;
+    let source_binding = state.imports.get_binding(project.id).ok_or_else(|| {
+        internal_error_response(
+            format!(
+                "Latest import job {} has no source binding for {}",
+                import_job.id, project.id
+            ),
+            "PROJECT_IMPORT_BINDING_MISSING",
+        )
+    })?;
+
+    Ok(Json(build_project_import_response(
+        &state,
+        project,
+        import_job,
+        source_binding,
+    )))
+}
+
+async fn get_project_import_history(
+    State(state): State<Arc<AppState>>,
+    claims: Claims,
+    Path(project_ref): Path<String>,
+) -> Result<Json<ProjectImportHistoryResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let project = resolve_project_for_user(&state, &claims, &project_ref)?;
+    let source_binding = state
+        .imports
+        .get_binding(project.id)
+        .ok_or_else(|| import_history_not_found_response(&project_ref))?;
+    let response = build_project_import_history_response(&state, project, source_binding)
+        .ok_or_else(|| import_history_not_found_response(&project_ref))?;
+    Ok(Json(response))
+}
+
+async fn get_project_import_review(
+    State(state): State<Arc<AppState>>,
+    claims: Claims,
+    Path(project_ref): Path<String>,
+) -> Result<Json<ProjectImportResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let project = resolve_project_for_user(&state, &claims, &project_ref)?;
+    let import_job = state
+        .imports
+        .latest_review_job_for_project(project.id)
+        .ok_or_else(|| import_review_not_found_response(&project_ref))?;
+    let source_binding = state.imports.get_binding(project.id).ok_or_else(|| {
+        internal_error_response(
+            format!(
+                "Reviewable import job {} has no source binding for {}",
+                import_job.id, project.id
+            ),
+            "PROJECT_IMPORT_BINDING_MISSING",
+        )
+    })?;
+
+    Ok(Json(build_project_import_response(
+        &state,
+        project,
+        import_job,
+        source_binding,
+    )))
+}
+
+async fn reimport_project(
+    State(state): State<Arc<AppState>>,
+    claims: Claims,
+    Path(project_ref): Path<String>,
+) -> Result<(StatusCode, Json<ProjectImportResponse>), (StatusCode, Json<ErrorResponse>)> {
+    let project = resolve_project_for_user(&state, &claims, &project_ref)?;
+    let (import_job, source_binding) =
+        state
+            .imports
+            .create_reimport_job(project.id)
+            .map_err(|error| {
+                if error.kind() == std::io::ErrorKind::NotFound {
+                    (
+                        StatusCode::NOT_FOUND,
+                        Json(ErrorResponse {
+                            error: format!("No import binding found for project {}", project_ref),
+                            code: Some("PROJECT_IMPORT_BINDING_NOT_FOUND".into()),
+                        }),
+                    )
+                } else {
+                    internal_error_response(
+                        format!(
+                            "Failed to persist re-import records for {}: {}",
+                            project.id, error
+                        ),
+                        "PROJECT_REIMPORT_PERSIST_FAILED",
+                    )
+                }
+            })?;
+
+    if should_start_import_processing(import_job.provider) {
+        spawn_project_import_processing(state.clone(), import_job.id);
+    }
+
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(build_project_import_response(
+            &state,
+            project,
+            import_job,
+            source_binding,
+        )),
+    ))
+}
+
+async fn apply_project_import_review(
+    State(state): State<Arc<AppState>>,
+    claims: Claims,
+    Path(project_ref): Path<String>,
+) -> Result<Json<ProjectImportResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let project = resolve_project_for_user(&state, &claims, &project_ref)?;
+    let import_job = state
+        .imports
+        .latest_review_job_for_project(project.id)
+        .ok_or_else(|| import_review_not_found_response(&project_ref))?;
+    let source_binding = state.imports.get_binding(project.id).ok_or_else(|| {
+        internal_error_response(
+            format!(
+                "Reviewable import job {} has no source binding for {}",
+                import_job.id, project.id
+            ),
+            "PROJECT_IMPORT_BINDING_MISSING",
+        )
+    })?;
+
+    if matches!(import_job.status, ImportStatus::Applied) {
+        return Ok(Json(build_project_import_response(
+            &state,
+            project,
+            import_job,
+            source_binding,
+        )));
+    }
+
+    let draft = state.imports.get_draft(import_job.id).ok_or_else(|| {
+        internal_error_response(
+            format!(
+                "Reviewable import job {} is missing draft payload",
+                import_job.id
+            ),
+            "PROJECT_IMPORT_DRAFT_MISSING",
+        )
+    })?;
+    if draft.project_id != project.id {
+        return Err(internal_error_response(
+            format!(
+                "Import draft {} belongs to {} instead of {}",
+                draft.job_id, draft.project_id, project.id
+            ),
+            "PROJECT_IMPORT_DRAFT_PROJECT_MISMATCH",
+        ));
+    }
+
+    promote_import_draft_to_blueprint(&state, &project, &draft)
+        .map_err(|error| internal_error_response(error, "PROJECT_IMPORT_APPLY_FAILED"))?;
+
+    let import_job = state
+        .imports
+        .mark_job_applied(
+            import_job.id,
+            "Import draft applied and reconciled against the canonical project blueprint.",
+        )
+        .map_err(|error| {
+            internal_error_response(
+                format!(
+                    "Failed to mark import job {} applied: {}",
+                    import_job.id, error
+                ),
+                "PROJECT_IMPORT_APPLY_STATUS_FAILED",
+            )
+        })?;
+
+    Ok(Json(build_project_import_response(
+        &state,
+        project,
+        import_job,
+        source_binding,
+    )))
+}
+
 async fn create_project(
     State(state): State<Arc<AppState>>,
     claims: Claims,
@@ -1229,6 +2324,15 @@ async fn delete_project(
             "PROJECT_DELETE_BLUEPRINT_FLUSH_FAILED",
         )
     })?;
+    let import_cleanup = state.imports.purge_project(project.id).map_err(|error| {
+        internal_error_response(
+            format!(
+                "Failed to purge import artifacts for project {}: {}",
+                project.id, error
+            ),
+            "PROJECT_DELETE_IMPORT_PURGE_FAILED",
+        )
+    })?;
 
     let deleted_project_record = state.projects.delete(project.id).map_err(|error| {
         internal_error_response(
@@ -1259,6 +2363,9 @@ async fn delete_project(
         deleted_project_record,
         blueprint_events_pruned: blueprint_report.event_entries_pruned,
         blueprint_history_snapshots_pruned: blueprint_report.history_snapshots_pruned,
+        deleted_import_jobs: import_cleanup.jobs_deleted,
+        deleted_import_drafts: import_cleanup.drafts_deleted,
+        deleted_import_managed_roots: import_cleanup.managed_roots_deleted,
     }))
 }
 
@@ -3464,11 +4571,9 @@ fn normalize_blueprint_event_payload_data(event_type: &str, data: &mut serde_jso
 }
 
 fn normalize_blueprint_event_payload_node(node: &mut serde_json::Value) {
-    let Ok(mut decoded) =
-        serde_json::from_value::<planner_schemas::artifacts::blueprint::BlueprintNode>(
-            node.clone(),
-        )
-    else {
+    let Ok(mut decoded) = serde_json::from_value::<
+        planner_schemas::artifacts::blueprint::BlueprintNode,
+    >(node.clone()) else {
         return;
     };
 
@@ -3547,7 +4652,10 @@ fn sanitize_export_scope_snapshot(
                     }
                 }
                 if !sanitized_filters.is_empty() {
-                    sanitized.insert("filters".into(), serde_json::Value::Object(sanitized_filters));
+                    sanitized.insert(
+                        "filters".into(),
+                        serde_json::Value::Object(sanitized_filters),
+                    );
                 }
             }
             "section" => {
@@ -3570,9 +4678,7 @@ fn sanitize_export_scope_snapshot(
 
 fn export_history_retention_expires_at(timestamp: &str) -> Option<String> {
     let parsed = chrono::DateTime::parse_from_rfc3339(timestamp).ok()?;
-    Some(
-        (parsed + chrono::Duration::days(EXPORT_AUDIT_RETENTION_DAYS)).to_rfc3339(),
-    )
+    Some((parsed + chrono::Duration::days(EXPORT_AUDIT_RETENTION_DAYS)).to_rfc3339())
 }
 
 fn export_history_matches_query(
@@ -3653,19 +4759,20 @@ async fn list_blueprint_export_history(
                     sanitize_export_scope_snapshot(scope_snapshot.as_ref());
                 let retention_expires_at = export_history_retention_expires_at(&timestamp);
 
-                let summary = planner_schemas::artifacts::blueprint::BlueprintEvent::ExportRecorded {
-                    export_id: export_id.clone(),
-                    kind: kind.clone(),
-                    actor: actor.clone(),
-                    node_id: node_id.clone(),
-                    node_count,
-                    edge_count,
-                    project_id: project_id.clone(),
-                    project_name: project_name.clone(),
-                    scope_snapshot: scope_snapshot.clone(),
-                    timestamp: timestamp.clone(),
-                }
-                .summary();
+                let summary =
+                    planner_schemas::artifacts::blueprint::BlueprintEvent::ExportRecorded {
+                        export_id: export_id.clone(),
+                        kind: kind.clone(),
+                        actor: actor.clone(),
+                        node_id: node_id.clone(),
+                        node_count,
+                        edge_count,
+                        project_id: project_id.clone(),
+                        project_name: project_name.clone(),
+                        scope_snapshot: scope_snapshot.clone(),
+                        timestamp: timestamp.clone(),
+                    }
+                    .summary();
 
                 Some(BlueprintExportHistoryEntry {
                     export_id,
@@ -4474,17 +5581,103 @@ mod tests {
     use super::*;
     use crate::auth::AuthConfig;
     use crate::session::SessionStore;
+    use async_trait::async_trait;
     use axum::body::Body;
     use axum::http::Request;
+    use std::path::{Path, PathBuf};
+    use std::process::Command as StdCommand;
+    use std::sync::Arc;
     use tower::ServiceExt;
     use uuid::Uuid;
 
+    struct ImmediateSuccessImportAcquirer;
+
+    #[async_trait]
+    impl crate::import::ImportAcquirer for ImmediateSuccessImportAcquirer {
+        async fn acquire_github(
+            &self,
+            _canonical_ref: &str,
+            checkout_path: &Path,
+        ) -> Result<crate::import::AcquiredImportSource, String> {
+            std::fs::create_dir_all(checkout_path.join("planner-server/src"))
+                .map_err(|err| err.to_string())?;
+            std::fs::write(
+                checkout_path.join("README.md"),
+                "# Task Tracker\nTrack work across teams.\n",
+            )
+            .map_err(|err| err.to_string())?;
+            std::fs::write(
+                checkout_path.join("Cargo.toml"),
+                "[workspace]\nmembers = [\"planner-server\"]\n",
+            )
+            .map_err(|err| err.to_string())?;
+            std::fs::write(
+                checkout_path.join("planner-server/Cargo.toml"),
+                "[package]\nname = \"planner-server\"\nversion = \"0.1.0\"\n[dependencies]\naxum = \"0.7\"\nserde = \"1\"\n",
+            )
+            .map_err(|err| err.to_string())?;
+            std::fs::write(
+                checkout_path.join("planner-server/src/lib.rs"),
+                "pub fn ready() {}\n",
+            )
+            .map_err(|err| err.to_string())?;
+            Ok(crate::import::AcquiredImportSource {
+                default_branch: "main".into(),
+                head_revision: "deadbeef".into(),
+            })
+        }
+    }
+
+    struct ImmediateFailureImportAcquirer;
+
+    #[async_trait]
+    impl crate::import::ImportAcquirer for ImmediateFailureImportAcquirer {
+        async fn acquire_github(
+            &self,
+            _canonical_ref: &str,
+            _checkout_path: &Path,
+        ) -> Result<crate::import::AcquiredImportSource, String> {
+            Err("simulated clone failure".into())
+        }
+    }
+
+    struct ImmediateFailureImportAnalyzer;
+
+    #[async_trait]
+    impl crate::import::ImportAnalyzer for ImmediateFailureImportAnalyzer {
+        async fn analyze(
+            &self,
+            _request: crate::import::ImportAnalysisRequest,
+        ) -> Result<crate::import::AnalyzedImportDraft, String> {
+            Err("simulated analysis failure".into())
+        }
+    }
+
     fn test_state() -> Arc<AppState> {
+        test_state_with_import_workers(
+            Arc::new(ImmediateSuccessImportAcquirer),
+            crate::import::default_import_analyzer(),
+        )
+    }
+
+    fn test_state_with_import_acquirer(
+        import_acquirer: Arc<dyn crate::import::ImportAcquirer>,
+    ) -> Arc<AppState> {
+        test_state_with_import_workers(import_acquirer, crate::import::default_import_analyzer())
+    }
+
+    fn test_state_with_import_workers(
+        import_acquirer: Arc<dyn crate::import::ImportAcquirer>,
+        import_analyzer: Arc<dyn crate::import::ImportAnalyzer>,
+    ) -> Arc<AppState> {
         Arc::new(AppState {
             sessions: SessionStore::new(),
             blueprints: planner_core::blueprint::BlueprintStore::new(),
             proposals: planner_core::discovery::ProposalStore::new(),
             projects: crate::project::ProjectStore::new(),
+            imports: crate::import::ProjectImportStore::new(),
+            import_acquirer,
+            import_analyzer,
             auth_config: None, // dev mode for tests
             event_store: None,
             cxdb: None, // no durable storage in unit tests
@@ -4503,6 +5696,9 @@ mod tests {
             blueprints: planner_core::blueprint::BlueprintStore::new(),
             proposals: planner_core::discovery::ProposalStore::new(),
             projects: crate::project::ProjectStore::new(),
+            imports: crate::import::ProjectImportStore::new(),
+            import_acquirer: Arc::new(ImmediateSuccessImportAcquirer),
+            import_analyzer: crate::import::default_import_analyzer(),
             auth_config: None,
             event_store: Some(planner_core::observability::EventStore::new(data_dir).unwrap()),
             cxdb: None,
@@ -4521,6 +5717,9 @@ mod tests {
             blueprints: planner_core::blueprint::BlueprintStore::open(data_dir).unwrap(),
             proposals: planner_core::discovery::ProposalStore::new(),
             projects: crate::project::ProjectStore::new(),
+            imports: crate::import::ProjectImportStore::new(),
+            import_acquirer: Arc::new(ImmediateSuccessImportAcquirer),
+            import_analyzer: crate::import::default_import_analyzer(),
             auth_config: None,
             event_store: None,
             cxdb: None,
@@ -4562,6 +5761,9 @@ mod tests {
             blueprints: planner_core::blueprint::BlueprintStore::new(),
             proposals: planner_core::discovery::ProposalStore::new(),
             projects: crate::project::ProjectStore::new(),
+            imports: crate::import::ProjectImportStore::new(),
+            import_acquirer: Arc::new(ImmediateSuccessImportAcquirer),
+            import_analyzer: crate::import::default_import_analyzer(),
             auth_config: Some(AuthConfig {
                 domain: "test.auth0.com".into(),
                 audience: "test".into(),
@@ -4585,6 +5787,1210 @@ mod tests {
 
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn test_create_project_import_creates_project_job_and_binding() {
+        let state = test_state();
+        let app = routes(state.clone());
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/projects/imports")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "provider": "github",
+                    "source_ref": "https://github.com/example/task-tracker.git"
+                })
+                .to_string(),
+            ))
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::CREATED);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let payload: ProjectImportResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(payload.project.slug, "task-tracker");
+        assert_eq!(
+            payload.import_job.status,
+            crate::import::ImportStatus::Queued
+        );
+        assert_eq!(payload.source_binding.provider, ImportProvider::GitHub);
+        assert_eq!(
+            payload.source_binding.canonical_ref,
+            "https://github.com/example/task-tracker"
+        );
+        assert!(state.imports.get_job(payload.import_job.id).is_some());
+    }
+
+    #[tokio::test]
+    async fn test_create_project_import_rejects_non_absolute_local_path() {
+        let state = test_state();
+        let app = routes(state);
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/projects/imports")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "provider": "local",
+                    "source_ref": "relative/path"
+                })
+                .to_string(),
+            ))
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_create_project_import_rejects_incomplete_github_repo_url() {
+        let state = test_state();
+        let app = routes(state);
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/projects/imports")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "provider": "github",
+                    "source_ref": "https://github.com/example"
+                })
+                .to_string(),
+            ))
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_get_project_import_returns_owner_scoped_job() {
+        let state = test_state();
+        let project =
+            state
+                .projects
+                .create("dev|local", "Imported Repo", None, None, Vec::new(), None);
+        let (job, _) = state
+            .imports
+            .create(
+                project.id,
+                ImportProvider::Local,
+                "/tmp/repo".into(),
+                "/tmp/repo".into(),
+                false,
+            )
+            .unwrap();
+        let app = routes(state);
+
+        let req = Request::builder()
+            .uri(format!("/projects/imports/{}", job.id))
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let payload: ProjectImportResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(payload.import_job.id, job.id);
+        assert_eq!(payload.source_binding.canonical_ref, "/tmp/repo");
+    }
+
+    #[tokio::test]
+    async fn test_create_project_import_returns_conflict_for_existing_visible_source() {
+        let state = test_state();
+        let existing =
+            state
+                .projects
+                .create("dev|local", "Existing Import", None, None, Vec::new(), None);
+        let (_job, binding) = state
+            .imports
+            .create(
+                existing.id,
+                ImportProvider::GitHub,
+                "https://github.com/example/task-tracker".into(),
+                "https://github.com/example/task-tracker".into(),
+                true,
+            )
+            .unwrap();
+        let app = routes(state.clone());
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/projects/imports")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "provider": "github",
+                    "source_ref": "https://github.com/example/task-tracker.git"
+                })
+                .to_string(),
+            ))
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::CONFLICT);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let payload: ProjectImportConflictResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(payload.project.id, existing.id);
+        assert_eq!(payload.project.slug, existing.slug);
+        assert_eq!(payload.source_binding.canonical_ref, binding.canonical_ref);
+        assert_eq!(state.projects.count(), 1);
+        assert_eq!(state.imports.count_jobs(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_get_project_import_state_returns_latest_job_for_project() {
+        let state = test_state();
+        let project =
+            state
+                .projects
+                .create("dev|local", "Import State", None, None, Vec::new(), None);
+        let (first_job, _) = state
+            .imports
+            .create(
+                project.id,
+                ImportProvider::GitHub,
+                "https://github.com/example/import-state".into(),
+                "https://github.com/example/import-state".into(),
+                true,
+            )
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        let (latest_job, _) = state.imports.create_reimport_job(project.id).unwrap();
+        let app = routes(state);
+
+        let req = Request::builder()
+            .uri(format!("/projects/{}/import-state", project.slug))
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let payload: ProjectImportResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(payload.project.id, project.id);
+        assert_eq!(payload.import_job.id, latest_job.id);
+        assert_ne!(payload.import_job.id, first_job.id);
+    }
+
+    #[tokio::test]
+    async fn test_get_project_import_history_returns_descending_entries_and_diff_summary() {
+        let state = test_state();
+        let project =
+            state
+                .projects
+                .create("dev|local", "Import History", None, None, Vec::new(), None);
+        let seeded_applied = state.sessions.create("dev|local");
+        let (applied_job, _) = state
+            .imports
+            .create(
+                project.id,
+                ImportProvider::GitHub,
+                "https://github.com/example/import-history".into(),
+                "https://github.com/example/import-history".into(),
+                true,
+            )
+            .unwrap();
+        state
+            .imports
+            .save_draft(ProjectImportDraft {
+                job_id: applied_job.id,
+                project_id: project.id,
+                analysis_summary: "Earlier applied import.".into(),
+                source_metadata: crate::import::ImportDraftSourceMetadata {
+                    provider: ImportProvider::GitHub,
+                    canonical_ref: "https://github.com/example/import-history".into(),
+                    local_root: format!("/tmp/imports/{}", project.slug),
+                    default_branch: Some("main".into()),
+                    head_revision: Some("cafebabe".into()),
+                },
+                discovered_nodes: vec![serde_json::from_value(sample_component_json()).unwrap()],
+                created_at: chrono::Utc::now().to_rfc3339(),
+                updated_at: chrono::Utc::now().to_rfc3339(),
+            })
+            .unwrap();
+        let applied_job = state
+            .imports
+            .mark_job_review_pending(
+                applied_job.id,
+                "Applied draft ready.",
+                "Earlier applied import.".into(),
+                seeded_applied.id,
+            )
+            .unwrap();
+        let _ = state
+            .imports
+            .mark_job_applied(
+                applied_job.id,
+                "Import draft applied and reconciled against the canonical project blueprint.",
+            )
+            .unwrap();
+
+        let seeded_pending = state.sessions.create("dev|local");
+        let (pending_job, _) = state.imports.create_reimport_job(project.id).unwrap();
+        state
+            .imports
+            .save_draft(ProjectImportDraft {
+                job_id: pending_job.id,
+                project_id: project.id,
+                analysis_summary: "Pending import with Rust added.".into(),
+                source_metadata: crate::import::ImportDraftSourceMetadata {
+                    provider: ImportProvider::GitHub,
+                    canonical_ref: "https://github.com/example/import-history".into(),
+                    local_root: format!("/tmp/imports/{}", project.slug),
+                    default_branch: Some("main".into()),
+                    head_revision: Some("deadbeef".into()),
+                },
+                discovered_nodes: vec![
+                    serde_json::from_value(sample_component_json()).unwrap(),
+                    serde_json::from_value(sample_technology_json()).unwrap(),
+                ],
+                created_at: chrono::Utc::now().to_rfc3339(),
+                updated_at: chrono::Utc::now().to_rfc3339(),
+            })
+            .unwrap();
+        let _ = state
+            .imports
+            .mark_job_review_pending(
+                pending_job.id,
+                "Import draft ready. Review imported context in the seeded session.",
+                "Pending import with Rust added.".into(),
+                seeded_pending.id,
+            )
+            .unwrap();
+
+        let app = routes(state);
+        let req = Request::builder()
+            .uri(format!("/projects/{}/import-history", project.slug))
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let payload: ProjectImportHistoryResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(payload.project.id, project.id);
+        assert_eq!(payload.history.len(), 2);
+        assert_eq!(payload.history[0].import_job.id, pending_job.id);
+        assert_eq!(payload.history[1].import_job.id, applied_job.id);
+        assert_eq!(payload.history[0].discovered_node_count, Some(2));
+        assert_eq!(payload.history[1].discovered_node_count, Some(1));
+
+        let diff_summary = payload.diff_summary.expect("diff summary should exist");
+        assert_eq!(diff_summary.current_job_id, pending_job.id.to_string());
+        assert_eq!(diff_summary.compared_to_job_id, applied_job.id.to_string());
+        assert_eq!(diff_summary.added_nodes.len(), 1);
+        assert_eq!(diff_summary.added_nodes[0].node_name, "Rust");
+        assert_eq!(diff_summary.added_node_types[0].node_type, "technology");
+        assert_eq!(diff_summary.added_node_types[0].count, 1);
+        assert!(diff_summary.removed_nodes.is_empty());
+        assert_eq!(
+            diff_summary.current_head_revision.as_deref(),
+            Some("deadbeef")
+        );
+        assert_eq!(
+            diff_summary.compared_head_revision.as_deref(),
+            Some("cafebabe")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_github_import_eventually_reaches_review_pending_with_seeded_session_and_draft() {
+        let state = test_state_with_import_acquirer(Arc::new(ImmediateSuccessImportAcquirer));
+        let app = routes(state.clone());
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/projects/imports")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "provider": "github",
+                    "source_ref": "https://github.com/example/ready-repo"
+                })
+                .to_string(),
+            ))
+            .unwrap();
+        let resp = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::CREATED);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let created: ProjectImportResponse = serde_json::from_slice(&body).unwrap();
+
+        let payload = wait_for_import_status(
+            &app,
+            created.import_job.id,
+            crate::import::ImportStatus::ReviewPending,
+        )
+        .await;
+        assert_eq!(
+            payload.import_job.status,
+            crate::import::ImportStatus::ReviewPending
+        );
+        assert_eq!(
+            payload.source_binding.default_branch.as_deref(),
+            Some("main")
+        );
+        assert_eq!(
+            payload.source_binding.head_revision.as_deref(),
+            Some("deadbeef")
+        );
+        assert!(payload.source_binding.local_root.is_some());
+        assert!(payload.import_job.seed_session_id.is_some());
+        assert!(payload
+            .import_job
+            .analysis_summary
+            .as_deref()
+            .unwrap_or_default()
+            .contains("Imported draft for"));
+        let draft = payload
+            .import_draft
+            .expect("import draft should be present");
+        assert_eq!(draft.project_id, payload.project.id);
+        assert_eq!(draft.job_id, payload.import_job.id);
+        assert!(!draft.discovered_nodes.is_empty());
+        assert!(draft.discovered_nodes.iter().all(|node| {
+            matches!(
+                node.scope().project.as_ref().map(|scope| scope.project_id.as_str()),
+                Some(project_id) if project_id == payload.project.id.to_string()
+            ) && matches!(
+                node.scope().scope_class,
+                planner_schemas::artifacts::blueprint::ScopeClass::Project
+            )
+        }));
+        assert!(state.proposals.list(None).is_empty());
+        let (blueprint_nodes, blueprint_edges) = state.blueprints.counts();
+        assert_eq!((blueprint_nodes, blueprint_edges), (0, 0));
+
+        let seeded_session_id = payload
+            .import_job
+            .seed_session_id
+            .expect("seeded session should exist");
+        let seeded_session = state
+            .sessions
+            .get(seeded_session_id)
+            .expect("seeded session should be persisted");
+        assert_eq!(seeded_session.project_id, Some(payload.project.id));
+        assert_eq!(
+            seeded_session.project_slug.as_deref(),
+            Some(payload.project.slug.as_str())
+        );
+        assert!(seeded_session
+            .project_description
+            .as_deref()
+            .unwrap_or_default()
+            .starts_with("Imported planning brief for"));
+    }
+
+    #[tokio::test]
+    async fn test_github_import_failure_is_durable_and_truthful() {
+        let state = test_state_with_import_acquirer(Arc::new(ImmediateFailureImportAcquirer));
+        let app = routes(state.clone());
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/projects/imports")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "provider": "github",
+                    "source_ref": "https://github.com/example/failing-repo"
+                })
+                .to_string(),
+            ))
+            .unwrap();
+        let resp = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::CREATED);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let created: ProjectImportResponse = serde_json::from_slice(&body).unwrap();
+
+        let payload = wait_for_import_status(
+            &app,
+            created.import_job.id,
+            crate::import::ImportStatus::Failed,
+        )
+        .await;
+        assert_eq!(
+            payload.import_job.status,
+            crate::import::ImportStatus::Failed
+        );
+        assert_eq!(
+            payload.import_job.error_message.as_deref(),
+            Some("simulated clone failure")
+        );
+        assert!(payload.source_binding.local_root.is_none());
+        assert!(payload.import_draft.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_github_import_analysis_failure_is_durable_without_review_handoff() {
+        let state = test_state_with_import_workers(
+            Arc::new(ImmediateSuccessImportAcquirer),
+            Arc::new(ImmediateFailureImportAnalyzer),
+        );
+        let app = routes(state.clone());
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/projects/imports")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "provider": "github",
+                    "source_ref": "https://github.com/example/fails-during-analysis"
+                })
+                .to_string(),
+            ))
+            .unwrap();
+        let resp = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::CREATED);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let created: ProjectImportResponse = serde_json::from_slice(&body).unwrap();
+
+        let payload = wait_for_import_status(
+            &app,
+            created.import_job.id,
+            crate::import::ImportStatus::Failed,
+        )
+        .await;
+        assert_eq!(
+            payload.import_job.error_message.as_deref(),
+            Some("simulated analysis failure")
+        );
+        assert!(payload.source_binding.local_root.is_some());
+        assert!(payload.import_job.seed_session_id.is_none());
+        assert!(payload.import_draft.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_local_import_eventually_reaches_review_pending_with_seeded_session_and_draft() {
+        let local_root = create_temp_local_git_repo("success");
+        let state = test_state();
+        let app = routes(state.clone());
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/projects/imports")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "provider": "local",
+                    "source_ref": local_root.to_string_lossy(),
+                })
+                .to_string(),
+            ))
+            .unwrap();
+        let resp = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::CREATED);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let created: ProjectImportResponse = serde_json::from_slice(&body).unwrap();
+
+        let payload = wait_for_import_status(
+            &app,
+            created.import_job.id,
+            crate::import::ImportStatus::ReviewPending,
+        )
+        .await;
+        assert_eq!(payload.import_job.provider, ImportProvider::Local);
+        assert_eq!(
+            payload.source_binding.local_root.as_deref(),
+            Some(local_root.to_string_lossy().as_ref())
+        );
+        assert!(!payload.source_binding.managed_checkout);
+        assert_eq!(
+            payload.source_binding.default_branch.as_deref(),
+            Some("main")
+        );
+        assert!(payload
+            .source_binding
+            .head_revision
+            .as_deref()
+            .is_some_and(|value| !value.trim().is_empty()));
+        assert!(payload.import_job.seed_session_id.is_some());
+        assert!(payload.import_draft.is_some());
+        assert!(state.proposals.list(None).is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_local_import_missing_directory_fails_without_review_state() {
+        let missing_root =
+            std::env::temp_dir().join(format!("planner-missing-local-import-{}", Uuid::new_v4()));
+        let state = test_state();
+        let app = routes(state.clone());
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/projects/imports")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "provider": "local",
+                    "source_ref": missing_root.to_string_lossy(),
+                })
+                .to_string(),
+            ))
+            .unwrap();
+        let resp = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::CREATED);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let created: ProjectImportResponse = serde_json::from_slice(&body).unwrap();
+
+        let payload = wait_for_import_status(
+            &app,
+            created.import_job.id,
+            crate::import::ImportStatus::Failed,
+        )
+        .await;
+        assert_eq!(payload.import_job.provider, ImportProvider::Local);
+        assert!(payload
+            .import_job
+            .error_message
+            .as_deref()
+            .unwrap_or_default()
+            .contains("local import root is unavailable"));
+        assert!(payload.source_binding.local_root.is_none());
+        assert!(payload.import_job.seed_session_id.is_none());
+        assert!(payload.import_draft.is_none());
+        assert!(state.proposals.list(None).is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_reimport_project_for_github_binding_reaches_review_pending() {
+        let state = test_state_with_import_acquirer(Arc::new(ImmediateSuccessImportAcquirer));
+        let project =
+            state
+                .projects
+                .create("dev|local", "Reimport GitHub", None, None, Vec::new(), None);
+        let (initial_job, _) = state
+            .imports
+            .create(
+                project.id,
+                ImportProvider::GitHub,
+                "https://github.com/example/reimport-github".into(),
+                "https://github.com/example/reimport-github".into(),
+                true,
+            )
+            .unwrap();
+        let app = routes(state.clone());
+
+        let req = Request::builder()
+            .method("POST")
+            .uri(format!("/projects/{}/reimport", project.slug))
+            .body(Body::from("{}"))
+            .unwrap();
+        let resp = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::ACCEPTED);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let created: ProjectImportResponse = serde_json::from_slice(&body).unwrap();
+        assert_ne!(created.import_job.id, initial_job.id);
+        assert_eq!(created.project.id, project.id);
+
+        let payload = wait_for_import_status(
+            &app,
+            created.import_job.id,
+            crate::import::ImportStatus::ReviewPending,
+        )
+        .await;
+        assert_eq!(payload.import_job.project_id, project.id);
+        assert!(payload.import_draft.is_some());
+        assert!(payload.import_job.seed_session_id.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_reimport_project_for_local_binding_reaches_review_pending() {
+        let local_root = create_temp_local_git_repo("reimport-local");
+        let state = test_state();
+        let project =
+            state
+                .projects
+                .create("dev|local", "Reimport Local", None, None, Vec::new(), None);
+        let (initial_job, _) = state
+            .imports
+            .create(
+                project.id,
+                ImportProvider::Local,
+                local_root.to_string_lossy().to_string(),
+                local_root.to_string_lossy().to_string(),
+                false,
+            )
+            .unwrap();
+        let app = routes(state.clone());
+
+        let req = Request::builder()
+            .method("POST")
+            .uri(format!("/projects/{}/reimport", project.slug))
+            .body(Body::from("{}"))
+            .unwrap();
+        let resp = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::ACCEPTED);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let created: ProjectImportResponse = serde_json::from_slice(&body).unwrap();
+        assert_ne!(created.import_job.id, initial_job.id);
+        assert_eq!(created.import_job.provider, ImportProvider::Local);
+
+        let payload = wait_for_import_status(
+            &app,
+            created.import_job.id,
+            crate::import::ImportStatus::ReviewPending,
+        )
+        .await;
+        assert_eq!(
+            payload.source_binding.local_root.as_deref(),
+            Some(local_root.to_string_lossy().as_ref())
+        );
+        assert!(payload.import_draft.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_failed_jobs_appear_in_history_without_breaking_review_lookup() {
+        let state = test_state();
+        let (project, applied_job, _draft) = seed_review_pending_import(&state, "Failed History");
+        let _ = state
+            .imports
+            .mark_job_applied(
+                applied_job.id,
+                "Import draft applied and reconciled against the canonical project blueprint.",
+            )
+            .unwrap();
+        let (failed_job, _) = state.imports.create_reimport_job(project.id).unwrap();
+        let _ = state
+            .imports
+            .mark_job_failed(failed_job.id, "simulated re-import failure")
+            .unwrap();
+        let app = routes(state.clone());
+
+        let history_req = Request::builder()
+            .uri(format!("/projects/{}/import-history", project.slug))
+            .body(Body::empty())
+            .unwrap();
+        let history_resp = app.clone().oneshot(history_req).await.unwrap();
+        assert_eq!(history_resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(history_resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let history: ProjectImportHistoryResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(history.history.len(), 2);
+        assert_eq!(history.history[0].import_job.id, failed_job.id);
+        assert_eq!(history.history[0].import_job.status, ImportStatus::Failed);
+        assert_eq!(history.history[1].import_job.id, applied_job.id);
+        assert!(history.diff_summary.is_none());
+
+        let review_req = Request::builder()
+            .uri(format!("/projects/{}/import-review", project.slug))
+            .body(Body::empty())
+            .unwrap();
+        let review_resp = app.oneshot(review_req).await.unwrap();
+        assert_eq!(review_resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(review_resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let review: ProjectImportResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(review.import_job.id, applied_job.id);
+        assert_eq!(review.import_job.status, ImportStatus::Applied);
+    }
+
+    async fn wait_for_import_status(
+        app: &Router,
+        job_id: Uuid,
+        expected_status: crate::import::ImportStatus,
+    ) -> ProjectImportResponse {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        loop {
+            let req = Request::builder()
+                .uri(format!("/projects/imports/{}", job_id))
+                .body(Body::empty())
+                .unwrap();
+            let resp = app.clone().oneshot(req).await.unwrap();
+            assert_eq!(resp.status(), StatusCode::OK);
+            let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            let payload: ProjectImportResponse = serde_json::from_slice(&body).unwrap();
+            if payload.import_job.status == expected_status {
+                return payload;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "timed out waiting for import job {} to reach {:?}; latest status was {:?}",
+                job_id,
+                expected_status,
+                payload.import_job.status
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+    }
+
+    fn create_temp_local_git_repo(prefix: &str) -> PathBuf {
+        let repo_root = std::env::temp_dir().join(format!(
+            "planner-local-import-{}-{}",
+            prefix,
+            Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(repo_root.join("planner-server/src")).unwrap();
+        std::fs::write(
+            repo_root.join("README.md"),
+            "# Task Tracker\nTrack work across teams.\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_root.join("Cargo.toml"),
+            "[workspace]\nmembers = [\"planner-server\"]\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_root.join("planner-server/Cargo.toml"),
+            "[package]\nname = \"planner-server\"\nversion = \"0.1.0\"\n[dependencies]\naxum = \"0.7\"\nserde = \"1\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_root.join("planner-server/src/lib.rs"),
+            "pub fn ready() {}\n",
+        )
+        .unwrap();
+
+        let output = StdCommand::new("git")
+            .args(["init", "-b", "main"])
+            .current_dir(&repo_root)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "git init failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let output = StdCommand::new("git")
+            .args(["config", "user.email", "planner-tests@example.com"])
+            .current_dir(&repo_root)
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        let output = StdCommand::new("git")
+            .args(["config", "user.name", "Planner Tests"])
+            .current_dir(&repo_root)
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        let output = StdCommand::new("git")
+            .args(["add", "."])
+            .current_dir(&repo_root)
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        let output = StdCommand::new("git")
+            .args(["commit", "-m", "initial"])
+            .current_dir(&repo_root)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "git commit failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        repo_root
+    }
+
+    fn seed_review_pending_import(
+        state: &Arc<AppState>,
+        project_name: &str,
+    ) -> (Project, ProjectImportJob, ProjectImportDraft) {
+        let project =
+            state
+                .projects
+                .create("dev|local", project_name, None, None, Vec::new(), None);
+        let seeded_session = state.sessions.create("dev|local");
+        state.sessions.update(seeded_session.id, |draft| {
+            draft.project_id = Some(project.id);
+            draft.project_slug = Some(project.slug.clone());
+            draft.project_name = Some(project.name.clone());
+            draft.cxdb_project_id = Some(project.id);
+            draft.project_description = Some(format!(
+                "Imported planning brief for {}.\n\nRepository brief: Task tracker.",
+                project.name
+            ));
+            draft.ensure_title_from_description();
+        });
+
+        let (job, _) = state
+            .imports
+            .create(
+                project.id,
+                ImportProvider::GitHub,
+                "https://github.com/example/imported-repo".into(),
+                "https://github.com/example/imported-repo".into(),
+                true,
+            )
+            .unwrap();
+        state
+            .imports
+            .update_binding_source_metadata(
+                project.id,
+                Some("main".into()),
+                Some("deadbeef".into()),
+                format!("/tmp/imports/{}", project.slug),
+            )
+            .unwrap();
+        let draft = state
+            .imports
+            .save_draft(ProjectImportDraft {
+                job_id: job.id,
+                project_id: project.id,
+                analysis_summary: format!(
+                    "Imported draft for {} from https://github.com/example/imported-repo.",
+                    project.name
+                ),
+                source_metadata: crate::import::ImportDraftSourceMetadata {
+                    provider: ImportProvider::GitHub,
+                    canonical_ref: "https://github.com/example/imported-repo".into(),
+                    local_root: format!("/tmp/imports/{}", project.slug),
+                    default_branch: Some("main".into()),
+                    head_revision: Some("deadbeef".into()),
+                },
+                discovered_nodes: vec![
+                    serde_json::from_value(sample_component_json()).unwrap(),
+                    serde_json::from_value(sample_technology_json()).unwrap(),
+                ],
+                created_at: chrono::Utc::now().to_rfc3339(),
+                updated_at: chrono::Utc::now().to_rfc3339(),
+            })
+            .unwrap();
+        let job = state
+            .imports
+            .mark_job_review_pending(
+                job.id,
+                "Import draft ready. Review imported context in the seeded session.",
+                draft.analysis_summary.clone(),
+                seeded_session.id,
+            )
+            .unwrap();
+        (project, job, draft)
+    }
+
+    #[tokio::test]
+    async fn test_get_project_import_review_returns_project_scoped_review_payload() {
+        let state = test_state();
+        let (project, job, _) = seed_review_pending_import(&state, "Imported Repo");
+        let app = routes(state);
+
+        let req = Request::builder()
+            .uri(format!("/projects/{}/import-review", project.slug))
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let payload: ProjectImportResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(payload.project.id, project.id);
+        assert_eq!(payload.import_job.id, job.id);
+        assert_eq!(
+            payload.import_job.status,
+            crate::import::ImportStatus::ReviewPending
+        );
+        assert_eq!(
+            payload.source_binding.default_branch.as_deref(),
+            Some("main")
+        );
+        assert_eq!(
+            payload
+                .import_draft
+                .as_ref()
+                .map(|draft| draft.discovered_nodes.len()),
+            Some(2)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_apply_project_import_review_promotes_draft_and_is_idempotent() {
+        let state = test_state();
+        let (project, job, draft) = seed_review_pending_import(&state, "Imported Repo");
+        let app = routes(state.clone());
+
+        let req = Request::builder()
+            .method("POST")
+            .uri(format!("/projects/{}/import-review", project.slug))
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let payload: ProjectImportResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(
+            payload.import_job.status,
+            crate::import::ImportStatus::Applied
+        );
+        assert!(state.proposals.list(None).is_empty());
+
+        let root_id = import_project_root_node_id(&project.id.to_string());
+        let root = state
+            .blueprints
+            .get_node(root_id.as_str())
+            .expect("project root should exist after apply");
+        assert!(matches!(
+            root.scope().project.as_ref().map(|scope| scope.project_id.as_str()),
+            Some(project_id) if project_id == project.id.to_string()
+        ));
+
+        let snapshot = state.blueprints.snapshot();
+        let applied_review_metadata = import_review_metadata(job.id);
+        for node in &draft.discovered_nodes {
+            let applied = state
+                .blueprints
+                .get_node(node.id().as_str())
+                .expect("draft node should be promoted");
+            assert!(matches!(
+                applied.scope().project.as_ref().map(|scope| scope.project_id.as_str()),
+                Some(project_id) if project_id == project.id.to_string()
+            ));
+            assert!(
+                applied.scope().lifecycle
+                    == planner_schemas::artifacts::blueprint::NodeLifecycle::Active
+            );
+            assert!(node_tags(&applied)
+                .iter()
+                .any(|tag| tag.eq_ignore_ascii_case(IMPORT_DRAFT_OWNED_TAG)));
+            assert!(node_tags(&applied)
+                .iter()
+                .any(|tag| { tag.eq_ignore_ascii_case(&import_review_metadata(job.id)) }));
+            assert!(snapshot.edges.iter().any(|edge| {
+                edge.source.as_str() == root_id.as_str()
+                    && edge.target.as_str() == node.id().as_str()
+                    && matches!(
+                        edge.edge_type,
+                        planner_schemas::artifacts::blueprint::EdgeType::Contains
+                    )
+                    && edge.metadata.as_deref() == Some(applied_review_metadata.as_str())
+            }));
+        }
+
+        let (node_count, edge_count) = state.blueprints.counts();
+        assert_eq!(node_count, draft.discovered_nodes.len() + 1);
+        assert_eq!(edge_count, draft.discovered_nodes.len());
+
+        let req = Request::builder()
+            .method("POST")
+            .uri(format!("/projects/{}/import-review", project.slug))
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let payload: ProjectImportResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(
+            payload.import_job.status,
+            crate::import::ImportStatus::Applied
+        );
+        assert_eq!(state.blueprints.counts(), (node_count, edge_count));
+        assert_eq!(
+            state.imports.get_job(job.id).map(|current| current.status),
+            Some(crate::import::ImportStatus::Applied)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_apply_project_import_review_leaves_job_review_pending_when_flush_fails() {
+        let data_dir =
+            std::env::temp_dir().join(format!("planner_import_apply_flush_{}", Uuid::new_v4()));
+        let state = test_state_with_persistent_blueprints(&data_dir);
+        let (project, job, draft) = seed_review_pending_import(&state, "Imported Repo");
+        std::fs::remove_dir_all(data_dir.join("blueprint/nodes")).unwrap();
+        let app = routes(state.clone());
+
+        let req = Request::builder()
+            .method("POST")
+            .uri(format!("/projects/{}/import-review", project.slug))
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
+
+        let current_job = state
+            .imports
+            .get_job(job.id)
+            .expect("job should remain persisted");
+        assert_eq!(
+            current_job.status,
+            crate::import::ImportStatus::ReviewPending
+        );
+        assert!(state
+            .blueprints
+            .get_node(draft.discovered_nodes[0].id().as_str())
+            .is_some());
+        assert!(state.proposals.list(None).is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_apply_project_import_review_archives_stale_import_owned_nodes_and_preserves_manual_nodes(
+    ) {
+        let state = test_state();
+        let (project, first_job, first_draft) = seed_review_pending_import(&state, "Imported Repo");
+        let app = routes(state.clone());
+
+        let first_apply = Request::builder()
+            .method("POST")
+            .uri(format!("/projects/{}/import-review", project.slug))
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.clone().oneshot(first_apply).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let mut manual_node: planner_schemas::artifacts::blueprint::BlueprintNode =
+            serde_json::from_value(sample_component_json()).unwrap();
+        if let planner_schemas::artifacts::blueprint::BlueprintNode::Component(component) =
+            &mut manual_node
+        {
+            component.id =
+                planner_schemas::artifacts::blueprint::NodeId::from_raw("comp-manual-9f8e7d6c");
+            component.name = "Manual Workflow".into();
+            component.tags = vec!["manual".into()];
+            component.scope = project_blueprint_scope(&project);
+        }
+        state.blueprints.upsert_node(manual_node.clone());
+
+        let seeded_session = state.sessions.create("dev|local");
+        state.sessions.update(seeded_session.id, |draft| {
+            draft.project_id = Some(project.id);
+            draft.project_slug = Some(project.slug.clone());
+            draft.project_name = Some(project.name.clone());
+            draft.cxdb_project_id = Some(project.id);
+            draft.project_description = Some(format!(
+                "Imported planning brief for {}.\n\nRepository brief: Task tracker refresh.",
+                project.name
+            ));
+            draft.ensure_title_from_description();
+        });
+
+        let (second_job, _) = state.imports.create_reimport_job(project.id).unwrap();
+        let second_draft = state
+            .imports
+            .save_draft(ProjectImportDraft {
+                job_id: second_job.id,
+                project_id: project.id,
+                analysis_summary: format!(
+                    "Imported draft refresh for {} from https://github.com/example/imported-repo.",
+                    project.name
+                ),
+                source_metadata: crate::import::ImportDraftSourceMetadata {
+                    provider: ImportProvider::GitHub,
+                    canonical_ref: "https://github.com/example/imported-repo".into(),
+                    local_root: format!("/tmp/imports/{}", project.slug),
+                    default_branch: Some("main".into()),
+                    head_revision: Some("beadfeed".into()),
+                },
+                discovered_nodes: vec![serde_json::from_value(sample_technology_json()).unwrap()],
+                created_at: chrono::Utc::now().to_rfc3339(),
+                updated_at: chrono::Utc::now().to_rfc3339(),
+            })
+            .unwrap();
+        state
+            .imports
+            .mark_job_review_pending(
+                second_job.id,
+                "Import draft ready. Review imported context in the seeded session.",
+                second_draft.analysis_summary.clone(),
+                seeded_session.id,
+            )
+            .unwrap();
+
+        let req = Request::builder()
+            .method("POST")
+            .uri(format!("/projects/{}/import-review", project.slug))
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let archived = state
+            .blueprints
+            .get_node(first_draft.discovered_nodes[0].id().as_str())
+            .expect("first component should remain as archived history");
+        assert_eq!(
+            archived.scope().lifecycle,
+            planner_schemas::artifacts::blueprint::NodeLifecycle::Archived
+        );
+        assert!(node_tags(&archived)
+            .iter()
+            .any(|tag| tag.eq_ignore_ascii_case(IMPORT_DRAFT_OWNED_TAG)));
+
+        let retained = state
+            .blueprints
+            .get_node(first_draft.discovered_nodes[1].id().as_str())
+            .expect("shared import node id should stay active");
+        assert_eq!(
+            retained.scope().lifecycle,
+            planner_schemas::artifacts::blueprint::NodeLifecycle::Active
+        );
+        assert!(node_tags(&retained)
+            .iter()
+            .any(|tag| { tag.eq_ignore_ascii_case(&import_review_metadata(second_job.id)) }));
+
+        let manual = state
+            .blueprints
+            .get_node(manual_node.id().as_str())
+            .expect("manual node should remain untouched");
+        assert_eq!(
+            manual.scope().lifecycle,
+            planner_schemas::artifacts::blueprint::NodeLifecycle::Active
+        );
+        assert!(!node_tags(&manual)
+            .iter()
+            .any(|tag| tag.eq_ignore_ascii_case(IMPORT_DRAFT_OWNED_TAG)));
+
+        let root_id = import_project_root_node_id(&project.id.to_string());
+        let snapshot = state.blueprints.snapshot();
+        let second_review_metadata = import_review_metadata(second_job.id);
+        assert!(!snapshot.edges.iter().any(|edge| {
+            edge.source.as_str() == root_id.as_str()
+                && edge.target.as_str() == first_draft.discovered_nodes[0].id().as_str()
+        }));
+        assert!(snapshot.edges.iter().any(|edge| {
+            edge.source.as_str() == root_id.as_str()
+                && edge.target.as_str() == first_draft.discovered_nodes[1].id().as_str()
+                && edge.metadata.as_deref() == Some(second_review_metadata.as_str())
+        }));
+
+        assert_eq!(
+            state.imports.get_job(first_job.id).map(|job| job.status),
+            Some(crate::import::ImportStatus::Applied)
+        );
+        assert_eq!(
+            state.imports.get_job(second_job.id).map(|job| job.status),
+            Some(crate::import::ImportStatus::Applied)
+        );
     }
 
     #[tokio::test]
@@ -4834,6 +7240,160 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_delete_project_purges_import_artifacts_and_managed_checkout() {
+        let state = test_state();
+        let project = state.projects.create(
+            "dev|local",
+            "Delete Import Artifacts",
+            None,
+            None,
+            Vec::new(),
+            None,
+        );
+        let seeded_session = state.sessions.create("dev|local");
+        let (job, _) = state
+            .imports
+            .create(
+                project.id,
+                ImportProvider::GitHub,
+                "https://github.com/example/delete-import".into(),
+                "https://github.com/example/delete-import".into(),
+                true,
+            )
+            .unwrap();
+        let managed_root = state
+            .imports
+            .managed_checkout_path(project.id, ImportProvider::GitHub);
+        std::fs::create_dir_all(managed_root.join("planner-server")).unwrap();
+        state
+            .imports
+            .update_binding_source_metadata(
+                project.id,
+                Some("main".into()),
+                Some("deadbeef".into()),
+                managed_root.to_string_lossy().to_string(),
+            )
+            .unwrap();
+        state
+            .imports
+            .save_draft(ProjectImportDraft {
+                job_id: job.id,
+                project_id: project.id,
+                analysis_summary: "Imported draft for delete coverage.".into(),
+                source_metadata: crate::import::ImportDraftSourceMetadata {
+                    provider: ImportProvider::GitHub,
+                    canonical_ref: "https://github.com/example/delete-import".into(),
+                    local_root: managed_root.to_string_lossy().to_string(),
+                    default_branch: Some("main".into()),
+                    head_revision: Some("deadbeef".into()),
+                },
+                discovered_nodes: vec![serde_json::from_value(sample_component_json()).unwrap()],
+                created_at: chrono::Utc::now().to_rfc3339(),
+                updated_at: chrono::Utc::now().to_rfc3339(),
+            })
+            .unwrap();
+        let _ = state
+            .imports
+            .mark_job_review_pending(
+                job.id,
+                "Import draft ready. Review imported context in the seeded session.",
+                "Imported draft for delete coverage.".into(),
+                seeded_session.id,
+            )
+            .unwrap();
+        let app = routes(state.clone());
+
+        let req = Request::builder()
+            .method("DELETE")
+            .uri(format!("/projects/{}", project.slug))
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let summary: DeleteProjectResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(summary.deleted_import_jobs, 1);
+        assert_eq!(summary.deleted_import_drafts, 1);
+        assert_eq!(summary.deleted_import_managed_roots, 1);
+        assert!(state.imports.get_job(job.id).is_none());
+        assert!(state.imports.get_draft(job.id).is_none());
+        assert!(state.imports.get_binding(project.id).is_none());
+        assert!(!managed_root.exists());
+    }
+
+    #[tokio::test]
+    async fn test_delete_project_preserves_external_local_import_root() {
+        let local_root = create_temp_local_git_repo("delete-local-root");
+        let state = test_state();
+        let project = state.projects.create(
+            "dev|local",
+            "Delete Local Root",
+            None,
+            None,
+            Vec::new(),
+            None,
+        );
+        let (job, _) = state
+            .imports
+            .create(
+                project.id,
+                ImportProvider::Local,
+                local_root.to_string_lossy().to_string(),
+                local_root.to_string_lossy().to_string(),
+                false,
+            )
+            .unwrap();
+        state
+            .imports
+            .update_binding_source_metadata(
+                project.id,
+                Some("main".into()),
+                Some("deadbeef".into()),
+                local_root.to_string_lossy().to_string(),
+            )
+            .unwrap();
+        state
+            .imports
+            .save_draft(ProjectImportDraft {
+                job_id: job.id,
+                project_id: project.id,
+                analysis_summary: "Imported local draft.".into(),
+                source_metadata: crate::import::ImportDraftSourceMetadata {
+                    provider: ImportProvider::Local,
+                    canonical_ref: local_root.to_string_lossy().to_string(),
+                    local_root: local_root.to_string_lossy().to_string(),
+                    default_branch: Some("main".into()),
+                    head_revision: Some("deadbeef".into()),
+                },
+                discovered_nodes: vec![serde_json::from_value(sample_component_json()).unwrap()],
+                created_at: chrono::Utc::now().to_rfc3339(),
+                updated_at: chrono::Utc::now().to_rfc3339(),
+            })
+            .unwrap();
+        let app = routes(state.clone());
+
+        let req = Request::builder()
+            .method("DELETE")
+            .uri(format!("/projects/{}", project.slug))
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let summary: DeleteProjectResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(summary.deleted_import_jobs, 1);
+        assert_eq!(summary.deleted_import_drafts, 1);
+        assert_eq!(summary.deleted_import_managed_roots, 0);
+        assert!(local_root.exists());
+    }
+
+    #[tokio::test]
     async fn test_delete_project_removes_owned_sessions() {
         let state = test_state();
         let project =
@@ -5033,7 +7593,7 @@ mod tests {
                     shared: None,
                     lifecycle: NodeLifecycle::Active,
                     override_scope: None,
-            scope_review: None,
+                    scope_review: None,
                 },
                 created_at: "2026-03-08T00:00:00Z".into(),
                 updated_at: "2026-03-08T00:00:00Z".into(),
@@ -5105,6 +7665,9 @@ mod tests {
             blueprints: planner_core::blueprint::BlueprintStore::new(),
             proposals: planner_core::discovery::ProposalStore::new(),
             projects: crate::project::ProjectStore::new(),
+            imports: crate::import::ProjectImportStore::new(),
+            import_acquirer: Arc::new(ImmediateSuccessImportAcquirer),
+            import_analyzer: crate::import::default_import_analyzer(),
             auth_config: None,
             event_store: None,
             cxdb: Some(cxdb),
@@ -5171,7 +7734,7 @@ mod tests {
                     shared: None,
                     lifecycle: NodeLifecycle::Active,
                     override_scope: None,
-            scope_review: None,
+                    scope_review: None,
                 },
                 created_at: "2026-03-08T00:00:00Z".into(),
                 updated_at: "2026-03-08T00:00:00Z".into(),
@@ -5207,7 +7770,7 @@ mod tests {
                     }),
                     lifecycle: NodeLifecycle::Active,
                     override_scope: None,
-            scope_review: None,
+                    scope_review: None,
                 },
                 created_at: "2026-03-08T00:00:00Z".into(),
                 updated_at: "2026-03-08T00:00:00Z".into(),
@@ -5753,6 +8316,9 @@ mod tests {
             blueprints: planner_core::blueprint::BlueprintStore::new(),
             proposals: planner_core::discovery::ProposalStore::new(),
             projects: crate::project::ProjectStore::new(),
+            imports: crate::import::ProjectImportStore::new(),
+            import_acquirer: Arc::new(ImmediateSuccessImportAcquirer),
+            import_analyzer: crate::import::default_import_analyzer(),
             auth_config: Some(AuthConfig {
                 domain: "test.auth0.com".into(),
                 audience: "test".into(),
@@ -6095,8 +8661,14 @@ mod tests {
         let project_id = project.id.to_string();
         assert_eq!(result.total, 1);
         assert_eq!(result.events.len(), 1);
-        assert_eq!(result.events[0].session_id.as_deref(), Some(session_id.as_str()));
-        assert_eq!(result.events[0].project_id.as_deref(), Some(project_id.as_str()));
+        assert_eq!(
+            result.events[0].session_id.as_deref(),
+            Some(session_id.as_str())
+        );
+        assert_eq!(
+            result.events[0].project_id.as_deref(),
+            Some(project_id.as_str())
+        );
         assert_eq!(
             result.events[0].project_name.as_deref(),
             Some(project.name.as_str())
@@ -7558,44 +10130,35 @@ mod tests {
         let entry = &history.entries[0];
         assert_eq!(entry.actor.as_deref(), Some("auth0|auditor"));
         assert_eq!(
-            entry.scope_snapshot
+            entry
+                .scope_snapshot
                 .as_ref()
                 .and_then(|value| value.get("filters"))
                 .and_then(|value| value.get("component"))
                 .and_then(serde_json::Value::as_str),
             Some("task-widget")
         );
-        assert!(
-            entry
-                .scope_snapshot
-                .as_ref()
-                .and_then(|value| value.get("filters"))
-                .and_then(|value| value.get("owner"))
-                .is_none()
-        );
-        assert!(
-            entry
-                .scope_snapshot
-                .as_ref()
-                .and_then(|value| value.get("selected_node_id"))
-                .is_none()
-        );
+        assert!(entry
+            .scope_snapshot
+            .as_ref()
+            .and_then(|value| value.get("filters"))
+            .and_then(|value| value.get("owner"))
+            .is_none());
+        assert!(entry
+            .scope_snapshot
+            .as_ref()
+            .and_then(|value| value.get("selected_node_id"))
+            .is_none());
         assert!(entry.scope_snapshot_redacted);
-        assert!(
-            entry
-                .scope_snapshot_redacted_fields
-                .contains(&"filters.owner".to_string())
-        );
-        assert!(
-            entry
-                .scope_snapshot_redacted_fields
-                .contains(&"filters.tag".to_string())
-        );
-        assert!(
-            entry
-                .scope_snapshot_redacted_fields
-                .contains(&"selected_node_id".to_string())
-        );
+        assert!(entry
+            .scope_snapshot_redacted_fields
+            .contains(&"filters.owner".to_string()));
+        assert!(entry
+            .scope_snapshot_redacted_fields
+            .contains(&"filters.tag".to_string()));
+        assert!(entry
+            .scope_snapshot_redacted_fields
+            .contains(&"selected_node_id".to_string()));
 
         let timestamp =
             chrono::DateTime::parse_from_rfc3339(&entry.timestamp).expect("entry timestamp");
@@ -7606,7 +10169,10 @@ mod tests {
                 .expect("retention metadata"),
         )
         .expect("retention timestamp");
-        assert_eq!(retention - timestamp, chrono::Duration::days(EXPORT_AUDIT_RETENTION_DAYS));
+        assert_eq!(
+            retention - timestamp,
+            chrono::Duration::days(EXPORT_AUDIT_RETENTION_DAYS)
+        );
     }
 
     #[tokio::test]
@@ -7642,8 +10208,7 @@ mod tests {
     #[tokio::test]
     async fn test_list_blueprint_events_normalizes_legacy_scope_tags_in_payloads() {
         use planner_schemas::artifacts::blueprint::{
-            BlueprintNode, NodeLifecycle, NodeScope, ProjectScope, ScopeClass,
-            SecondaryScopeRefs,
+            BlueprintNode, NodeLifecycle, NodeScope, ProjectScope, ScopeClass, SecondaryScopeRefs,
         };
 
         let state = test_state();
@@ -7684,12 +10249,18 @@ mod tests {
         let events: BlueprintEventsResponse = serde_json::from_slice(&body).unwrap();
         assert_eq!(events.total, 1);
         assert_eq!(events.events[0].event_type, "node_created");
-        assert_eq!(events.events[0].data["node"]["scope"]["lifecycle"], "archived");
+        assert_eq!(
+            events.events[0].data["node"]["scope"]["lifecycle"],
+            "archived"
+        );
         assert_eq!(
             events.events[0].data["node"]["scope"]["override_scope"]["shared_source_id"],
             "shared-guidance"
         );
-        assert_eq!(events.events[0].data["node"]["tags"], serde_json::json!(["storage"]));
+        assert_eq!(
+            events.events[0].data["node"]["tags"],
+            serde_json::json!(["storage"])
+        );
     }
 
     #[tokio::test]

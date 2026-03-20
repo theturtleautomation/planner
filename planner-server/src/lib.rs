@@ -5,6 +5,7 @@
 
 pub mod api;
 pub mod auth;
+pub mod import;
 pub mod project;
 pub mod rate_limit;
 pub mod rbac;
@@ -14,6 +15,7 @@ pub mod ws;
 pub mod ws_socratic;
 
 use auth::AuthConfig;
+use import::{ImportAcquirer, ImportAnalyzer, ProjectImportStore};
 use project::ProjectStore;
 use session::SessionStore;
 
@@ -27,6 +29,12 @@ pub struct AppState {
     pub proposals: planner_core::discovery::ProposalStore,
     /// Canonical persisted project store.
     pub projects: ProjectStore,
+    /// Durable import jobs and source bindings.
+    pub imports: ProjectImportStore,
+    /// Background source acquisition implementation for import jobs.
+    pub import_acquirer: std::sync::Arc<dyn ImportAcquirer>,
+    /// Filesystem analysis implementation for prepared import sources.
+    pub import_analyzer: std::sync::Arc<dyn ImportAnalyzer>,
     /// Auth0 JWT config. None = dev mode (auth bypassed).
     pub auth_config: Option<AuthConfig>,
     /// Filesystem-backed event store. None if persistence is unavailable.

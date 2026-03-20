@@ -1,15 +1,18 @@
 # Phase 07 Socratic Prompt Protocol Redesign Implementation Prompt
 
-**Status:** In progress — prompt-envelope cutover is delivered across core/server/web/TUI; remaining work is validation closure plus scheduled legacy-adapter removal after the migration window  
+**Status:** Implemented except scheduled post-window legacy-adapter removal  
 **Date:** 2026-03-09  
 **Source:** `docs/phase-07-socratic-prompt-protocol-redesign-implementation.md`
 
 ## Usage
 
-Paste the prompt below into a coding agent working in `/home/thetu/planner`.
-Treat the source implementation doc as the product spec and this document as the
-execution brief. Implement the work in order. Do not collapse later cleanup into
-earlier phases unless it is required to keep the build green.
+This document is now primarily a historical execution brief for the delivered
+prompt-envelope cutover.
+
+Use the source implementation doc as the canonical status record. Do not treat
+this file as an active implementation prompt except for the dedicated
+post-window legacy-adapter removal once the recorded migration-window gate is
+satisfied.
 
 ## Current Execution State (2026-03-09)
 
@@ -57,7 +60,7 @@ earlier phases unless it is required to keep the build green.
 - Remaining: scheduled legacy-adapter removal after the recorded
   migration-window date/threshold.
 
-Open risks from partial implementation:
+Open risks from the implemented state:
 
 - The recorded benchmark snapshot is a local-machine baseline, not a
   cross-environment SLA.
@@ -68,7 +71,8 @@ Open risks from partial implementation:
 
 ## Outstanding Items To Complete
 
-Treat these as the remaining implementation workstreams.
+Treat these as the remaining scheduled cleanup items, not active feature
+implementation.
 
 - Delivered in code:
   - `W1 Draft Planner Unification`

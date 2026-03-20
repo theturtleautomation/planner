@@ -1914,7 +1914,7 @@ mod tests {
                 shared: None,
                 lifecycle: NodeLifecycle::Active,
                 override_scope: None,
-            scope_review: None,
+                scope_review: None,
             },
             created_at: ts.clone(),
             updated_at: ts.clone(),

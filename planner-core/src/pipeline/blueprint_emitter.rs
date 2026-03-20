@@ -45,7 +45,7 @@ fn project_scope_from_intake(intake: &IntakeV1) -> NodeScope {
         shared: None,
         lifecycle: NodeLifecycle::Active,
         override_scope: None,
-            scope_review: None,
+        scope_review: None,
     }
 }
 
@@ -77,7 +77,7 @@ fn ensure_project_root_node(
         shared: None,
         lifecycle: NodeLifecycle::Active,
         override_scope: None,
-            scope_review: None,
+        scope_review: None,
     };
 
     let node = Project {
@@ -124,7 +124,7 @@ fn scope_for_spec(spec: &NLSpecV1) -> NodeScope {
         shared: None,
         lifecycle: NodeLifecycle::Active,
         override_scope: None,
-            scope_review: None,
+        scope_review: None,
     };
 
     if let planner_schemas::ChunkType::Domain { name } = &spec.chunk {
@@ -548,7 +548,7 @@ pub fn emit_from_ar(store: &BlueprintStore, reports: &[ArReportV1]) {
                         shared: None,
                         lifecycle: NodeLifecycle::Active,
                         override_scope: None,
-            scope_review: None,
+                        scope_review: None,
                     },
                     created_at: ts.clone(),
                     updated_at: ts.clone(),

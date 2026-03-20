@@ -24,6 +24,9 @@ use tower_http::cors::{Any, CorsLayer};
 
 use planner_server::api;
 use planner_server::auth::AuthConfig;
+use planner_server::import::{
+    default_import_acquirer, default_import_analyzer, ProjectImportStore,
+};
 use planner_server::project::{self, ProjectStore};
 use planner_server::rate_limit;
 use planner_server::session::SessionStore;
@@ -211,6 +214,24 @@ async fn main() {
         );
     }
 
+    let import_store = match ProjectImportStore::open(std::path::Path::new(&data_dir)) {
+        Ok(store) => {
+            tracing::info!(
+                "Import persistence enabled: {}/imports/ ({} jobs loaded)",
+                data_dir,
+                store.count_jobs(),
+            );
+            store
+        }
+        Err(e) => {
+            tracing::warn!(
+                "Import persistence unavailable ({}), falling back to in-memory only",
+                e
+            );
+            ProjectImportStore::new()
+        }
+    };
+
     // Initialize event persistence
     let event_store =
         match planner_core::observability::EventStore::new(std::path::Path::new(&data_dir)) {
@@ -262,6 +283,9 @@ async fn main() {
         blueprints: blueprint_store,
         proposals: proposal_store,
         projects: project_store,
+        imports: import_store,
+        import_acquirer: default_import_acquirer(),
+        import_analyzer: default_import_analyzer(),
         auth_config,
         event_store,
         cxdb,

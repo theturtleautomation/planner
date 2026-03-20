@@ -16,6 +16,10 @@ import type {
   ProjectResponse,
   ListProjectsResponse,
   DeleteProjectResponse,
+  ProjectImportResponse,
+  ProjectImportConflictResponse,
+  ProjectImportHistoryResponse,
+  ImportProvider,
 } from '../types.ts';
 import type {
   BlueprintResponse,
@@ -63,9 +67,16 @@ async function apiFetch<T>(
 
   if (!response.ok) {
     const text = await response.text().catch(() => response.statusText);
+    let details: unknown;
+    try {
+      details = text ? JSON.parse(text) : undefined;
+    } catch {
+      details = undefined;
+    }
     throw new ApiError(
       `API ${init.method ?? 'GET'} ${path} → ${response.status}: ${text}`,
       response.status,
+      details,
     );
   }
 
@@ -152,6 +163,66 @@ export function createApiClient(getToken: GetTokenFn) {
           legacy_scope_keys: payload.legacyScopeKeys ?? [],
         }),
       });
+    },
+
+    createProjectImport(payload: {
+      provider: ImportProvider;
+      sourceRef: string;
+    }): Promise<ProjectImportResponse | ProjectImportConflictResponse> {
+      return apiFetch<ProjectImportResponse>(getToken, '/projects/imports', {
+        method: 'POST',
+        body: JSON.stringify({
+          provider: payload.provider,
+          source_ref: payload.sourceRef,
+        }),
+      });
+    },
+
+    getProjectImport(jobId: string): Promise<ProjectImportResponse> {
+      return apiFetch<ProjectImportResponse>(getToken, `/projects/imports/${encodeURIComponent(jobId)}`);
+    },
+
+    getProjectImportReview(projectRef: string): Promise<ProjectImportResponse> {
+      return apiFetch<ProjectImportResponse>(
+        getToken,
+        `/projects/${encodeURIComponent(projectRef)}/import-review`,
+      );
+    },
+
+    getProjectImportState(projectRef: string): Promise<ProjectImportResponse> {
+      return apiFetch<ProjectImportResponse>(
+        getToken,
+        `/projects/${encodeURIComponent(projectRef)}/import-state`,
+      );
+    },
+
+    getProjectImportHistory(projectRef: string): Promise<ProjectImportHistoryResponse> {
+      return apiFetch<ProjectImportHistoryResponse>(
+        getToken,
+        `/projects/${encodeURIComponent(projectRef)}/import-history`,
+      );
+    },
+
+    applyProjectImportReview(projectRef: string): Promise<ProjectImportResponse> {
+      return apiFetch<ProjectImportResponse>(
+        getToken,
+        `/projects/${encodeURIComponent(projectRef)}/import-review`,
+        {
+          method: 'POST',
+          body: '{}',
+        },
+      );
+    },
+
+    reimportProject(projectRef: string): Promise<ProjectImportResponse> {
+      return apiFetch<ProjectImportResponse>(
+        getToken,
+        `/projects/${encodeURIComponent(projectRef)}/reimport`,
+        {
+          method: 'POST',
+          body: '{}',
+        },
+      );
     },
 
     getProject(projectRef: string): Promise<ProjectResponse> {

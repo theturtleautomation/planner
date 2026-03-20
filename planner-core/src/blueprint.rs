@@ -519,7 +519,7 @@ fn backfill_project_root_nodes(blueprint: &mut Blueprint) -> usize {
                 shared: None,
                 lifecycle: NodeLifecycle::Active,
                 override_scope: None,
-            scope_review: None,
+                scope_review: None,
             },
             created_at: now.clone(),
             updated_at: now,
@@ -1201,7 +1201,7 @@ fn backfill_legacy_factory_project_scope(blueprint: &mut Blueprint) -> usize {
         shared: None,
         lifecycle: NodeLifecycle::Active,
         override_scope: None,
-            scope_review: None,
+        scope_review: None,
     };
 
     let node_ids: Vec<String> = blueprint.nodes.keys().cloned().collect();
@@ -3320,7 +3320,7 @@ mod tests {
                 shared: None,
                 lifecycle: NodeLifecycle::Active,
                 override_scope: None,
-            scope_review: None,
+                scope_review: None,
             },
             created_at: "2026-03-08T00:00:00Z".into(),
             updated_at: "2026-03-08T00:00:00Z".into(),
@@ -3415,7 +3415,7 @@ mod tests {
                 shared: None,
                 lifecycle: NodeLifecycle::Active,
                 override_scope: None,
-            scope_review: None,
+                scope_review: None,
             },
             created_at: "2026-03-08T16:07:38Z".into(),
             updated_at: "2026-03-08T16:07:38Z".into(),
@@ -3508,7 +3508,7 @@ mod tests {
                 shared: None,
                 lifecycle: NodeLifecycle::Active,
                 override_scope: None,
-            scope_review: None,
+                scope_review: None,
             },
             created_at: "2026-03-08T16:07:38Z".into(),
             updated_at: "2026-03-08T16:07:38Z".into(),
@@ -3584,7 +3584,7 @@ mod tests {
                 shared: None,
                 lifecycle: NodeLifecycle::Active,
                 override_scope: None,
-            scope_review: None,
+                scope_review: None,
             },
             created_at: "2026-03-08T16:07:38Z".into(),
             updated_at: "2026-03-08T16:07:38Z".into(),
@@ -3746,7 +3746,7 @@ mod tests {
                     shared: None,
                     lifecycle: NodeLifecycle::Active,
                     override_scope: None,
-            scope_review: None,
+                    scope_review: None,
                 },
                 created_at: "2026-03-15T17:21:24Z".into(),
                 updated_at: "2026-03-15T17:21:24Z".into(),
@@ -3812,7 +3812,7 @@ mod tests {
                     shared: None,
                     lifecycle,
                     override_scope: None,
-            scope_review: None,
+                    scope_review: None,
                 },
                 created_at: updated_at.into(),
                 updated_at: updated_at.into(),
@@ -3848,7 +3848,7 @@ mod tests {
                     shared: None,
                     lifecycle,
                     override_scope: None,
-            scope_review: None,
+                    scope_review: None,
                 },
                 created_at: updated_at.into(),
                 updated_at: updated_at.into(),
@@ -4025,7 +4025,7 @@ mod tests {
                 shared: None,
                 lifecycle: NodeLifecycle::Active,
                 override_scope: None,
-            scope_review: None,
+                scope_review: None,
             },
         ));
         store.upsert_node(make_scoped_decision(
@@ -4042,7 +4042,7 @@ mod tests {
                 shared: None,
                 lifecycle: NodeLifecycle::Active,
                 override_scope: None,
-            scope_review: None,
+                scope_review: None,
             },
         ));
 
@@ -4072,7 +4072,7 @@ mod tests {
                 }),
                 lifecycle: NodeLifecycle::Active,
                 override_scope: None,
-            scope_review: None,
+                scope_review: None,
             },
         ));
 
@@ -4109,7 +4109,7 @@ mod tests {
                 }),
                 lifecycle: NodeLifecycle::Active,
                 override_scope: None,
-            scope_review: None,
+                scope_review: None,
             },
         ));
 
@@ -4143,7 +4143,7 @@ mod tests {
                     shared: None,
                     lifecycle: NodeLifecycle::Active,
                     override_scope: None,
-            scope_review: None,
+                    scope_review: None,
                 },
             ));
             store.upsert_node(make_scoped_decision(
@@ -4163,7 +4163,7 @@ mod tests {
                     }),
                     lifecycle: NodeLifecycle::Active,
                     override_scope: None,
-            scope_review: None,
+                    scope_review: None,
                 },
             ));
             store.save_snapshot().unwrap();
@@ -4257,7 +4257,7 @@ mod tests {
                     shared: None,
                     lifecycle: NodeLifecycle::Active,
                     override_scope: None,
-            scope_review: None,
+                    scope_review: None,
                 },
                 created_at: "2026-03-08T00:00:00Z".into(),
                 updated_at: "2026-03-08T00:00:00Z".into(),
@@ -4267,7 +4267,9 @@ mod tests {
 
         {
             let reopened = BlueprintStore::open(&data_dir).unwrap();
-            let node = reopened.get_node("dec-legacy-scope").expect("node should reopen");
+            let node = reopened
+                .get_node("dec-legacy-scope")
+                .expect("node should reopen");
             assert_eq!(node.scope().lifecycle, NodeLifecycle::Archived);
             let override_scope = node
                 .scope()

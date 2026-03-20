@@ -2,9 +2,15 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import Layout from '../components/Layout.tsx';
 import CreateProjectModal from '../components/CreateProjectModal.tsx';
-import { createApiClient } from '../api/client.ts';
+import ImportProjectModal from '../components/ImportProjectModal.tsx';
+import { ApiError, createApiClient } from '../api/client.ts';
 import { useGetAccessToken } from '../auth/useAuthenticatedFetch.ts';
-import type { Project } from '../types.ts';
+import type {
+  ImportProvider,
+  Project,
+  ProjectImportConflictResponse,
+  ProjectImportResponse,
+} from '../types.ts';
 
 function formatDate(iso: string): string {
   const parsed = new Date(iso);
@@ -21,6 +27,10 @@ function projectSessionsPath(slug: string): string {
   return `/projects/${encodeURIComponent(slug)}/sessions`;
 }
 
+function sessionPath(id: string): string {
+  return `/session/${encodeURIComponent(id)}`;
+}
+
 export default function ProjectsPage() {
   const navigate = useNavigate();
   const getToken = useGetAccessToken();
@@ -31,8 +41,10 @@ export default function ProjectsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [importModalOpen, setImportModalOpen] = useState(false);
   const [archiveMutationProjectId, setArchiveMutationProjectId] = useState<string | null>(null);
   const [deleteMutationProjectId, setDeleteMutationProjectId] = useState<string | null>(null);
+  const [latestImport, setLatestImport] = useState<ProjectImportResponse | null>(null);
 
   const query = searchParams.get('query') ?? '';
   const showArchived = searchParams.get('show_archived') === 'true';
@@ -80,6 +92,64 @@ export default function ProjectsPage() {
     }
   }, [api, loadProjects, navigate]);
 
+  const handleCreateImport = useCallback(async (provider: ImportProvider, sourceRef: string) => {
+    setError(null);
+    try {
+      const response = await api.createProjectImport({ provider, sourceRef });
+      setLatestImport(response as ProjectImportResponse);
+      await loadProjects();
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        const details = err.details as ProjectImportConflictResponse | undefined;
+        if (details?.project?.slug) {
+          void navigate(projectSessionsPath(details.project.slug));
+          return;
+        }
+      }
+      throw err;
+    }
+  }, [api, loadProjects, navigate]);
+
+  useEffect(() => {
+    if (!latestImport) return undefined;
+    if (
+      latestImport.import_job.status === 'review_pending'
+      || latestImport.import_job.status === 'applied'
+      || latestImport.import_job.status === 'failed'
+    ) {
+      return undefined;
+    }
+
+    let cancelled = false;
+    let timer: number | undefined;
+
+    const refresh = async () => {
+      try {
+        const response = await api.getProjectImport(latestImport.import_job.id);
+        if (cancelled) return;
+        setLatestImport(response);
+        if (
+          response.import_job.status === 'queued'
+          || response.import_job.status === 'cloning'
+          || response.import_job.status === 'analyzing'
+        ) {
+          timer = window.setTimeout(refresh, 400);
+        }
+      } catch (err) {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    };
+
+    timer = window.setTimeout(refresh, 0);
+    return () => {
+      cancelled = true;
+      if (timer) {
+        window.clearTimeout(timer);
+      }
+    };
+  }, [api, latestImport]);
+
   const handleArchiveToggle = useCallback(async (project: Project, archived: boolean) => {
     setArchiveMutationProjectId(project.id);
     setError(null);
@@ -110,6 +180,48 @@ export default function ProjectsPage() {
       setDeleteMutationProjectId(null);
     }
   }, [api, loadProjects]);
+
+  const latestImportMessage = useMemo(() => {
+    if (!latestImport) return null;
+    const { import_job: job } = latestImport;
+    if (job.provider === 'local') {
+      switch (job.status) {
+        case 'queued':
+          return job.progress_message ?? 'Local import is queued.';
+        case 'analyzing':
+          return job.progress_message ?? 'Local import is analyzing the validated source root and preparing a seeded planning session.';
+        case 'review_pending':
+          return job.analysis_summary
+            ?? job.progress_message
+            ?? 'Import draft is ready. Open the seeded session to review imported context.';
+        case 'applied':
+          return 'Import draft was applied to the canonical project blueprint.';
+        case 'failed':
+          return job.error_message ?? 'Local import failed.';
+        default:
+          return null;
+      }
+    }
+
+    switch (job.status) {
+      case 'queued':
+        return 'GitHub import is queued.';
+      case 'cloning':
+        return job.progress_message ?? 'GitHub import is cloning the default branch into managed storage.';
+      case 'analyzing':
+        return job.progress_message ?? 'GitHub import is analyzing the checkout and preparing a seeded planning session.';
+      case 'review_pending':
+        return job.analysis_summary
+          ?? job.progress_message
+          ?? 'Import draft is ready. Open the seeded session to review imported context.';
+      case 'applied':
+        return 'Import draft was applied to the canonical project blueprint.';
+      case 'failed':
+        return job.error_message ?? 'GitHub import failed.';
+      default:
+        return null;
+    }
+  }, [latestImport]);
 
   return (
     <Layout>
@@ -148,11 +260,60 @@ export default function ProjectsPage() {
             <button className="btn btn-outline" onClick={() => { void navigate('/sessions'); }}>
               Open Sessions
             </button>
+            <button className="btn btn-outline" onClick={() => setImportModalOpen(true)}>
+              Import Existing Project
+            </button>
             <button className="btn btn-primary" onClick={() => setCreateModalOpen(true)}>
               New Project
             </button>
           </div>
         </header>
+
+        {latestImport && (
+          <div
+            style={{
+              border: '1px solid var(--color-border)',
+              borderRadius: '8px',
+              background: 'var(--color-surface)',
+              padding: '12px 14px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '6px',
+            }}
+          >
+            <div style={{ color: 'var(--color-text)', fontWeight: 700 }}>
+              Import queued for {latestImport.project.name}
+            </div>
+            <div style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>
+              {latestImportMessage}
+            </div>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              {latestImport.import_job.status === 'review_pending' && latestImport.import_job.seed_session_id && (
+                <button
+                  className="btn btn-primary"
+                  onClick={() => { void navigate(sessionPath(latestImport.import_job.seed_session_id!)); }}
+                >
+                  Open Seeded Session
+                </button>
+              )}
+              {(
+                latestImport.import_job.status === 'review_pending'
+                || latestImport.import_job.status === 'applied'
+                || latestImport.import_job.status === 'failed'
+              ) && (
+                <button
+                  className="btn btn-outline"
+                  onClick={() => { void navigate(projectSessionsPath(latestImport.project.slug)); }}
+                >
+                  Open Project
+                </button>
+              )}
+              <button className="btn" onClick={() => setLatestImport(null)}>
+                Dismiss
+              </button>
+            </div>
+          </div>
+        )}
 
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
           <input
@@ -360,6 +521,11 @@ export default function ProjectsPage() {
         isOpen={createModalOpen}
         onClose={() => setCreateModalOpen(false)}
         onCreate={handleCreateProject}
+      />
+      <ImportProjectModal
+        isOpen={importModalOpen}
+        onClose={() => setImportModalOpen(false)}
+        onImport={handleCreateImport}
       />
     </Layout>
   );
