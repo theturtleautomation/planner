@@ -6,6 +6,7 @@ import { useGetAccessToken } from '../auth/useAuthenticatedFetch.ts';
 import type {
   Project,
   ProjectImportHistoryComparisonResponse,
+  ProjectImportHistoryPairComparisonResponse,
   ProjectImportHistoryResponse,
   ProjectImportResponse,
   SessionSummary,
@@ -69,6 +70,8 @@ export default function ProjectSessionsPage() {
   const [importReview, setImportReview] = useState<ProjectImportResponse | null>(null);
   const [importHistory, setImportHistory] = useState<ProjectImportHistoryResponse | null>(null);
   const [importComparison, setImportComparison] = useState<ProjectImportHistoryComparisonResponse | null>(null);
+  const [importHistoryBaselineJobId, setImportHistoryBaselineJobId] = useState<string | null>(null);
+  const [importPairComparison, setImportPairComparison] = useState<ProjectImportHistoryPairComparisonResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [applyPending, setApplyPending] = useState(false);
@@ -132,6 +135,8 @@ export default function ProjectSessionsPage() {
       setImportReview(importReviewResponse);
       setImportHistory(importHistoryResponse);
       setImportComparison(null);
+      setImportHistoryBaselineJobId(null);
+      setImportPairComparison(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -216,6 +221,8 @@ export default function ProjectSessionsPage() {
       setImportReview(response);
       setImportHistory(await loadImportHistory());
       setImportComparison(null);
+      setImportHistoryBaselineJobId(null);
+      setImportPairComparison(null);
     } catch (err) {
       setApplyError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -244,10 +251,35 @@ export default function ProjectSessionsPage() {
     try {
       const response = await api.getProjectImportHistoryComparison(projectSlug, jobId);
       setImportComparison(response);
+      setImportHistoryBaselineJobId(null);
+      setImportPairComparison(null);
     } catch (err) {
       setRestoreError(err instanceof Error ? err.message : String(err));
     }
   }, [api, projectSlug]);
+
+  const handleSelectImportHistoryBaseline = useCallback((jobId: string) => {
+    setRestoreError(null);
+    setImportHistoryBaselineJobId(jobId);
+    setImportComparison(null);
+    setImportPairComparison(null);
+  }, []);
+
+  const handleCompareImportHistoryToBaseline = useCallback(async (jobId: string) => {
+    if (!projectSlug || !importHistoryBaselineJobId) return;
+    setRestoreError(null);
+    try {
+      const response = await api.getProjectImportHistoryPairComparison(
+        projectSlug,
+        importHistoryBaselineJobId,
+        jobId,
+      );
+      setImportPairComparison(response);
+      setImportComparison(null);
+    } catch (err) {
+      setRestoreError(err instanceof Error ? err.message : String(err));
+    }
+  }, [api, importHistoryBaselineJobId, projectSlug]);
 
   const handleReimport = useCallback(async () => {
     if (!projectSlug) return;
@@ -258,6 +290,8 @@ export default function ProjectSessionsPage() {
       setImportState(response);
       setImportHistory(await loadImportHistory());
       setImportComparison(null);
+      setImportHistoryBaselineJobId(null);
+      setImportPairComparison(null);
     } catch (err) {
       setReimportError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -275,6 +309,8 @@ export default function ProjectSessionsPage() {
       setImportReview(response);
       setImportHistory(await loadImportHistory());
       setImportComparison(null);
+      setImportHistoryBaselineJobId(null);
+      setImportPairComparison(null);
     } catch (err) {
       setRestoreError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -292,6 +328,8 @@ export default function ProjectSessionsPage() {
       setImportReview(response);
       setImportHistory(await loadImportHistory());
       setImportComparison(null);
+      setImportHistoryBaselineJobId(null);
+      setImportPairComparison(null);
     } catch (err) {
       setRestoreError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -309,6 +347,8 @@ export default function ProjectSessionsPage() {
       setImportReview(response);
       setImportHistory(await loadImportHistory());
       setImportComparison(null);
+      setImportHistoryBaselineJobId(null);
+      setImportPairComparison(null);
     } catch (err) {
       setRestoreError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -359,6 +399,7 @@ export default function ProjectSessionsPage() {
   const importHistoryEntries = importHistory?.history ?? [];
   const importDiffSummary = importHistory?.diff_summary ?? null;
   const selectedHistoryComparison = importComparison?.diff_summary ?? null;
+  const selectedPairComparison = importPairComparison?.diff_summary ?? null;
   const restoreBlockedByPendingReview = importStateStatus === 'review_pending';
 
   return (
@@ -808,6 +849,57 @@ export default function ProjectSessionsPage() {
               </div>
             )}
 
+            {selectedPairComparison && (
+              <div
+                style={{
+                  border: '1px solid var(--color-border)',
+                  borderRadius: '8px',
+                  padding: '12px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '6px',
+                }}
+              >
+                <span style={{ color: 'var(--color-text)', fontWeight: 600 }}>
+                  Selected History Entries Compared
+                </span>
+                <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>
+                  Comparing baseline import {importPairComparison?.baseline_entry.import_job.id.slice(0, 8)} to import {importPairComparison?.compared_entry.import_job.id.slice(0, 8)}.
+                </span>
+                <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>
+                  {selectedPairComparison.added_nodes.length} added, {selectedPairComparison.removed_nodes.length} removed
+                </span>
+                <div style={{ color: 'var(--color-text-muted)', fontSize: '12px', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                  {selectedPairComparison.current_head_revision && (
+                    <span>Compared revision: {selectedPairComparison.current_head_revision.slice(0, 8)}</span>
+                  )}
+                  {selectedPairComparison.compared_head_revision && (
+                    <span>Baseline revision: {selectedPairComparison.compared_head_revision.slice(0, 8)}</span>
+                  )}
+                </div>
+                {selectedPairComparison.added_node_types.length > 0 && (
+                  <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>
+                    Added types: {selectedPairComparison.added_node_types.map((entry) => `${entry.node_type} (${entry.count})`).join(', ')}
+                  </span>
+                )}
+                {selectedPairComparison.removed_node_types.length > 0 && (
+                  <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>
+                    Removed types: {selectedPairComparison.removed_node_types.map((entry) => `${entry.node_type} (${entry.count})`).join(', ')}
+                  </span>
+                )}
+                {selectedPairComparison.added_nodes.length > 0 && (
+                  <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>
+                    Added nodes: {selectedPairComparison.added_nodes.map((node) => node.node_name).join(', ')}
+                  </span>
+                )}
+                {selectedPairComparison.removed_nodes.length > 0 && (
+                  <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>
+                    Removed nodes: {selectedPairComparison.removed_nodes.map((node) => node.node_name).join(', ')}
+                  </span>
+                )}
+              </div>
+            )}
+
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {importHistoryEntries.map((entry) => (
                 <article
@@ -845,14 +937,30 @@ export default function ProjectSessionsPage() {
                       <span>Draft nodes: {entry.discovered_node_count}</span>
                     )}
                   </div>
-                  {entry.import_job.id !== importState?.import_job.id && entry.discovered_node_count !== null && entry.discovered_node_count !== undefined && (
+                  {entry.discovered_node_count !== null && entry.discovered_node_count !== undefined && (
                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                       <button
                         className="btn btn-outline"
-                        onClick={() => { void handleCompareImportHistoryEntry(entry.import_job.id); }}
+                        onClick={() => { handleSelectImportHistoryBaseline(entry.import_job.id); }}
                       >
-                        Compare To Current
+                        {importHistoryBaselineJobId === entry.import_job.id ? 'Baseline Selected' : 'Use As Baseline'}
                       </button>
+                      {importHistoryBaselineJobId && importHistoryBaselineJobId !== entry.import_job.id && (
+                        <button
+                          className="btn btn-outline"
+                          onClick={() => { void handleCompareImportHistoryToBaseline(entry.import_job.id); }}
+                        >
+                          Compare To Selected
+                        </button>
+                      )}
+                      {entry.import_job.id !== importState?.import_job.id && (
+                        <button
+                          className="btn btn-outline"
+                          onClick={() => { void handleCompareImportHistoryEntry(entry.import_job.id); }}
+                        >
+                          Compare To Current
+                        </button>
+                      )}
                     </div>
                   )}
                   {entry.import_job.status === 'review_pending'

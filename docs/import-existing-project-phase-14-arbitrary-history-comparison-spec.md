@@ -1,6 +1,6 @@
 # Import Existing Project Phase 14 Arbitrary History Comparison Spec
 
-**Status:** Ready for implementation  
+**Status:** Implemented  
 **Date:** 2026-03-20  
 **Parent:** [Project Plan](/home/thetu/planner/docs/project-plan.md)  
 **Source Research:** [Import Existing Project Plan](/home/thetu/planner/docs/import-existing-project-plan.md)  
@@ -32,6 +32,37 @@ After this slice:
 
 The user still does **not** get visual graph diffing, multi-entry merge plans,
 or compare/restore operations across different projects.
+
+## Implementation Notes
+
+Implemented on 2026-03-20 in the bounded Phase 14 delivery slice.
+
+Execution landed in:
+
+- `planner-server/src/api.rs`
+- `planner-web/src/api/client.ts`
+- `planner-web/src/api/__tests__/client.test.ts`
+- `planner-web/src/types.ts`
+- `planner-web/src/pages/ProjectSessionsPage.tsx`
+- `planner-web/src/pages/__tests__/ProjectSessionsPage.test.tsx`
+
+Delivered behavior:
+
+- `GET /projects/{projectRef}/import-history/{baseJobId}/compare/{jobId}` now
+  compares any two eligible same-project history entries without mutating
+  import or blueprint state
+- `ProjectSessionsPage` now lets the user mark one history entry as a baseline
+  and compare a second entry against it while keeping restore actions separate
+- the arbitrary two-entry comparison reuses the existing lightweight node-level
+  added/removed summary shape instead of inventing a second diff model
+- changing the selected baseline clears the prior pair comparison panel so the
+  history surface stays truthful
+
+Verification completed:
+
+- `cargo test -p planner-server compare_project_import_history_entry -- --nocapture`
+- `cargo test -p planner-server compare_project_import_history_entries -- --nocapture`
+- `npm --prefix planner-web test -- --run src/api/__tests__/client.test.ts src/pages/__tests__/ProjectSessionsPage.test.tsx`
 
 ## Locked Decisions For This Slice
 

@@ -181,6 +181,22 @@ describe('createApiClient', () => {
     );
   });
 
+  it('getProjectImportHistoryPairComparison makes GET request to /api/projects/:projectRef/import-history/:baseJobId/compare/:jobId', async () => {
+    fetchSpy.mockResolvedValue(makeFetchResponse({
+      project: { id: 'p1' },
+      source_binding: { project_id: 'p1' },
+      baseline_entry: { import_job: { id: 'job-0' } },
+      compared_entry: { import_job: { id: 'job-1' } },
+      diff_summary: { current_job_id: 'job-1', compared_to_job_id: 'job-0', added_nodes: [], removed_nodes: [], added_node_types: [], removed_node_types: [] },
+    }));
+    const api = createApiClient(mockGetToken);
+    await api.getProjectImportHistoryPairComparison('task-tracker', 'job-0', 'job-1');
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/projects/task-tracker/import-history/job-0/compare/job-1',
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    );
+  });
+
   it('applyProjectImportReview makes POST request to /api/projects/:projectRef/import-review', async () => {
     fetchSpy.mockResolvedValue(makeFetchResponse({
       project: { id: 'p1' },

@@ -20,6 +20,7 @@ import type {
   ProjectImportConflictResponse,
   ProjectImportHistoryResponse,
   ProjectImportHistoryComparisonResponse,
+  ProjectImportHistoryPairComparisonResponse,
   ImportProvider,
 } from '../types.ts';
 import type {
@@ -211,6 +212,17 @@ export function createApiClient(getToken: GetTokenFn) {
       return apiFetch<ProjectImportHistoryComparisonResponse>(
         getToken,
         `/projects/${encodeURIComponent(projectRef)}/import-history/${encodeURIComponent(jobId)}/compare`,
+      );
+    },
+
+    getProjectImportHistoryPairComparison(
+      projectRef: string,
+      baseJobId: string,
+      jobId: string,
+    ): Promise<ProjectImportHistoryPairComparisonResponse> {
+      return apiFetch<ProjectImportHistoryPairComparisonResponse>(
+        getToken,
+        `/projects/${encodeURIComponent(projectRef)}/import-history/${encodeURIComponent(baseJobId)}/compare/${encodeURIComponent(jobId)}`,
       );
     },
 

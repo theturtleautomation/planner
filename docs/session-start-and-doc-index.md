@@ -62,6 +62,7 @@ Read these when the task touches the relevant area.
 - [import-existing-project-phase-12-historical-applied-restore-for-review-spec.md](/home/thetu/planner/docs/import-existing-project-phase-12-historical-applied-restore-for-review-spec.md)
 - [import-existing-project-phase-13-historical-entry-comparison-spec.md](/home/thetu/planner/docs/import-existing-project-phase-13-historical-entry-comparison-spec.md)
 - [import-existing-project-phase-14-arbitrary-history-comparison-spec.md](/home/thetu/planner/docs/import-existing-project-phase-14-arbitrary-history-comparison-spec.md)
+- [import-existing-project-phase-15-selection-aware-history-comparison-spec.md](/home/thetu/planner/docs/import-existing-project-phase-15-selection-aware-history-comparison-spec.md)
 - [knowledge-library-project-scope-plan.md](/home/thetu/planner/docs/knowledge-library-project-scope-plan.md)
 
 ### Planning integrity and audit remediation

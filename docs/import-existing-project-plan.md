@@ -77,7 +77,15 @@
 > execution artifact is now
 > [Import Existing Project Phase 14 Arbitrary History Comparison Spec](/home/thetu/planner/docs/import-existing-project-phase-14-arbitrary-history-comparison-spec.md),
 > which scopes comparing any two eligible same-project history entries without
-> yet reopening graph-level diff tooling or multi-entry comparison.
+> yet reopening graph-level diff tooling or multi-entry comparison. That slice
+> is now implemented. Remaining import work should stay phased behind
+> follow-on specs that improve comparison truthfulness or richer reconciliation
+> behavior rather than reopening completed Phase 14 work. The next ready
+> execution artifact is now
+> [Import Existing Project Phase 15 Selection-Aware History Comparison Spec](/home/thetu/planner/docs/import-existing-project-phase-15-selection-aware-history-comparison-spec.md),
+> which scopes selection-aware history comparison so persisted merge-control
+> exclusions are reflected in compare results without inventing a new diff
+> model or graph viewer.
 
 ## Findings
 

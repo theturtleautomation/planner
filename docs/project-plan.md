@@ -38,6 +38,7 @@ These are the main planning documents currently shaping the repo:
 - [Import Existing Project Phase 12 Historical Applied Restore For Review Spec](/home/thetu/planner/docs/import-existing-project-phase-12-historical-applied-restore-for-review-spec.md)
 - [Import Existing Project Phase 13 Historical Entry Comparison Spec](/home/thetu/planner/docs/import-existing-project-phase-13-historical-entry-comparison-spec.md)
 - [Import Existing Project Phase 14 Arbitrary History Comparison Spec](/home/thetu/planner/docs/import-existing-project-phase-14-arbitrary-history-comparison-spec.md)
+- [Import Existing Project Phase 15 Selection-Aware History Comparison Spec](/home/thetu/planner/docs/import-existing-project-phase-15-selection-aware-history-comparison-spec.md)
 - [Planning Status Audit Remediation Spec](/home/thetu/planner/docs/planning-status-audit-remediation-spec.md)
 
 ## Current Active Thread
@@ -95,6 +96,8 @@ Current completed slice:
   [Import Existing Project Phase 12 Historical Applied Restore For Review Spec](/home/thetu/planner/docs/import-existing-project-phase-12-historical-applied-restore-for-review-spec.md)
 - selected-entry historical comparison is implemented and verified in
   [Import Existing Project Phase 13 Historical Entry Comparison Spec](/home/thetu/planner/docs/import-existing-project-phase-13-historical-entry-comparison-spec.md)
+- arbitrary two-entry historical comparison is implemented and verified in
+  [Import Existing Project Phase 14 Arbitrary History Comparison Spec](/home/thetu/planner/docs/import-existing-project-phase-14-arbitrary-history-comparison-spec.md)
 
 Current agreed product constraints:
 
@@ -112,9 +115,10 @@ Current agreed product constraints:
 
 Current next bounded slice:
 
-- broader history comparison is now bounded to arbitrary two-entry comparison
+- broader history comparison is now bounded to selection-aware comparison that
+  respects persisted merge-control exclusions
   in
-  [Import Existing Project Phase 14 Arbitrary History Comparison Spec](/home/thetu/planner/docs/import-existing-project-phase-14-arbitrary-history-comparison-spec.md)
+  [Import Existing Project Phase 15 Selection-Aware History Comparison Spec](/home/thetu/planner/docs/import-existing-project-phase-15-selection-aware-history-comparison-spec.md)
 - later history work should stay phased behind follow-on specs after this slice
   is implemented and verified
 
@@ -145,13 +149,13 @@ unplanned implementation.
 The next move is:
 
 - use `delivery-cycle` to implement
-  [Import Existing Project Phase 14 Arbitrary History Comparison Spec](/home/thetu/planner/docs/import-existing-project-phase-14-arbitrary-history-comparison-spec.md)
+  [Import Existing Project Phase 15 Selection-Aware History Comparison Spec](/home/thetu/planner/docs/import-existing-project-phase-15-selection-aware-history-comparison-spec.md)
 
 After that, keep later import work phased behind follow-on specs for:
 
 - broader historical reconciliation and history comparison behavior beyond
-  current restore flows, selected-entry comparison, and arbitrary two-entry
-  comparison
+  current restore flows, selected-entry comparison, arbitrary two-entry
+  comparison, and selection-aware comparison
 
 Use
 [Import Existing Project Plan](/home/thetu/planner/docs/import-existing-project-plan.md)
