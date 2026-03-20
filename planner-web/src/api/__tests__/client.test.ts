@@ -181,6 +181,22 @@ describe('createApiClient', () => {
     expect(callArgs.body).toBe('{}');
   });
 
+  it('restoreProjectImportHistoryEntry makes POST request to /api/projects/:projectRef/import-history/:jobId/restore', async () => {
+    fetchSpy.mockResolvedValue(makeFetchResponse({
+      project: { id: 'p1' },
+      import_job: { id: 'job-restore' },
+      source_binding: { project_id: 'p1' },
+    }));
+    const api = createApiClient(mockGetToken);
+    await api.restoreProjectImportHistoryEntry('task-tracker', 'job-1');
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/projects/task-tracker/import-history/job-1/restore',
+      expect.objectContaining({ method: 'POST' }),
+    );
+    const callArgs = fetchSpy.mock.calls[0][1] as RequestInit;
+    expect(callArgs.body).toBe('{}');
+  });
+
   it('reimportProject makes POST request to /api/projects/:projectRef/reimport', async () => {
     fetchSpy.mockResolvedValue(makeFetchResponse({
       project: { id: 'p1' },

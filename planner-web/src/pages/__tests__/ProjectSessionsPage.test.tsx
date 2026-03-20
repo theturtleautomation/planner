@@ -12,6 +12,7 @@ const {
   mockGetProjectImportHistory,
   mockGetProjectImportReview,
   mockApplyProjectImportReview,
+  mockRestoreProjectImportHistoryEntry,
   mockReimportProject,
   mockGetToken,
   MockApiError,
@@ -22,6 +23,7 @@ const {
   mockGetProjectImportHistory: vi.fn(),
   mockGetProjectImportReview: vi.fn(),
   mockApplyProjectImportReview: vi.fn(),
+  mockRestoreProjectImportHistoryEntry: vi.fn(),
   mockReimportProject: vi.fn(),
   mockGetToken: vi.fn().mockResolvedValue('mock-token'),
   MockApiError: class ApiError extends Error {
@@ -44,6 +46,7 @@ vi.mock('../../api/client.ts', () => ({
     getProjectImportHistory: mockGetProjectImportHistory,
     getProjectImportReview: mockGetProjectImportReview,
     applyProjectImportReview: mockApplyProjectImportReview,
+    restoreProjectImportHistoryEntry: mockRestoreProjectImportHistoryEntry,
     reimportProject: mockReimportProject,
   })),
 }));
@@ -83,6 +86,7 @@ describe('ProjectSessionsPage import review', () => {
       getProjectImportHistory: mockGetProjectImportHistory,
       getProjectImportReview: mockGetProjectImportReview,
       applyProjectImportReview: mockApplyProjectImportReview,
+      restoreProjectImportHistoryEntry: mockRestoreProjectImportHistoryEntry,
       reimportProject: mockReimportProject,
     }));
 
@@ -433,6 +437,8 @@ describe('ProjectSessionsPage import review', () => {
     expect(screen.getByText('Changes Since Last Applied Import')).toBeInTheDocument();
     expect(screen.getByText(/Added nodes: Rust/)).toBeInTheDocument();
     expect(screen.getByText(/Applying this draft will reconcile import-owned project blueprint state/i)).toBeInTheDocument();
+    expect(screen.getByText(/Resolve the pending import review before restoring an older applied import/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Restore This Import' })).not.toBeInTheDocument();
   });
 
   it('applies the import draft and exposes blueprint navigation', async () => {
@@ -717,5 +723,292 @@ describe('ProjectSessionsPage import review', () => {
 
     expect(await screen.findByText('Imported source is attached to this project')).toBeInTheDocument();
     expect(screen.getByText('Re-import request queued')).toBeInTheDocument();
+  });
+
+  it('restores an older applied import from project history', async () => {
+    const user = userEvent.setup();
+    mockGetProjectImportState.mockResolvedValueOnce({
+      project: {
+        id: 'proj-1',
+        slug: 'task-tracker',
+        name: 'Task Tracker',
+        description: 'Import review workspace',
+        owner_user_id: 'dev|local',
+        created_at: '2026-03-20T00:00:00Z',
+        updated_at: '2026-03-20T00:00:00Z',
+        archived_at: null,
+        legacy_scope_keys: [],
+      },
+      import_job: {
+        id: 'job-1',
+        project_id: 'proj-1',
+        provider: 'github',
+        requested_ref: 'https://github.com/example/task-tracker',
+        status: 'applied',
+        restored_from_job_id: null,
+        seed_session_id: 'seed-1',
+        analysis_summary: 'Imported draft for Task Tracker from GitHub.',
+        progress_message: 'Import draft applied and reconciled against the canonical project blueprint.',
+        error_message: null,
+        created_at: '2026-03-20T00:00:00Z',
+        updated_at: '2026-03-20T00:02:00Z',
+      },
+      source_binding: {
+        project_id: 'proj-1',
+        provider: 'github',
+        canonical_ref: 'https://github.com/example/task-tracker',
+        default_branch: 'main',
+        head_revision: 'deadbeef',
+        local_root: '/tmp/imports/task-tracker',
+        managed_checkout: true,
+        created_at: '2026-03-20T00:00:00Z',
+        updated_at: '2026-03-20T00:02:00Z',
+      },
+      import_draft: null,
+    });
+    mockGetProjectImportReview.mockResolvedValueOnce({
+      project: {
+        id: 'proj-1',
+        slug: 'task-tracker',
+        name: 'Task Tracker',
+        description: 'Import review workspace',
+        owner_user_id: 'dev|local',
+        created_at: '2026-03-20T00:00:00Z',
+        updated_at: '2026-03-20T00:00:00Z',
+        archived_at: null,
+        legacy_scope_keys: [],
+      },
+      import_job: {
+        id: 'job-1',
+        project_id: 'proj-1',
+        provider: 'github',
+        requested_ref: 'https://github.com/example/task-tracker',
+        status: 'applied',
+        restored_from_job_id: null,
+        seed_session_id: 'seed-1',
+        analysis_summary: 'Imported draft for Task Tracker from GitHub.',
+        progress_message: 'Import draft applied and reconciled against the canonical project blueprint.',
+        error_message: null,
+        created_at: '2026-03-20T00:00:00Z',
+        updated_at: '2026-03-20T00:02:00Z',
+      },
+      source_binding: {
+        project_id: 'proj-1',
+        provider: 'github',
+        canonical_ref: 'https://github.com/example/task-tracker',
+        default_branch: 'main',
+        head_revision: 'deadbeef',
+        local_root: '/tmp/imports/task-tracker',
+        managed_checkout: true,
+        created_at: '2026-03-20T00:00:00Z',
+        updated_at: '2026-03-20T00:02:00Z',
+      },
+      import_draft: null,
+    });
+    mockGetProjectImportHistory
+      .mockResolvedValueOnce({
+        project: {
+          id: 'proj-1',
+          slug: 'task-tracker',
+          name: 'Task Tracker',
+          description: 'Import review workspace',
+          owner_user_id: 'dev|local',
+          created_at: '2026-03-20T00:00:00Z',
+          updated_at: '2026-03-20T00:00:00Z',
+          archived_at: null,
+          legacy_scope_keys: [],
+        },
+        source_binding: {
+          project_id: 'proj-1',
+          provider: 'github',
+          canonical_ref: 'https://github.com/example/task-tracker',
+          default_branch: 'main',
+          head_revision: 'deadbeef',
+          local_root: '/tmp/imports/task-tracker',
+          managed_checkout: true,
+          created_at: '2026-03-20T00:00:00Z',
+          updated_at: '2026-03-20T00:02:00Z',
+        },
+        history: [
+          {
+            import_job: {
+              id: 'job-1',
+              project_id: 'proj-1',
+              provider: 'github',
+              requested_ref: 'https://github.com/example/task-tracker',
+              status: 'applied',
+              restored_from_job_id: null,
+              seed_session_id: 'seed-1',
+              analysis_summary: 'Imported draft for Task Tracker from GitHub.',
+              progress_message: 'Import draft applied and reconciled against the canonical project blueprint.',
+              error_message: null,
+              created_at: '2026-03-20T00:00:00Z',
+              updated_at: '2026-03-20T00:02:00Z',
+            },
+            source_metadata: {
+              provider: 'github',
+              canonical_ref: 'https://github.com/example/task-tracker',
+              local_root: '/tmp/imports/task-tracker',
+              default_branch: 'main',
+              head_revision: 'deadbeef',
+            },
+            discovered_node_count: 2,
+          },
+          {
+            import_job: {
+              id: 'job-0',
+              project_id: 'proj-1',
+              provider: 'github',
+              requested_ref: 'https://github.com/example/task-tracker',
+              status: 'applied',
+              restored_from_job_id: null,
+              seed_session_id: 'seed-0',
+              analysis_summary: 'Earlier import draft for Task Tracker from GitHub.',
+              progress_message: 'Import draft applied and reconciled against the canonical project blueprint.',
+              error_message: null,
+              created_at: '2026-03-19T23:00:00Z',
+              updated_at: '2026-03-19T23:10:00Z',
+            },
+            source_metadata: {
+              provider: 'github',
+              canonical_ref: 'https://github.com/example/task-tracker',
+              local_root: '/tmp/imports/task-tracker',
+              default_branch: 'main',
+              head_revision: 'cafebabe',
+            },
+            discovered_node_count: 1,
+          },
+        ],
+        diff_summary: null,
+      })
+      .mockResolvedValueOnce({
+        project: {
+          id: 'proj-1',
+          slug: 'task-tracker',
+          name: 'Task Tracker',
+          description: 'Import review workspace',
+          owner_user_id: 'dev|local',
+          created_at: '2026-03-20T00:00:00Z',
+          updated_at: '2026-03-20T00:00:00Z',
+          archived_at: null,
+          legacy_scope_keys: [],
+        },
+        source_binding: {
+          project_id: 'proj-1',
+          provider: 'github',
+          canonical_ref: 'https://github.com/example/task-tracker',
+          default_branch: 'main',
+          head_revision: 'cafebabe',
+          local_root: '/tmp/imports/task-tracker',
+          managed_checkout: true,
+          created_at: '2026-03-20T00:00:00Z',
+          updated_at: '2026-03-20T00:05:00Z',
+        },
+        history: [
+          {
+            import_job: {
+              id: 'job-restore',
+              project_id: 'proj-1',
+              provider: 'github',
+              requested_ref: 'https://github.com/example/task-tracker',
+              status: 'applied',
+              restored_from_job_id: 'job-0',
+              seed_session_id: null,
+              analysis_summary: 'Earlier import draft for Task Tracker from GitHub.',
+              progress_message: 'Historical import restored from job-0 into the canonical project blueprint.',
+              error_message: null,
+              created_at: '2026-03-20T00:05:00Z',
+              updated_at: '2026-03-20T00:05:00Z',
+            },
+            source_metadata: {
+              provider: 'github',
+              canonical_ref: 'https://github.com/example/task-tracker',
+              local_root: '/tmp/imports/task-tracker',
+              default_branch: 'main',
+              head_revision: 'cafebabe',
+            },
+            discovered_node_count: 1,
+          },
+          {
+            import_job: {
+              id: 'job-1',
+              project_id: 'proj-1',
+              provider: 'github',
+              requested_ref: 'https://github.com/example/task-tracker',
+              status: 'applied',
+              restored_from_job_id: null,
+              seed_session_id: 'seed-1',
+              analysis_summary: 'Imported draft for Task Tracker from GitHub.',
+              progress_message: 'Import draft applied and reconciled against the canonical project blueprint.',
+              error_message: null,
+              created_at: '2026-03-20T00:00:00Z',
+              updated_at: '2026-03-20T00:02:00Z',
+            },
+            source_metadata: {
+              provider: 'github',
+              canonical_ref: 'https://github.com/example/task-tracker',
+              local_root: '/tmp/imports/task-tracker',
+              default_branch: 'main',
+              head_revision: 'deadbeef',
+            },
+            discovered_node_count: 2,
+          },
+        ],
+        diff_summary: null,
+      });
+    mockRestoreProjectImportHistoryEntry.mockResolvedValueOnce({
+      project: {
+        id: 'proj-1',
+        slug: 'task-tracker',
+        name: 'Task Tracker',
+        description: 'Import review workspace',
+        owner_user_id: 'dev|local',
+        created_at: '2026-03-20T00:00:00Z',
+        updated_at: '2026-03-20T00:00:00Z',
+        archived_at: null,
+        legacy_scope_keys: [],
+      },
+      import_job: {
+        id: 'job-restore',
+        project_id: 'proj-1',
+        provider: 'github',
+        requested_ref: 'https://github.com/example/task-tracker',
+        status: 'applied',
+        restored_from_job_id: 'job-0',
+        seed_session_id: null,
+        analysis_summary: 'Earlier import draft for Task Tracker from GitHub.',
+        progress_message: 'Historical import restored from job-0 into the canonical project blueprint.',
+        error_message: null,
+        created_at: '2026-03-20T00:05:00Z',
+        updated_at: '2026-03-20T00:05:00Z',
+      },
+      source_binding: {
+        project_id: 'proj-1',
+        provider: 'github',
+        canonical_ref: 'https://github.com/example/task-tracker',
+        default_branch: 'main',
+        head_revision: 'cafebabe',
+        local_root: '/tmp/imports/task-tracker',
+        managed_checkout: true,
+        created_at: '2026-03-20T00:00:00Z',
+        updated_at: '2026-03-20T00:05:00Z',
+      },
+      import_draft: null,
+    });
+
+    renderProjectSessions();
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Restore This Import' })).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Restore This Import' }));
+
+    await waitFor(() => {
+      expect(mockRestoreProjectImportHistoryEntry).toHaveBeenCalledWith('task-tracker', 'job-0');
+    });
+
+    expect(screen.getByText('Historical import restored to canonical blueprint')).toBeInTheDocument();
+    expect(screen.getByText(/Restored from import job-0/i)).toBeInTheDocument();
   });
 });

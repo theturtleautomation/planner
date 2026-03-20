@@ -73,6 +73,8 @@ export default function ProjectSessionsPage() {
   const [applyError, setApplyError] = useState<string | null>(null);
   const [reimportPending, setReimportPending] = useState(false);
   const [reimportError, setReimportError] = useState<string | null>(null);
+  const [restorePendingJobId, setRestorePendingJobId] = useState<string | null>(null);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
 
   const loadImportHistory = useCallback(async () => {
     if (!projectSlug) return null;
@@ -231,11 +233,29 @@ export default function ProjectSessionsPage() {
     }
   }, [api, loadImportHistory, projectSlug]);
 
+  const handleRestoreImportHistoryEntry = useCallback(async (jobId: string) => {
+    if (!projectSlug) return;
+    setRestorePendingJobId(jobId);
+    setRestoreError(null);
+    try {
+      const response = await api.restoreProjectImportHistoryEntry(projectSlug, jobId);
+      setImportState(response);
+      setImportReview(response);
+      setImportHistory(await loadImportHistory());
+    } catch (err) {
+      setRestoreError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRestorePendingJobId(null);
+    }
+  }, [api, loadImportHistory, projectSlug]);
+
   const importDraftCount = importReview?.import_draft?.discovered_nodes.length ?? 0;
   const importSource = importReview?.import_draft?.source_metadata ?? null;
   const importStatus = importReview?.import_job.status ?? null;
   const importHeadline = importStatus === 'applied'
-    ? 'Import draft applied and reconciled to canonical blueprint'
+    ? (importReview?.import_job.restored_from_job_id
+      ? 'Historical import restored to canonical blueprint'
+      : 'Import draft applied and reconciled to canonical blueprint')
     : 'Import draft ready for project review';
   const importDetails = importReview?.import_job.analysis_summary
     ?? importReview?.import_job.progress_message
@@ -250,7 +270,9 @@ export default function ProjectSessionsPage() {
     : importStateStatus === 'review_pending'
       ? 'Latest import draft is ready for review'
       : importStateStatus === 'applied'
-        ? 'Latest import draft was applied'
+        ? (importState?.import_job.restored_from_job_id
+          ? 'Historical import was restored'
+          : 'Latest import draft was applied')
         : 'Imported source is attached to this project';
   const importStateDetails = importState?.import_job.analysis_summary
     ?? importState?.import_job.progress_message
@@ -261,6 +283,7 @@ export default function ProjectSessionsPage() {
     || importStateStatus === 'analyzing';
   const importHistoryEntries = importHistory?.history ?? [];
   const importDiffSummary = importHistory?.diff_summary ?? null;
+  const restoreBlockedByPendingReview = importStateStatus === 'review_pending';
 
   return (
     <Layout>
@@ -368,6 +391,12 @@ export default function ProjectSessionsPage() {
                 {reimportError && (
                   <div style={{ color: 'var(--color-error)', fontSize: '12px' }}>
                     Failed to re-import project: {reimportError}
+                  </div>
+                )}
+
+                {restoreError && (
+                  <div style={{ color: 'var(--color-error)', fontSize: '12px' }}>
+                    Failed to restore import history: {restoreError}
                   </div>
                 )}
 
@@ -497,6 +526,12 @@ export default function ProjectSessionsPage() {
               </div>
             )}
 
+            {restoreError && (
+              <div style={{ color: 'var(--color-error)', fontSize: '12px' }}>
+                Failed to restore import history: {restoreError}
+              </div>
+            )}
+
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
               <button
                 className="btn btn-outline"
@@ -534,6 +569,11 @@ export default function ProjectSessionsPage() {
               <span style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>
                 Recent project-scoped import attempts for this source binding.
               </span>
+              {restoreBlockedByPendingReview && (
+                <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>
+                  Resolve the pending import review before restoring an older applied import.
+                </span>
+              )}
             </div>
 
             {importDiffSummary && (
@@ -608,6 +648,11 @@ export default function ProjectSessionsPage() {
                   <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>
                     Source: {entry.import_job.requested_ref}
                   </span>
+                  {entry.import_job.restored_from_job_id && (
+                    <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>
+                      Restored from import {entry.import_job.restored_from_job_id.slice(0, 8)}
+                    </span>
+                  )}
                   <div style={{ color: 'var(--color-text-muted)', fontSize: '12px', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
                     {entry.source_metadata?.head_revision && (
                       <span>Revision: {entry.source_metadata.head_revision.slice(0, 8)}</span>
@@ -616,6 +661,19 @@ export default function ProjectSessionsPage() {
                       <span>Draft nodes: {entry.discovered_node_count}</span>
                     )}
                   </div>
+                  {entry.import_job.status === 'applied'
+                    && !restoreBlockedByPendingReview
+                    && entry.import_job.id !== importState?.import_job.id && (
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      <button
+                        className="btn btn-outline"
+                        onClick={() => { void handleRestoreImportHistoryEntry(entry.import_job.id); }}
+                        disabled={restorePendingJobId === entry.import_job.id}
+                      >
+                        {restorePendingJobId === entry.import_job.id ? 'Restoring…' : 'Restore This Import'}
+                      </button>
+                    </div>
+                  )}
                 </article>
               ))}
             </div>

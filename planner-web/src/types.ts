@@ -387,6 +387,7 @@ export interface ProjectImportJob {
   provider: ImportProvider;
   requested_ref: string;
   status: ImportStatus;
+  restored_from_job_id?: string | null;
   seed_session_id?: string | null;
   analysis_summary?: string | null;
   progress_message?: string | null;

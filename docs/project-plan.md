@@ -48,7 +48,7 @@ Goal:
 
 Canonical planning doc:
 
-- [Import Existing Project Phase 9 Historical Restore Spec](/home/thetu/planner/docs/import-existing-project-phase-9-historical-restore-spec.md)
+- [Import Existing Project Plan](/home/thetu/planner/docs/import-existing-project-plan.md)
 
 Supporting research doc:
 
@@ -77,6 +77,9 @@ Current completed slice:
 - apply-time canonical reconciliation for import-owned project-local blueprint
   state is implemented and verified in
   [Import Existing Project Phase 8 Canonical Reconciliation Spec](/home/thetu/planner/docs/import-existing-project-phase-8-canonical-reconciliation-spec.md)
+- project-scoped restore to a historical applied import is implemented and
+  verified in
+  [Import Existing Project Phase 9 Historical Restore Spec](/home/thetu/planner/docs/import-existing-project-phase-9-historical-restore-spec.md)
 
 Current agreed product constraints:
 
@@ -94,8 +97,10 @@ Current agreed product constraints:
 
 Current next bounded slice:
 
-- project-scoped restore to a historical applied import is now bounded in
-  [Import Existing Project Phase 9 Historical Restore Spec](/home/thetu/planner/docs/import-existing-project-phase-9-historical-restore-spec.md)
+- the next bounded import slice is not yet promoted
+- remaining work should be split through a follow-on spec focused on broader
+  historical reconciliation beyond applied-import restore, such as richer
+  restore semantics for pending drafts or more advanced merge controls
 
 ## Immediate Bounded Closeout Slice
 
@@ -123,8 +128,8 @@ unplanned implementation.
 
 The next move is:
 
-- implement and close
-  [Import Existing Project Phase 9 Historical Restore Spec](/home/thetu/planner/docs/import-existing-project-phase-9-historical-restore-spec.md)
+- use `spec-lifecycle` to promote the next bounded import spec focused on
+  broader historical reconciliation beyond applied-import restore
 
 After that, keep later import work phased behind follow-on specs for:
 

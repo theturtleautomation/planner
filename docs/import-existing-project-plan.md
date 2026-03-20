@@ -43,7 +43,10 @@
 > [Import Existing Project Phase 9 Historical Restore Spec](/home/thetu/planner/docs/import-existing-project-phase-9-historical-restore-spec.md),
 > which scopes restore to an older applied import through the existing
 > project-scoped history surface without yet reopening per-node merge or broad
-> time-travel semantics.
+> time-travel semantics. That slice is now implemented. Remaining work should
+> be promoted through a later bounded spec for broader historical
+> reconciliation beyond applied-import restore rather than reopening completed
+> Phase 9 work.
 
 ## Findings
 

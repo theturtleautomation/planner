@@ -111,6 +111,8 @@ pub struct ProjectImportJob {
     pub requested_ref: String,
     pub status: ImportStatus,
     #[serde(default)]
+    pub restored_from_job_id: Option<Uuid>,
+    #[serde(default)]
     pub seed_session_id: Option<Uuid>,
     #[serde(default)]
     pub analysis_summary: Option<String>,
@@ -243,6 +245,7 @@ impl ProjectImportStore {
             provider,
             requested_ref,
             status: ImportStatus::Queued,
+            restored_from_job_id: None,
             seed_session_id: None,
             analysis_summary: None,
             progress_message: Some("Import request queued".into()),
@@ -288,9 +291,44 @@ impl ProjectImportStore {
             provider: binding.provider,
             requested_ref: binding.canonical_ref.clone(),
             status: ImportStatus::Queued,
+            restored_from_job_id: None,
             seed_session_id: None,
             analysis_summary: None,
             progress_message: Some("Re-import request queued".into()),
+            error_message: None,
+            created_at: now.clone(),
+            updated_at: now,
+        };
+        self.persist_job(&job)?;
+        self.jobs.write().insert(job.id, job.clone());
+        Ok((job, binding))
+    }
+
+    pub fn create_restore_job(
+        &self,
+        project_id: Uuid,
+        restored_from_job_id: Uuid,
+    ) -> std::io::Result<(ProjectImportJob, ProjectSourceBinding)> {
+        let binding = self.get_binding(project_id).ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("import binding not found for project: {project_id}"),
+            )
+        })?;
+        let now = now_rfc3339();
+        let job = ProjectImportJob {
+            id: Uuid::new_v4(),
+            project_id,
+            provider: binding.provider,
+            requested_ref: binding.canonical_ref.clone(),
+            status: ImportStatus::Queued,
+            restored_from_job_id: Some(restored_from_job_id),
+            seed_session_id: None,
+            analysis_summary: None,
+            progress_message: Some(format!(
+                "Historical restore queued from import {}",
+                restored_from_job_id
+            )),
             error_message: None,
             created_at: now.clone(),
             updated_at: now,
@@ -436,9 +474,11 @@ impl ProjectImportStore {
         &self,
         job_id: Uuid,
         progress_message: impl Into<String>,
+        restored_from_job_id: Option<Uuid>,
     ) -> std::io::Result<ProjectImportJob> {
         self.update_job(job_id, |job| {
             job.status = ImportStatus::Applied;
+            job.restored_from_job_id = restored_from_job_id;
             job.progress_message = Some(progress_message.into());
             job.error_message = None;
         })

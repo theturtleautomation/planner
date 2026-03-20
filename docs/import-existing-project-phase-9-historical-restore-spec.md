@@ -1,6 +1,6 @@
 # Import Existing Project Phase 9 Historical Restore Spec
 
-**Status:** Ready for implementation  
+**Status:** Implemented  
 **Date:** 2026-03-20  
 **Parent:** [Project Plan](/home/thetu/planner/docs/project-plan.md)  
 **Source Research:** [Import Existing Project Plan](/home/thetu/planner/docs/import-existing-project-plan.md)  
@@ -35,6 +35,38 @@ After this slice:
 
 The user still does **not** get arbitrary draft editing, partial rollback,
 cross-project restore, or hard-delete cleanup of archived import-owned nodes.
+
+## Implementation Notes
+
+Implemented on 2026-03-20 in the bounded Phase 9 delivery slice.
+
+Execution landed in:
+
+- `planner-server/src/import.rs`
+- `planner-server/src/api.rs`
+- `planner-web/src/api/client.ts`
+- `planner-web/src/api/__tests__/client.test.ts`
+- `planner-web/src/types.ts`
+- `planner-web/src/pages/ProjectSessionsPage.tsx`
+- `planner-web/src/pages/__tests__/ProjectSessionsPage.test.tsx`
+
+Delivered behavior:
+
+- `POST /projects/{projectRef}/import-history/{jobId}/restore` now restores an
+  older applied import through a fresh append-only latest job record
+- restore reuses the existing import draft payload and the Phase 8
+  reconciliation path instead of reacquiring source or rerunning analysis
+- restore is blocked while the project has a current pending import review
+- restored jobs now carry explicit lineage back to the historical applied job
+- `ProjectSessionsPage` now exposes `Restore This Import` on eligible applied
+  history rows and refreshes the latest-state/history surfaces after restore
+
+Verification completed:
+
+- `cargo test -p planner-server restore_project_import_history_entry -- --nocapture`
+- `cargo test -p planner-server project_import -- --nocapture`
+- `cargo test -p planner-server import_history -- --nocapture`
+- `npm --prefix planner-web test -- --run src/pages/__tests__/ProjectSessionsPage.test.tsx src/api/__tests__/client.test.ts`
 
 ## Locked Decisions For This Slice
 
