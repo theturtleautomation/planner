@@ -73,7 +73,11 @@
 > current import state before restore, without yet reopening arbitrary
 > history-to-history comparison or graph-level diff tooling. That slice is now
 > implemented. Remaining import work should be treated as optional follow-on
-> refinement, not as an automatically active next phase.
+> refinement, not as an automatically active next phase. The next ready
+> execution artifact is now
+> [Import Existing Project Phase 14 Arbitrary History Comparison Spec](/home/thetu/planner/docs/import-existing-project-phase-14-arbitrary-history-comparison-spec.md),
+> which scopes comparing any two eligible same-project history entries without
+> yet reopening graph-level diff tooling or multi-entry comparison.
 
 ## Findings
 

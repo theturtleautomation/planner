@@ -37,6 +37,7 @@ These are the main planning documents currently shaping the repo:
 - [Import Existing Project Phase 11 Selective Apply Merge Controls Spec](/home/thetu/planner/docs/import-existing-project-phase-11-selective-apply-merge-controls-spec.md)
 - [Import Existing Project Phase 12 Historical Applied Restore For Review Spec](/home/thetu/planner/docs/import-existing-project-phase-12-historical-applied-restore-for-review-spec.md)
 - [Import Existing Project Phase 13 Historical Entry Comparison Spec](/home/thetu/planner/docs/import-existing-project-phase-13-historical-entry-comparison-spec.md)
+- [Import Existing Project Phase 14 Arbitrary History Comparison Spec](/home/thetu/planner/docs/import-existing-project-phase-14-arbitrary-history-comparison-spec.md)
 - [Planning Status Audit Remediation Spec](/home/thetu/planner/docs/planning-status-audit-remediation-spec.md)
 
 ## Current Active Thread
@@ -111,10 +112,11 @@ Current agreed product constraints:
 
 Current next bounded slice:
 
-- the next bounded import slice is not yet promoted
-- later history work should be deferred or promoted only if we explicitly want
-  more import-history product surface beyond the current restore and compare
-  flows
+- broader history comparison is now bounded to arbitrary two-entry comparison
+  in
+  [Import Existing Project Phase 14 Arbitrary History Comparison Spec](/home/thetu/planner/docs/import-existing-project-phase-14-arbitrary-history-comparison-spec.md)
+- later history work should stay phased behind follow-on specs after this slice
+  is implemented and verified
 
 ## Immediate Bounded Closeout Slice
 
@@ -142,13 +144,14 @@ unplanned implementation.
 
 The next move is:
 
-- use `spec-lifecycle` only if we explicitly decide to invest further in
-  import-history refinements beyond the current restore and compare flows
+- use `delivery-cycle` to implement
+  [Import Existing Project Phase 14 Arbitrary History Comparison Spec](/home/thetu/planner/docs/import-existing-project-phase-14-arbitrary-history-comparison-spec.md)
 
 After that, keep later import work phased behind follow-on specs for:
 
-- broader historical reconciliation and history comparison behavior only if the
-  current restore-first and selected-entry comparison flows prove insufficient
+- broader historical reconciliation and history comparison behavior beyond
+  current restore flows, selected-entry comparison, and arbitrary two-entry
+  comparison
 
 Use
 [Import Existing Project Plan](/home/thetu/planner/docs/import-existing-project-plan.md)
