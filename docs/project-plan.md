@@ -92,6 +92,8 @@ Current completed slice:
   [Import Existing Project Phase 11 Selective Apply Merge Controls Spec](/home/thetu/planner/docs/import-existing-project-phase-11-selective-apply-merge-controls-spec.md)
 - historical applied import restore-for-review is implemented and verified in
   [Import Existing Project Phase 12 Historical Applied Restore For Review Spec](/home/thetu/planner/docs/import-existing-project-phase-12-historical-applied-restore-for-review-spec.md)
+- selected-entry historical comparison is implemented and verified in
+  [Import Existing Project Phase 13 Historical Entry Comparison Spec](/home/thetu/planner/docs/import-existing-project-phase-13-historical-entry-comparison-spec.md)
 
 Current agreed product constraints:
 
@@ -109,10 +111,10 @@ Current agreed product constraints:
 
 Current next bounded slice:
 
-- broader history comparison is now bounded to selected-entry comparison in
-  [Import Existing Project Phase 13 Historical Entry Comparison Spec](/home/thetu/planner/docs/import-existing-project-phase-13-historical-entry-comparison-spec.md)
-- later history work should stay phased behind follow-on specs after this slice
-  is implemented and verified
+- the next bounded import slice is not yet promoted
+- later history work should be deferred or promoted only if we explicitly want
+  more import-history product surface beyond the current restore and compare
+  flows
 
 ## Immediate Bounded Closeout Slice
 
@@ -140,13 +142,13 @@ unplanned implementation.
 
 The next move is:
 
-- use `delivery-cycle` to implement
-  [Import Existing Project Phase 13 Historical Entry Comparison Spec](/home/thetu/planner/docs/import-existing-project-phase-13-historical-entry-comparison-spec.md)
+- use `spec-lifecycle` only if we explicitly decide to invest further in
+  import-history refinements beyond the current restore and compare flows
 
 After that, keep later import work phased behind follow-on specs for:
 
-- broader historical reconciliation and history comparison behavior beyond
-  selected-entry comparison and the current restore-first flows
+- broader historical reconciliation and history comparison behavior only if the
+  current restore-first and selected-entry comparison flows prove insufficient
 
 Use
 [Import Existing Project Plan](/home/thetu/planner/docs/import-existing-project-plan.md)

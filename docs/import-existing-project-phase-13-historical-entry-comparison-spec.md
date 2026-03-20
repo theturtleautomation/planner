@@ -1,6 +1,6 @@
 # Import Existing Project Phase 13 Historical Entry Comparison Spec
 
-**Status:** Ready for implementation  
+**Status:** Implemented  
 **Date:** 2026-03-20  
 **Parent:** [Project Plan](/home/thetu/planner/docs/project-plan.md)  
 **Source Research:** [Import Existing Project Plan](/home/thetu/planner/docs/import-existing-project-plan.md)  
@@ -34,6 +34,36 @@ After this slice:
 
 The user still does **not** get visual graph diffing, compare-any-two history
 entries, or per-edge history merge tooling.
+
+## Implementation Notes
+
+Implemented on 2026-03-20 in the bounded Phase 13 delivery slice.
+
+Execution landed in:
+
+- `planner-server/src/api.rs`
+- `planner-web/src/api/client.ts`
+- `planner-web/src/api/__tests__/client.test.ts`
+- `planner-web/src/types.ts`
+- `planner-web/src/pages/ProjectSessionsPage.tsx`
+- `planner-web/src/pages/__tests__/ProjectSessionsPage.test.tsx`
+
+Delivered behavior:
+
+- `GET /projects/{projectRef}/import-history/{jobId}/compare` now compares one
+  selected historical import entry against the current import state
+- the comparison reuses the lightweight node-level summary shape from Phase 7
+  instead of introducing a new graph diff model
+- `ProjectSessionsPage` now exposes `Compare To Current` on eligible
+  historical import entries and renders a compact comparison panel
+- restore actions clear the selected comparison so the panel does not linger on
+  stale current-state assumptions
+
+Verification completed:
+
+- `cargo test -p planner-server compare_project_import_history_entry -- --nocapture`
+- `cargo test -p planner-server get_project_import_history_returns_descending_entries_and_diff_summary -- --nocapture`
+- `npm --prefix planner-web test -- --run src/api/__tests__/client.test.ts src/pages/__tests__/ProjectSessionsPage.test.tsx`
 
 ## Locked Decisions For This Slice
 
@@ -171,4 +201,4 @@ compare or visual graph tooling, stop and split that into a later spec.
 
 ## Open Questions
 
-None. The slice is ready for bounded implementation.
+None. The slice is implemented and verified.

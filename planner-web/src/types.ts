@@ -478,6 +478,14 @@ export interface ProjectImportHistoryResponse {
   diff_summary?: ProjectImportDiffSummary | null;
 }
 
+export interface ProjectImportHistoryComparisonResponse {
+  project: Project;
+  source_binding: ProjectSourceBinding;
+  selected_entry: ProjectImportHistoryEntry;
+  current_import_job: ProjectImportJob;
+  diff_summary: ProjectImportDiffSummary;
+}
+
 export interface SendMessageResponse {
   user_message: ChatMessage;
   planner_message: ChatMessage;

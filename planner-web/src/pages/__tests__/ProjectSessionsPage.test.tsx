@@ -10,6 +10,7 @@ const {
   mockListProjectSessions,
   mockGetProjectImportState,
   mockGetProjectImportHistory,
+  mockGetProjectImportHistoryComparison,
   mockGetProjectImportReview,
   mockUpdateProjectImportReviewSelection,
   mockApplyProjectImportReview,
@@ -24,6 +25,7 @@ const {
   mockListProjectSessions: vi.fn(),
   mockGetProjectImportState: vi.fn(),
   mockGetProjectImportHistory: vi.fn(),
+  mockGetProjectImportHistoryComparison: vi.fn(),
   mockGetProjectImportReview: vi.fn(),
   mockUpdateProjectImportReviewSelection: vi.fn(),
   mockApplyProjectImportReview: vi.fn(),
@@ -50,6 +52,7 @@ vi.mock('../../api/client.ts', () => ({
     listProjectSessions: mockListProjectSessions,
     getProjectImportState: mockGetProjectImportState,
     getProjectImportHistory: mockGetProjectImportHistory,
+    getProjectImportHistoryComparison: mockGetProjectImportHistoryComparison,
     getProjectImportReview: mockGetProjectImportReview,
     updateProjectImportReviewSelection: mockUpdateProjectImportReviewSelection,
     applyProjectImportReview: mockApplyProjectImportReview,
@@ -93,6 +96,7 @@ describe('ProjectSessionsPage import review', () => {
       listProjectSessions: mockListProjectSessions,
       getProjectImportState: mockGetProjectImportState,
       getProjectImportHistory: mockGetProjectImportHistory,
+      getProjectImportHistoryComparison: mockGetProjectImportHistoryComparison,
       getProjectImportReview: mockGetProjectImportReview,
       updateProjectImportReviewSelection: mockUpdateProjectImportReviewSelection,
       applyProjectImportReview: mockApplyProjectImportReview,
@@ -1455,6 +1459,97 @@ describe('ProjectSessionsPage import review', () => {
     expect(screen.getByText('Historical draft restored for review')).toBeInTheDocument();
     expect(screen.getByText(/Included: 1/)).toBeInTheDocument();
     expect(screen.queryByText(/Excluded:/)).not.toBeInTheDocument();
+  });
+
+  it('compares a historical import entry to the current state', async () => {
+    const user = userEvent.setup();
+    mockGetProjectImportHistoryComparison.mockResolvedValueOnce({
+      project: {
+        id: 'proj-1',
+        slug: 'task-tracker',
+        name: 'Task Tracker',
+        description: 'Import review workspace',
+        owner_user_id: 'dev|local',
+        created_at: '2026-03-20T00:00:00Z',
+        updated_at: '2026-03-20T00:00:00Z',
+        archived_at: null,
+        legacy_scope_keys: [],
+      },
+      source_binding: {
+        project_id: 'proj-1',
+        provider: 'github',
+        canonical_ref: 'https://github.com/example/task-tracker',
+        default_branch: 'main',
+        head_revision: 'deadbeef',
+        local_root: '/tmp/imports/task-tracker',
+        managed_checkout: true,
+        created_at: '2026-03-20T00:00:00Z',
+        updated_at: '2026-03-20T00:02:00Z',
+      },
+      selected_entry: {
+        import_job: {
+          id: 'job-0',
+          project_id: 'proj-1',
+          provider: 'github',
+          requested_ref: 'https://github.com/example/task-tracker',
+          status: 'applied',
+          restored_from_job_id: null,
+          seed_session_id: 'seed-0',
+          analysis_summary: 'Earlier import draft for Task Tracker from GitHub.',
+          progress_message: 'Import draft applied and reconciled against the canonical project blueprint.',
+          error_message: null,
+          created_at: '2026-03-19T23:00:00Z',
+          updated_at: '2026-03-19T23:10:00Z',
+        },
+        source_metadata: {
+          provider: 'github',
+          canonical_ref: 'https://github.com/example/task-tracker',
+          local_root: '/tmp/imports/task-tracker',
+          default_branch: 'main',
+          head_revision: 'cafebabe',
+        },
+        discovered_node_count: 1,
+      },
+      current_import_job: {
+        id: 'job-1',
+        project_id: 'proj-1',
+        provider: 'github',
+        requested_ref: 'https://github.com/example/task-tracker',
+        status: 'review_pending',
+        seed_session_id: 'seed-1',
+        analysis_summary: 'Imported draft for Task Tracker from GitHub.',
+        progress_message: 'Import draft ready. Review imported context in the seeded session.',
+        error_message: null,
+        created_at: '2026-03-20T00:00:00Z',
+        updated_at: '2026-03-20T00:01:00Z',
+      },
+      diff_summary: {
+        current_job_id: 'job-1',
+        compared_to_job_id: 'job-0',
+        added_nodes: [{ node_id: 'tech-rust-a1', node_name: 'Rust', node_type: 'technology' }],
+        removed_nodes: [],
+        added_node_types: [{ node_type: 'technology', count: 1 }],
+        removed_node_types: [],
+        current_head_revision: 'deadbeef',
+        compared_head_revision: 'cafebabe',
+      },
+    });
+
+    renderProjectSessions();
+
+    await waitFor(() => {
+      expect(screen.getAllByRole('button', { name: 'Compare To Current' }).length).toBeGreaterThan(0);
+    });
+
+    await user.click(screen.getAllByRole('button', { name: 'Compare To Current' })[0]);
+
+    await waitFor(() => {
+      expect(mockGetProjectImportHistoryComparison).toHaveBeenCalledWith('task-tracker', 'job-0');
+    });
+
+    expect(screen.getByText('Selected Historical Entry Compared To Current')).toBeInTheDocument();
+    expect(screen.getByText(/Comparing import job-0 to current import job-1/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/Added nodes: Rust/).length).toBeGreaterThan(0);
   });
 
   it('reopens an older historical review draft into the current review slot', async () => {

@@ -71,7 +71,9 @@
 > [Import Existing Project Phase 13 Historical Entry Comparison Spec](/home/thetu/planner/docs/import-existing-project-phase-13-historical-entry-comparison-spec.md),
 > which scopes comparing one selected historical import entry against the
 > current import state before restore, without yet reopening arbitrary
-> history-to-history comparison or graph-level diff tooling.
+> history-to-history comparison or graph-level diff tooling. That slice is now
+> implemented. Remaining import work should be treated as optional follow-on
+> refinement, not as an automatically active next phase.
 
 ## Findings
 

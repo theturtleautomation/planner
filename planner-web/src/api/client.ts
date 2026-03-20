@@ -19,6 +19,7 @@ import type {
   ProjectImportResponse,
   ProjectImportConflictResponse,
   ProjectImportHistoryResponse,
+  ProjectImportHistoryComparisonResponse,
   ImportProvider,
 } from '../types.ts';
 import type {
@@ -200,6 +201,16 @@ export function createApiClient(getToken: GetTokenFn) {
       return apiFetch<ProjectImportHistoryResponse>(
         getToken,
         `/projects/${encodeURIComponent(projectRef)}/import-history`,
+      );
+    },
+
+    getProjectImportHistoryComparison(
+      projectRef: string,
+      jobId: string,
+    ): Promise<ProjectImportHistoryComparisonResponse> {
+      return apiFetch<ProjectImportHistoryComparisonResponse>(
+        getToken,
+        `/projects/${encodeURIComponent(projectRef)}/import-history/${encodeURIComponent(jobId)}/compare`,
       );
     },
 
