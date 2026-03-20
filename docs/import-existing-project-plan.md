@@ -85,7 +85,13 @@
 > [Import Existing Project Phase 15 Selection-Aware History Comparison Spec](/home/thetu/planner/docs/import-existing-project-phase-15-selection-aware-history-comparison-spec.md),
 > which scopes selection-aware history comparison so persisted merge-control
 > exclusions are reflected in compare results without inventing a new diff
-> model or graph viewer.
+> model or graph viewer. That slice is now implemented. Remaining import work
+> should stay phased behind follow-on specs that improve history-surface
+> truthfulness or richer reconciliation behavior rather than reopening
+> completed Phase 15 work. The next ready execution artifact is now
+> [Import Existing Project Phase 16 History Selection Summary Spec](/home/thetu/planner/docs/import-existing-project-phase-16-history-selection-summary-spec.md),
+> which scopes exposing effective included/excluded counts directly on history
+> rows without inventing graph summaries or history-side editing.
 
 ## Findings
 

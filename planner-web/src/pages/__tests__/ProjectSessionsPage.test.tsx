@@ -1527,6 +1527,8 @@ describe('ProjectSessionsPage import review', () => {
         created_at: '2026-03-20T00:00:00Z',
         updated_at: '2026-03-20T00:01:00Z',
       },
+      selected_entry_uses_selection_filter: false,
+      current_import_job_uses_selection_filter: false,
       diff_summary: {
         current_job_id: 'job-1',
         compared_to_job_id: 'job-0',
@@ -1627,6 +1629,8 @@ describe('ProjectSessionsPage import review', () => {
         },
         discovered_node_count: 1,
       },
+      baseline_entry_uses_selection_filter: false,
+      compared_entry_uses_selection_filter: false,
       diff_summary: {
         current_job_id: 'job-0',
         compared_to_job_id: 'job-1',
@@ -1663,6 +1667,182 @@ describe('ProjectSessionsPage import review', () => {
 
     await user.click(screen.getByRole('button', { name: 'Use As Baseline' }));
     expect(screen.queryByText('Selected History Entries Compared')).not.toBeInTheDocument();
+  });
+
+  it('shows selection-aware comparison notes and clears stale comparison after merge-control changes', async () => {
+    const user = userEvent.setup();
+    mockGetProjectImportHistoryComparison.mockResolvedValueOnce({
+      project: {
+        id: 'proj-1',
+        slug: 'task-tracker',
+        name: 'Task Tracker',
+        description: 'Import review workspace',
+        owner_user_id: 'dev|local',
+        created_at: '2026-03-20T00:00:00Z',
+        updated_at: '2026-03-20T00:00:00Z',
+        archived_at: null,
+        legacy_scope_keys: [],
+      },
+      source_binding: {
+        project_id: 'proj-1',
+        provider: 'github',
+        canonical_ref: 'https://github.com/example/task-tracker',
+        default_branch: 'main',
+        head_revision: 'deadbeef',
+        local_root: '/tmp/imports/task-tracker',
+        managed_checkout: true,
+        created_at: '2026-03-20T00:00:00Z',
+        updated_at: '2026-03-20T00:02:00Z',
+      },
+      selected_entry: {
+        import_job: {
+          id: 'job-0',
+          project_id: 'proj-1',
+          provider: 'github',
+          requested_ref: 'https://github.com/example/task-tracker',
+          status: 'applied',
+          restored_from_job_id: null,
+          seed_session_id: 'seed-0',
+          analysis_summary: 'Earlier import draft for Task Tracker from GitHub.',
+          progress_message: 'Import draft applied and reconciled against the canonical project blueprint.',
+          error_message: null,
+          created_at: '2026-03-19T23:00:00Z',
+          updated_at: '2026-03-19T23:10:00Z',
+        },
+        source_metadata: {
+          provider: 'github',
+          canonical_ref: 'https://github.com/example/task-tracker',
+          local_root: '/tmp/imports/task-tracker',
+          default_branch: 'main',
+          head_revision: 'cafebabe',
+        },
+        discovered_node_count: 1,
+      },
+      current_import_job: {
+        id: 'job-1',
+        project_id: 'proj-1',
+        provider: 'github',
+        requested_ref: 'https://github.com/example/task-tracker',
+        status: 'review_pending',
+        seed_session_id: 'seed-1',
+        analysis_summary: 'Imported draft for Task Tracker from GitHub.',
+        progress_message: 'Import draft ready. Review imported context in the seeded session.',
+        error_message: null,
+        created_at: '2026-03-20T00:00:00Z',
+        updated_at: '2026-03-20T00:01:00Z',
+      },
+      selected_entry_uses_selection_filter: false,
+      current_import_job_uses_selection_filter: true,
+      diff_summary: {
+        current_job_id: 'job-1',
+        compared_to_job_id: 'job-0',
+        added_nodes: [],
+        removed_nodes: [],
+        added_node_types: [],
+        removed_node_types: [],
+        current_head_revision: 'deadbeef',
+        compared_head_revision: 'cafebabe',
+      },
+    });
+    mockUpdateProjectImportReviewSelection.mockResolvedValueOnce({
+      project: {
+        id: 'proj-1',
+        slug: 'task-tracker',
+        name: 'Task Tracker',
+        description: 'Import review workspace',
+        owner_user_id: 'dev|local',
+        created_at: '2026-03-20T00:00:00Z',
+        updated_at: '2026-03-20T00:00:00Z',
+        archived_at: null,
+        legacy_scope_keys: [],
+      },
+      import_job: {
+        id: 'job-1',
+        project_id: 'proj-1',
+        provider: 'github',
+        requested_ref: 'https://github.com/example/task-tracker',
+        status: 'review_pending',
+        seed_session_id: 'seed-1',
+        analysis_summary: 'Imported draft for Task Tracker from GitHub.',
+        progress_message: 'Import draft ready. Review imported context in the seeded session.',
+        error_message: null,
+        created_at: '2026-03-20T00:00:00Z',
+        updated_at: '2026-03-20T00:01:30Z',
+      },
+      source_binding: {
+        project_id: 'proj-1',
+        provider: 'github',
+        canonical_ref: 'https://github.com/example/task-tracker',
+        default_branch: 'main',
+        head_revision: 'deadbeef',
+        local_root: '/tmp/imports/task-tracker',
+        managed_checkout: true,
+        created_at: '2026-03-20T00:00:00Z',
+        updated_at: '2026-03-20T00:01:30Z',
+      },
+      import_draft: {
+        job_id: 'job-1',
+        project_id: 'proj-1',
+        analysis_summary: 'Imported draft for Task Tracker from GitHub.',
+        source_metadata: {
+          provider: 'github',
+          canonical_ref: 'https://github.com/example/task-tracker',
+          local_root: '/tmp/imports/task-tracker',
+          default_branch: 'main',
+          head_revision: 'deadbeef',
+        },
+        discovered_nodes: [{ id: 'comp-auth-a1' }, { id: 'tech-rust-a1' }],
+        created_at: '2026-03-20T00:01:00Z',
+        updated_at: '2026-03-20T00:01:30Z',
+      },
+      import_review_selection: {
+        job_id: 'job-1',
+        excluded_node_ids: ['tech-rust-a1'],
+        included_node_count: 1,
+        excluded_node_count: 1,
+      },
+      review_nodes: [
+        {
+          node_id: 'comp-auth-a1',
+          node_name: 'Auth Service',
+          node_type: 'component',
+          included: true,
+        },
+        {
+          node_id: 'tech-rust-a1',
+          node_name: 'Rust',
+          node_type: 'technology',
+          included: false,
+        },
+      ],
+    });
+
+    renderProjectSessions();
+
+    await waitFor(() => {
+      expect(screen.getAllByRole('button', { name: 'Compare To Current' }).length).toBeGreaterThan(0);
+    });
+
+    await user.click(screen.getAllByRole('button', { name: 'Compare To Current' })[0]);
+
+    await waitFor(() => {
+      expect(screen.getByText('Selected Historical Entry Compared To Current')).toBeInTheDocument();
+    });
+
+    expect(
+      screen.getByText('Current import comparison uses selected nodes from saved merge controls.'),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getAllByRole('button', { name: 'Exclude From Apply' })[0]);
+
+    await waitFor(() => {
+      expect(mockUpdateProjectImportReviewSelection).toHaveBeenCalledWith('task-tracker', {
+        nodeId: 'comp-auth-a1',
+        included: false,
+      });
+    });
+
+    expect(screen.queryByText('Selected Historical Entry Compared To Current')).not.toBeInTheDocument();
   });
 
   it('reopens an older historical review draft into the current review slot', async () => {

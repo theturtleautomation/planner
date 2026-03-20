@@ -483,6 +483,8 @@ export interface ProjectImportHistoryComparisonResponse {
   source_binding: ProjectSourceBinding;
   selected_entry: ProjectImportHistoryEntry;
   current_import_job: ProjectImportJob;
+  selected_entry_uses_selection_filter: boolean;
+  current_import_job_uses_selection_filter: boolean;
   diff_summary: ProjectImportDiffSummary;
 }
 
@@ -491,6 +493,8 @@ export interface ProjectImportHistoryPairComparisonResponse {
   source_binding: ProjectSourceBinding;
   baseline_entry: ProjectImportHistoryEntry;
   compared_entry: ProjectImportHistoryEntry;
+  baseline_entry_uses_selection_filter: boolean;
+  compared_entry_uses_selection_filter: boolean;
   diff_summary: ProjectImportDiffSummary;
 }
 

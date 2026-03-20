@@ -212,6 +212,10 @@ pub struct ProjectImportHistoryComparisonResponse {
     pub source_binding: ProjectSourceBinding,
     pub selected_entry: ProjectImportHistoryEntry,
     pub current_import_job: ProjectImportJob,
+    #[serde(default)]
+    pub selected_entry_uses_selection_filter: bool,
+    #[serde(default)]
+    pub current_import_job_uses_selection_filter: bool,
     pub diff_summary: ProjectImportDiffSummary,
 }
 
@@ -221,6 +225,10 @@ pub struct ProjectImportHistoryPairComparisonResponse {
     pub source_binding: ProjectSourceBinding,
     pub baseline_entry: ProjectImportHistoryEntry,
     pub compared_entry: ProjectImportHistoryEntry,
+    #[serde(default)]
+    pub baseline_entry_uses_selection_filter: bool,
+    #[serde(default)]
+    pub compared_entry_uses_selection_filter: bool,
     pub diff_summary: ProjectImportDiffSummary,
 }
 
@@ -1503,6 +1511,23 @@ fn build_selected_import_draft(
     selected_draft
 }
 
+fn build_selection_aware_import_draft(
+    state: &Arc<AppState>,
+    import_job: &ProjectImportJob,
+    draft: &ProjectImportDraft,
+) -> (ProjectImportDraft, bool) {
+    let selection = state.imports.get_review_selection(import_job.id);
+    let uses_selection_filter = selection
+        .as_ref()
+        .map(|selection| !selection.excluded_node_ids.is_empty())
+        .unwrap_or(false);
+    if uses_selection_filter {
+        (build_selected_import_draft(state, import_job, draft), true)
+    } else {
+        (draft.clone(), false)
+    }
+}
+
 fn build_project_import_history_response(
     state: &Arc<AppState>,
     project: Project,
@@ -1528,27 +1553,31 @@ fn build_project_import_history_response(
         })
         .collect::<Vec<_>>();
 
-    let latest_pending_draft = history.iter().find_map(|entry| {
+    let latest_pending = history.iter().find_map(|entry| {
         if matches!(entry.job.status, ImportStatus::ReviewPending) {
-            entry.draft.clone()
+            entry.draft.clone().map(|draft| (entry.job.clone(), draft))
         } else {
             None
         }
     });
-    let latest_applied_draft = history.iter().find_map(|entry| {
+    let latest_applied = history.iter().find_map(|entry| {
         if matches!(entry.job.status, ImportStatus::Applied) {
-            entry.draft.clone()
+            entry.draft.clone().map(|draft| (entry.job.clone(), draft))
         } else {
             None
         }
     });
-    let diff_summary = match (latest_pending_draft.as_ref(), latest_applied_draft.as_ref()) {
-        (Some(current_draft), Some(compared_draft))
+    let diff_summary = match (latest_pending.as_ref(), latest_applied.as_ref()) {
+        (Some((current_job, current_draft)), Some((compared_job, compared_draft)))
             if current_draft.job_id != compared_draft.job_id =>
         {
+            let (current_draft, _) =
+                build_selection_aware_import_draft(state, current_job, current_draft);
+            let (compared_draft, _) =
+                build_selection_aware_import_draft(state, compared_job, compared_draft);
             Some(build_import_draft_diff_summary(
-                current_draft,
-                compared_draft,
+                &current_draft,
+                &compared_draft,
             ))
         }
         _ => None,
@@ -2241,10 +2270,14 @@ async fn compare_project_import_history_entry(
         })?;
 
     let selected_entry = ProjectImportHistoryEntry {
-        import_job: historical_job,
+        import_job: historical_job.clone(),
         source_metadata: Some(historical_draft.source_metadata.clone()),
         discovered_node_count: Some(historical_draft.discovered_nodes.len()),
     };
+    let (current_draft, current_import_job_uses_selection_filter) =
+        build_selection_aware_import_draft(&state, &current_import_job, &current_draft);
+    let (historical_draft, selected_entry_uses_selection_filter) =
+        build_selection_aware_import_draft(&state, &historical_job, &historical_draft);
     let diff_summary = build_import_draft_diff_summary(&current_draft, &historical_draft);
 
     Ok(Json(ProjectImportHistoryComparisonResponse {
@@ -2252,6 +2285,8 @@ async fn compare_project_import_history_entry(
         source_binding,
         selected_entry,
         current_import_job,
+        selected_entry_uses_selection_filter,
+        current_import_job_uses_selection_filter,
         diff_summary,
     }))
 }
@@ -2272,15 +2307,19 @@ async fn compare_project_import_history_entries(
         project_import_history_entry_for_comparison(&state, &project_ref, project.id, job_id)?;
 
     let baseline_entry = ProjectImportHistoryEntry {
-        import_job: baseline_job,
+        import_job: baseline_job.clone(),
         source_metadata: Some(baseline_draft.source_metadata.clone()),
         discovered_node_count: Some(baseline_draft.discovered_nodes.len()),
     };
     let compared_entry = ProjectImportHistoryEntry {
-        import_job: compared_job,
+        import_job: compared_job.clone(),
         source_metadata: Some(compared_draft.source_metadata.clone()),
         discovered_node_count: Some(compared_draft.discovered_nodes.len()),
     };
+    let (baseline_draft, baseline_entry_uses_selection_filter) =
+        build_selection_aware_import_draft(&state, &baseline_job, &baseline_draft);
+    let (compared_draft, compared_entry_uses_selection_filter) =
+        build_selection_aware_import_draft(&state, &compared_job, &compared_draft);
     let diff_summary = build_import_draft_diff_summary(&compared_draft, &baseline_draft);
 
     Ok(Json(ProjectImportHistoryPairComparisonResponse {
@@ -2288,6 +2327,8 @@ async fn compare_project_import_history_entries(
         source_binding,
         baseline_entry,
         compared_entry,
+        baseline_entry_uses_selection_filter,
+        compared_entry_uses_selection_filter,
         diff_summary,
     }))
 }
@@ -6974,6 +7015,8 @@ mod tests {
         let payload: ProjectImportHistoryComparisonResponse = serde_json::from_slice(&body).unwrap();
         assert_eq!(payload.selected_entry.import_job.id, applied_job.id);
         assert_eq!(payload.current_import_job.id, pending_job.id);
+        assert!(!payload.selected_entry_uses_selection_filter);
+        assert!(!payload.current_import_job_uses_selection_filter);
         assert_eq!(payload.diff_summary.current_job_id, pending_job.id.to_string());
         assert_eq!(payload.diff_summary.compared_to_job_id, applied_job.id.to_string());
         assert_eq!(payload.diff_summary.added_nodes.len(), 1);
@@ -7156,6 +7199,8 @@ mod tests {
             serde_json::from_slice(&body).unwrap();
         assert_eq!(payload.baseline_entry.import_job.id, first_job.id);
         assert_eq!(payload.compared_entry.import_job.id, second_job.id);
+        assert!(!payload.baseline_entry_uses_selection_filter);
+        assert!(!payload.compared_entry_uses_selection_filter);
         assert_eq!(payload.diff_summary.current_job_id, second_job.id.to_string());
         assert_eq!(payload.diff_summary.compared_to_job_id, first_job.id.to_string());
         assert!(payload.diff_summary.added_nodes.is_empty());
@@ -7242,6 +7287,257 @@ mod tests {
             .unwrap();
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::CONFLICT);
+    }
+
+    #[tokio::test]
+    async fn test_compare_project_import_history_entry_uses_selection_filtering_for_current_review_job(
+    ) {
+        let state = test_state();
+        let project = state.projects.create(
+            "dev|local",
+            "Import Compare Selection Aware",
+            None,
+            None,
+            Vec::new(),
+            None,
+        );
+
+        let seeded_applied = state.sessions.create("dev|local");
+        let (applied_job, _) = state
+            .imports
+            .create(
+                project.id,
+                ImportProvider::GitHub,
+                "https://github.com/example/import-compare-selection".into(),
+                "https://github.com/example/import-compare-selection".into(),
+                true,
+            )
+            .unwrap();
+        state
+            .imports
+            .save_draft(ProjectImportDraft {
+                job_id: applied_job.id,
+                project_id: project.id,
+                analysis_summary: "Applied import.".into(),
+                source_metadata: crate::import::ImportDraftSourceMetadata {
+                    provider: ImportProvider::GitHub,
+                    canonical_ref: "https://github.com/example/import-compare-selection".into(),
+                    local_root: format!("/tmp/imports/{}", project.slug),
+                    default_branch: Some("main".into()),
+                    head_revision: Some("cafebabe".into()),
+                },
+                discovered_nodes: vec![serde_json::from_value(sample_component_json()).unwrap()],
+                created_at: chrono::Utc::now().to_rfc3339(),
+                updated_at: chrono::Utc::now().to_rfc3339(),
+            })
+            .unwrap();
+        let applied_job = state
+            .imports
+            .mark_job_review_pending(
+                applied_job.id,
+                "Applied draft ready.",
+                "Applied import.".into(),
+                seeded_applied.id,
+            )
+            .unwrap();
+        let applied_job = state
+            .imports
+            .mark_job_applied(
+                applied_job.id,
+                "Import draft applied and reconciled against the canonical project blueprint.",
+                None,
+            )
+            .unwrap();
+
+        let seeded_pending = state.sessions.create("dev|local");
+        let (pending_job, _) = state.imports.create_reimport_job(project.id).unwrap();
+        state
+            .imports
+            .save_draft(ProjectImportDraft {
+                job_id: pending_job.id,
+                project_id: project.id,
+                analysis_summary: "Pending import with merge controls.".into(),
+                source_metadata: crate::import::ImportDraftSourceMetadata {
+                    provider: ImportProvider::GitHub,
+                    canonical_ref: "https://github.com/example/import-compare-selection".into(),
+                    local_root: format!("/tmp/imports/{}", project.slug),
+                    default_branch: Some("main".into()),
+                    head_revision: Some("deadbeef".into()),
+                },
+                discovered_nodes: vec![
+                    serde_json::from_value(sample_component_json()).unwrap(),
+                    serde_json::from_value(sample_technology_json()).unwrap(),
+                ],
+                created_at: chrono::Utc::now().to_rfc3339(),
+                updated_at: chrono::Utc::now().to_rfc3339(),
+            })
+            .unwrap();
+        let pending_job = state
+            .imports
+            .mark_job_review_pending(
+                pending_job.id,
+                "Import draft ready. Review imported context in the seeded session.",
+                "Pending import with merge controls.".into(),
+                seeded_pending.id,
+            )
+            .unwrap();
+        let _ = state
+            .imports
+            .set_review_node_included(
+                pending_job.id,
+                project.id,
+                "tech-rust-b2c3d4e5",
+                false,
+            )
+            .unwrap();
+
+        let counts_before = state.blueprints.counts();
+        let app = routes(state.clone());
+        let req = Request::builder()
+            .uri(format!(
+                "/projects/{}/import-history/{}/compare",
+                project.slug, applied_job.id
+            ))
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let payload: ProjectImportHistoryComparisonResponse = serde_json::from_slice(&body).unwrap();
+        assert!(payload.current_import_job_uses_selection_filter);
+        assert!(!payload.selected_entry_uses_selection_filter);
+        assert!(payload.diff_summary.added_nodes.is_empty());
+        assert!(payload.diff_summary.removed_nodes.is_empty());
+        assert_eq!(state.blueprints.counts(), counts_before);
+    }
+
+    #[tokio::test]
+    async fn test_compare_project_import_history_entries_uses_selection_filtering_on_baseline_entry(
+    ) {
+        let state = test_state();
+        let project = state.projects.create(
+            "dev|local",
+            "Import Pair Compare Selection Aware",
+            None,
+            None,
+            Vec::new(),
+            None,
+        );
+
+        let seeded_baseline = state.sessions.create("dev|local");
+        let (baseline_job, _) = state
+            .imports
+            .create(
+                project.id,
+                ImportProvider::GitHub,
+                "https://github.com/example/import-pair-selection".into(),
+                "https://github.com/example/import-pair-selection".into(),
+                true,
+            )
+            .unwrap();
+        state
+            .imports
+            .save_draft(ProjectImportDraft {
+                job_id: baseline_job.id,
+                project_id: project.id,
+                analysis_summary: "Baseline reviewable import.".into(),
+                source_metadata: crate::import::ImportDraftSourceMetadata {
+                    provider: ImportProvider::GitHub,
+                    canonical_ref: "https://github.com/example/import-pair-selection".into(),
+                    local_root: format!("/tmp/imports/{}", project.slug),
+                    default_branch: Some("main".into()),
+                    head_revision: Some("deadbeef".into()),
+                },
+                discovered_nodes: vec![
+                    serde_json::from_value(sample_component_json()).unwrap(),
+                    serde_json::from_value(sample_technology_json()).unwrap(),
+                ],
+                created_at: chrono::Utc::now().to_rfc3339(),
+                updated_at: chrono::Utc::now().to_rfc3339(),
+            })
+            .unwrap();
+        let baseline_job = state
+            .imports
+            .mark_job_review_pending(
+                baseline_job.id,
+                "Baseline draft ready.",
+                "Baseline reviewable import.".into(),
+                seeded_baseline.id,
+            )
+            .unwrap();
+        let _ = state
+            .imports
+            .set_review_node_included(
+                baseline_job.id,
+                project.id,
+                "tech-rust-b2c3d4e5",
+                false,
+            )
+            .unwrap();
+
+        let seeded_compared = state.sessions.create("dev|local");
+        let (compared_job, _) = state.imports.create_reimport_job(project.id).unwrap();
+        state
+            .imports
+            .save_draft(ProjectImportDraft {
+                job_id: compared_job.id,
+                project_id: project.id,
+                analysis_summary: "Compared applied import.".into(),
+                source_metadata: crate::import::ImportDraftSourceMetadata {
+                    provider: ImportProvider::GitHub,
+                    canonical_ref: "https://github.com/example/import-pair-selection".into(),
+                    local_root: format!("/tmp/imports/{}", project.slug),
+                    default_branch: Some("main".into()),
+                    head_revision: Some("cafebabe".into()),
+                },
+                discovered_nodes: vec![serde_json::from_value(sample_component_json()).unwrap()],
+                created_at: chrono::Utc::now().to_rfc3339(),
+                updated_at: chrono::Utc::now().to_rfc3339(),
+            })
+            .unwrap();
+        let compared_job = state
+            .imports
+            .mark_job_review_pending(
+                compared_job.id,
+                "Compared draft ready.",
+                "Compared applied import.".into(),
+                seeded_compared.id,
+            )
+            .unwrap();
+        let compared_job = state
+            .imports
+            .mark_job_applied(
+                compared_job.id,
+                "Import draft applied and reconciled against the canonical project blueprint.",
+                None,
+            )
+            .unwrap();
+
+        let counts_before = state.blueprints.counts();
+        let app = routes(state.clone());
+        let req = Request::builder()
+            .uri(format!(
+                "/projects/{}/import-history/{}/compare/{}",
+                project.slug, baseline_job.id, compared_job.id
+            ))
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let payload: ProjectImportHistoryPairComparisonResponse =
+            serde_json::from_slice(&body).unwrap();
+        assert!(payload.baseline_entry_uses_selection_filter);
+        assert!(!payload.compared_entry_uses_selection_filter);
+        assert!(payload.diff_summary.added_nodes.is_empty());
+        assert!(payload.diff_summary.removed_nodes.is_empty());
+        assert_eq!(state.blueprints.counts(), counts_before);
     }
 
     #[tokio::test]

@@ -1,6 +1,6 @@
 # Import Existing Project Phase 15 Selection-Aware History Comparison Spec
 
-**Status:** Ready for implementation  
+**Status:** Implemented  
 **Date:** 2026-03-20  
 **Parent:** [Project Plan](/home/thetu/planner/docs/project-plan.md)  
 **Source Research:** [Import Existing Project Plan](/home/thetu/planner/docs/import-existing-project-plan.md)  
@@ -32,6 +32,34 @@ After this slice:
 
 The user still does **not** get graph visual diffing, cross-project compare,
 or compare-driven editing of review selection.
+
+## Implementation Notes
+
+Implemented on 2026-03-20 in the bounded Phase 15 delivery slice.
+
+Execution landed in:
+
+- `planner-server/src/api.rs`
+- `planner-web/src/types.ts`
+- `planner-web/src/pages/ProjectSessionsPage.tsx`
+- `planner-web/src/pages/__tests__/ProjectSessionsPage.test.tsx`
+
+Delivered behavior:
+
+- current-state and arbitrary two-entry import history comparison now respect
+  persisted merge-control exclusions when a compared job has saved review
+  selection state
+- comparison payloads now indicate when a side is using the effective selected
+  subset instead of the raw draft payload
+- `ProjectSessionsPage` now clears stale compare panels when merge controls
+  change and explains when comparison is using selected nodes from saved merge
+  controls
+
+Verification completed:
+
+- `cargo test -p planner-server compare_project_import_history_entry -- --nocapture`
+- `cargo test -p planner-server compare_project_import_history_entries -- --nocapture`
+- `npm --prefix planner-web test -- --run src/pages/__tests__/ProjectSessionsPage.test.tsx src/api/__tests__/client.test.ts`
 
 ## Locked Decisions For This Slice
 

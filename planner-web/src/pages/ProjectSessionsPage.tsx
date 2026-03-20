@@ -238,6 +238,8 @@ export default function ProjectSessionsPage() {
       const response = await api.updateProjectImportReviewSelection(projectSlug, { nodeId, included });
       setImportState(response);
       setImportReview(response);
+      setImportComparison(null);
+      setImportPairComparison(null);
     } catch (err) {
       setApplyError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -401,6 +403,22 @@ export default function ProjectSessionsPage() {
   const selectedHistoryComparison = importComparison?.diff_summary ?? null;
   const selectedPairComparison = importPairComparison?.diff_summary ?? null;
   const restoreBlockedByPendingReview = importStateStatus === 'review_pending';
+  const selectedHistoryComparisonNotes = [
+    importComparison?.current_import_job_uses_selection_filter
+      ? 'Current import comparison uses selected nodes from saved merge controls.'
+      : null,
+    importComparison?.selected_entry_uses_selection_filter
+      ? 'Historical entry comparison uses selected nodes from saved merge controls.'
+      : null,
+  ].filter(Boolean) as string[];
+  const selectedPairComparisonNotes = [
+    importPairComparison?.baseline_entry_uses_selection_filter
+      ? 'Baseline entry comparison uses selected nodes from saved merge controls.'
+      : null,
+    importPairComparison?.compared_entry_uses_selection_filter
+      ? 'Compared entry comparison uses selected nodes from saved merge controls.'
+      : null,
+  ].filter(Boolean) as string[];
 
   return (
     <Layout>
@@ -815,6 +833,11 @@ export default function ProjectSessionsPage() {
                 <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>
                   Comparing import {importComparison?.selected_entry.import_job.id.slice(0, 8)} to current import {importComparison?.current_import_job.id.slice(0, 8)}.
                 </span>
+                {selectedHistoryComparisonNotes.map((note) => (
+                  <span key={note} style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>
+                    {note}
+                  </span>
+                ))}
                 <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>
                   {selectedHistoryComparison.added_nodes.length} added, {selectedHistoryComparison.removed_nodes.length} removed
                 </span>
@@ -866,6 +889,11 @@ export default function ProjectSessionsPage() {
                 <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>
                   Comparing baseline import {importPairComparison?.baseline_entry.import_job.id.slice(0, 8)} to import {importPairComparison?.compared_entry.import_job.id.slice(0, 8)}.
                 </span>
+                {selectedPairComparisonNotes.map((note) => (
+                  <span key={note} style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>
+                    {note}
+                  </span>
+                ))}
                 <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>
                   {selectedPairComparison.added_nodes.length} added, {selectedPairComparison.removed_nodes.length} removed
                 </span>
