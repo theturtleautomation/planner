@@ -414,11 +414,27 @@ export interface ProjectImportDraft {
   updated_at: string;
 }
 
+export interface ProjectImportReviewSelection {
+  job_id: string;
+  excluded_node_ids: string[];
+  included_node_count: number;
+  excluded_node_count: number;
+}
+
+export interface ProjectImportReviewNodeSummary {
+  node_id: string;
+  node_name: string;
+  node_type: string;
+  included: boolean;
+}
+
 export interface ProjectImportResponse {
   project: Project;
   import_job: ProjectImportJob;
   source_binding: ProjectSourceBinding;
   import_draft?: ProjectImportDraft | null;
+  import_review_selection?: ProjectImportReviewSelection | null;
+  review_nodes?: ProjectImportReviewNodeSummary[] | null;
 }
 
 export interface ProjectImportConflictResponse {

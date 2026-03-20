@@ -225,6 +225,23 @@ export function createApiClient(getToken: GetTokenFn) {
       );
     },
 
+    updateProjectImportReviewSelection(
+      projectRef: string,
+      payload: { nodeId: string; included: boolean },
+    ): Promise<ProjectImportResponse> {
+      return apiFetch<ProjectImportResponse>(
+        getToken,
+        `/projects/${encodeURIComponent(projectRef)}/import-review-selection`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            node_id: payload.nodeId,
+            included: payload.included,
+          }),
+        },
+      );
+    },
+
     applyProjectImportReview(projectRef: string): Promise<ProjectImportResponse> {
       return apiFetch<ProjectImportResponse>(
         getToken,

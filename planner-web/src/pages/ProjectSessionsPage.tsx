@@ -71,6 +71,7 @@ export default function ProjectSessionsPage() {
   const [error, setError] = useState<string | null>(null);
   const [applyPending, setApplyPending] = useState(false);
   const [applyError, setApplyError] = useState<string | null>(null);
+  const [selectionPendingNodeId, setSelectionPendingNodeId] = useState<string | null>(null);
   const [reimportPending, setReimportPending] = useState(false);
   const [reimportError, setReimportError] = useState<string | null>(null);
   const [restorePendingJobId, setRestorePendingJobId] = useState<string | null>(null);
@@ -218,6 +219,21 @@ export default function ProjectSessionsPage() {
     }
   }, [api, loadImportHistory, projectSlug]);
 
+  const handleSetImportNodeIncluded = useCallback(async (nodeId: string, included: boolean) => {
+    if (!projectSlug) return;
+    setSelectionPendingNodeId(nodeId);
+    setApplyError(null);
+    try {
+      const response = await api.updateProjectImportReviewSelection(projectSlug, { nodeId, included });
+      setImportState(response);
+      setImportReview(response);
+    } catch (err) {
+      setApplyError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSelectionPendingNodeId(null);
+    }
+  }, [api, projectSlug]);
+
   const handleReimport = useCallback(async () => {
     if (!projectSlug) return;
     setReimportPending(true);
@@ -268,6 +284,10 @@ export default function ProjectSessionsPage() {
   const importDraftCount = importReview?.import_draft?.discovered_nodes.length ?? 0;
   const importSource = importReview?.import_draft?.source_metadata ?? null;
   const importStatus = importReview?.import_job.status ?? null;
+  const importReviewSelection = importReview?.import_review_selection ?? null;
+  const importReviewNodes = importReview?.review_nodes ?? [];
+  const includedDraftCount = importReviewSelection?.included_node_count ?? importDraftCount;
+  const excludedDraftCount = importReviewSelection?.excluded_node_count ?? 0;
   const importHeadline = importStatus === 'applied'
     ? (importReview?.import_job.restored_from_job_id
       ? 'Historical import restored to canonical blueprint'
@@ -471,6 +491,8 @@ export default function ProjectSessionsPage() {
                 {importSource.default_branch && <span>Branch: {importSource.default_branch}</span>}
                 {importSource.head_revision && <span>Revision: {importSource.head_revision.slice(0, 8)}</span>}
                 <span>Draft records: {importDraftCount}</span>
+                <span>Included: {includedDraftCount}</span>
+                {excludedDraftCount > 0 && <span>Excluded: {excludedDraftCount}</span>}
               </div>
             )}
 
@@ -507,6 +529,61 @@ export default function ProjectSessionsPage() {
                 </button>
               )}
             </div>
+
+            {importStatus === 'review_pending' && importReviewNodes.length > 0 && (
+              <div
+                style={{
+                  border: '1px solid var(--color-border)',
+                  borderRadius: '8px',
+                  padding: '12px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px',
+                }}
+              >
+                <span style={{ color: 'var(--color-text)', fontWeight: 600 }}>
+                  Merge Controls
+                </span>
+                <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>
+                  Exclude discovered nodes you do not want promoted when this import draft is applied.
+                </span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {importReviewNodes.map((node) => (
+                    <div
+                      key={node.node_id}
+                      style={{
+                        border: '1px solid var(--color-border)',
+                        borderRadius: '8px',
+                        padding: '10px',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        gap: '10px',
+                        alignItems: 'center',
+                        flexWrap: 'wrap',
+                      }}
+                    >
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <span style={{ color: 'var(--color-text)', fontWeight: 600 }}>
+                          {node.node_name}
+                        </span>
+                        <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>
+                          {node.node_type} · {node.included ? 'included' : 'excluded'}
+                        </span>
+                      </div>
+                      <button
+                        className="btn btn-outline"
+                        onClick={() => { void handleSetImportNodeIncluded(node.node_id, !node.included); }}
+                        disabled={selectionPendingNodeId === node.node_id}
+                      >
+                        {selectionPendingNodeId === node.node_id
+                          ? (node.included ? 'Excluding…' : 'Including…')
+                          : (node.included ? 'Exclude From Apply' : 'Include In Apply')}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </section>
           </>
         )}

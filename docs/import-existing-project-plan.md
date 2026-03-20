@@ -53,7 +53,18 @@
 > mutation at restore time. That slice is now implemented. Remaining work
 > should be promoted through a later bounded spec for more advanced merge
 > controls and broader historical reconciliation rather than reopening
-> completed Phase 10 work.
+> completed Phase 10 work. The next ready execution artifact is now
+> [Import Existing Project Phase 11 Selective Apply Merge Controls Spec](/home/thetu/planner/docs/import-existing-project-phase-11-selective-apply-merge-controls-spec.md),
+> which scopes per-node exclude-from-apply controls on the current
+> `review_pending` draft without yet reopening edge-level merge tooling or
+> broader historical reconciliation. That slice is now implemented. Remaining
+> work should be promoted through a later bounded spec for broader historical
+> reconciliation rather than reopening completed Phase 11 work. The next ready
+> execution artifact is now
+> [Import Existing Project Phase 12 Historical Applied Restore For Review Spec](/home/thetu/planner/docs/import-existing-project-phase-12-historical-applied-restore-for-review-spec.md),
+> which scopes reopening a historical `applied` import into the current review
+> slot so the user can use merge controls before apply, without yet reopening
+> generalized history comparison or multi-version merge tooling.
 
 ## Findings
 

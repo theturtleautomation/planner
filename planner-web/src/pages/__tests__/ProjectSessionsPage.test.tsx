@@ -11,6 +11,7 @@ const {
   mockGetProjectImportState,
   mockGetProjectImportHistory,
   mockGetProjectImportReview,
+  mockUpdateProjectImportReviewSelection,
   mockApplyProjectImportReview,
   mockRestoreProjectImportHistoryEntry,
   mockRestoreProjectImportReviewDraft,
@@ -23,6 +24,7 @@ const {
   mockGetProjectImportState: vi.fn(),
   mockGetProjectImportHistory: vi.fn(),
   mockGetProjectImportReview: vi.fn(),
+  mockUpdateProjectImportReviewSelection: vi.fn(),
   mockApplyProjectImportReview: vi.fn(),
   mockRestoreProjectImportHistoryEntry: vi.fn(),
   mockRestoreProjectImportReviewDraft: vi.fn(),
@@ -47,6 +49,7 @@ vi.mock('../../api/client.ts', () => ({
     getProjectImportState: mockGetProjectImportState,
     getProjectImportHistory: mockGetProjectImportHistory,
     getProjectImportReview: mockGetProjectImportReview,
+    updateProjectImportReviewSelection: mockUpdateProjectImportReviewSelection,
     applyProjectImportReview: mockApplyProjectImportReview,
     restoreProjectImportHistoryEntry: mockRestoreProjectImportHistoryEntry,
     restoreProjectImportReviewDraft: mockRestoreProjectImportReviewDraft,
@@ -88,6 +91,7 @@ describe('ProjectSessionsPage import review', () => {
       getProjectImportState: mockGetProjectImportState,
       getProjectImportHistory: mockGetProjectImportHistory,
       getProjectImportReview: mockGetProjectImportReview,
+      updateProjectImportReviewSelection: mockUpdateProjectImportReviewSelection,
       applyProjectImportReview: mockApplyProjectImportReview,
       restoreProjectImportHistoryEntry: mockRestoreProjectImportHistoryEntry,
       restoreProjectImportReviewDraft: mockRestoreProjectImportReviewDraft,
@@ -194,6 +198,26 @@ describe('ProjectSessionsPage import review', () => {
         created_at: '2026-03-20T00:01:00Z',
         updated_at: '2026-03-20T00:01:00Z',
       },
+      import_review_selection: {
+        job_id: 'job-1',
+        excluded_node_ids: [],
+        included_node_count: 2,
+        excluded_node_count: 0,
+      },
+      review_nodes: [
+        {
+          node_id: 'comp-auth-a1',
+          node_name: 'Auth Service',
+          node_type: 'component',
+          included: true,
+        },
+        {
+          node_id: 'tech-rust-a1',
+          node_name: 'Rust',
+          node_type: 'technology',
+          included: true,
+        },
+      ],
     });
     mockGetProjectImportHistory.mockResolvedValue({
       project: {
@@ -443,6 +467,102 @@ describe('ProjectSessionsPage import review', () => {
     expect(screen.getByText(/Applying this draft will reconcile import-owned project blueprint state/i)).toBeInTheDocument();
     expect(screen.getByText(/Resolve the pending import review before restoring an older applied import/i)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Restore This Import' })).not.toBeInTheDocument();
+  });
+
+  it('updates merge controls for the current review draft', async () => {
+    const user = userEvent.setup();
+    mockUpdateProjectImportReviewSelection.mockResolvedValueOnce({
+      project: {
+        id: 'proj-1',
+        slug: 'task-tracker',
+        name: 'Task Tracker',
+        description: 'Import review workspace',
+        owner_user_id: 'dev|local',
+        created_at: '2026-03-20T00:00:00Z',
+        updated_at: '2026-03-20T00:00:00Z',
+        archived_at: null,
+        legacy_scope_keys: [],
+      },
+      import_job: {
+        id: 'job-1',
+        project_id: 'proj-1',
+        provider: 'github',
+        requested_ref: 'https://github.com/example/task-tracker',
+        status: 'review_pending',
+        seed_session_id: 'seed-1',
+        analysis_summary: 'Imported draft for Task Tracker from GitHub.',
+        progress_message: 'Import draft ready. Review imported context in the seeded session.',
+        error_message: null,
+        created_at: '2026-03-20T00:00:00Z',
+        updated_at: '2026-03-20T00:01:30Z',
+      },
+      source_binding: {
+        project_id: 'proj-1',
+        provider: 'github',
+        canonical_ref: 'https://github.com/example/task-tracker',
+        default_branch: 'main',
+        head_revision: 'deadbeef',
+        local_root: '/tmp/imports/task-tracker',
+        managed_checkout: true,
+        created_at: '2026-03-20T00:00:00Z',
+        updated_at: '2026-03-20T00:01:00Z',
+      },
+      import_draft: {
+        job_id: 'job-1',
+        project_id: 'proj-1',
+        analysis_summary: 'Imported draft for Task Tracker from GitHub.',
+        source_metadata: {
+          provider: 'github',
+          canonical_ref: 'https://github.com/example/task-tracker',
+          local_root: '/tmp/imports/task-tracker',
+          default_branch: 'main',
+          head_revision: 'deadbeef',
+        },
+        discovered_nodes: [{ id: 'comp-auth-a1' }, { id: 'tech-rust-a1' }],
+        created_at: '2026-03-20T00:01:00Z',
+        updated_at: '2026-03-20T00:01:30Z',
+      },
+      import_review_selection: {
+        job_id: 'job-1',
+        excluded_node_ids: ['comp-auth-a1'],
+        included_node_count: 1,
+        excluded_node_count: 1,
+      },
+      review_nodes: [
+        {
+          node_id: 'comp-auth-a1',
+          node_name: 'Auth Service',
+          node_type: 'component',
+          included: false,
+        },
+        {
+          node_id: 'tech-rust-a1',
+          node_name: 'Rust',
+          node_type: 'technology',
+          included: true,
+        },
+      ],
+    });
+
+    renderProjectSessions();
+
+    await waitFor(() => {
+      expect(screen.getByText('Merge Controls')).toBeInTheDocument();
+    });
+
+    await user.click(screen.getAllByRole('button', { name: 'Exclude From Apply' })[0]);
+
+    await waitFor(() => {
+      expect(mockUpdateProjectImportReviewSelection).toHaveBeenCalledWith('task-tracker', {
+        nodeId: 'comp-auth-a1',
+        included: false,
+      });
+    });
+
+    expect(screen.getByText(/Included: 1/)).toBeInTheDocument();
+    expect(screen.getByText(/Excluded: 1/)).toBeInTheDocument();
+    expect(screen.getByText('component · excluded')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Include In Apply' })).toBeInTheDocument();
   });
 
   it('applies the import draft and exposes blueprint navigation', async () => {

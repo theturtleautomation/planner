@@ -20,7 +20,8 @@ use uuid::Uuid;
 use crate::auth::{auth_middleware, Claims};
 use crate::import::{
     inspect_local_import_source, ImportAnalysisRequest, ImportDraftSourceMetadata, ImportProvider,
-    ImportStatus, ProjectImportDraft, ProjectImportJob, ProjectSourceBinding,
+    ImportStatus, ProjectImportDraft, ProjectImportJob, ProjectImportReviewSelection,
+    ProjectSourceBinding,
 };
 use crate::project::Project;
 use crate::session::Session;
@@ -125,6 +126,10 @@ pub struct ProjectImportResponse {
     pub source_binding: ProjectSourceBinding,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub import_draft: Option<ProjectImportDraft>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub import_review_selection: Option<ProjectImportReviewSelectionResponse>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review_nodes: Option<Vec<ProjectImportReviewNodeSummary>>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -148,6 +153,28 @@ pub struct ProjectImportDiffNodeSummary {
     pub node_id: String,
     pub node_name: String,
     pub node_type: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectImportReviewSelectionResponse {
+    pub job_id: Uuid,
+    pub excluded_node_ids: Vec<String>,
+    pub included_node_count: usize,
+    pub excluded_node_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectImportReviewNodeSummary {
+    pub node_id: String,
+    pub node_name: String,
+    pub node_type: String,
+    pub included: bool,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct UpdateProjectImportReviewSelectionRequest {
+    pub node_id: String,
+    pub included: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -687,6 +714,10 @@ pub fn routes(state: Arc<AppState>) -> Router {
             get(get_project_import_review).post(apply_project_import_review),
         )
         .route(
+            "/projects/{projectRef}/import-review-selection",
+            post(update_project_import_review_selection),
+        )
+        .route(
             "/projects/{projectRef}/import-state",
             get(get_project_import_state),
         )
@@ -1213,11 +1244,33 @@ fn build_project_import_response(
     source_binding: ProjectSourceBinding,
 ) -> ProjectImportResponse {
     let import_draft = state.imports.get_draft(import_job.id);
+    let (import_review_selection, review_nodes) = if let Some(draft) = import_draft.as_ref() {
+        if matches!(import_job.status, ImportStatus::ReviewPending) {
+            let selection = state.imports.get_review_selection(import_job.id).unwrap_or(
+                ProjectImportReviewSelection {
+                    job_id: import_job.id,
+                    project_id: project.id,
+                    excluded_node_ids: Vec::new(),
+                    created_at: draft.created_at.clone(),
+                    updated_at: draft.updated_at.clone(),
+                },
+            );
+            let review_nodes = build_import_review_node_summaries(draft, &selection);
+            let review_selection = build_import_review_selection_response(draft, &selection);
+            (Some(review_selection), Some(review_nodes))
+        } else {
+            (None, None)
+        }
+    } else {
+        (None, None)
+    };
     ProjectImportResponse {
         project,
         import_job,
         source_binding,
         import_draft,
+        import_review_selection,
+        review_nodes,
     }
 }
 
@@ -1274,6 +1327,22 @@ fn import_restore_pending_review_response(project_ref: &str) -> (StatusCode, Jso
     )
 }
 
+fn import_review_node_not_found_response(
+    project_ref: &str,
+    node_id: &str,
+) -> (StatusCode, Json<ErrorResponse>) {
+    (
+        StatusCode::BAD_REQUEST,
+        Json(ErrorResponse {
+            error: format!(
+                "Import review node {} does not exist on the current review draft for project {}",
+                node_id, project_ref
+            ),
+            code: Some("PROJECT_IMPORT_REVIEW_NODE_NOT_FOUND".into()),
+        }),
+    )
+}
+
 fn summarize_import_diff_node(
     node: &planner_schemas::artifacts::blueprint::BlueprintNode,
 ) -> ProjectImportDiffNodeSummary {
@@ -1282,6 +1351,52 @@ fn summarize_import_diff_node(
         node_name: node.name().to_string(),
         node_type: node.type_name().to_string(),
     }
+}
+
+fn build_import_review_selection_response(
+    draft: &ProjectImportDraft,
+    selection: &ProjectImportReviewSelection,
+) -> ProjectImportReviewSelectionResponse {
+    let excluded = selection
+        .excluded_node_ids
+        .iter()
+        .cloned()
+        .collect::<std::collections::HashSet<_>>();
+    let excluded_node_count = draft
+        .discovered_nodes
+        .iter()
+        .filter(|node| excluded.contains(&node.id().to_string()))
+        .count();
+    let included_node_count = draft.discovered_nodes.len().saturating_sub(excluded_node_count);
+    ProjectImportReviewSelectionResponse {
+        job_id: selection.job_id,
+        excluded_node_ids: selection.excluded_node_ids.clone(),
+        included_node_count,
+        excluded_node_count,
+    }
+}
+
+fn build_import_review_node_summaries(
+    draft: &ProjectImportDraft,
+    selection: &ProjectImportReviewSelection,
+) -> Vec<ProjectImportReviewNodeSummary> {
+    let excluded = selection
+        .excluded_node_ids
+        .iter()
+        .cloned()
+        .collect::<std::collections::HashSet<_>>();
+    let mut nodes = draft
+        .discovered_nodes
+        .iter()
+        .map(|node| ProjectImportReviewNodeSummary {
+            node_id: node.id().to_string(),
+            node_name: node.name().to_string(),
+            node_type: node.type_name().to_string(),
+            included: !excluded.contains(&node.id().to_string()),
+        })
+        .collect::<Vec<_>>();
+    nodes.sort_by(|left, right| left.node_name.cmp(&right.node_name));
+    nodes
 }
 
 fn summarize_node_types(nodes: &[ProjectImportDiffNodeSummary]) -> Vec<ProjectImportNodeTypeCount> {
@@ -1334,6 +1449,28 @@ fn build_import_draft_diff_summary(
         current_head_revision: current_draft.source_metadata.head_revision.clone(),
         compared_head_revision: compared_draft.source_metadata.head_revision.clone(),
     }
+}
+
+fn build_selected_import_draft(
+    state: &Arc<AppState>,
+    import_job: &ProjectImportJob,
+    draft: &ProjectImportDraft,
+) -> ProjectImportDraft {
+    let excluded = state
+        .imports
+        .get_review_selection(import_job.id)
+        .map(|selection| {
+            selection
+                .excluded_node_ids
+                .into_iter()
+                .collect::<std::collections::HashSet<_>>()
+        })
+        .unwrap_or_default();
+    let mut selected_draft = draft.clone();
+    selected_draft
+        .discovered_nodes
+        .retain(|node| !excluded.contains(&node.id().to_string()));
+    selected_draft
 }
 
 fn build_project_import_history_response(
@@ -2000,6 +2137,9 @@ async fn get_project_import_review(
         .imports
         .latest_review_job_for_project(project.id)
         .ok_or_else(|| import_review_not_found_response(&project_ref))?;
+    if !matches!(import_job.status, ImportStatus::ReviewPending) {
+        return Err(import_review_not_found_response(&project_ref));
+    }
     let source_binding = state.imports.get_binding(project.id).ok_or_else(|| {
         internal_error_response(
             format!(
@@ -2317,6 +2457,65 @@ async fn restore_project_import_review_draft(
     )))
 }
 
+async fn update_project_import_review_selection(
+    State(state): State<Arc<AppState>>,
+    claims: Claims,
+    Path(project_ref): Path<String>,
+    Json(req): Json<UpdateProjectImportReviewSelectionRequest>,
+) -> Result<Json<ProjectImportResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let project = resolve_project_for_user(&state, &claims, &project_ref)?;
+    let import_job = state
+        .imports
+        .latest_review_job_for_project(project.id)
+        .ok_or_else(|| import_review_not_found_response(&project_ref))?;
+    let source_binding = state.imports.get_binding(project.id).ok_or_else(|| {
+        internal_error_response(
+            format!(
+                "Reviewable import job {} has no source binding for {}",
+                import_job.id, project.id
+            ),
+            "PROJECT_IMPORT_BINDING_MISSING",
+        )
+    })?;
+    let draft = state.imports.get_draft(import_job.id).ok_or_else(|| {
+        internal_error_response(
+            format!(
+                "Reviewable import job {} is missing draft payload",
+                import_job.id
+            ),
+            "PROJECT_IMPORT_DRAFT_MISSING",
+        )
+    })?;
+
+    if !draft
+        .discovered_nodes
+        .iter()
+        .any(|node| node.id().to_string() == req.node_id)
+    {
+        return Err(import_review_node_not_found_response(&project_ref, &req.node_id));
+    }
+
+    state
+        .imports
+        .set_review_node_included(import_job.id, project.id, &req.node_id, req.included)
+        .map_err(|error| {
+            internal_error_response(
+                format!(
+                    "Failed to update import review selection for job {}: {}",
+                    import_job.id, error
+                ),
+                "PROJECT_IMPORT_REVIEW_SELECTION_UPDATE_FAILED",
+            )
+        })?;
+
+    Ok(Json(build_project_import_response(
+        &state,
+        project,
+        import_job,
+        source_binding,
+    )))
+}
+
 async fn apply_project_import_review(
     State(state): State<Arc<AppState>>,
     claims: Claims,
@@ -2365,7 +2564,9 @@ async fn apply_project_import_review(
         ));
     }
 
-    promote_import_draft_to_blueprint(&state, &project, &draft)
+    let selected_draft = build_selected_import_draft(&state, &import_job, &draft);
+
+    promote_import_draft_to_blueprint(&state, &project, &selected_draft)
         .map_err(|error| internal_error_response(error, "PROJECT_IMPORT_APPLY_FAILED"))?;
 
     let import_job = state
@@ -7006,6 +7207,59 @@ mod tests {
                 .map(|draft| draft.discovered_nodes.len()),
             Some(2)
         );
+        assert_eq!(
+            payload
+                .import_review_selection
+                .as_ref()
+                .map(|selection| selection.included_node_count),
+            Some(2)
+        );
+        assert_eq!(
+            payload
+                .review_nodes
+                .as_ref()
+                .map(|nodes| nodes.iter().filter(|node| node.included).count()),
+            Some(2)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_update_project_import_review_selection_excludes_node_on_latest_review() {
+        let state = test_state();
+        let (project, _job, draft) = seed_review_pending_import(&state, "Imported Repo");
+        let app = routes(state.clone());
+        let target_node_id = draft.discovered_nodes[0].id().to_string();
+
+        let req = Request::builder()
+            .method("POST")
+            .uri(format!("/projects/{}/import-review-selection", project.slug))
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "node_id": target_node_id,
+                    "included": false,
+                })
+                .to_string(),
+            ))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let payload: ProjectImportResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(
+            payload
+                .import_review_selection
+                .as_ref()
+                .map(|selection| selection.excluded_node_ids.clone()),
+            Some(vec![draft.discovered_nodes[0].id().to_string()])
+        );
+        assert!(payload
+            .review_nodes
+            .as_ref()
+            .and_then(|nodes| nodes.iter().find(|node| node.node_id == target_node_id))
+            .is_some_and(|node| !node.included));
     }
 
     #[tokio::test]
@@ -7097,6 +7351,32 @@ mod tests {
             state.imports.get_job(job.id).map(|current| current.status),
             Some(crate::import::ImportStatus::Applied)
         );
+    }
+
+    #[tokio::test]
+    async fn test_apply_project_import_review_promotes_only_selected_nodes() {
+        let state = test_state();
+        let (project, job, draft) = seed_review_pending_import(&state, "Imported Repo");
+        let excluded_node_id = draft.discovered_nodes[0].id().to_string();
+        state
+            .imports
+            .set_review_node_included(job.id, project.id, &excluded_node_id, false)
+            .unwrap();
+        let app = routes(state.clone());
+
+        let req = Request::builder()
+            .method("POST")
+            .uri(format!("/projects/{}/import-review", project.slug))
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        assert!(state.blueprints.get_node(&excluded_node_id).is_none());
+        assert!(state
+            .blueprints
+            .get_node(draft.discovered_nodes[1].id().as_str())
+            .is_some());
     }
 
     #[tokio::test]
@@ -7514,6 +7794,15 @@ mod tests {
                 seeded_session.id,
             )
             .unwrap();
+        state
+            .imports
+            .set_review_node_included(
+                historical_job.id,
+                project.id,
+                historical_draft.discovered_nodes[0].id().as_str(),
+                false,
+            )
+            .unwrap();
 
         let (latest_applied_job, _) = state.imports.create_reimport_job(project.id).unwrap();
         let latest_applied_job = state
@@ -7559,6 +7848,13 @@ mod tests {
                 .as_ref()
                 .map(|draft| draft.analysis_summary.as_str()),
             Some("Historical review draft.")
+        );
+        assert_eq!(
+            payload
+                .import_review_selection
+                .as_ref()
+                .map(|selection| selection.excluded_node_ids.len()),
+            Some(0)
         );
         assert_eq!(state.blueprints.counts(), counts_before);
         assert_eq!(

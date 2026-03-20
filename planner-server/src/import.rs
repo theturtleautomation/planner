@@ -147,6 +147,16 @@ pub struct ProjectImportDraft {
     pub updated_at: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectImportReviewSelection {
+    pub job_id: Uuid,
+    pub project_id: Uuid,
+    #[serde(default)]
+    pub excluded_node_ids: Vec<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct HistoricalImportDraft {
     pub job: ProjectImportJob,
@@ -161,9 +171,11 @@ pub struct ProjectImportStore {
     jobs: RwLock<HashMap<Uuid, ProjectImportJob>>,
     bindings: RwLock<HashMap<Uuid, ProjectSourceBinding>>,
     drafts: RwLock<HashMap<Uuid, ProjectImportDraft>>,
+    selections: RwLock<HashMap<Uuid, ProjectImportReviewSelection>>,
     jobs_dir: PathBuf,
     bindings_dir: PathBuf,
     drafts_dir: PathBuf,
+    selections_dir: PathBuf,
     checkouts_dir: PathBuf,
     persistent: bool,
 }
@@ -181,14 +193,17 @@ impl ProjectImportStore {
         let jobs_dir = imports_dir.join("jobs");
         let bindings_dir = imports_dir.join("bindings");
         let drafts_dir = imports_dir.join("drafts");
+        let selections_dir = imports_dir.join("selections");
         let checkouts_dir = imports_dir.join("checkouts");
         Self {
             jobs: RwLock::new(HashMap::new()),
             bindings: RwLock::new(HashMap::new()),
             drafts: RwLock::new(HashMap::new()),
+            selections: RwLock::new(HashMap::new()),
             jobs_dir,
             bindings_dir,
             drafts_dir,
+            selections_dir,
             checkouts_dir,
             persistent: false,
         }
@@ -199,24 +214,32 @@ impl ProjectImportStore {
         let jobs_dir = imports_dir.join("jobs");
         let bindings_dir = imports_dir.join("bindings");
         let drafts_dir = imports_dir.join("drafts");
+        let selections_dir = imports_dir.join("selections");
         let checkouts_dir = imports_dir.join("checkouts");
         std::fs::create_dir_all(&jobs_dir)?;
         std::fs::create_dir_all(&bindings_dir)?;
         std::fs::create_dir_all(&drafts_dir)?;
+        std::fs::create_dir_all(&selections_dir)?;
         std::fs::create_dir_all(&checkouts_dir)?;
 
         let jobs = load_records::<ProjectImportJob, _>(&jobs_dir, |job| job.id)?;
         let bindings =
             load_records::<ProjectSourceBinding, _>(&bindings_dir, |binding| binding.project_id)?;
         let drafts = load_records::<ProjectImportDraft, _>(&drafts_dir, |draft| draft.job_id)?;
+        let selections =
+            load_records::<ProjectImportReviewSelection, _>(&selections_dir, |selection| {
+                selection.job_id
+            })?;
 
         Ok(Self {
             jobs: RwLock::new(jobs),
             bindings: RwLock::new(bindings),
             drafts: RwLock::new(drafts),
+            selections: RwLock::new(selections),
             jobs_dir,
             bindings_dir,
             drafts_dir,
+            selections_dir,
             checkouts_dir,
             persistent: true,
         })
@@ -301,6 +324,7 @@ impl ProjectImportStore {
         };
         self.persist_job(&job)?;
         self.jobs.write().insert(job.id, job.clone());
+        self.reset_review_selection(job.id, project_id)?;
         Ok((job, binding))
     }
 
@@ -396,6 +420,10 @@ impl ProjectImportStore {
 
     pub fn get_draft(&self, job_id: Uuid) -> Option<ProjectImportDraft> {
         self.drafts.read().get(&job_id).cloned()
+    }
+
+    pub fn get_review_selection(&self, job_id: Uuid) -> Option<ProjectImportReviewSelection> {
+        self.selections.read().get(&job_id).cloned()
     }
 
     pub fn latest_job_for_project(&self, project_id: Uuid) -> Option<ProjectImportJob> {
@@ -497,13 +525,15 @@ impl ProjectImportStore {
         analysis_summary: String,
         seed_session_id: Uuid,
     ) -> std::io::Result<ProjectImportJob> {
-        self.update_job(job_id, |job| {
+        let job = self.update_job(job_id, |job| {
             job.status = ImportStatus::ReviewPending;
             job.seed_session_id = Some(seed_session_id);
             job.analysis_summary = Some(analysis_summary);
             job.progress_message = Some(progress_message.into());
             job.error_message = None;
-        })
+        })?;
+        self.reset_review_selection(job.id, job.project_id)?;
+        Ok(job)
     }
 
     pub fn mark_job_applied(
@@ -554,6 +584,46 @@ impl ProjectImportStore {
         Ok(draft)
     }
 
+    pub fn reset_review_selection(
+        &self,
+        job_id: Uuid,
+        project_id: Uuid,
+    ) -> std::io::Result<ProjectImportReviewSelection> {
+        let now = now_rfc3339();
+        let selection = ProjectImportReviewSelection {
+            job_id,
+            project_id,
+            excluded_node_ids: Vec::new(),
+            created_at: now.clone(),
+            updated_at: now,
+        };
+        self.persist_selection(&selection)?;
+        self.selections.write().insert(job_id, selection.clone());
+        Ok(selection)
+    }
+
+    pub fn set_review_node_included(
+        &self,
+        job_id: Uuid,
+        project_id: Uuid,
+        node_id: &str,
+        included: bool,
+    ) -> std::io::Result<ProjectImportReviewSelection> {
+        if self.get_review_selection(job_id).is_none() {
+            self.reset_review_selection(job_id, project_id)?;
+        }
+
+        self.update_selection(job_id, |selection| {
+            if included {
+                selection.excluded_node_ids.retain(|current| current != node_id);
+            } else if !selection.excluded_node_ids.iter().any(|current| current == node_id) {
+                selection.excluded_node_ids.push(node_id.to_string());
+            }
+            selection.excluded_node_ids.sort();
+            selection.excluded_node_ids.dedup();
+        })
+    }
+
     pub fn purge_project(&self, project_id: Uuid) -> std::io::Result<ProjectImportCleanupReport> {
         let binding = self.get_binding(project_id);
         let job_ids = self
@@ -579,6 +649,10 @@ impl ProjectImportStore {
             if draft_path.exists() {
                 std::fs::remove_file(&draft_path)?;
             }
+            let selection_path = self.selections_dir.join(format!("{}.msgpack", job_id));
+            if selection_path.exists() {
+                std::fs::remove_file(&selection_path)?;
+            }
         }
 
         let binding_path = self.bindings_dir.join(format!("{}.msgpack", project_id));
@@ -601,6 +675,9 @@ impl ProjectImportStore {
         self.drafts
             .write()
             .retain(|_, draft| draft.project_id != project_id);
+        self.selections
+            .write()
+            .retain(|_, selection| selection.project_id != project_id);
         self.bindings.write().remove(&project_id);
 
         Ok(ProjectImportCleanupReport {
@@ -622,6 +699,14 @@ impl ProjectImportStore {
 
     fn persist_draft(&self, draft: &ProjectImportDraft) -> std::io::Result<()> {
         persist_record(&self.drafts_dir, &draft.job_id.to_string(), draft)?;
+        Ok(())
+    }
+
+    fn persist_selection(
+        &self,
+        selection: &ProjectImportReviewSelection,
+    ) -> std::io::Result<()> {
+        persist_record(&self.selections_dir, &selection.job_id.to_string(), selection)?;
         Ok(())
     }
 
@@ -666,6 +751,30 @@ impl ProjectImportStore {
             binding.clone()
         };
         self.persist_binding(&updated)?;
+        Ok(updated)
+    }
+
+    fn update_selection<F>(
+        &self,
+        job_id: Uuid,
+        update: F,
+    ) -> std::io::Result<ProjectImportReviewSelection>
+    where
+        F: FnOnce(&mut ProjectImportReviewSelection),
+    {
+        let updated = {
+            let mut selections = self.selections.write();
+            let selection = selections.get_mut(&job_id).ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("import review selection not found: {job_id}"),
+                )
+            })?;
+            update(selection);
+            selection.updated_at = now_rfc3339();
+            selection.clone()
+        };
+        self.persist_selection(&updated)?;
         Ok(updated)
     }
 }
