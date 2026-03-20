@@ -1845,6 +1845,70 @@ describe('ProjectSessionsPage import review', () => {
     expect(screen.queryByText('Selected Historical Entry Compared To Current')).not.toBeInTheDocument();
   });
 
+  it('renders effective selection summary on history rows with saved exclusions', async () => {
+    mockGetProjectImportHistory.mockResolvedValueOnce({
+      project: {
+        id: 'proj-1',
+        slug: 'task-tracker',
+        name: 'Task Tracker',
+        description: 'Import review workspace',
+        owner_user_id: 'dev|local',
+        created_at: '2026-03-20T00:00:00Z',
+        updated_at: '2026-03-20T00:00:00Z',
+        archived_at: null,
+        legacy_scope_keys: [],
+      },
+      source_binding: {
+        project_id: 'proj-1',
+        provider: 'github',
+        canonical_ref: 'https://github.com/example/task-tracker',
+        default_branch: 'main',
+        head_revision: 'deadbeef',
+        local_root: '/tmp/imports/task-tracker',
+        managed_checkout: true,
+        created_at: '2026-03-20T00:00:00Z',
+        updated_at: '2026-03-20T00:01:00Z',
+      },
+      history: [
+        {
+          import_job: {
+            id: 'job-1',
+            project_id: 'proj-1',
+            provider: 'github',
+            requested_ref: 'https://github.com/example/task-tracker',
+            status: 'review_pending',
+            seed_session_id: 'seed-1',
+            analysis_summary: 'Imported draft for Task Tracker from GitHub.',
+            progress_message: 'Import draft ready. Review imported context in the seeded session.',
+            error_message: null,
+            created_at: '2026-03-20T00:00:00Z',
+            updated_at: '2026-03-20T00:01:00Z',
+          },
+          source_metadata: {
+            provider: 'github',
+            canonical_ref: 'https://github.com/example/task-tracker',
+            local_root: '/tmp/imports/task-tracker',
+            default_branch: 'main',
+            head_revision: 'deadbeef',
+          },
+          discovered_node_count: 2,
+          effective_included_node_count: 1,
+          effective_excluded_node_count: 1,
+        },
+      ],
+      diff_summary: null,
+    });
+
+    renderProjectSessions();
+
+    await waitFor(() => {
+      expect(screen.getByText('Import History')).toBeInTheDocument();
+    });
+
+    expect(screen.getByText('Effective selection: 1 included, 1 excluded')).toBeInTheDocument();
+    expect(screen.getByText("Saved exclusions affect this job's effective apply footprint.")).toBeInTheDocument();
+  });
+
   it('reopens an older historical review draft into the current review slot', async () => {
     const user = userEvent.setup();
     mockGetProjectImportState.mockResolvedValueOnce({

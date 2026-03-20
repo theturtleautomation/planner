@@ -101,6 +101,8 @@ Current completed slice:
   [Import Existing Project Phase 14 Arbitrary History Comparison Spec](/home/thetu/planner/docs/import-existing-project-phase-14-arbitrary-history-comparison-spec.md)
 - selection-aware history comparison is implemented and verified in
   [Import Existing Project Phase 15 Selection-Aware History Comparison Spec](/home/thetu/planner/docs/import-existing-project-phase-15-selection-aware-history-comparison-spec.md)
+- history selection summaries are implemented and verified in
+  [Import Existing Project Phase 16 History Selection Summary Spec](/home/thetu/planner/docs/import-existing-project-phase-16-history-selection-summary-spec.md)
 
 Current agreed product constraints:
 
@@ -118,12 +120,10 @@ Current agreed product constraints:
 
 Current next bounded slice:
 
-- broader history truthfulness is now bounded to exposing effective selection
-  summaries directly on history rows
-  in
-  [Import Existing Project Phase 16 History Selection Summary Spec](/home/thetu/planner/docs/import-existing-project-phase-16-history-selection-summary-spec.md)
-- later history work should stay phased behind follow-on specs after this slice
-  is implemented and verified
+- no further import slice is currently promoted as ready for implementation
+- any later import-history or reconciliation refinement should be treated as a
+  fresh planning decision and promoted through a new bounded spec only if we
+  explicitly choose to keep investing here
 
 ## Immediate Bounded Closeout Slice
 
@@ -151,10 +151,10 @@ unplanned implementation.
 
 The next move is:
 
-- use `delivery-cycle` to implement
-  [Import Existing Project Phase 16 History Selection Summary Spec](/home/thetu/planner/docs/import-existing-project-phase-16-history-selection-summary-spec.md)
+- decide whether the import thread should pause here as complete-for-now or
+  whether a new optional refinement spec should be promoted deliberately
 
-After that, keep later import work phased behind follow-on specs for:
+If we keep investing later, phase future work behind follow-on specs for:
 
 - broader historical reconciliation and history comparison behavior beyond
   current restore flows, selected-entry comparison, arbitrary two-entry

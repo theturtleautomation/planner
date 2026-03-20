@@ -1,6 +1,6 @@
 # Import Existing Project Phase 16 History Selection Summary Spec
 
-**Status:** Ready for implementation  
+**Status:** Implemented  
 **Date:** 2026-03-20  
 **Parent:** [Project Plan](/home/thetu/planner/docs/project-plan.md)  
 **Source Research:** [Import Existing Project Plan](/home/thetu/planner/docs/import-existing-project-plan.md)  
@@ -33,6 +33,32 @@ After this slice:
 
 The user still does **not** get graph diff visualizations, timeline playback,
 or compare-driven editing from the history list.
+
+## Implementation Notes
+
+Implemented on 2026-03-20 in the bounded Phase 16 delivery slice.
+
+Execution landed in:
+
+- `planner-server/src/api.rs`
+- `planner-web/src/types.ts`
+- `planner-web/src/pages/ProjectSessionsPage.tsx`
+- `planner-web/src/pages/__tests__/ProjectSessionsPage.test.tsx`
+
+Delivered behavior:
+
+- project import history entries now expose effective included and excluded
+  counts when saved review-selection state exists
+- `ProjectSessionsPage` now shows a compact effective-selection summary on
+  history rows and explicitly notes when saved exclusions change the effective
+  apply footprint
+- compare, restore, and restore-for-review actions remain unchanged
+
+Verification completed:
+
+- `cargo test -p planner-server get_project_import_history -- --nocapture`
+- `cargo test -p planner-server compare_project_import_history_entry -- --nocapture`
+- `npm --prefix planner-web test -- --run src/pages/__tests__/ProjectSessionsPage.test.tsx`
 
 ## Locked Decisions For This Slice
 

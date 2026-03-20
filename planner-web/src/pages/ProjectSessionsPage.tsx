@@ -964,7 +964,22 @@ export default function ProjectSessionsPage() {
                     {entry.discovered_node_count !== null && entry.discovered_node_count !== undefined && (
                       <span>Draft nodes: {entry.discovered_node_count}</span>
                     )}
+                    {entry.effective_included_node_count !== null && entry.effective_included_node_count !== undefined && (
+                      <span>
+                        Effective selection: {entry.effective_included_node_count} included
+                        {entry.effective_excluded_node_count !== null && entry.effective_excluded_node_count !== undefined
+                          ? `, ${entry.effective_excluded_node_count} excluded`
+                          : ''}
+                      </span>
+                    )}
                   </div>
+                  {entry.effective_excluded_node_count !== null
+                    && entry.effective_excluded_node_count !== undefined
+                    && entry.effective_excluded_node_count > 0 && (
+                    <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>
+                      Saved exclusions affect this job&apos;s effective apply footprint.
+                    </span>
+                  )}
                   {entry.discovered_node_count !== null && entry.discovered_node_count !== undefined && (
                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                       <button

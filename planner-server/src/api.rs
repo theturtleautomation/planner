@@ -146,6 +146,10 @@ pub struct ProjectImportHistoryEntry {
     pub source_metadata: Option<ImportDraftSourceMetadata>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub discovered_node_count: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effective_included_node_count: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effective_excluded_node_count: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1528,6 +1532,27 @@ fn build_selection_aware_import_draft(
     }
 }
 
+fn build_import_history_selection_summary(
+    state: &Arc<AppState>,
+    import_job: &ProjectImportJob,
+    draft: &ProjectImportDraft,
+) -> Option<(usize, usize)> {
+    state.imports.get_review_selection(import_job.id).map(|selection| {
+        let node_ids = draft
+            .discovered_nodes
+            .iter()
+            .map(|node| node.id().to_string())
+            .collect::<std::collections::HashSet<_>>();
+        let excluded_count = selection
+            .excluded_node_ids
+            .into_iter()
+            .filter(|node_id| node_ids.contains(node_id))
+            .count();
+        let included_count = draft.discovered_nodes.len().saturating_sub(excluded_count);
+        (included_count, excluded_count)
+    })
+}
+
 fn build_project_import_history_response(
     state: &Arc<AppState>,
     project: Project,
@@ -1540,16 +1565,24 @@ fn build_project_import_history_response(
 
     let entries = history
         .iter()
-        .map(|entry| ProjectImportHistoryEntry {
-            import_job: entry.job.clone(),
-            source_metadata: entry
+        .map(|entry| {
+            let selection_summary = entry
                 .draft
                 .as_ref()
-                .map(|draft| draft.source_metadata.clone()),
-            discovered_node_count: entry
-                .draft
-                .as_ref()
-                .map(|draft| draft.discovered_nodes.len()),
+                .and_then(|draft| build_import_history_selection_summary(state, &entry.job, draft));
+            ProjectImportHistoryEntry {
+                import_job: entry.job.clone(),
+                source_metadata: entry
+                    .draft
+                    .as_ref()
+                    .map(|draft| draft.source_metadata.clone()),
+                discovered_node_count: entry
+                    .draft
+                    .as_ref()
+                    .map(|draft| draft.discovered_nodes.len()),
+                effective_included_node_count: selection_summary.map(|(included, _)| included),
+                effective_excluded_node_count: selection_summary.map(|(_, excluded)| excluded),
+            }
         })
         .collect::<Vec<_>>();
 
@@ -2273,6 +2306,8 @@ async fn compare_project_import_history_entry(
         import_job: historical_job.clone(),
         source_metadata: Some(historical_draft.source_metadata.clone()),
         discovered_node_count: Some(historical_draft.discovered_nodes.len()),
+        effective_included_node_count: None,
+        effective_excluded_node_count: None,
     };
     let (current_draft, current_import_job_uses_selection_filter) =
         build_selection_aware_import_draft(&state, &current_import_job, &current_draft);
@@ -2310,11 +2345,15 @@ async fn compare_project_import_history_entries(
         import_job: baseline_job.clone(),
         source_metadata: Some(baseline_draft.source_metadata.clone()),
         discovered_node_count: Some(baseline_draft.discovered_nodes.len()),
+        effective_included_node_count: None,
+        effective_excluded_node_count: None,
     };
     let compared_entry = ProjectImportHistoryEntry {
         import_job: compared_job.clone(),
         source_metadata: Some(compared_draft.source_metadata.clone()),
         discovered_node_count: Some(compared_draft.discovered_nodes.len()),
+        effective_included_node_count: None,
+        effective_excluded_node_count: None,
     };
     let (baseline_draft, baseline_entry_uses_selection_filter) =
         build_selection_aware_import_draft(&state, &baseline_job, &baseline_draft);
@@ -6907,6 +6946,86 @@ mod tests {
             diff_summary.compared_head_revision.as_deref(),
             Some("cafebabe")
         );
+    }
+
+    #[tokio::test]
+    async fn test_get_project_import_history_includes_selection_summary_counts() {
+        let state = test_state();
+        let project = state.projects.create(
+            "dev|local",
+            "Import History Selection Summary",
+            None,
+            None,
+            Vec::new(),
+            None,
+        );
+        let seeded_pending = state.sessions.create("dev|local");
+        let (pending_job, _) = state
+            .imports
+            .create(
+                project.id,
+                ImportProvider::GitHub,
+                "https://github.com/example/import-history-selection-summary".into(),
+                "https://github.com/example/import-history-selection-summary".into(),
+                true,
+            )
+            .unwrap();
+        state
+            .imports
+            .save_draft(ProjectImportDraft {
+                job_id: pending_job.id,
+                project_id: project.id,
+                analysis_summary: "Pending import with exclusions.".into(),
+                source_metadata: crate::import::ImportDraftSourceMetadata {
+                    provider: ImportProvider::GitHub,
+                    canonical_ref: "https://github.com/example/import-history-selection-summary".into(),
+                    local_root: format!("/tmp/imports/{}", project.slug),
+                    default_branch: Some("main".into()),
+                    head_revision: Some("deadbeef".into()),
+                },
+                discovered_nodes: vec![
+                    serde_json::from_value(sample_component_json()).unwrap(),
+                    serde_json::from_value(sample_technology_json()).unwrap(),
+                ],
+                created_at: chrono::Utc::now().to_rfc3339(),
+                updated_at: chrono::Utc::now().to_rfc3339(),
+            })
+            .unwrap();
+        let pending_job = state
+            .imports
+            .mark_job_review_pending(
+                pending_job.id,
+                "Import draft ready. Review imported context in the seeded session.",
+                "Pending import with exclusions.".into(),
+                seeded_pending.id,
+            )
+            .unwrap();
+        let _ = state
+            .imports
+            .set_review_node_included(
+                pending_job.id,
+                project.id,
+                "tech-rust-b2c3d4e5",
+                false,
+            )
+            .unwrap();
+
+        let app = routes(state);
+        let req = Request::builder()
+            .uri(format!("/projects/{}/import-history", project.slug))
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let payload: ProjectImportHistoryResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(payload.history.len(), 1);
+        assert_eq!(payload.history[0].discovered_node_count, Some(2));
+        assert_eq!(payload.history[0].effective_included_node_count, Some(1));
+        assert_eq!(payload.history[0].effective_excluded_node_count, Some(1));
     }
 
     #[tokio::test]

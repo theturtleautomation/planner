@@ -91,7 +91,11 @@
 > completed Phase 15 work. The next ready execution artifact is now
 > [Import Existing Project Phase 16 History Selection Summary Spec](/home/thetu/planner/docs/import-existing-project-phase-16-history-selection-summary-spec.md),
 > which scopes exposing effective included/excluded counts directly on history
-> rows without inventing graph summaries or history-side editing.
+> rows without inventing graph summaries or history-side editing. That slice
+> is now implemented. No further import execution artifact is currently
+> promoted. Remaining future work should be treated as optional refinement and
+> promoted through a fresh bounded spec only if we explicitly decide to keep
+> investing in import-history or reconciliation behavior.
 
 ## Findings
 

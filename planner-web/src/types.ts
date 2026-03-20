@@ -447,6 +447,8 @@ export interface ProjectImportHistoryEntry {
   import_job: ProjectImportJob;
   source_metadata?: ImportDraftSourceMetadata | null;
   discovered_node_count?: number | null;
+  effective_included_node_count?: number | null;
+  effective_excluded_node_count?: number | null;
 }
 
 export interface ProjectImportDiffNodeSummary {
