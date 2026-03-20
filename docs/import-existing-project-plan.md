@@ -39,7 +39,11 @@
 > semantics. That slice is now implemented. Remaining work should be promoted
 > through a later bounded spec for rollback and more advanced reconciliation
 > behavior against historical imports rather than reopening completed Phase 8
-> work.
+> work. The next ready execution artifact is now
+> [Import Existing Project Phase 9 Historical Restore Spec](/home/thetu/planner/docs/import-existing-project-phase-9-historical-restore-spec.md),
+> which scopes restore to an older applied import through the existing
+> project-scoped history surface without yet reopening per-node merge or broad
+> time-travel semantics.
 
 ## Findings
 

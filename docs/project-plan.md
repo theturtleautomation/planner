@@ -32,6 +32,7 @@ These are the main planning documents currently shaping the repo:
 - [Import Existing Project Phase 6 Reimport And Lifecycle Cleanup Spec](/home/thetu/planner/docs/import-existing-project-phase-6-reimport-and-lifecycle-cleanup-spec.md)
 - [Import Existing Project Phase 7 History And Draft Diff Spec](/home/thetu/planner/docs/import-existing-project-phase-7-history-and-draft-diff-spec.md)
 - [Import Existing Project Phase 8 Canonical Reconciliation Spec](/home/thetu/planner/docs/import-existing-project-phase-8-canonical-reconciliation-spec.md)
+- [Import Existing Project Phase 9 Historical Restore Spec](/home/thetu/planner/docs/import-existing-project-phase-9-historical-restore-spec.md)
 - [Planning Status Audit Remediation Spec](/home/thetu/planner/docs/planning-status-audit-remediation-spec.md)
 
 ## Current Active Thread
@@ -47,7 +48,7 @@ Goal:
 
 Canonical planning doc:
 
-- [Import Existing Project Plan](/home/thetu/planner/docs/import-existing-project-plan.md)
+- [Import Existing Project Phase 9 Historical Restore Spec](/home/thetu/planner/docs/import-existing-project-phase-9-historical-restore-spec.md)
 
 Supporting research doc:
 
@@ -93,10 +94,8 @@ Current agreed product constraints:
 
 Current next bounded slice:
 
-- the next bounded import slice is not yet promoted
-- remaining work should be split through a follow-on spec focused on rollback
-  and richer historical reconciliation behavior against canonical blueprint
-  state
+- project-scoped restore to a historical applied import is now bounded in
+  [Import Existing Project Phase 9 Historical Restore Spec](/home/thetu/planner/docs/import-existing-project-phase-9-historical-restore-spec.md)
 
 ## Immediate Bounded Closeout Slice
 
@@ -124,13 +123,13 @@ unplanned implementation.
 
 The next move is:
 
-- use `spec-lifecycle` to promote the next bounded import spec focused on
-  rollback and richer historical reconciliation behavior against canonical
-  blueprint state
+- implement and close
+  [Import Existing Project Phase 9 Historical Restore Spec](/home/thetu/planner/docs/import-existing-project-phase-9-historical-restore-spec.md)
 
 After that, keep later import work phased behind follow-on specs for:
 
-- rollback and more advanced reconciliation behavior against historical imports
+- broader historical reconciliation behavior beyond bounded applied-import
+  restore
 
 Use
 [Import Existing Project Plan](/home/thetu/planner/docs/import-existing-project-plan.md)

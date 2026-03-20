@@ -56,6 +56,7 @@ Read these when the task touches the relevant area.
 - [import-existing-project-phase-6-reimport-and-lifecycle-cleanup-spec.md](/home/thetu/planner/docs/import-existing-project-phase-6-reimport-and-lifecycle-cleanup-spec.md)
 - [import-existing-project-phase-7-history-and-draft-diff-spec.md](/home/thetu/planner/docs/import-existing-project-phase-7-history-and-draft-diff-spec.md)
 - [import-existing-project-phase-8-canonical-reconciliation-spec.md](/home/thetu/planner/docs/import-existing-project-phase-8-canonical-reconciliation-spec.md)
+- [import-existing-project-phase-9-historical-restore-spec.md](/home/thetu/planner/docs/import-existing-project-phase-9-historical-restore-spec.md)
 - [knowledge-library-project-scope-plan.md](/home/thetu/planner/docs/knowledge-library-project-scope-plan.md)
 
 ### Planning integrity and audit remediation
