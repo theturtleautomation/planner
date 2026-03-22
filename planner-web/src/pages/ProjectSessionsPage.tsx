@@ -403,6 +403,31 @@ export default function ProjectSessionsPage() {
   const selectedHistoryComparison = importComparison?.diff_summary ?? null;
   const selectedPairComparison = importPairComparison?.diff_summary ?? null;
   const restoreBlockedByPendingReview = importStateStatus === 'review_pending';
+  const importHeroTitle = importStateStatus === 'review_pending'
+    ? 'Import review is active.'
+    : importStateStatus === 'failed'
+      ? 'Import needs intervention.'
+      : importStateBusy
+        ? 'Import is in flight.'
+        : importStatus === 'applied'
+          ? 'Import history is stable.'
+          : 'Import remains attached.';
+  const importHeroCopy = importStateStatus === 'review_pending'
+    ? 'A draft is waiting for review and merge controls are available below.'
+    : importStateStatus === 'failed'
+      ? 'The latest import failed. Use the controls below to inspect, retry, or restore history.'
+      : importStateBusy
+        ? 'A fresh import run is underway. The queue keeps import state visible without overtaking the session workspace.'
+        : 'Source attachment and import history remain available without becoming the primary surface.';
+  const resumableSessionCount = sessions.filter((session) => (
+    session.can_resume_checkpoint
+    || session.can_resume_live
+    || session.can_restart_from_description
+    || session.can_retry_pipeline
+  )).length;
+  const activeSessionCount = sessions.filter((session) => (
+    session.intake_phase === 'interviewing' || session.intake_phase === 'pipeline_running'
+  )).length;
   const selectedHistoryComparisonNotes = [
     importComparison?.current_import_job_uses_selection_filter
       ? 'Current import comparison uses selected nodes from saved merge controls.'
@@ -422,32 +447,8 @@ export default function ProjectSessionsPage() {
 
   return (
     <Layout>
-      <div
-        style={{
-          flex: 1,
-          overflow: 'auto',
-          padding: '48px 24px 72px',
-          maxWidth: '1040px',
-          margin: '0 auto',
-          width: '100%',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '36px',
-        }}
-      >
-        <header
-          style={{
-            background: 'var(--color-surface-offset)',
-            borderRadius: '18px',
-            padding: '32px',
-            display: 'flex',
-            alignItems: 'flex-end',
-            justifyContent: 'space-between',
-            gap: '12px',
-            flexWrap: 'wrap',
-            boxShadow: 'var(--shadow-md)',
-          }}
-        >
+      <div className="command-page" style={{ maxWidth: '1040px' }}>
+        <header className="command-page-header">
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxWidth: '38rem' }}>
             <span className="page-kicker">Project sessions</span>
             <h1 className="display-heading" style={{ margin: 0 }}>
@@ -470,18 +471,65 @@ export default function ProjectSessionsPage() {
           </div>
         </header>
 
-        <nav style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }} aria-label="Project sections">
+        <section className="command-hero-grid">
+          <div className="command-surface-strong">
+            <div className="command-surface-copy">
+              <span className="page-kicker">Working set</span>
+              <h2 className="section-heading" style={{ margin: 0 }}>Keep active work central and import review off to the side.</h2>
+              <p className="section-copy" style={{ margin: 0 }}>
+                This project route holds active sessions, resumability, and import governance in one bounded workspace without turning import history into the default focal point.
+              </p>
+            </div>
+            <div className="command-info-grid">
+              <div className="command-info-cell">
+                <span className="command-info-label">Sessions</span>
+                <span className="command-info-value">{sessions.length}</span>
+                <span className="command-info-copy">Project-local sessions currently attached to this workspace.</span>
+              </div>
+              <div className="command-info-cell">
+                <span className="command-info-label">Resumable or blocked</span>
+                <span className="command-info-value">{resumableSessionCount}</span>
+                <span className="command-info-copy">Sessions that need intervention or are ready to continue.</span>
+              </div>
+              <div className="command-info-cell">
+                <span className="command-info-label">Live or building</span>
+                <span className="command-info-value">{activeSessionCount}</span>
+                <span className="command-info-copy">Interviewing and pipeline work still in motion.</span>
+              </div>
+            </div>
+          </div>
+
+          <aside className="command-surface-soft">
+            <div className="command-surface-copy">
+              <span className="page-kicker">Import state</span>
+              <h2 className="section-heading" style={{ margin: 0 }}>
+                {importHeroTitle}
+              </h2>
+              <p className="section-copy" style={{ margin: 0 }}>
+                {importHeroCopy}
+              </p>
+            </div>
+            {importStateSource && (
+              <div className="directory-row-meta">
+                <span className="utility-pill">{importStateSource.provider.toUpperCase()}</span>
+                <span className="utility-pill">{importStateSource.default_branch ?? 'no branch recorded'}</span>
+                {importStateSource.head_revision && (
+                  <span className="utility-pill">{importStateSource.head_revision.slice(0, 8)}</span>
+                )}
+              </div>
+            )}
+            <div className="utility-note" style={{ margin: 0 }}>
+              Import review and history stay available below, but the main route should still read as a session workspace first.
+            </div>
+          </aside>
+        </section>
+
+        <nav className="command-tab-row" aria-label="Project sections">
           {tabs.map((tab) => (
             <NavLink
               key={tab.to}
               to={tab.to}
-              className={({ isActive }) => `btn${isActive ? ' btn-outline' : ''}`}
-              style={({ isActive }) => ({
-                textDecoration: 'none',
-                color: isActive ? 'var(--color-primary)' : undefined,
-                background: isActive ? 'var(--color-surface-2)' : undefined,
-                boxShadow: isActive ? 'inset 0 0 0 1px var(--color-ghost-border)' : undefined,
-              })}
+              className={({ isActive }) => `command-tab${isActive ? ' active' : ''}`}
             >
               {tab.label}
             </NavLink>
@@ -1068,44 +1116,71 @@ export default function ProjectSessionsPage() {
         )}
 
         {!loading && !error && sessions.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <section className="command-surface-soft">
+            <div className="command-surface-header">
+              <div className="command-surface-copy">
+                <h2 className="section-heading" style={{ margin: 0 }}>Project session queue</h2>
+                <p className="section-copy" style={{ margin: 0 }}>
+                  The active working set for this project stays denser than the import governance surfaces below.
+                </p>
+              </div>
+            </div>
+            <div className="directory-list">
             {sessions.map((session) => (
-              <article
-                key={session.id}
-                style={{
-                  borderRadius: '14px',
-                  background: 'var(--color-surface)',
-                  padding: '14px 16px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: '10px',
-                  flexWrap: 'wrap',
-                  boxShadow: 'var(--shadow-md)',
-                }}
-              >
-                <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <span style={{ color: 'var(--color-text)', fontWeight: 700 }}>{sessionTitle(session)}</span>
-                  <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>
-                    {phaseLabel(session.intake_phase)} · {formatRelativeTime(session.last_activity_at)}
-                  </span>
+              <article key={session.id} className="directory-row">
+                <div className="directory-row-main">
+                  <div className="directory-row-heading">
+                    <div style={{ minWidth: 0 }}>
+                      <span className="directory-row-title">{sessionTitle(session)}</span>
+                      <div className="directory-row-code">{session.id.slice(0, 8)}</div>
+                    </div>
+                    <span
+                      className="directory-row-highlight"
+                      data-tone={
+                        session.intake_phase === 'error'
+                          ? 'danger'
+                          : session.intake_phase === 'pipeline_running'
+                            ? 'warning'
+                            : session.intake_phase === 'complete'
+                              ? 'success'
+                              : 'primary'
+                      }
+                    >
+                      {phaseLabel(session.intake_phase)}
+                    </span>
+                  </div>
                   {session.project_description?.trim() && (
-                    <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>
+                    <div className="directory-row-copy">
                       {session.project_description.length > 120
                         ? `${session.project_description.slice(0, 120)}…`
                         : session.project_description}
-                    </span>
+                    </div>
                   )}
                 </div>
-                <button
-                  className="btn btn-outline"
-                  onClick={() => { void navigate(`/session/${session.id}`); }}
-                >
-                  Open Session
-                </button>
+                <div className="directory-row-facts">
+                  <div className="directory-row-meta">
+                    <span className="utility-pill">{formatRelativeTime(session.last_activity_at)}</span>
+                    {session.can_resume_checkpoint && <span className="utility-pill">checkpoint</span>}
+                    {session.can_resume_live && <span className="utility-pill">live resume</span>}
+                    {session.can_retry_pipeline && <span className="utility-pill">retry pipeline</span>}
+                    {session.can_restart_from_description && <span className="utility-pill">restart interview</span>}
+                  </div>
+                  <div className="section-copy" style={{ margin: 0 }}>
+                    Last activity and resumability stay visible without opening the session first.
+                  </div>
+                </div>
+                <div className="directory-row-actions">
+                  <button
+                    className="btn btn-outline"
+                    onClick={() => { void navigate(`/session/${session.id}`); }}
+                  >
+                    Open Session
+                  </button>
+                </div>
               </article>
             ))}
-          </div>
+            </div>
+          </section>
         )}
       </div>
     </Layout>

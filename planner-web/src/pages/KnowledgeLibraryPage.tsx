@@ -2613,23 +2613,26 @@ export default function KnowledgeLibraryPage() {
     <Layout>
       <div className="knowledge-page">
         <div className="knowledge-header">
-          <div style={{ flex: 1 }}>
-            <h1 style={{ margin: 0, fontSize: 'var(--text-lg)', fontWeight: 600 }}>Knowledge Library</h1>
-            <p style={{ margin: '4px 0 0', fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>
+          <div className="command-surface-strong" style={{ minWidth: 0 }}>
+            <div className="command-surface-copy">
+              <span className="page-kicker">Inventory workspace</span>
+              <h1 className="display-heading" style={{ margin: 0, fontSize: 'clamp(1.7rem, 1.45rem + 0.55vw, 2.25rem)' }}>Knowledge Library</h1>
+              <p style={{ margin: 0, fontSize: 'var(--text-sm)', color: 'var(--color-text-muted)', lineHeight: 1.6 }}>
               {isProjectLanding
                 ? 'Choose a software project first, then drill into scoped knowledge.'
                 : isProjectScoped
                   ? `Project-scoped view for ${scopedProjectName}. Shared across projects records linked to this project are included.`
                   : 'Global cross-project view for intentional broad exploration.'}
-            </p>
+              </p>
+            </div>
             {isProjectLanding ? (
-              <div style={{ marginTop: 'var(--space-2)' }}>
+              <div style={{ marginTop: 'var(--space-1)' }}>
                 <Link to="/knowledge/all" style={{ fontSize: 'var(--text-xs)' }}>
                   Open All Knowledge
                 </Link>
               </div>
             ) : (
-              <div style={{ marginTop: 'var(--space-2)', display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+              <div style={{ marginTop: 'var(--space-1)', display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
                 {originBackLink && (
                   <Link to={originBackLink.path} style={{ fontSize: 'var(--text-xs)' }}>
                     Back to {originBackLink.label}

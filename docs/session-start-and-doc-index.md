@@ -53,6 +53,10 @@ Read these when the task touches the relevant area.
 - [planner-design-system-phase-2-editorial-typography-and-cta-spec.md](/home/thetu/planner/docs/planner-design-system-phase-2-editorial-typography-and-cta-spec.md)
 - [planner-design-system-phase-3-overlay-depth-and-restrained-glass-spec.md](/home/thetu/planner/docs/planner-design-system-phase-3-overlay-depth-and-restrained-glass-spec.md)
 - [planner-design-system-phase-4-utility-route-consistency-spec.md](/home/thetu/planner/docs/planner-design-system-phase-4-utility-route-consistency-spec.md)
+- [planner-design-system-phase-5-route-hierarchy-and-operational-density-spec.md](/home/thetu/planner/docs/planner-design-system-phase-5-route-hierarchy-and-operational-density-spec.md)
+- [planner-design-system-phase-6-operational-surfaces-and-event-density-spec.md](/home/thetu/planner/docs/planner-design-system-phase-6-operational-surfaces-and-event-density-spec.md)
+- [planner-design-system-phase-7-knowledge-inventory-and-context-spec.md](/home/thetu/planner/docs/planner-design-system-phase-7-knowledge-inventory-and-context-spec.md)
+- [planner-design-system-phase-8-blueprint-command-chrome-and-inspector-spec.md](/home/thetu/planner/docs/planner-design-system-phase-8-blueprint-command-chrome-and-inspector-spec.md)
 
 ### Import and blueprint work
 

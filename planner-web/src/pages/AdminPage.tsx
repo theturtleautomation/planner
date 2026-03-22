@@ -171,11 +171,12 @@ function EventRow({ event }: EventRowProps) {
       display: 'flex',
       alignItems: 'flex-start',
       gap: '8px',
-      padding: '10px 12px',
-      borderRadius: '16px',
+      padding: '12px 14px',
+      borderRadius: '18px',
       background: `linear-gradient(180deg, color-mix(in srgb, ${s.bg} 88%, var(--color-surface-2)), color-mix(in srgb, var(--color-surface) 92%, transparent))`,
       fontSize: '12px',
       lineHeight: 1.5,
+      boxShadow: 'var(--shadow-sm)',
     }}>
       {/* Timestamp */}
       <span style={{
@@ -352,6 +353,8 @@ export default function AdminPage() {
     if (levelFilter === 'all') return sorted;
     return sorted.filter((e) => e.level === levelFilter);
   }, [eventsData, levelFilter]);
+  const errorEventCount = filteredEvents.filter((event) => event.level === 'error').length;
+  const warnEventCount = filteredEvents.filter((event) => event.level === 'warn').length;
 
   return (
     <Layout>
@@ -370,127 +373,155 @@ export default function AdminPage() {
           </div>
         </div>
 
-        <div className="utility-card utility-card-stack">
-          <div className="utility-card-header">
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <span className="page-kicker" style={{ color: 'var(--color-text-muted)' }}>System health</span>
-              <h2 className="section-heading">Runtime status</h2>
+        <section className="command-hero-grid">
+          <div className="command-surface-strong">
+            <div className="command-surface-header">
+              <div className="command-surface-copy">
+                <span className="page-kicker" style={{ color: 'var(--color-text-muted)' }}>System health</span>
+                <h2 className="section-heading" style={{ margin: 0 }}>Runtime status</h2>
+              </div>
+              {statusUpdatedAt && (
+                <span style={{ color: 'var(--color-text-muted)', fontSize: '11px', fontFamily: 'var(--font-mono)' }}>
+                  updated {secsAgo(statusUpdatedAt)}
+                </span>
+              )}
             </div>
-            {statusUpdatedAt && (
-              <span style={{ color: 'var(--color-text-muted)', fontSize: '11px', fontFamily: 'var(--font-mono)' }}>
-                updated {secsAgo(statusUpdatedAt)}
-              </span>
+
+            {statusError && (
+              <div className="utility-note" style={{ background: 'rgba(255,68,68,0.06)', color: 'var(--color-error)', fontFamily: 'var(--font-mono)', margin: 0 }}>
+                {statusError}
+              </div>
+            )}
+
+            {!status && !statusError && (
+              <span style={{ color: 'var(--color-text-muted)', fontSize: '12px', fontFamily: 'var(--font-mono)' }}>loading…</span>
+            )}
+
+            {status && (
+              <div className="command-info-grid">
+                <div className="command-info-cell">
+                  <span className="command-info-label">Status</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '7px', marginTop: '6px' }}>
+                    <StatusDot ok={status.status === 'ok'} />
+                    <span style={{
+                      color: status.status === 'ok' ? 'var(--color-success)' : 'var(--color-gold)',
+                      fontSize: '14px',
+                      fontFamily: 'var(--font-mono)',
+                      fontWeight: 700,
+                      textTransform: 'uppercase',
+                    }}>
+                      {status.status}
+                    </span>
+                  </div>
+                </div>
+                <div className="command-info-cell">
+                  <span className="command-info-label">Version</span>
+                  <span className="command-info-value" style={{ fontSize: 'clamp(1.15rem, 1rem + 0.5vw, 1.5rem)', fontFamily: 'var(--font-mono)' }}>
+                    {status.version}
+                  </span>
+                </div>
+                <div className="command-info-cell">
+                  <span className="command-info-label">Uptime</span>
+                  <span className="command-info-value" style={{ fontSize: 'clamp(1.15rem, 1rem + 0.5vw, 1.5rem)', fontFamily: 'var(--font-mono)' }}>
+                    {formatUptime(status.uptime_secs)}
+                  </span>
+                </div>
+                <div className="command-info-cell">
+                  <span className="command-info-label">Active sessions</span>
+                  <span className="command-info-value">{status.sessions.active}</span>
+                </div>
+                <div className="command-info-cell">
+                  <span className="command-info-label">Total events</span>
+                  <span className="command-info-value">{status.sessions.total_events}</span>
+                </div>
+              </div>
             )}
           </div>
 
-          {statusError && (
-            <div className="utility-note" style={{ background: 'rgba(255,68,68,0.06)', color: 'var(--color-error)', fontFamily: 'var(--font-mono)' }}>
-              {statusError}
+          <aside className="command-surface-soft">
+            <div className="command-surface-copy">
+              <span className="page-kicker">Event pressure</span>
+              <h2 className="section-heading" style={{ margin: 0 }}>Live operational stream.</h2>
+              <p className="section-copy" style={{ margin: 0 }}>
+                Use the event log below for sequence detail. This summary just keeps recent severity and polling cadence visible.
+              </p>
             </div>
-          )}
-
-          {!status && !statusError && (
-            <span style={{ color: 'var(--color-text-muted)', fontSize: '12px', fontFamily: 'var(--font-mono)' }}>loading…</span>
-          )}
-
-          {status && (
-            <div className="utility-stat-grid">
-              <div className="utility-stat-card">
-                <div className="utility-stat-eyebrow" style={{ color: 'var(--color-text-muted)' }}>status</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '7px', marginTop: '10px' }}>
-                  <StatusDot ok={status.status === 'ok'} />
-                  <span style={{
-                    color: status.status === 'ok' ? 'var(--color-success)' : 'var(--color-gold)',
-                    fontSize: '14px',
-                    fontFamily: 'var(--font-mono)',
-                    fontWeight: 700,
-                    textTransform: 'uppercase',
-                  }}>
-                    {status.status}
-                  </span>
-                </div>
+            <div className="command-info-grid">
+              <div className="command-info-cell">
+                <span className="command-info-label">Visible events</span>
+                <span className="command-info-value">{filteredEvents.length}</span>
+                <span className="command-info-copy">Current stream length after level filtering.</span>
               </div>
-              <div className="utility-stat-card">
-                <div className="utility-stat-eyebrow" style={{ color: 'var(--color-text-muted)' }}>version</div>
-                <div className="utility-stat-value" style={{ fontSize: 'clamp(1.15rem, 1rem + 0.5vw, 1.5rem)', fontFamily: 'var(--font-mono)' }}>
-                  {status.version}
-                </div>
+              <div className="command-info-cell">
+                <span className="command-info-label">Errors</span>
+                <span className="command-info-value">{errorEventCount}</span>
+                <span className="command-info-copy">Highest-severity rows in the current working slice.</span>
               </div>
-              <div className="utility-stat-card">
-                <div className="utility-stat-eyebrow" style={{ color: 'var(--color-text-muted)' }}>uptime</div>
-                <div className="utility-stat-value" style={{ fontSize: 'clamp(1.15rem, 1rem + 0.5vw, 1.5rem)', fontFamily: 'var(--font-mono)' }}>
-                  {formatUptime(status.uptime_secs)}
-                </div>
-              </div>
-              <div className="utility-stat-card">
-                <div className="utility-stat-eyebrow" style={{ color: 'var(--color-text-muted)' }}>active sessions</div>
-                <div className="utility-stat-value">{status.sessions.active}</div>
-              </div>
-              <div className="utility-stat-card">
-                <div className="utility-stat-eyebrow" style={{ color: 'var(--color-text-muted)' }}>total events</div>
-                <div className="utility-stat-value">{status.sessions.total_events}</div>
+              <div className="command-info-cell">
+                <span className="command-info-label">Warnings</span>
+                <span className="command-info-value">{warnEventCount}</span>
+                <span className="command-info-copy">Intermediate signals worth checking before they become failures.</span>
               </div>
             </div>
-          )}
-        </div>
+          </aside>
+        </section>
 
-        {status && status.providers && status.providers.length > 0 && (
-          <div className="utility-card utility-card-stack">
-            <div className="utility-card-header">
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        <section className="command-split-grid">
+          {status && status.providers && status.providers.length > 0 && (
+            <div className="command-surface-soft">
+              <div className="command-surface-copy">
                 <span className="page-kicker" style={{ color: 'var(--color-text-muted)' }}>Provider availability</span>
-                <h2 className="section-heading">LLM providers</h2>
+                <h2 className="section-heading" style={{ margin: 0 }}>LLM providers</h2>
               </div>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '12px' }}>
-              {status.providers.map((provider) => (
-                <div
-                  key={provider.name}
-                  className="utility-stat-card"
-                  style={{
-                    background: provider.available
-                      ? 'rgba(0,255,136,0.07)'
-                      : 'rgba(255,68,68,0.07)',
-                  }}
-                >
-                  <span style={{
-                    color: 'var(--color-text)',
-                    fontSize: '13px',
-                    fontFamily: 'var(--font-mono)',
-                    fontWeight: 700,
-                    letterSpacing: '0.04em',
-                  }}>
-                    {provider.name}
-                  </span>
-                  <div className="utility-stat-copy" style={{ marginTop: '6px', fontFamily: 'var(--font-mono)' }}>
-                    bin: {provider.binary}
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '10px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '12px' }}>
+                {status.providers.map((provider) => (
+                  <div
+                    key={provider.name}
+                    className="utility-stat-card"
+                    style={{
+                      background: provider.available
+                        ? 'rgba(0,255,136,0.07)'
+                        : 'rgba(255,68,68,0.07)',
+                    }}
+                  >
                     <span style={{
-                      fontSize: '14px',
-                      color: provider.available ? 'var(--color-success)' : 'var(--color-error)',
-                      lineHeight: 1,
-                    }}>
-                      {provider.available ? '✓' : '✗'}
-                    </span>
-                    <span style={{
-                      color: provider.available ? 'var(--color-success)' : 'var(--color-error)',
-                      fontSize: '11px',
+                      color: 'var(--color-text)',
+                      fontSize: '13px',
                       fontFamily: 'var(--font-mono)',
-                      fontWeight: 600,
-                      textTransform: 'uppercase',
+                      fontWeight: 700,
                       letterSpacing: '0.04em',
                     }}>
-                      {provider.available ? 'available' : 'unavailable'}
+                      {provider.name}
                     </span>
+                    <div className="utility-stat-copy" style={{ marginTop: '6px', fontFamily: 'var(--font-mono)' }}>
+                      bin: {provider.binary}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '10px' }}>
+                      <span style={{
+                        fontSize: '14px',
+                        color: provider.available ? 'var(--color-success)' : 'var(--color-error)',
+                        lineHeight: 1,
+                      }}>
+                        {provider.available ? '✓' : '✗'}
+                      </span>
+                      <span style={{
+                        color: provider.available ? 'var(--color-success)' : 'var(--color-error)',
+                        fontSize: '11px',
+                        fontFamily: 'var(--font-mono)',
+                        fontWeight: 600,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.04em',
+                      }}>
+                        {provider.available ? 'available' : 'unavailable'}
+                      </span>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        <div className="utility-card utility-card-stack" style={{ flex: 1, minHeight: 0 }}>
+        <div className="command-surface-soft" style={{ flex: 1, minHeight: 0 }}>
           <div className="utility-card-header">
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
               <span className="page-kicker" style={{ color: 'var(--color-text-muted)' }}>System events</span>
@@ -537,6 +568,7 @@ export default function AdminPage() {
             )}
           </div>
         </div>
+        </section>
       </div>
     </Layout>
   );

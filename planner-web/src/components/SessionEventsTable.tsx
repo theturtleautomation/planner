@@ -104,6 +104,10 @@ export default function SessionEventsTable({ events }: SessionEventsTableProps) 
             <option value="system">System</option>
           </select>
         </label>
+
+        <div style={{ marginLeft: 'auto', fontSize: '0.625rem', color: 'var(--color-text-muted)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+          {filteredEvents.length} visible
+        </div>
       </div>
 
       {filteredEvents.length === 0 ? (

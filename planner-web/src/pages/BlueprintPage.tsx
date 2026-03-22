@@ -395,12 +395,15 @@ export default function BlueprintPage() {
         {/* Topbar */}
         <div className="topbar">
           <div className="topbar-left">
+            <span className="page-kicker">Blueprint workspace</span>
             <div className="topbar-title">Blueprint</div>
-            {blueprint && (
-              <div className="topbar-subtitle">
-                {blueprint.total_nodes} nodes · {blueprint.total_edges} edges
-              </div>
-            )}
+            <div className="topbar-subtitle">
+              {blueprint
+                ? `${blueprint.total_nodes} nodes · ${blueprint.total_edges} edges`
+                : 'Loading command workspace'}
+              {selectedNode ? ` · selected ${selectedNode.name}` : ''}
+              {projectId ? ` · scoped to ${projectId}` : ''}
+            </div>
           </div>
 
           <div className="topbar-right">
@@ -584,17 +587,9 @@ export default function BlueprintPage() {
         </div>
 
         {/* Content area */}
-        <div className="content" style={{ display: 'flex' }}>
+        <div className="content">
           {/* Sidebar filter (inside content, not app-level sidebar) */}
-          <div style={{
-            width: '200px', flexShrink: 0,
-            background: 'linear-gradient(180deg, color-mix(in srgb, var(--color-surface-2) 86%, transparent), color-mix(in srgb, var(--color-surface) 92%, transparent))',
-            boxShadow: 'var(--shadow-sm)',
-            borderRadius: '20px',
-            display: 'flex', flexDirection: 'column',
-            padding: 'var(--space-3) 0',
-            overflowY: 'auto', overscrollBehavior: 'contain',
-          }}>
+          <div className="blueprint-sidebar">
             <div className="sidebar-label" style={{ padding: 'var(--space-1) var(--space-4)' }}>
               Node Types
             </div>
@@ -648,18 +643,10 @@ export default function BlueprintPage() {
           </div>
 
           {/* Main view area */}
-          <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
+          <div className="blueprint-canvas-shell">
             {!loading && !fetchError && blueprint && (
               <div
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  zIndex: 1,
-                  padding: 'var(--space-3) var(--space-4) 0',
-                  pointerEvents: 'none',
-                }}
+                className="blueprint-status-band"
               >
                 <div
                   style={{

@@ -81,6 +81,10 @@ export default function ProjectsPage() {
       return name.includes(normalized) || slug.includes(normalized) || description.includes(normalized);
     });
   }, [projects, query, showArchived]);
+  const archivedCount = useMemo(
+    () => projects.filter((project) => Boolean(project.archived_at)).length,
+    [projects],
+  );
 
   const handleCreateProject = useCallback(async (name: string, description?: string) => {
     try {
@@ -225,32 +229,8 @@ export default function ProjectsPage() {
 
   return (
     <Layout>
-      <div
-        style={{
-          flex: 1,
-          overflow: 'auto',
-          padding: '48px 24px 72px',
-          maxWidth: '1100px',
-          margin: '0 auto',
-          width: '100%',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '36px',
-        }}
-      >
-        <header
-          style={{
-            display: 'flex',
-            alignItems: 'flex-end',
-            justifyContent: 'space-between',
-            gap: '12px',
-            flexWrap: 'wrap',
-            background: 'var(--color-surface-offset)',
-            borderRadius: '18px',
-            padding: '32px',
-            boxShadow: 'var(--shadow-md)',
-          }}
-        >
+      <div className="command-page" style={{ maxWidth: '1100px' }}>
+        <header className="command-page-header">
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxWidth: '38rem' }}>
             <span className="page-kicker">Project directory</span>
             <h1 className="display-heading" style={{ margin: 0 }}>Projects</h1>
@@ -259,7 +239,7 @@ export default function ProjectsPage() {
             </p>
           </div>
 
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          <div className="command-page-header-actions">
             <button className="btn btn-outline" onClick={() => { void navigate('/sessions'); }}>
               Open Sessions
             </button>
@@ -273,17 +253,7 @@ export default function ProjectsPage() {
         </header>
 
         {latestImport && (
-          <div
-            style={{
-              borderRadius: '16px',
-              background: 'var(--color-surface)',
-              padding: '16px 18px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '8px',
-              boxShadow: 'var(--shadow-md)',
-            }}
-          >
+          <div className="command-surface-subtle">
             <div style={{ color: 'var(--color-text)', fontWeight: 700 }}>
               Import queued for {latestImport.project.name}
             </div>
@@ -318,75 +288,84 @@ export default function ProjectsPage() {
           </div>
         )}
 
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-          <input
-            value={query}
-            onChange={(event) => {
-              const next = event.target.value;
-              const nextParams = new URLSearchParams(searchParams);
-              if (next.trim()) {
-                nextParams.set('query', next);
-              } else {
-                nextParams.delete('query');
-              }
-              setSearchParams(nextParams, { replace: true });
-            }}
-            placeholder="Search projects by name, slug, or description"
-            aria-label="Search projects"
-            style={{
-              flex: '1 1 280px',
-              minWidth: '220px',
-              background: 'var(--color-surface-2)',
-              border: 'none',
-              boxShadow: 'inset 0 0 0 1px var(--color-ghost-border)',
-              borderRadius: '10px',
-              color: 'var(--color-text)',
-              padding: '12px 14px',
-              fontSize: '13px',
-            }}
-          />
-          <label
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '6px',
-              color: 'var(--color-text-muted)',
-              fontSize: '12px',
-              borderRadius: '999px',
-              padding: '0 10px',
-              minHeight: '38px',
-              background: 'var(--color-surface)',
-              boxShadow: 'inset 0 0 0 1px var(--color-divider)',
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={showArchived}
-              onChange={(event) => {
-                const nextParams = new URLSearchParams(searchParams);
-                if (event.target.checked) {
-                  nextParams.set('show_archived', 'true');
-                } else {
-                  nextParams.delete('show_archived');
-                }
-                setSearchParams(nextParams, { replace: true });
-              }}
-            />
-            Show archived
-          </label>
-          {query && (
-            <button
-              className="btn"
-              onClick={() => {
-                const nextParams = new URLSearchParams(searchParams);
-                nextParams.delete('query');
-                setSearchParams(nextParams, { replace: true });
-              }}
-            >
-              Clear
-            </button>
-          )}
-        </div>
+        <section className="command-hero-grid">
+          <div className="command-surface-strong">
+            <div className="command-surface-copy">
+              <span className="page-kicker">Directory focus</span>
+              <h2 className="section-heading" style={{ margin: 0 }}>Scan the project queue from one line of sight.</h2>
+              <p className="section-copy" style={{ margin: 0 }}>
+                Creation and import stay route-level. The list below exposes freshness, status, and the next move without falling back to a card gallery.
+              </p>
+            </div>
+            <div className="command-input-row">
+              <input
+                value={query}
+                onChange={(event) => {
+                  const next = event.target.value;
+                  const nextParams = new URLSearchParams(searchParams);
+                  if (next.trim()) {
+                    nextParams.set('query', next);
+                  } else {
+                    nextParams.delete('query');
+                  }
+                  setSearchParams(nextParams, { replace: true });
+                }}
+                placeholder="Search projects by name, slug, or description"
+                aria-label="Search projects"
+                className="command-input"
+              />
+              {query && (
+                <button
+                  className="btn"
+                  onClick={() => {
+                    const nextParams = new URLSearchParams(searchParams);
+                    nextParams.delete('query');
+                    setSearchParams(nextParams, { replace: true });
+                  }}
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            <div className="command-pill-matrix">
+              <label className="command-tab active" style={{ cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={showArchived}
+                  onChange={(event) => {
+                    const nextParams = new URLSearchParams(searchParams);
+                    if (event.target.checked) {
+                      nextParams.set('show_archived', 'true');
+                    } else {
+                      nextParams.delete('show_archived');
+                    }
+                    setSearchParams(nextParams, { replace: true });
+                  }}
+                  style={{ marginRight: '8px' }}
+                />
+                Show archived
+              </label>
+            </div>
+          </div>
+
+          <aside className="command-surface-soft">
+            <div className="command-info-grid">
+              <div className="command-info-cell">
+                <span className="command-info-label">Visible projects</span>
+                <span className="command-info-value">{filtered.length}</span>
+                <span className="command-info-copy">Current directory results after search and archive filters.</span>
+              </div>
+              <div className="command-info-cell">
+                <span className="command-info-label">Archived</span>
+                <span className="command-info-value">{archivedCount}</span>
+                <span className="command-info-copy">Archived records remain available without dominating the primary list.</span>
+              </div>
+            </div>
+            <div className="utility-note" style={{ margin: 0 }}>
+              Project creation and import stay at the top of the route so per-row controls can stay tighter and quieter.
+            </div>
+          </aside>
+        </section>
 
         {loading && <div style={{ color: 'var(--color-text-muted)' }}>Loading projects…</div>}
 
@@ -437,50 +416,49 @@ export default function ProjectsPage() {
         )}
 
         {!loading && filtered.length > 0 && (
-          <div style={{ display: 'grid', gap: '12px', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))' }}>
+          <div className="directory-list">
             {filtered.map((project) => {
               const isArchiving = archiveMutationProjectId === project.id;
               const isDeleting = deleteMutationProjectId === project.id;
               const isMutating = isArchiving || isDeleting;
               return (
-                <article
-                  key={project.id}
-                  style={{
-                    borderRadius: '16px',
-                    padding: '16px',
-                    background: 'var(--color-surface)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '10px',
-                    boxShadow: 'var(--shadow-md)',
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ color: 'var(--color-text)', fontSize: '15px', fontWeight: 700 }}>{project.name}</div>
-                      <div style={{ color: 'var(--color-primary)', fontSize: '11px', fontFamily: 'monospace' }}>
-                        {project.slug}
+                <article key={project.id} className="directory-row">
+                  <div className="directory-row-main">
+                    <div className="directory-row-heading">
+                      <div style={{ minWidth: 0 }}>
+                        <div className="directory-row-title">{project.name}</div>
+                        <div className="directory-row-code">{project.slug}</div>
                       </div>
-                      {project.archived_at && (
-                        <div style={{ color: 'var(--color-text-muted)', fontSize: '11px' }}>
-                          Archived
-                        </div>
-                      )}
+                      <div className="directory-row-meta">
+                        {project.archived_at && (
+                          <span className="directory-row-highlight" data-tone="warning">
+                            Archived
+                          </span>
+                        )}
+                        <span className="directory-row-highlight" data-tone="primary">
+                          Updated {formatDate(project.updated_at)}
+                        </span>
+                      </div>
                     </div>
+                    <div className="directory-row-copy">
+                      {project.description?.trim() || 'No description yet.'}
+                    </div>
+                  </div>
+                  <div className="directory-row-facts">
+                    <div className="directory-row-meta">
+                      <span className="utility-pill">Sessions</span>
+                      <span className="utility-pill">Knowledge</span>
+                      <span className="utility-pill">Blueprint</span>
+                      <span className="utility-pill">Events</span>
+                    </div>
+                    <div className="section-copy" style={{ margin: 0 }}>
+                      Project-scoped planning workspace with attached route surfaces.
+                    </div>
+                  </div>
+                  <div className="directory-row-actions">
                     <button className="btn btn-outline" onClick={() => { void navigate(projectSessionsPath(project.slug)); }}>
                       Open
                     </button>
-                  </div>
-
-                  <div style={{ color: 'var(--color-text-muted)', fontSize: '12px', lineHeight: 1.5 }}>
-                    {project.description?.trim() || 'No description yet.'}
-                  </div>
-
-                  <div style={{ color: 'var(--color-text-muted)', fontSize: '11px' }}>
-                    Updated {formatDate(project.updated_at)}
-                  </div>
-
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                     <button className="btn" onClick={() => { void navigate(`/projects/${encodeURIComponent(project.slug)}/knowledge`); }}>
                       Knowledge
                     </button>

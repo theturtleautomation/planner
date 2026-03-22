@@ -237,31 +237,57 @@ export default function DiscoveryPage() {
 
   return (
     <Layout>
-      <div className="page-header">
-        <div>
-          <h1 className="page-title">Automated Discovery</h1>
-          <p className="page-subtitle">
-            {proposalView === 'nodes'
-              ? 'Scan project artifacts to discover technologies, components, and patterns.'
-              : 'Review relationship edges imported from code-graph tooling.'}
-            {pendingCount > 0 && ` ${pendingCount} pending review.`}
-          </p>
+      <div className="command-page" style={{ maxWidth: '1080px' }}>
+      <section className="command-hero-grid">
+        <div className="command-surface-strong">
+          <div className="command-surface-header">
+            <div className="command-surface-copy">
+              <span className="page-kicker">Proposal review</span>
+              <h1 className="display-heading" style={{ margin: 0 }}>Automated Discovery</h1>
+              <p className="section-copy" style={{ margin: 0 }}>
+                {proposalView === 'nodes'
+                  ? 'Scan project artifacts to discover technologies, components, and patterns.'
+                  : 'Review relationship edges imported from code-graph tooling.'}
+                {pendingCount > 0 && ` ${pendingCount} pending review.`}
+              </p>
+            </div>
+            <div className="command-pill-matrix">
+              <button className="btn btn-outline" onClick={loadProposals} disabled={loading}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/>
+                </svg>
+                Refresh
+              </button>
+              <button className="btn btn-primary" onClick={handleScan} disabled={scanning}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                {scanning ? 'Scanning…' : 'Run Discovery Scan'}
+              </button>
+            </div>
+          </div>
         </div>
-        <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
-          <button className="btn btn-outline" onClick={loadProposals} disabled={loading}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/>
-            </svg>
-            Refresh
-          </button>
-          <button className="btn btn-primary" onClick={handleScan} disabled={scanning}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-            </svg>
-            {scanning ? 'Scanning…' : 'Run Discovery Scan'}
-          </button>
-        </div>
-      </div>
+
+        <aside className="command-surface-soft">
+          <div className="command-info-grid">
+            <div className="command-info-cell">
+              <span className="command-info-label">Pending review</span>
+              <span className="command-info-value">{pendingCount}</span>
+              <span className="command-info-copy">Items still waiting for an accept or reject decision.</span>
+            </div>
+            <div className="command-info-cell">
+              <span className="command-info-label">Current view</span>
+              <span className="command-info-value" style={{ fontSize: '1.1rem', lineHeight: 1.2 }}>
+                {proposalView === 'nodes' ? 'Nodes' : 'Edges'}
+              </span>
+              <span className="command-info-copy">Switch between discovered nodes and imported relationship proposals below.</span>
+            </div>
+          </div>
+          <div className="utility-note" style={{ margin: 0 }}>
+            Review objects stay dense and decision-oriented. The route should feel like triage, not a gallery of proposal cards.
+          </div>
+        </aside>
+      </section>
 
       {/* Scan feedback */}
       {scanResult && (
@@ -292,7 +318,8 @@ export default function DiscoveryPage() {
       )}
 
       {/* Status filter chips */}
-      <div className="event-filters" style={{ marginBottom: 'var(--space-4)' }}>
+      <section className="command-surface-soft">
+      <div className="event-filters" style={{ marginBottom: 0 }}>
         <div className="event-filter-group" style={{ marginBottom: 'var(--space-2)' }}>
           {PROPOSAL_VIEWS.map(view => (
             <button
@@ -319,6 +346,7 @@ export default function DiscoveryPage() {
           ))}
         </div>
       </div>
+      </section>
 
       {/* Error */}
       {error && (
@@ -354,6 +382,7 @@ export default function DiscoveryPage() {
 
       {/* Node proposal list */}
       {!loading && !error && proposalView === 'nodes' && nodeProposals.length > 0 && (
+        <section className="command-surface-soft">
         <div className="snapshot-list">
           {nodeProposals.map(p => {
             const relatedKnowledgeLink = getRelatedKnowledgeLink(p);
@@ -532,10 +561,12 @@ export default function DiscoveryPage() {
               );
           })}
         </div>
+        </section>
       )}
 
       {/* Edge proposal list */}
       {!loading && !error && proposalView === 'edges' && edgeProposals.length > 0 && (
+        <section className="command-surface-soft">
         <div className="snapshot-list">
           {edgeProposals.map(p => {
             const displayName = `${p.edge.source} -> ${p.edge.target}`;
@@ -663,7 +694,9 @@ export default function DiscoveryPage() {
             );
           })}
         </div>
+        </section>
       )}
+      </div>
     </Layout>
   );
 }

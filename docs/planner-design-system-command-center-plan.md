@@ -72,7 +72,7 @@ dark-first dashboard shell:
 
 ## Rollout Model
 
-This redesign should ship in four bounded phases.
+The initial redesign shipped in four bounded phases.
 
 ### Phase 1: Tonal Foundation And Border Removal
 
@@ -150,6 +150,60 @@ Status:
 - implemented and verified on 2026-03-22 in
   [Planner Design System Phase 4 Utility Route Consistency Spec](/home/thetu/planner/docs/planner-design-system-phase-4-utility-route-consistency-spec.md)
 
+## Follow-On Spec Queue
+
+The Stitch-to-Planner translation work is intentionally queued as follow-on
+specs instead of reopening the initial four-phase rollout as one unbounded
+redesign.
+
+### Phase 5: Route Hierarchy And Operational Density
+
+Goal:
+
+- strengthen dominant-module hierarchy and operational row density across Home,
+  Projects, `/sessions`, and project-local session management
+
+Status:
+
+- implemented and verified on 2026-03-22 in
+  [Planner Design System Phase 5 Route Hierarchy And Operational Density Spec](/home/thetu/planner/docs/planner-design-system-phase-5-route-hierarchy-and-operational-density-spec.md)
+
+### Phase 6: Operational Surfaces And Event Density
+
+Goal:
+
+- refine Admin, Events, Discovery, import review/history, and shared event
+  surfaces into denser command-center review tools
+
+Status:
+
+- implemented and verified on 2026-03-22 in
+  [Planner Design System Phase 6 Operational Surfaces And Event Density Spec](/home/thetu/planner/docs/planner-design-system-phase-6-operational-surfaces-and-event-density-spec.md)
+
+### Phase 7: Knowledge Inventory And Context
+
+Goal:
+
+- turn Knowledge into a clearer inventory-and-context workspace without copying
+  the Stitch source's featured-content framing
+
+Status:
+
+- implemented and verified on 2026-03-22 in
+  [Planner Design System Phase 7 Knowledge Inventory And Context Spec](/home/thetu/planner/docs/planner-design-system-phase-7-knowledge-inventory-and-context-spec.md)
+
+### Phase 8: Blueprint Command Chrome And Inspector
+
+Goal:
+
+- improve Blueprint command chrome and inspector clarity while preserving graph
+  performance and avoiding source-like graph theatrics
+
+Status:
+
+- implemented and verified on 2026-03-22 in
+  [Planner Design System Phase 8 Blueprint Command Chrome And Inspector Spec](/home/thetu/planner/docs/planner-design-system-phase-8-blueprint-command-chrome-and-inspector-spec.md)
+
 ## Working Constraints
 
 - redesign slices must stay frontend-only unless a product contract forces
@@ -161,14 +215,11 @@ Status:
 
 ## Next Move
 
-The initial four-phase command-center refresh is implemented, including the
-utility-route cleanup validated against a fresh Vite-served Chromium sweep.
+The initial four-phase command-center refresh and the Stitch-translation
+follow-on queue are now implemented and verified through Phase 8.
 
-The next move, if design work resumes, should be:
-
-- create a fresh bounded follow-on spec only if we decide to keep investing in
-  deeper data-density refinement, additional utility-route cleanup, or
-  Blueprint graph-specific visual work
+Any further visual work should be treated as a new bounded slice instead of
+reopening the completed design-system queue.
 
 Later context-menu or popover work should remain a separate future slice rather
-than being bundled into the completed utility-route cleanup.
+than being bundled into the completed Blueprint command-chrome work.

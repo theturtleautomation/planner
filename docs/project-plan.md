@@ -32,6 +32,10 @@ These are the main planning documents currently shaping the repo:
 - [Planner Design System Phase 2 Editorial Typography And CTA Spec](/home/thetu/planner/docs/planner-design-system-phase-2-editorial-typography-and-cta-spec.md)
 - [Planner Design System Phase 3 Overlay Depth And Restrained Glass Spec](/home/thetu/planner/docs/planner-design-system-phase-3-overlay-depth-and-restrained-glass-spec.md)
 - [Planner Design System Phase 4 Utility Route Consistency Spec](/home/thetu/planner/docs/planner-design-system-phase-4-utility-route-consistency-spec.md)
+- [Planner Design System Phase 5 Route Hierarchy And Operational Density Spec](/home/thetu/planner/docs/planner-design-system-phase-5-route-hierarchy-and-operational-density-spec.md)
+- [Planner Design System Phase 6 Operational Surfaces And Event Density Spec](/home/thetu/planner/docs/planner-design-system-phase-6-operational-surfaces-and-event-density-spec.md)
+- [Planner Design System Phase 7 Knowledge Inventory And Context Spec](/home/thetu/planner/docs/planner-design-system-phase-7-knowledge-inventory-and-context-spec.md)
+- [Planner Design System Phase 8 Blueprint Command Chrome And Inspector Spec](/home/thetu/planner/docs/planner-design-system-phase-8-blueprint-command-chrome-and-inspector-spec.md)
 - [Knowledge Library Project Scope Plan](/home/thetu/planner/docs/knowledge-library-project-scope-plan.md)
 - [Import Existing Project Plan](/home/thetu/planner/docs/import-existing-project-plan.md)
 - [Import Existing Project Phase 1 Domain Skeleton Spec](/home/thetu/planner/docs/import-existing-project-phase-1-domain-skeleton-spec.md)
@@ -140,10 +144,21 @@ Current completed slice:
 - utility-route command-center consistency cleanup is implemented and verified
   in
   [Planner Design System Phase 4 Utility Route Consistency Spec](/home/thetu/planner/docs/planner-design-system-phase-4-utility-route-consistency-spec.md)
+- route hierarchy and operational density follow-on work is implemented and
+  verified in
+  [Planner Design System Phase 5 Route Hierarchy And Operational Density Spec](/home/thetu/planner/docs/planner-design-system-phase-5-route-hierarchy-and-operational-density-spec.md)
+- operational surfaces and event-density follow-on work is implemented and
+  verified in
+  [Planner Design System Phase 6 Operational Surfaces And Event Density Spec](/home/thetu/planner/docs/planner-design-system-phase-6-operational-surfaces-and-event-density-spec.md)
+- knowledge inventory and context follow-on work is implemented and verified in
+  [Planner Design System Phase 7 Knowledge Inventory And Context Spec](/home/thetu/planner/docs/planner-design-system-phase-7-knowledge-inventory-and-context-spec.md)
+- Blueprint command chrome and inspector follow-on work is implemented and
+  verified in
+  [Planner Design System Phase 8 Blueprint Command Chrome And Inspector Spec](/home/thetu/planner/docs/planner-design-system-phase-8-blueprint-command-chrome-and-inspector-spec.md)
 
 Current ready slice:
 
-- no additional bounded visual-system follow-on spec is queued yet
+- no additional visual-system follow-on slice is queued yet
 
 Current agreed product constraints:
 
@@ -157,9 +172,9 @@ Current agreed product constraints:
 
 Current next bounded slice:
 
-- no additional bounded visual-system follow-on spec is queued yet; the next
-  move is either a new spec for deeper data-density or Blueprint-specific
-  visual work, or a stop after the completed four-phase refresh
+- no additional visual-system slice is queued; any later restyle work should be
+  opened as a new bounded spec rather than extending the completed Phase 5-8
+  queue
 
 ### Import Existing Project
 
@@ -251,14 +266,15 @@ Keep planning and implementation aligned to artifact state:
 
 ## Next Expected Move
 
-For the design-system thread, the four-phase command-center refresh is now
-implemented and verified. There is no currently queued follow-on spec.
+For the design-system thread, the initial four-phase command-center refresh and
+the bounded follow-on queue are implemented and verified through Phase 8.
 
 The next move is:
 
-- create a fresh bounded follow-on spec only if we decide to keep investing in
-  deeper data-density refinement, remaining utility-route polish, or
-  Blueprint graph-specific visual work
+- treat any further visual work as a fresh bounded spec rather than reopening
+  the completed design-system queue
+- keep the manual Socratic lobby confidence check as the current non-coding
+  verification checkpoint before promoting any new follow-on slice
 
 If Socratic work resumes in parallel, keep using the live lobby verification
 checkpoint above or add a new bounded Socratic spec rather than reopening the

@@ -126,13 +126,14 @@ function EventRow({ event, relTs }: EventRowProps) {
     <div
       onClick={() => hasDetails && setExpanded((v) => !v)}
       style={{
-        padding: '8px 12px',
-        borderRadius: '14px',
+        padding: '10px 12px',
+        borderRadius: '16px',
         cursor: hasDetails ? 'pointer' : 'default',
         background: expanded
-          ? 'color-mix(in srgb, var(--color-surface-offset) 84%, transparent)'
-          : 'color-mix(in srgb, var(--color-surface) 94%, transparent)',
-        transition: 'background 0.15s',
+          ? 'linear-gradient(180deg, color-mix(in srgb, var(--color-surface-offset) 88%, transparent), color-mix(in srgb, var(--color-surface) 92%, transparent))'
+          : 'linear-gradient(180deg, color-mix(in srgb, var(--color-surface) 96%, transparent), color-mix(in srgb, var(--color-surface-offset) 82%, transparent))',
+        boxShadow: 'inset 0 0 0 1px color-mix(in srgb, var(--color-ghost-border) 86%, transparent)',
+        transition: 'background 0.15s, box-shadow 0.15s',
       }}
     >
       {/* Main row */}
@@ -311,7 +312,7 @@ function ExpandedEventLog({ events }: { events: PlannerEvent[] }) {
           display: 'flex',
           alignItems: 'center',
           gap: '6px',
-          padding: '8px 12px 4px',
+          padding: '10px 12px 6px',
           flexShrink: 0,
           background: 'transparent',
         }}
@@ -392,7 +393,7 @@ function ExpandedEventLog({ events }: { events: PlannerEvent[] }) {
           flex: 1,
           overflowY: 'auto',
           overscrollBehavior: 'contain',
-          padding: '6px 10px 10px',
+          padding: '6px 10px 12px',
           display: 'flex',
           flexDirection: 'column',
           gap: '6px',
@@ -457,7 +458,7 @@ export default function EventLogPanel({ events }: EventLogPanelProps) {
     <div
       style={{
         background: 'linear-gradient(180deg, color-mix(in srgb, var(--color-surface-2) 88%, transparent), color-mix(in srgb, var(--color-surface) 94%, transparent))',
-        borderRadius: '20px',
+        borderRadius: '22px',
         boxShadow: 'var(--shadow-sm)',
         display: 'flex',
         flexDirection: 'column',
@@ -475,8 +476,8 @@ export default function EventLogPanel({ events }: EventLogPanelProps) {
           display: 'flex',
           alignItems: 'center',
           gap: '8px',
-          padding: '0 12px',
-          minHeight: '36px',
+          padding: '0 14px',
+          minHeight: '40px',
           flexShrink: 0,
           cursor: 'pointer',
           transition: 'background 0.15s',

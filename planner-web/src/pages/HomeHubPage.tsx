@@ -61,6 +61,11 @@ export default function HomeHubPage() {
   }, [loadProjects]);
 
   const recentProjects = useMemo(() => projects.slice(0, 6), [projects]);
+  const activeProjectCount = useMemo(
+    () => projects.filter((project) => !project.archived_at).length,
+    [projects],
+  );
+  const latestProjectUpdate = recentProjects[0]?.updated_at ?? null;
 
   const handleCreateProject = useCallback(async (name: string, description?: string) => {
     try {
@@ -130,112 +135,87 @@ export default function HomeHubPage() {
 
   return (
     <Layout>
-      <div
-        style={{
-          flex: 1,
-          overflow: 'auto',
-          padding: '48px 24px 72px',
-          maxWidth: '1080px',
-          margin: '0 auto',
-          width: '100%',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '40px',
-        }}
-      >
-        <section
-          style={{
-            background: 'var(--color-surface-offset)',
-            borderRadius: '18px',
-            padding: '32px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '22px',
-            boxShadow: 'var(--shadow-md)',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxWidth: '36rem' }}>
-              <span className="page-kicker">Command center</span>
-              <h1 className="display-heading" style={{ margin: 0 }}>Home</h1>
+      <div className="command-page">
+        <section className="command-hero-grid">
+          <div className="command-surface-strong">
+            <div className="command-surface-header">
+              <div className="command-surface-copy" style={{ maxWidth: '38rem' }}>
+                <span className="page-kicker">Command center</span>
+                <h1 className="display-heading" style={{ margin: 0 }}>Home</h1>
+                <p className="section-copy" style={{ margin: 0 }}>
+                  Route quickly to active projects, planning sessions, and the core operating surfaces around them.
+                </p>
+              </div>
+              {!AUTH0_ENABLED && (
+                <span className="directory-row-highlight" data-tone="warning">
+                  dev mode
+                </span>
+              )}
+            </div>
+
+            <div className="command-input-row">
+              <input
+                value={prompt}
+                onChange={(event) => setPrompt(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    routePrompt();
+                  }
+                }}
+                placeholder="Try: open projects, new project, knowledge, or a project name"
+                aria-label="Home intent prompt"
+                className="command-input"
+              />
+              <button className="btn btn-primary" onClick={routePrompt}>
+                Go
+              </button>
+            </div>
+
+            <div className="command-pill-matrix">
+              {quickActions.map((action) => (
+                <button
+                  key={action.label}
+                  className={`btn${action.variant === 'primary' ? ' btn-primary' : action.variant === 'outline' ? ' btn-outline' : ''}`}
+                  onClick={action.onClick}
+                >
+                  {action.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <aside className="command-surface-soft">
+            <div className="command-surface-copy">
+              <span className="page-kicker">Operating picture</span>
+              <h2 className="section-heading" style={{ margin: 0 }}>Project-first routing stays central.</h2>
               <p className="section-copy" style={{ margin: 0 }}>
-                Route quickly to active projects, planning sessions, and the core operating surfaces around them.
+                Start from project context, then branch into sessions, knowledge, blueprint, and events from a bounded workspace.
               </p>
             </div>
-            {!AUTH0_ENABLED && (
-              <span
-                style={{
-                  alignSelf: 'flex-start',
-                  background: 'rgba(209, 153, 0, 0.12)',
-                  color: 'var(--color-gold)',
-                  borderRadius: '999px',
-                  padding: '5px 10px',
-                  fontSize: '10px',
-                  fontWeight: 700,
-                  letterSpacing: '0.05em',
-                  textTransform: 'uppercase',
-                }}
-              >
-                dev mode
-              </span>
-            )}
-          </div>
-
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            <input
-              value={prompt}
-              onChange={(event) => setPrompt(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') {
-                  event.preventDefault();
-                  routePrompt();
-                }
-              }}
-              placeholder="Try: open projects, new project, knowledge, or a project name"
-              aria-label="Home intent prompt"
-              style={{
-                flex: '1 1 360px',
-                minWidth: '220px',
-                background: 'var(--color-surface-2)',
-                boxShadow: 'inset 0 0 0 1px var(--color-ghost-border)',
-                border: 'none',
-                borderRadius: '10px',
-                color: 'var(--color-text)',
-                padding: '12px 14px',
-                fontSize: '13px',
-              }}
-            />
-            <button className="btn btn-primary" onClick={routePrompt}>
-              Go
-            </button>
-          </div>
-
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            {quickActions.map((action) => (
-              <button
-                key={action.label}
-                className={`btn${action.variant === 'primary' ? ' btn-primary' : action.variant === 'outline' ? ' btn-outline' : ''}`}
-                onClick={action.onClick}
-              >
-                {action.label}
-              </button>
-            ))}
-          </div>
+            <div className="command-info-grid">
+              <div className="command-info-cell">
+                <span className="command-info-label">Active projects</span>
+                <span className="command-info-value">{activeProjectCount}</span>
+                <span className="command-info-copy">Available project spaces in the working directory.</span>
+              </div>
+              <div className="command-info-cell">
+                <span className="command-info-label">Recent update</span>
+                <span className="command-info-value" style={{ fontSize: '1.15rem', lineHeight: 1.15 }}>
+                  {formatRelativeTime(latestProjectUpdate)}
+                </span>
+                <span className="command-info-copy">The freshest project update in the current workspace.</span>
+              </div>
+            </div>
+            <div className="utility-note" style={{ margin: 0 }}>
+              Use the prompt for direct routing and the project list below for the active working directory.
+            </div>
+          </aside>
         </section>
 
-        <section
-          style={{
-            background: 'var(--color-surface)',
-            borderRadius: '18px',
-            padding: '24px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '18px',
-            boxShadow: 'var(--shadow-md)',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        <section className="command-surface-soft">
+          <div className="command-surface-header">
+            <div className="command-surface-copy">
               <h2 className="section-heading" style={{ margin: 0 }}>Recent Projects</h2>
               <p className="section-copy" style={{ margin: 0 }}>
                 Project sessions, blueprint, knowledge, and events all start here.
@@ -273,35 +253,38 @@ export default function HomeHubPage() {
           )}
 
           {!loading && !error && recentProjects.length > 0 && (
-            <div style={{ display: 'grid', gap: '10px', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))' }}>
+            <div className="directory-list">
               {recentProjects.map((project) => (
-                <article
-                  key={project.id}
-                  style={{
-                    borderRadius: '14px',
-                    padding: '14px',
-                    background: 'var(--color-surface-offset)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '10px',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ color: 'var(--color-text)', fontWeight: 700, fontSize: '14px' }}>{project.name}</div>
-                      <div style={{ color: 'var(--color-text-muted)', fontSize: '11px', fontFamily: 'monospace' }}>
-                        {project.slug}
+                <article key={project.id} className="directory-row">
+                  <div className="directory-row-main">
+                    <div className="directory-row-heading">
+                      <div style={{ minWidth: 0 }}>
+                        <div className="directory-row-title">{project.name}</div>
+                        <div className="directory-row-code">{project.slug}</div>
                       </div>
+                      <span className="directory-row-highlight" data-tone="primary">
+                        {formatRelativeTime(project.updated_at)}
+                      </span>
                     </div>
+                    <div className="directory-row-copy">
+                      {project.description?.trim() || 'No description yet.'}
+                    </div>
+                  </div>
+                  <div className="directory-row-facts">
+                    <div className="directory-row-meta">
+                      <span className="utility-pill">Sessions</span>
+                      <span className="utility-pill">Knowledge</span>
+                      <span className="utility-pill">Blueprint</span>
+                      <span className="utility-pill">Events</span>
+                    </div>
+                    <div className="section-copy" style={{ margin: 0 }}>
+                      Updated route anchor for project-scoped planning work.
+                    </div>
+                  </div>
+                  <div className="directory-row-actions">
                     <button className="btn btn-outline" onClick={() => { void navigate(projectSessionsPath(project.slug)); }}>
                       Open
                     </button>
-                  </div>
-                  <div style={{ color: 'var(--color-text-muted)', fontSize: '12px', lineHeight: 1.5 }}>
-                    {project.description?.trim() || 'No description yet.'}
-                  </div>
-                  <div style={{ color: 'var(--color-text-muted)', fontSize: '11px' }}>
-                    {formatRelativeTime(project.updated_at)}
                   </div>
                 </article>
               ))}

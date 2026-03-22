@@ -157,54 +157,76 @@ export default function EventTimelinePage() {
 
   return (
     <Layout>
-      <div className="page-header">
-        <div>
-          <h1 className="page-title">Event Timeline</h1>
-          <p className="page-subtitle">
-            {activeSection === 'events'
-              ? `All changes across the blueprint — ${filtered.length} event${filtered.length !== 1 ? 's' : ''}`
-              : `${snapshots.length} snapshot${snapshots.length !== 1 ? 's' : ''} saved`
-            }
-          </p>
-        </div>
-        <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
-          {activeSection === 'snapshots' && (
-            <button className="btn btn-primary" onClick={handleCreateSnapshot} disabled={creatingSnapshot}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/>
-                <polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
-              </svg>
-              {creatingSnapshot ? 'Creating…' : 'Create Snapshot'}
-            </button>
-          )}
-          <button className="btn btn-outline" onClick={activeSection === 'events' ? loadEvents : loadSnapshots} disabled={loading || snapshotsLoading}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/>
-            </svg>
-            Refresh
-          </button>
-        </div>
-      </div>
+      <div className="command-page" style={{ maxWidth: '1080px' }}>
+        <section className="command-hero-grid">
+          <div className="command-surface-strong">
+            <div className="command-surface-header">
+              <div className="command-surface-copy">
+                <span className="page-kicker">Change log</span>
+                <h1 className="display-heading" style={{ margin: 0 }}>Event Timeline</h1>
+                <p className="section-copy" style={{ margin: 0 }}>
+                  {activeSection === 'events'
+                    ? `All changes across the blueprint — ${filtered.length} event${filtered.length !== 1 ? 's' : ''}`
+                    : `${snapshots.length} snapshot${snapshots.length !== 1 ? 's' : ''} saved`
+                  }
+                </p>
+              </div>
+              <div className="command-pill-matrix">
+                {activeSection === 'snapshots' && (
+                  <button className="btn btn-primary" onClick={handleCreateSnapshot} disabled={creatingSnapshot}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                      <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/>
+                      <polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
+                    </svg>
+                    {creatingSnapshot ? 'Creating…' : 'Create Snapshot'}
+                  </button>
+                )}
+                <button className="btn btn-outline" onClick={activeSection === 'events' ? loadEvents : loadSnapshots} disabled={loading || snapshotsLoading}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/>
+                  </svg>
+                  Refresh
+                </button>
+              </div>
+            </div>
+            <nav className="command-tab-row" aria-label="Event timeline sections">
+              <button
+                className={`command-tab${activeSection === 'events' ? ' active' : ''}`}
+                onClick={() => setActiveSection('events')}
+              >
+                Events
+              </button>
+              <button
+                className={`command-tab${activeSection === 'snapshots' ? ' active' : ''}`}
+                onClick={() => setActiveSection('snapshots')}
+              >
+                Snapshots
+              </button>
+            </nav>
+          </div>
 
-      {/* Section tabs */}
-      <div className="drawer-tabs" style={{ marginBottom: 'var(--space-4)' }}>
-        <button
-          className={`drawer-tab${activeSection === 'events' ? ' active' : ''}`}
-          onClick={() => setActiveSection('events')}
-        >
-          Events
-        </button>
-        <button
-          className={`drawer-tab${activeSection === 'snapshots' ? ' active' : ''}`}
-          onClick={() => setActiveSection('snapshots')}
-        >
-          Snapshots
-        </button>
-      </div>
+          <aside className="command-surface-soft">
+            <div className="command-info-grid">
+              <div className="command-info-cell">
+                <span className="command-info-label">Visible events</span>
+                <span className="command-info-value">{filtered.length}</span>
+                <span className="command-info-copy">Current working slice after timeline filters.</span>
+              </div>
+              <div className="command-info-cell">
+                <span className="command-info-label">Snapshots</span>
+                <span className="command-info-value">{snapshots.length}</span>
+                <span className="command-info-copy">Saved blueprint checkpoints available for historical reference.</span>
+              </div>
+            </div>
+            <div className="utility-note" style={{ margin: 0 }}>
+              Timeline work stays primary. Snapshots remain close as a secondary recovery and audit surface.
+            </div>
+          </aside>
+        </section>
 
       {/* Events section */}
       {activeSection === 'events' && (
-        <>
+        <section className="command-surface-soft">
 
       {/* Filters */}
       <div className="event-filters">
@@ -257,8 +279,8 @@ export default function EventTimelinePage() {
 
       {/* Event list */}
       {!loading && !error && filtered.length > 0 && (
-        <div className="global-event-timeline">
-          {filtered.map((evt, i) => {
+          <div className="global-event-timeline">
+            {filtered.map((evt, i) => {
             const relatedKnowledgeLink = eventKnowledgeLink(evt);
             const before = evt.event_type === 'node_updated' && evt.data?.before
               ? evt.data.before as Record<string, unknown> : null;
@@ -344,12 +366,12 @@ export default function EventTimelinePage() {
         </div>
       )}
 
-        </>
+        </section>
       )}
 
       {/* Snapshots section */}
       {activeSection === 'snapshots' && (
-        <>
+        <section className="command-surface-soft">
           {snapshotsLoading && (
             <div style={{ display: 'flex', justifyContent: 'center', padding: 'var(--space-8)' }}>
               <div className="skeleton-pulse" />
@@ -386,8 +408,9 @@ export default function EventTimelinePage() {
               ))}
             </div>
           )}
-        </>
+        </section>
       )}
+      </div>
     </Layout>
   );
 }

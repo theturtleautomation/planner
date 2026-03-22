@@ -441,10 +441,10 @@ function SessionCard({
       style={{
         display: 'flex',
         flexDirection: 'column',
-        gap: '14px',
+        gap: '12px',
         padding: '18px 20px',
-        background: `linear-gradient(180deg, color-mix(in srgb, ${phaseConfig.bg} 72%, var(--color-surface-2)), color-mix(in srgb, var(--color-surface) 90%, transparent))`,
-        borderRadius: '22px',
+        background: `linear-gradient(180deg, color-mix(in srgb, ${phaseConfig.bg} 62%, var(--color-surface-offset)), color-mix(in srgb, var(--color-surface) 94%, transparent))`,
+        borderRadius: '24px',
         boxShadow: 'var(--shadow-sm)',
         cursor: 'pointer',
         transition: 'transform 0.18s ease, background 0.18s ease, box-shadow 0.18s ease',
@@ -460,8 +460,8 @@ function SessionCard({
         element.style.boxShadow = 'var(--shadow-sm)';
       }}
     >
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: 0 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.35fr) minmax(220px, 0.95fr)', gap: '14px 18px', alignItems: 'start' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: 0 }}>
           <span style={{ color: 'var(--color-text)', fontSize: '15px', fontWeight: 700 }}>
             {title}
           </span>
@@ -479,46 +479,45 @@ function SessionCard({
           <span style={{ color: 'var(--color-text-muted)', fontSize: '11px' }}>
             Last activity {lastActivity}
           </span>
+          <div style={{ color: 'var(--color-text)', fontSize: '13px', lineHeight: 1.55 }}>
+            {description}
+          </div>
+          <div style={{ color: 'var(--color-text-muted)', fontSize: '12px', lineHeight: 1.6 }}>
+            {workflowSummary}
+          </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-          <span
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              padding: '4px 9px',
-              borderRadius: '999px',
-              background: phaseConfig.bg,
-              color: phaseConfig.color,
-              fontSize: '10px',
-              fontWeight: 700,
-              letterSpacing: '0.05em',
-              textTransform: 'uppercase',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {phaseConfig.label}
-          </span>
-          <Badge label={primaryAction} tone={primaryActionTone} />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-start' }}>
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                padding: '4px 9px',
+                borderRadius: '999px',
+                background: phaseConfig.bg,
+                color: phaseConfig.color,
+                fontSize: '10px',
+                fontWeight: 700,
+                letterSpacing: '0.05em',
+                textTransform: 'uppercase',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {phaseConfig.label}
+            </span>
+            <Badge label={primaryAction} tone={primaryActionTone} />
+            <Badge label={stateBadge.label} tone={stateBadge.tone} />
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+            {projectLabel && <MetadataPill>{`Project: ${projectLabel}`}</MetadataPill>}
+            <MetadataPill>{`${session.message_count} ${session.message_count === 1 ? 'message' : 'messages'}`}</MetadataPill>
+            <MetadataPill>{`${session.event_count} ${session.event_count === 1 ? 'event' : 'events'}`}</MetadataPill>
+            {classification && <MetadataPill>{classification}</MetadataPill>}
+            {convergencePct && <MetadataPill>{convergencePct}</MetadataPill>}
+            {checkpointSaved && <MetadataPill>{checkpointSaved}</MetadataPill>}
+          </div>
         </div>
-      </div>
-
-      <div style={{ color: 'var(--color-text)', fontSize: '13px', lineHeight: 1.55 }}>
-        {description}
-      </div>
-
-      <div style={{ color: 'var(--color-text-muted)', fontSize: '12px', lineHeight: 1.6 }}>
-        {workflowSummary}
-      </div>
-
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-          <Badge label={stateBadge.label} tone={stateBadge.tone} />
-          {projectLabel && <MetadataPill>{`Project: ${projectLabel}`}</MetadataPill>}
-          <MetadataPill>{`${session.message_count} ${session.message_count === 1 ? 'message' : 'messages'}`}</MetadataPill>
-          <MetadataPill>{`${session.event_count} ${session.event_count === 1 ? 'event' : 'events'}`}</MetadataPill>
-        {classification && <MetadataPill>{classification}</MetadataPill>}
-        {convergencePct && <MetadataPill>{convergencePct}</MetadataPill>}
-        {checkpointSaved && <MetadataPill>{checkpointSaved}</MetadataPill>}
       </div>
 
       {attentionBadges.length > 0 && (
@@ -684,80 +683,76 @@ export default function Dashboard() {
   const sortedSessions = useMemo(() => [...sessions].sort(compareSessions), [sessions]);
   const actionableCount = sortedSessions.filter(isActionable).length;
   const attentionCount = sortedSessions.filter(needsAttention).length;
+  const activeCount = sortedSessions.filter((session) => ACTIVE_PHASES.has(session.intake_phase)).length;
+  const archivedCount = sortedSessions.filter((session) => session.archived).length;
 
   return (
     <Layout>
       <div className="command-page" style={{ maxWidth: '980px' }}>
-        <div className="command-page-header">
-          <div className="command-page-header-copy">
-            <span className="page-kicker">Operational queue</span>
-            <h1 className="display-heading">Sessions</h1>
-            <p className="section-copy">
-              Watch resumability, interventions, and recent activity across the global session queue while new planning work starts from projects.
-            </p>
+        <section className="command-hero-grid">
+          <div className="command-surface-strong">
+            <div className="command-surface-header">
+              <div className="command-surface-copy">
+                <span className="page-kicker">Operational queue</span>
+                <h1 className="display-heading" style={{ margin: 0 }}>Sessions</h1>
+                <p className="section-copy" style={{ margin: 0 }}>
+                  Watch resumability, interventions, and recent activity across the global session queue while new planning work starts from projects.
+                </p>
+              </div>
+              <div className="command-pill-matrix">
+                <a href="/admin" className="command-link">
+                  Admin
+                </a>
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  aria-pressed={showArchived}
+                  onClick={() => setShowArchived((value) => !value)}
+                  style={showArchived ? { color: 'var(--color-primary)' } : undefined}
+                >
+                  {showArchived ? 'hide archived' : 'show archived'}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => void navigate('/projects')}
+                >
+                  start from project
+                </button>
+              </div>
+            </div>
+            <div className="utility-note" style={{ margin: 0 }}>
+              Attention and resumability sort first, then recent activity. The queue is for intervention and continuity, not project creation.
+            </div>
           </div>
 
-          <div className="command-page-header-actions">
-            <a href="/admin" className="command-link">
-              Admin
-            </a>
-            <button
-              type="button"
-              className="btn btn-outline"
-              aria-pressed={showArchived}
-              onClick={() => setShowArchived((value) => !value)}
-              style={showArchived ? { color: 'var(--color-primary)' } : undefined}
-            >
-              {showArchived ? 'hide archived' : 'show archived'}
-            </button>
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={() => void navigate('/projects')}
-            >
-              start from project
-            </button>
-          </div>
-        </div>
-
-        {!loading && !fetchError && sessions.length > 0 && (
-          <div className="utility-stat-grid">
-            <div
-              className="utility-stat-card"
-              style={{
-                background: 'rgba(0,212,255,0.05)',
-              }}
-            >
-              <div className="utility-stat-eyebrow" style={{ color: 'var(--color-primary)' }}>
-                actionable
+          <aside className="command-surface-soft">
+            <div className="command-info-grid">
+              <div className="command-info-cell">
+                <span className="command-info-label">Actionable</span>
+                <span className="command-info-value">{actionableCount}</span>
+                <span className="command-info-copy">Sessions ready to resume, restart, retry, or open now.</span>
               </div>
-              <div className="utility-stat-value">
-                {actionableCount}
+              <div className="command-info-cell">
+                <span className="command-info-label">Attention needed</span>
+                <span className="command-info-value">{attentionCount}</span>
+                <span className="command-info-copy">Warnings, errors, and blocked flows that need intervention.</span>
               </div>
+              <div className="command-info-cell">
+                <span className="command-info-label">Live or building</span>
+                <span className="command-info-value">{activeCount}</span>
+                <span className="command-info-copy">Interviewing and pipeline-running work currently on the board.</span>
+              </div>
+              {showArchived && (
+                <div className="command-info-cell">
+                  <span className="command-info-label">Archived in view</span>
+                  <span className="command-info-value">{archivedCount}</span>
+                  <span className="command-info-copy">Archived sessions are visible without overtaking the active queue.</span>
+                </div>
+              )}
             </div>
-            <div
-              className="utility-stat-card"
-              style={{
-                background: 'rgba(255,215,0,0.05)',
-              }}
-            >
-              <div className="utility-stat-eyebrow" style={{ color: 'var(--color-gold)' }}>
-                attention needed
-              </div>
-              <div className="utility-stat-value">
-                {attentionCount}
-              </div>
-            </div>
-            <div className="utility-stat-card" style={{ background: 'rgba(136,136,160,0.05)' }}>
-              <div className="utility-stat-eyebrow" style={{ color: 'var(--color-text-muted)' }}>
-                sort order
-              </div>
-              <div className="utility-stat-copy">
-                Attention and resumability first, then recent activity.
-              </div>
-            </div>
-          </div>
-        )}
+          </aside>
+        </section>
 
         {loading && (
           <div
@@ -824,7 +819,7 @@ export default function Dashboard() {
         )}
 
         {!loading && !fetchError && sessions.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div className="directory-list">
             {sortedSessions.map((session) => (
               <SessionCard
                 key={session.id}
