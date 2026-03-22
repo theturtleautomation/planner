@@ -66,6 +66,7 @@ export default function HomeHubPage() {
     [projects],
   );
   const latestProjectUpdate = recentProjects[0]?.updated_at ?? null;
+  const primaryProject = recentProjects[0] ?? null;
 
   const handleCreateProject = useCallback(async (name: string, description?: string) => {
     try {
@@ -122,35 +123,90 @@ export default function HomeHubPage() {
     void navigate(`/projects?query=${encodeURIComponent(raw)}`);
   }, [navigate, projects, prompt]);
 
-  const quickActions: Array<{ label: string; onClick: () => void; variant?: 'primary' | 'outline' | 'default' }> = [
-    { label: 'New Project', onClick: () => { setCreateModalOpen(true); }, variant: 'primary' },
-    { label: 'Open Projects', onClick: () => { void navigate('/projects'); }, variant: 'outline' },
+  const utilityActions: Array<{ label: string; onClick: () => void; variant?: 'outline' | 'default' }> = [
     { label: 'Knowledge Library', onClick: () => { void navigate('/knowledge'); }, variant: 'outline' },
+    { label: 'Open Sessions', onClick: () => { void navigate('/sessions'); }, variant: 'outline' },
     { label: 'Events', onClick: () => { void navigate('/events'); }, variant: 'default' },
     { label: 'Admin', onClick: () => { void navigate('/admin'); }, variant: 'default' },
-    { label: 'Open Sessions', onClick: () => { void navigate('/sessions'); } },
-    { label: 'Blueprint', onClick: () => { void navigate('/blueprint'); } },
-    { label: 'Discovery', onClick: () => { void navigate('/discovery'); } },
+    { label: 'Blueprint', onClick: () => { void navigate('/blueprint'); }, variant: 'default' },
+    { label: 'Discovery', onClick: () => { void navigate('/discovery'); }, variant: 'default' },
   ];
 
   return (
     <Layout>
       <div className="command-page">
-        <section className="command-hero-grid">
-          <div className="command-surface-strong">
-            <div className="command-surface-header">
-              <div className="command-surface-copy" style={{ maxWidth: '38rem' }}>
-                <span className="page-kicker">Command center</span>
-                <h1 className="display-heading" style={{ margin: 0 }}>Home</h1>
-                <p className="section-copy" style={{ margin: 0 }}>
-                  Route quickly to active projects, planning sessions, and the core operating surfaces around them.
-                </p>
-              </div>
-              {!AUTH0_ENABLED && (
-                <span className="directory-row-highlight" data-tone="warning">
-                  dev mode
-                </span>
+        <section className="command-surface-strong">
+          <div className="command-surface-header">
+            <div className="command-surface-copy">
+              <span className="page-kicker">Command center</span>
+              <h1 className="display-heading" style={{ margin: 0 }}>Home</h1>
+              <p className="section-copy" style={{ margin: 0 }}>
+                Start from your project work. Recent projects support repeat visits, and supporting routes stay available without competing with the launch path.
+              </p>
+            </div>
+            {!AUTH0_ENABLED && (
+              <span className="directory-row-highlight" data-tone="warning">
+                dev mode
+              </span>
+            )}
+          </div>
+
+          <div className="command-info-grid" style={{ marginTop: 'var(--space-2)' }}>
+            <div className="command-info-cell">
+              <span className="command-info-label">Active projects</span>
+              <span className="command-info-value">{activeProjectCount}</span>
+              <span className="command-info-copy">Available project spaces in the current workspace.</span>
+            </div>
+            <div className="command-info-cell">
+              <span className="command-info-label">Recent update</span>
+              <span className="command-info-value" style={{ fontSize: '1.15rem', lineHeight: 1.15 }}>
+                {formatRelativeTime(latestProjectUpdate)}
+              </span>
+              <span className="command-info-copy">The freshest project update in the current workspace.</span>
+            </div>
+          </div>
+
+          <div
+            className="command-surface-soft"
+            style={{
+              marginTop: 'var(--space-5)',
+              display: 'grid',
+              gap: 'var(--space-4)',
+            }}
+          >
+            <div className="command-surface-copy">
+              <span className="page-kicker">
+                {primaryProject ? 'Resume latest project' : 'Start here'}
+              </span>
+              <h2 className="section-heading" style={{ margin: 0 }}>
+                {primaryProject ? primaryProject.name : 'Create the first project shell.'}
+              </h2>
+              <p className="section-copy" style={{ margin: 0 }}>
+                {primaryProject
+                  ? primaryProject.description?.trim() || 'Open the current project workspace and continue planning from project context.'
+                  : 'Projects are the operating unit for sessions, knowledge, blueprint, and events.'}
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
+              {primaryProject ? (
+                <button
+                  className="btn btn-primary"
+                  onClick={() => { void navigate(projectSessionsPath(primaryProject.slug)); }}
+                >
+                  Resume {primaryProject.name}
+                </button>
+              ) : (
+                <button className="btn btn-primary" onClick={() => { setCreateModalOpen(true); }}>
+                  Create Project
+                </button>
               )}
+              <button className="btn btn-outline" onClick={() => { void navigate('/projects'); }}>
+                Open Projects
+              </button>
+              <button className="btn" onClick={() => { setCreateModalOpen(true); }}>
+                New Project
+              </button>
             </div>
 
             <div className="command-input-row">
@@ -163,7 +219,7 @@ export default function HomeHubPage() {
                     routePrompt();
                   }
                 }}
-                placeholder="Try: open projects, new project, knowledge, or a project name"
+                placeholder="Try: open projects, alpha project, knowledge, or sessions"
                 aria-label="Home intent prompt"
                 className="command-input"
               />
@@ -172,45 +228,10 @@ export default function HomeHubPage() {
               </button>
             </div>
 
-            <div className="command-pill-matrix">
-              {quickActions.map((action) => (
-                <button
-                  key={action.label}
-                  className={`btn${action.variant === 'primary' ? ' btn-primary' : action.variant === 'outline' ? ' btn-outline' : ''}`}
-                  onClick={action.onClick}
-                >
-                  {action.label}
-                </button>
-              ))}
+            <div className="utility-note" style={{ margin: 0 }}>
+              Use the intent prompt when you know the destination. Use recent projects below when you want the main planning surface quickly.
             </div>
           </div>
-
-          <aside className="command-surface-soft">
-            <div className="command-surface-copy">
-              <span className="page-kicker">Operating picture</span>
-              <h2 className="section-heading" style={{ margin: 0 }}>Project-first routing stays central.</h2>
-              <p className="section-copy" style={{ margin: 0 }}>
-                Start from project context, then branch into sessions, knowledge, blueprint, and events from a bounded workspace.
-              </p>
-            </div>
-            <div className="command-info-grid">
-              <div className="command-info-cell">
-                <span className="command-info-label">Active projects</span>
-                <span className="command-info-value">{activeProjectCount}</span>
-                <span className="command-info-copy">Available project spaces in the working directory.</span>
-              </div>
-              <div className="command-info-cell">
-                <span className="command-info-label">Recent update</span>
-                <span className="command-info-value" style={{ fontSize: '1.15rem', lineHeight: 1.15 }}>
-                  {formatRelativeTime(latestProjectUpdate)}
-                </span>
-                <span className="command-info-copy">The freshest project update in the current workspace.</span>
-              </div>
-            </div>
-            <div className="utility-note" style={{ margin: 0 }}>
-              Use the prompt for direct routing and the project list below for the active working directory.
-            </div>
-          </aside>
         </section>
 
         <section className="command-surface-soft">
@@ -290,6 +311,28 @@ export default function HomeHubPage() {
               ))}
             </div>
           )}
+        </section>
+
+        <section className="command-surface-subtle">
+          <div className="command-surface-header">
+            <div className="command-surface-copy">
+              <h2 className="section-heading" style={{ margin: 0 }}>Utilities</h2>
+              <p className="section-copy" style={{ margin: 0 }}>
+                Supporting routes stay available here, but they no longer compete with the main project launch path.
+              </p>
+            </div>
+          </div>
+          <div className="command-pill-matrix" style={{ justifyContent: 'flex-start' }}>
+            {utilityActions.map((action) => (
+              <button
+                key={action.label}
+                className={`btn${action.variant === 'outline' ? ' btn-outline' : ''}`}
+                onClick={action.onClick}
+              >
+                {action.label}
+              </button>
+            ))}
+          </div>
         </section>
       </div>
       <CreateProjectModal

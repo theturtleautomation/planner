@@ -37,6 +37,30 @@ const SOURCE_LABELS: Record<DiscoverySource, string> = {
   code_graph_context: 'Code Graph',
 };
 
+function groupByReviewState<T extends { status: ProposalStatus }>(proposals: T[]) {
+  const pending = proposals.filter((proposal) => proposal.status === 'pending');
+  const reviewed = proposals.filter((proposal) => proposal.status !== 'pending');
+
+  const groups: Array<{ key: 'pending' | 'reviewed'; title: string; description: string; proposals: T[] }> = [];
+  if (pending.length > 0) {
+    groups.push({
+      key: 'pending',
+      title: 'Pending review',
+      description: 'Proposals that still need an explicit accept or reject decision.',
+      proposals: pending,
+    });
+  }
+  if (reviewed.length > 0) {
+    groups.push({
+      key: 'reviewed',
+      title: 'Reviewed',
+      description: 'Accepted, rejected, or merged proposals kept visible for audit and comparison.',
+      proposals: reviewed,
+    });
+  }
+  return groups;
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function DiscoveryPage() {
@@ -232,6 +256,28 @@ export default function DiscoveryPage() {
 
   const activeProposals = proposalView === 'nodes' ? nodeProposals : edgeProposals;
   const pendingCount = activeProposals.filter(p => p.status === 'pending').length;
+  const groupedNodeProposals = useMemo(
+    () => filterStatus === 'all'
+      ? groupByReviewState(nodeProposals)
+      : [{
+          key: 'pending' as const,
+          title: `${STATUS_FILTERS.find((filter) => filter.key === filterStatus)?.label ?? 'Filtered'} node proposals`,
+          description: 'Filtered review objects for the current proposal mode.',
+          proposals: nodeProposals,
+        }],
+    [filterStatus, nodeProposals],
+  );
+  const groupedEdgeProposals = useMemo(
+    () => filterStatus === 'all'
+      ? groupByReviewState(edgeProposals)
+      : [{
+          key: 'pending' as const,
+          title: `${STATUS_FILTERS.find((filter) => filter.key === filterStatus)?.label ?? 'Filtered'} edge proposals`,
+          description: 'Filtered review objects for the current proposal mode.',
+          proposals: edgeProposals,
+        }],
+    [edgeProposals, filterStatus],
+  );
 
   // ─── Render ────────────────────────────────────────────────────────────
 
@@ -382,9 +428,18 @@ export default function DiscoveryPage() {
 
       {/* Node proposal list */}
       {!loading && !error && proposalView === 'nodes' && nodeProposals.length > 0 && (
-        <section className="command-surface-soft">
-        <div className="snapshot-list">
-          {nodeProposals.map(p => {
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {groupedNodeProposals.map((group) => (
+            <section key={group.key} className="command-surface-soft">
+              <div style={{ display: 'grid', gap: '4px', marginBottom: 'var(--space-3)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'baseline', flexWrap: 'wrap' }}>
+                  <h2 className="section-heading" style={{ margin: 0 }}>{group.title}</h2>
+                  <span className="utility-pill">{group.proposals.length} {group.proposals.length === 1 ? 'proposal' : 'proposals'}</span>
+                </div>
+                <p className="section-copy" style={{ margin: 0 }}>{group.description}</p>
+              </div>
+              <div className="snapshot-list">
+          {group.proposals.map(p => {
             const relatedKnowledgeLink = getRelatedKnowledgeLink(p);
             const displayName = proposalNameOverrides[p.id]?.trim() || getNodeDisplayName(p);
             const suggestedComponentName =
@@ -560,15 +615,26 @@ export default function DiscoveryPage() {
                 </div>
               );
           })}
+              </div>
+            </section>
+          ))}
         </div>
-        </section>
       )}
 
       {/* Edge proposal list */}
       {!loading && !error && proposalView === 'edges' && edgeProposals.length > 0 && (
-        <section className="command-surface-soft">
-        <div className="snapshot-list">
-          {edgeProposals.map(p => {
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {groupedEdgeProposals.map((group) => (
+            <section key={group.key} className="command-surface-soft">
+              <div style={{ display: 'grid', gap: '4px', marginBottom: 'var(--space-3)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'baseline', flexWrap: 'wrap' }}>
+                  <h2 className="section-heading" style={{ margin: 0 }}>{group.title}</h2>
+                  <span className="utility-pill">{group.proposals.length} {group.proposals.length === 1 ? 'proposal' : 'proposals'}</span>
+                </div>
+                <p className="section-copy" style={{ margin: 0 }}>{group.description}</p>
+              </div>
+              <div className="snapshot-list">
+          {group.proposals.map(p => {
             const displayName = `${p.edge.source} -> ${p.edge.target}`;
             return (
               <div
@@ -693,8 +759,10 @@ export default function DiscoveryPage() {
               </div>
             );
           })}
+              </div>
+            </section>
+          ))}
         </div>
-        </section>
       )}
       </div>
     </Layout>

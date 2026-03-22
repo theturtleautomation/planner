@@ -13,6 +13,12 @@ interface BadgeDescriptor {
   tone: BadgeTone;
 }
 
+interface QueueSectionDescriptor {
+  key: string;
+  title: string;
+  description: string;
+}
+
 const ACTIVE_PHASES = new Set<IntakePhase>(['interviewing', 'pipeline_running']);
 
 const PHASE_CONFIG: Record<
@@ -168,6 +174,48 @@ function compareSessions(left: SessionSummary, right: SessionSummary): number {
 
   return right.created_at.localeCompare(left.created_at);
 }
+
+function getQueueSectionKey(session: SessionSummary): QueueSectionDescriptor['key'] {
+  if (session.archived) return 'archived';
+  if (needsAttention(session)) return 'attention';
+  if (ACTIVE_PHASES.has(session.intake_phase)) return 'active';
+  if (isActionable(session)) return 'ready';
+  if (session.intake_phase === 'complete') return 'complete';
+  return 'quiet';
+}
+
+const QUEUE_SECTION_ORDER: QueueSectionDescriptor[] = [
+  {
+    key: 'attention',
+    title: 'Needs attention',
+    description: 'Failures, warnings, and blocked sessions that need intervention first.',
+  },
+  {
+    key: 'active',
+    title: 'Live or building',
+    description: 'Sessions still moving through interviews or pipeline work.',
+  },
+  {
+    key: 'ready',
+    title: 'Ready to continue',
+    description: 'Sessions that can be resumed, restarted, retried, or started now.',
+  },
+  {
+    key: 'quiet',
+    title: 'Recently quiet',
+    description: 'Sessions without immediate urgency that still belong in the operating queue.',
+  },
+  {
+    key: 'complete',
+    title: 'Completed',
+    description: 'Finished sessions that remain available for inspection and follow-on work.',
+  },
+  {
+    key: 'archived',
+    title: 'Archived',
+    description: 'Sessions kept in view for reference without overtaking the active queue.',
+  },
+];
 
 function getStateBadge(session: SessionSummary): BadgeDescriptor {
   if (session.archived) {
@@ -678,73 +726,69 @@ export default function Dashboard() {
   const attentionCount = sortedSessions.filter(needsAttention).length;
   const activeCount = sortedSessions.filter((session) => ACTIVE_PHASES.has(session.intake_phase)).length;
   const archivedCount = sortedSessions.filter((session) => session.archived).length;
+  const groupedSessions = useMemo(() => {
+    const grouped = new Map<string, SessionSummary[]>();
+    for (const session of sortedSessions) {
+      const key = getQueueSectionKey(session);
+      const bucket = grouped.get(key);
+      if (bucket) {
+        bucket.push(session);
+      } else {
+        grouped.set(key, [session]);
+      }
+    }
+
+    return QUEUE_SECTION_ORDER
+      .map((section) => ({
+        ...section,
+        sessions: grouped.get(section.key) ?? [],
+      }))
+      .filter((section) => section.sessions.length > 0);
+  }, [sortedSessions]);
 
   return (
     <Layout>
       <div className="command-page" style={{ maxWidth: '980px' }}>
-        <section className="command-hero-grid">
-          <div className="command-surface-strong">
-            <div className="command-surface-header">
-              <div className="command-surface-copy">
-                <span className="page-kicker">Operational queue</span>
-                <h1 className="display-heading" style={{ margin: 0 }}>Sessions</h1>
-                <p className="section-copy" style={{ margin: 0 }}>
-                  Watch resumability, interventions, and recent activity across the global session queue while new planning work starts from projects.
-                </p>
-              </div>
-              <div className="command-pill-matrix">
-                <a href="/admin" className="command-link">
-                  Admin
-                </a>
-                <button
-                  type="button"
-                  className="btn btn-outline"
-                  aria-pressed={showArchived}
-                  onClick={() => setShowArchived((value) => !value)}
-                  style={showArchived ? { color: 'var(--color-primary)' } : undefined}
-                >
-                  {showArchived ? 'hide archived' : 'show archived'}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  onClick={() => void navigate('/projects')}
-                >
-                  start from project
-                </button>
-              </div>
+        <section className="command-surface-strong">
+          <div className="command-surface-header">
+            <div className="command-surface-copy">
+              <span className="page-kicker">Operational queue</span>
+              <h1 className="display-heading" style={{ margin: 0 }}>Sessions</h1>
+              <p className="section-copy" style={{ margin: 0 }}>
+                Watch resumability, interventions, and recent activity across the global session queue while new planning work starts from projects.
+              </p>
             </div>
-            <div className="utility-note" style={{ margin: 0 }}>
-              Attention and resumability sort first, then recent activity. The queue is for intervention and continuity, not project creation.
+            <div className="command-pill-matrix">
+              <a href="/admin" className="command-link">
+                Admin
+              </a>
+              <button
+                type="button"
+                className="btn btn-outline"
+                aria-pressed={showArchived}
+                onClick={() => setShowArchived((value) => !value)}
+                style={showArchived ? { color: 'var(--color-primary)' } : undefined}
+              >
+                {showArchived ? 'hide archived' : 'show archived'}
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => void navigate('/projects')}
+              >
+                start from project
+              </button>
             </div>
           </div>
-
-          <aside className="command-surface-soft">
-            <div className="command-info-grid">
-              <div className="command-info-cell">
-                <span className="command-info-label">Actionable</span>
-                <span className="command-info-value">{actionableCount}</span>
-                <span className="command-info-copy">Sessions ready to resume, restart, retry, or open now.</span>
-              </div>
-              <div className="command-info-cell">
-                <span className="command-info-label">Attention needed</span>
-                <span className="command-info-value">{attentionCount}</span>
-                <span className="command-info-copy">Warnings, errors, and blocked flows that need intervention.</span>
-              </div>
-              <div className="command-info-cell">
-                <span className="command-info-label">Live or building</span>
-                <span className="command-info-value">{activeCount}</span>
-                <span className="command-info-copy">Interviewing and pipeline-running work currently on the board.</span>
-              </div>
-              {showArchived && (
-                <div className="command-info-cell">
-                  <span className="command-info-label">Archived in view</span>
-                  <span className="command-info-value">{archivedCount}</span>
-                  <span className="command-info-copy">Archived sessions are visible without overtaking the active queue.</span>
-                </div>
-              )}
-            </div>
-          </aside>
+          <div className="directory-row-meta">
+            <span className="utility-pill">{attentionCount} need attention</span>
+            <span className="utility-pill">{actionableCount} actionable</span>
+            <span className="utility-pill">{activeCount} live or building</span>
+            {showArchived && <span className="utility-pill">{archivedCount} archived in view</span>}
+          </div>
+          <div className="utility-note" style={{ margin: 0 }}>
+            Queue groups keep failures and resumable work above quieter sessions so the row list stays the primary reading surface.
+          </div>
         </section>
 
         {loading && (
@@ -812,31 +856,46 @@ export default function Dashboard() {
         )}
 
         {!loading && !fetchError && sessions.length > 0 && (
-          <div className="directory-list">
-            {sortedSessions.map((session) => (
-              <SessionCard
-                key={session.id}
-                session={session}
-                onClick={() => void navigate(`/session/${session.id}`)}
-                onOpenKnowledge={() => {
-                  if (!session.project_id?.trim()) return;
-                  void navigate(
-                    buildKnowledgeDeepLink({
-                      projectId: session.project_id,
-                      originPath: '/sessions',
-                      originLabel: 'Sessions',
-                    }),
-                  );
-                }}
-                onRename={() => { void handleRename(session); }}
-                onDuplicate={() => { void handleDuplicate(session); }}
-                onArchiveToggle={() => { void handleArchiveToggle(session); }}
-                actionBusy={
-                  activeAction?.sessionId === session.id
-                    ? activeAction.kind
-                    : null
-                }
-              />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            {groupedSessions.map((section) => (
+              <section key={section.key} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div className="command-surface-subtle" style={{ gap: '8px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'baseline', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <h2 className="section-heading" style={{ margin: 0 }}>{section.title}</h2>
+                      <p className="section-copy" style={{ margin: 0 }}>{section.description}</p>
+                    </div>
+                    <span className="utility-pill">{section.sessions.length} {section.sessions.length === 1 ? 'session' : 'sessions'}</span>
+                  </div>
+                </div>
+                <div className="directory-list">
+                  {section.sessions.map((session) => (
+                    <SessionCard
+                      key={session.id}
+                      session={session}
+                      onClick={() => void navigate(`/session/${session.id}`)}
+                      onOpenKnowledge={() => {
+                        if (!session.project_id?.trim()) return;
+                        void navigate(
+                          buildKnowledgeDeepLink({
+                            projectId: session.project_id,
+                            originPath: '/sessions',
+                            originLabel: 'Sessions',
+                          }),
+                        );
+                      }}
+                      onRename={() => { void handleRename(session); }}
+                      onDuplicate={() => { void handleDuplicate(session); }}
+                      onArchiveToggle={() => { void handleArchiveToggle(session); }}
+                      actionBusy={
+                        activeAction?.sessionId === session.id
+                          ? activeAction.kind
+                          : null
+                      }
+                    />
+                  ))}
+                </div>
+              </section>
             ))}
           </div>
         )}

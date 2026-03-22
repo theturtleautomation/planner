@@ -621,6 +621,20 @@ describe('KnowledgeLibraryPage phase 2 routing', () => {
     expect(screen.getByText(/recent node changes/i)).toBeInTheDocument();
   });
 
+  it('keeps inventory as the default project section and suppresses the list in overview mode', async () => {
+    const user = userEvent.setup();
+    renderPage('/knowledge/projects/proj-alpha');
+
+    await waitFor(() => {
+      expect(screen.getByTestId('node-list-panel')).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: /^overview$/i }));
+
+    expect(screen.getByRole('button', { name: /^overview$/i })).toHaveClass('active');
+    expect(screen.queryByTestId('node-list-panel')).not.toBeInTheDocument();
+  });
+
   it('shows durable export history entries sourced from project events', async () => {
     const user = userEvent.setup();
     mockListBlueprintExportHistory.mockResolvedValueOnce({ entries: makeExportHistoryEntries(), total: 1 });

@@ -1,5 +1,6 @@
 import { useAuth0 } from '@auth0/auth0-react';
 import { Navigate } from 'react-router-dom';
+import EntryShell from '../components/EntryShell.tsx';
 import LoginPage from '../pages/LoginPage.tsx';
 import HomeHubPage from '../pages/HomeHubPage.tsx';
 
@@ -9,25 +10,30 @@ export function CallbackPageAuth0() {
 
   if (error) {
     return (
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        height: '100vh', background: '#0a0a0f', color: '#ff4444',
-        fontFamily: 'monospace', fontSize: '13px',
-      }}>
-        Auth error: {error.message}
-      </div>
+      <EntryShell
+        badge="Auth0"
+        kicker="Authentication"
+        title="Authentication could not be completed"
+        description={error.message}
+        actionLabel="Return to sign in"
+        onAction={() => {
+          window.location.assign('/');
+        }}
+        note="Planner could not finish the callback flow. Returning to the entry surface will restart sign-in."
+        tone="error"
+      />
     );
   }
 
   if (isLoading) {
     return (
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        height: '100vh', background: '#0a0a0f', color: '#8888a0',
-        fontFamily: 'monospace', fontSize: '13px',
-      }}>
-        completing authentication…
-      </div>
+      <EntryShell
+        badge="Auth0"
+        kicker="Authentication"
+        title="Completing sign-in"
+        description="Planner is finishing the authentication handshake and preparing your entry surface."
+        note="This should only take a moment."
+      />
     );
   }
 
@@ -40,13 +46,13 @@ export function RootPageAuth0() {
 
   if (isLoading) {
     return (
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        height: '100vh', background: '#0a0a0f', color: '#8888a0',
-        fontFamily: 'monospace', fontSize: '13px',
-      }}>
-        loading…
-      </div>
+      <EntryShell
+        badge="Auth0"
+        kicker="Authentication"
+        title="Loading Planner"
+        description="Checking your sign-in state and preparing the project-first workspace."
+        note="Planner will route you to the correct entry surface automatically."
+      />
     );
   }
 

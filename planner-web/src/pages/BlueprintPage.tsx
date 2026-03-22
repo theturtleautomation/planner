@@ -64,7 +64,7 @@ export default function BlueprintPage() {
   const [fetchError, setFetchError] = useState<string | null>(null);
 
   // UI state
-  const [viewMode, setViewMode] = useState<ViewMode>('overview');
+  const [viewMode, setViewMode] = useState<ViewMode>('graph');
   const [layoutMode, setLayoutMode] = useState<'force' | 'hierarchical'>('force');
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);

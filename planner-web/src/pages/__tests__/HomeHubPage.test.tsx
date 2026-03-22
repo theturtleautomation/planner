@@ -51,7 +51,7 @@ describe('HomeHubPage', () => {
     });
   });
 
-  it('renders quick actions and recent projects', async () => {
+  it('renders the launch surface and recent projects', async () => {
     mockListProjects.mockResolvedValue({
       projects: [
         {
@@ -75,9 +75,13 @@ describe('HomeHubPage', () => {
     });
 
     expect(screen.getByRole('heading', { name: 'Home' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /open projects/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /new project/i })).toBeInTheDocument();
-    expect(screen.getByText('Alpha Project')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /resume alpha project/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^open projects$/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /utilities/i })).toBeInTheDocument();
+    const headings = screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent);
+    expect(headings).toContain('Recent Projects');
+    expect(headings.indexOf('Recent Projects')).toBeLessThan(headings.indexOf('Utilities'));
+    expect(screen.getAllByText('Alpha Project')).toHaveLength(2);
   });
 
   it('routes prompt intent to projects', async () => {
@@ -124,5 +128,31 @@ describe('HomeHubPage', () => {
     await user.click(screen.getByRole('button', { name: 'Go' }));
 
     expect(await screen.findByText('Project Sessions Route')).toBeInTheDocument();
+  });
+
+  it('keeps the empty-state launch posture when no projects exist', async () => {
+    mockListProjects.mockResolvedValue({ projects: [] });
+
+    renderHome();
+
+    await waitFor(() => {
+      expect(mockListProjects).toHaveBeenCalledTimes(1);
+    });
+
+    expect(screen.getAllByText('Create the first project shell.')).toHaveLength(2);
+    expect(screen.getByRole('button', { name: /create your first project/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /utilities/i })).toBeInTheDocument();
+    const headings = screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent);
+    expect(headings.indexOf('Recent Projects')).toBeLessThan(headings.indexOf('Utilities'));
+    expect(screen.queryByRole('button', { name: /resume /i })).not.toBeInTheDocument();
+  });
+
+  it('surfaces project-loading failures inside the supporting content region', async () => {
+    mockListProjects.mockRejectedValue(new Error('boom'));
+
+    renderHome();
+
+    expect(await screen.findByText(/failed to load projects: boom/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /recent projects/i })).toBeInTheDocument();
   });
 });

@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useLocation, Link } from 'react-router-dom';
 import { AUTH0_ENABLED } from '../config.ts';
@@ -41,24 +41,24 @@ function UserInfo() {
   return <UserInfoDev />;
 }
 
-type NavSection = 'primary' | 'secondary' | 'utility';
-
 interface NavItem {
   label: string;
   path: string;
   icon: string;
-  section: NavSection;
 }
 
-const NAV_ITEMS: NavItem[] = [
-  { label: 'Home', path: '/', icon: 'home', section: 'primary' },
-  { label: 'Projects', path: '/projects', icon: 'folder', section: 'primary' },
-  { label: 'Knowledge', path: '/knowledge', icon: 'book', section: 'primary' },
-  { label: 'Sessions', path: '/sessions', icon: 'clock', section: 'secondary' },
-  { label: 'Events', path: '/events', icon: 'activity', section: 'secondary' },
-  { label: 'Admin', path: '/admin', icon: 'terminal', section: 'secondary' },
-  { label: 'Discovery', path: '/discovery', icon: 'search', section: 'utility' },
-  { label: 'Blueprint', path: '/blueprint', icon: 'globe', section: 'utility' },
+const PRIMARY_NAV_ITEMS: NavItem[] = [
+  { label: 'Home', path: '/', icon: 'home' },
+  { label: 'Projects', path: '/projects', icon: 'folder' },
+  { label: 'Knowledge', path: '/knowledge', icon: 'book' },
+  { label: 'Sessions', path: '/sessions', icon: 'clock' },
+];
+
+const UTILITY_NAV_ITEMS: NavItem[] = [
+  { label: 'Events', path: '/events', icon: 'activity' },
+  { label: 'Discovery', path: '/discovery', icon: 'search' },
+  { label: 'Blueprint', path: '/blueprint', icon: 'globe' },
+  { label: 'Admin', path: '/admin', icon: 'terminal' },
 ];
 
 function isActiveNavItem(pathname: string, item: NavItem): boolean {
@@ -125,31 +125,33 @@ function ThemeToggle() {
 
 export default function Layout({ children, sessionId, isConnected }: LayoutProps) {
   const location = useLocation();
-  const primaryItems = NAV_ITEMS.filter((item) => item.section === 'primary');
-  const secondaryItems = NAV_ITEMS.filter((item) => item.section === 'secondary');
-  const utilityItems = NAV_ITEMS.filter((item) => item.section === 'utility');
+  void sessionId;
+  void isConnected;
+  const utilityRouteActive = UTILITY_NAV_ITEMS.some((item) => isActiveNavItem(location.pathname, item));
+  const [moreOpen, setMoreOpen] = useState(utilityRouteActive);
 
-  const renderSection = (label: string, items: NavItem[]) => (
-    <div className="sidebar-section">
-      <div className="sidebar-label">{label}</div>
-      {items.map((item) => {
-        const isActive = isActiveNavItem(location.pathname, item);
-        return (
-          <Link
-            key={item.path}
-            to={item.path}
-            className={`sidebar-item${isActive ? ' active' : ''}`}
-            style={{ textDecoration: 'none' }}
-          >
-            <span className="icon">
-              <SidebarIcon name={item.icon} />
-            </span>
-            {item.label}
-          </Link>
-        );
-      })}
-    </div>
-  );
+  useEffect(() => {
+    if (utilityRouteActive) {
+      setMoreOpen(true);
+    }
+  }, [utilityRouteActive]);
+
+  const renderNavItem = (item: NavItem) => {
+    const isActive = isActiveNavItem(location.pathname, item);
+    return (
+      <Link
+        key={item.path}
+        to={item.path}
+        className={`sidebar-item${isActive ? ' active' : ''}`}
+        style={{ textDecoration: 'none' }}
+      >
+        <span className="icon">
+          <SidebarIcon name={item.icon} />
+        </span>
+        {item.label}
+      </Link>
+    );
+  };
 
   return (
     <div className="app-shell">
@@ -164,34 +166,39 @@ export default function Layout({ children, sessionId, isConnected }: LayoutProps
           <span className="sidebar-wordmark">Planner</span>
         </div>
 
-        {renderSection('Primary', primaryItems)}
-        {renderSection('Secondary', secondaryItems)}
-        {renderSection('Utility', utilityItems)}
+        <div className="sidebar-section">
+          <div className="sidebar-label">Primary</div>
+          {PRIMARY_NAV_ITEMS.map(renderNavItem)}
+        </div>
+
+        <div className="sidebar-section">
+          <div className="sidebar-label">Utility</div>
+          <button
+            type="button"
+            className={`sidebar-item sidebar-more-toggle${moreOpen || utilityRouteActive ? ' active' : ''}`}
+            aria-expanded={moreOpen}
+            aria-controls="sidebar-utility-panel"
+            onClick={() => {
+              setMoreOpen((value) => !value);
+            }}
+          >
+            <span className="icon">
+              <SidebarIcon name="globe" />
+            </span>
+            More
+            <span className="sidebar-caret" aria-hidden="true">{moreOpen ? '−' : '+'}</span>
+          </button>
+          {moreOpen ? (
+            <div id="sidebar-utility-panel" className="sidebar-utility-panel">
+              {UTILITY_NAV_ITEMS.map(renderNavItem)}
+            </div>
+          ) : null}
+        </div>
 
         <div className="sidebar-spacer" />
 
-        {/* Bottom: status + user info + theme toggle */}
-        <div className="sidebar-section" style={{ marginTop: 0 }}>
-          {sessionId !== undefined && (
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 'var(--space-2)',
-              padding: 'var(--space-1) var(--space-2)',
-              marginBottom: 'var(--space-2)',
-            }}>
-              <span style={{
-                width: '8px', height: '8px', borderRadius: '50%', display: 'inline-block',
-                background: isConnected ? 'var(--color-success)' : 'var(--color-error)',
-                ...(isConnected ? {} : { animation: 'blink 1.5s ease infinite' }),
-              }} />
-              <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>
-                {isConnected ? 'connected' : 'disconnected'}
-              </span>
-            </div>
-          )}
-          <div style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            padding: 'var(--space-1) var(--space-2)',
-          }}>
+        <div className="sidebar-section sidebar-footer" style={{ marginTop: 0 }}>
+          <div className="sidebar-footer-row">
             <UserInfo />
             <ThemeToggle />
           </div>

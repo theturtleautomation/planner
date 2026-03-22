@@ -27,6 +27,21 @@ These are the main planning documents currently shaping the repo:
 - [Phase 09 Socratic Recursive Category Synthesis Spec](/home/thetu/planner/docs/phase-09-socratic-recursive-category-synthesis-spec.md)
 - [Phase 10 Socratic Category Status And Refresh Spec](/home/thetu/planner/docs/phase-10-socratic-category-status-and-refresh-spec.md)
 - [Phase 11 Socratic Category Replay And Validation Spec](/home/thetu/planner/docs/phase-11-socratic-category-replay-and-validation-spec.md)
+- [Phase 12 Socratic Live Question Workspace Spec](/home/thetu/planner/docs/phase-12-socratic-live-question-workspace-spec.md)
+- [Phase 13 Socratic Focused Question Lobby Reset Spec](/home/thetu/planner/docs/phase-13-socratic-realtime-workspace-deltas-and-warm-prompt-library-spec.md)
+- [Planner UI Reset Route-By-Route Spec Queue](/home/thetu/planner/docs/planner-ui-reset-route-by-route-spec-queue.md)
+- [Planner UI Reset Phase 00 Shell Navigation And Auth Spec](/home/thetu/planner/docs/planner-ui-reset-phase-00-shell-navigation-and-auth-spec.md)
+- [Planner UI Reset Phase 01 Home Hub Spec](/home/thetu/planner/docs/planner-ui-reset-phase-01-home-hub-spec.md)
+- [Planner UI Reset Phase 02 Projects Directory Spec](/home/thetu/planner/docs/planner-ui-reset-phase-02-projects-directory-spec.md)
+- [Planner UI Reset Phase 03 Project Workspace Spec](/home/thetu/planner/docs/planner-ui-reset-phase-03-project-workspace-spec.md)
+- [Planner UI Reset Phase 04 Sessions Queue Spec](/home/thetu/planner/docs/planner-ui-reset-phase-04-sessions-queue-spec.md)
+- [Planner UI Reset Phase 06 Knowledge Workspace Spec](/home/thetu/planner/docs/planner-ui-reset-phase-06-knowledge-workspace-spec.md)
+- [Planner UI Reset Phase 07 Blueprint Workspace Spec](/home/thetu/planner/docs/planner-ui-reset-phase-07-blueprint-workspace-spec.md)
+- [Planner UI Reset Phase 08 Discovery Review Workspace Spec](/home/thetu/planner/docs/planner-ui-reset-phase-08-discovery-review-workspace-spec.md)
+- [Planner UI Reset Phase 09 Events Timeline Workspace Spec](/home/thetu/planner/docs/planner-ui-reset-phase-09-events-timeline-workspace-spec.md)
+- [Planner UI Reset Phase 10 Admin Operations Workspace Spec](/home/thetu/planner/docs/planner-ui-reset-phase-10-admin-operations-workspace-spec.md)
+- [Planner UI Reset Tranche Audit Remediation Spec](/home/thetu/planner/docs/planner-ui-reset-tranche-audit-remediation-spec.md)
+- [Planner UI Reset Residual Corrections Spec](/home/thetu/planner/docs/planner-ui-reset-residual-corrections-spec.md)
 - [Planner Design System Command Center Plan](/home/thetu/planner/docs/planner-design-system-command-center-plan.md)
 - [Planner Design System Phase 1 Tonal Foundation Spec](/home/thetu/planner/docs/planner-design-system-phase-1-tonal-foundation-spec.md)
 - [Planner Design System Phase 2 Editorial Typography And CTA Spec](/home/thetu/planner/docs/planner-design-system-phase-2-editorial-typography-and-cta-spec.md)
@@ -58,23 +73,105 @@ These are the main planning documents currently shaping the repo:
 
 ## Current Active Thread
 
-### Socratic Category Drill-Down
+### Planner Route-By-Route UI Reset
 
 Goal:
 
-- replace the flat multi-area Socratic lobby batch with a category-first intake
-  flow
-- let users enter a category, answer scoped prompts, and explicitly return to a
-  refreshed main category screen
-- preserve dimension-based convergence and draft review as the hidden truth
-  model behind the new navigation layer
+- build a methodical page-by-page UI reset program across the actual routed
+  surfaces in Planner
+- use web research and `design-system-patterns` as inputs to each child spec
+  without turning the effort into generic design-system modernization
+- address one route family at a time so the product model can be tightened
+  responsibly instead of by one broad speculative redesign
 
 Canonical planning doc:
 
-- [Phase 08 Socratic Category Drill-Down Implementation](/home/thetu/planner/docs/phase-08-socratic-category-drilldown-implementation.md)
+- [Planner UI Reset Route-By-Route Spec Queue](/home/thetu/planner/docs/planner-ui-reset-route-by-route-spec-queue.md)
+
+Current queued child specs:
+
+- `UIR-00` shell, navigation, and auth entry
+- `UIR-01` home hub
+- `UIR-02` projects directory
+- `UIR-03` project workspace
+- `UIR-04` sessions queue
+- `UIR-05` Socratic focused question lobby
+- `UIR-06` knowledge workspace
+- `UIR-07` blueprint workspace
+- `UIR-08` discovery review workspace
+- `UIR-09` events timeline workspace
+- `UIR-10` admin operations workspace
+
+Current implemented children:
+
+- `UIR-00` in
+  [Planner UI Reset Phase 00 Shell Navigation And Auth Spec](/home/thetu/planner/docs/planner-ui-reset-phase-00-shell-navigation-and-auth-spec.md)
+- `UIR-01` in
+  [Planner UI Reset Phase 01 Home Hub Spec](/home/thetu/planner/docs/planner-ui-reset-phase-01-home-hub-spec.md)
+- `UIR-02` in
+  [Planner UI Reset Phase 02 Projects Directory Spec](/home/thetu/planner/docs/planner-ui-reset-phase-02-projects-directory-spec.md)
+- `UIR-03` in
+  [Planner UI Reset Phase 03 Project Workspace Spec](/home/thetu/planner/docs/planner-ui-reset-phase-03-project-workspace-spec.md)
+- `UIR-04` in
+  [Planner UI Reset Phase 04 Sessions Queue Spec](/home/thetu/planner/docs/planner-ui-reset-phase-04-sessions-queue-spec.md)
+- `UIR-05` in
+  [Phase 13 Socratic Focused Question Lobby Reset Spec](/home/thetu/planner/docs/phase-13-socratic-realtime-workspace-deltas-and-warm-prompt-library-spec.md)
+- `UIR-06` in
+  [Planner UI Reset Phase 06 Knowledge Workspace Spec](/home/thetu/planner/docs/planner-ui-reset-phase-06-knowledge-workspace-spec.md)
+- `UIR-07` in
+  [Planner UI Reset Phase 07 Blueprint Workspace Spec](/home/thetu/planner/docs/planner-ui-reset-phase-07-blueprint-workspace-spec.md)
+- `UIR-08` in
+  [Planner UI Reset Phase 08 Discovery Review Workspace Spec](/home/thetu/planner/docs/planner-ui-reset-phase-08-discovery-review-workspace-spec.md)
+- `UIR-09` in
+  [Planner UI Reset Phase 09 Events Timeline Workspace Spec](/home/thetu/planner/docs/planner-ui-reset-phase-09-events-timeline-workspace-spec.md)
+- `UIR-10` in
+  [Planner UI Reset Phase 10 Admin Operations Workspace Spec](/home/thetu/planner/docs/planner-ui-reset-phase-10-admin-operations-workspace-spec.md)
+- tranche audit remediation in
+  [Planner UI Reset Tranche Audit Remediation Spec](/home/thetu/planner/docs/planner-ui-reset-tranche-audit-remediation-spec.md)
+- residual correction follow-up in
+  [Planner UI Reset Residual Corrections Spec](/home/thetu/planner/docs/planner-ui-reset-residual-corrections-spec.md)
+
+Current planning state:
+
+- route-by-route spec drafting is complete for `UIR-00` through `UIR-10`
+- the child specs have been tightened into fuller implementation-bounding route
+  docs with route-specific UI models, state semantics, and verification plans
+- `UIR-00`, `UIR-01`, `UIR-02`, `UIR-03`, `UIR-04`, `UIR-05`, `UIR-06`,
+  `UIR-07`, `UIR-08`, `UIR-09`, and `UIR-10` are implemented with
+  route-specific evidence aligned to the current tranche
+- the 2026-03-22 tranche audit remediation is implemented in
+  [Planner UI Reset Tranche Audit Remediation Spec](/home/thetu/planner/docs/planner-ui-reset-tranche-audit-remediation-spec.md)
+- the residual correction follow-up is implemented in
+  [Planner UI Reset Residual Corrections Spec](/home/thetu/planner/docs/planner-ui-reset-residual-corrections-spec.md)
+- queue status, child-spec truthfulness, and route-specific verification have
+  been synchronized to the current `planner-web` surface
+
+Current next bounded slice:
+
+- the route-by-route UI reset delivery tranche and its follow-up correction
+  passes are complete
+- next work should return to cumulative QA and future follow-on specs opened
+  from new product gaps rather than from the original tranche audit ledger
+
+### Socratic Focused Question Lobby
+
+Goal:
+
+- make the Socratic lobby a focused question experience where the active work
+  is the only real focal point
+- preserve dynamic categories and convergence while moving map and context into
+  revealable surfaces instead of permanently visible competing panes
+- make readiness, preparation, branch change, and next action visible without
+  turning the lobby into an always-on operational dashboard
+
+Canonical planning doc:
+
+- [Phase 13 Socratic Focused Question Lobby Reset Spec](/home/thetu/planner/docs/phase-13-socratic-realtime-workspace-deltas-and-warm-prompt-library-spec.md)
 
 Supporting research doc:
 
+- [Phase 12 Socratic Live Question Workspace Spec](/home/thetu/planner/docs/phase-12-socratic-live-question-workspace-spec.md)
+- [Phase 08 Socratic Category Drill-Down Implementation](/home/thetu/planner/docs/phase-08-socratic-category-drilldown-implementation.md)
 - [Phase 07 Socratic Prompt Protocol Redesign Implementation](/home/thetu/planner/docs/phase-07-socratic-prompt-protocol-redesign-implementation.md)
 
 Current completed slice:
@@ -92,29 +189,50 @@ Current completed slice:
 - replay hardening, stale-revision refresh, and main-screen-only build
   completion are implemented and verified in
   [Phase 11 Socratic Category Replay And Validation Spec](/home/thetu/planner/docs/phase-11-socratic-category-replay-and-validation-spec.md)
+- live question workspace, explicit branch-collapse explanation, workspace
+  header build readiness, and websocket snapshot refresh are implemented and
+  verified in
+  [Phase 12 Socratic Live Question Workspace Spec](/home/thetu/planner/docs/phase-12-socratic-live-question-workspace-spec.md)
 
-Current ready follow-on specs:
+Current completed slice:
 
-- none queued yet
+- [Phase 13 Socratic Focused Question Lobby Reset Spec](/home/thetu/planner/docs/phase-13-socratic-realtime-workspace-deltas-and-warm-prompt-library-spec.md)
+  is implemented and verified on the web surface
 
 Current agreed product constraints:
 
 - categories are synthesized server-side from the current interview state
-- clients render the latest category snapshot and do not invent hierarchy
+- clients render server-authored workspace snapshots and deltas and do not
+  invent hierarchy or question content
 - recursive category paths are now supported beyond one root and one leaf level
-- users explicitly choose when to return to the main category screen
-- build/start remains valid only from the main category screen when the
-  underlying belief state is build-ready
-- category snapshots now carry server-authored status, new-category, and
-  build-guidance metadata for the current screen
-- draft review remains a separate later prompt flow, not a category
-- replay and validation hardening are now part of the implemented category flow
+- categories remain useful as navigation and status framing, but the default
+  question lobby should not keep the category map permanently visible as a
+  co-equal pane
+- the lobby should default to one dominant focused question canvas
+- category and all-question inspection should be available through an explicit
+  revealable question-map surface
+- belief state, draft context, and events should be available through an
+  explicit revealable context surface
+- users should be able to inspect question work across categories without
+  serial branch hunting and without requiring a permanently noisy all-groups
+  page state
+- the UI should make ready now, preparing, changed, moved, resolved, and build
+  ready explicit as product states
+- build/start is exposed from the lobby when the server marks the session ready
+- websocket updates should be used where they materially improve clarity, but
+  realtime transport is not the product goal by itself
+- prepared question reuse may stay per-session and server-authored if it helps
+  the lobby feel immediate, but it must remain subordinate to correctness and
+  comprehension
+- draft review remains part of the server-authored prompt/workspace flow, not a
+  freeform side mode
+- replay and validation hardening remain part of the implemented workspace flow
 
 Current next bounded slice:
 
-- no additional bounded Socratic follow-on spec is queued yet; the next move is
-  either manual confidence verification of the live lobby or a new spec for the
-  next product change
+- keep the focused-question lobby aligned with upcoming `UIR-06` and `UIR-07`
+  route work so shell, project workspace, and Socratic context continue to read
+  as one product family
 
 ### Planner Visual System Refresh
 
@@ -245,12 +363,15 @@ replace the active product thread.
 If manual product verification is resumed for the active Socratic thread, the
 next bounded check should be:
 
-- open the Socratic lobby
-- verify the main category list renders before a scoped prompt batch
-- enter a deep category path, answer at least one prompt, then return with
-  `Back`
-- confirm that the refreshed main category list and build gating update from
-  the latest interview state
+- open the Socratic lobby workspace
+- verify the active question is the clear focal point before opening any reveal
+  surface
+- open the question map and confirm all active categories and question groups
+  can be inspected without serial hunting
+- answer at least one scoped prompt and confirm the lobby explains any new,
+  moved, or resolved work inline and in the question map
+- confirm build readiness surfaces from the pulse bar and focused canvas when
+  the session becomes ready
 
 This is a manual confidence check only. It does not create a new implementation
 slice by itself.
@@ -266,19 +387,25 @@ Keep planning and implementation aligned to artifact state:
 
 ## Next Expected Move
 
-For the design-system thread, the initial four-phase command-center refresh and
-the bounded follow-on queue are implemented and verified through Phase 8.
-
 The next move is:
 
-- treat any further visual work as a fresh bounded spec rather than reopening
+- use
+  [Planner UI Reset Route-By-Route Spec Queue](/home/thetu/planner/docs/planner-ui-reset-route-by-route-spec-queue.md)
+  as the parent planning container for the broader UI reset
+- implement `UIR-00` shell/navigation/auth first, then continue in queue order
+  through the ready child specs
+- run the live workspace manual confidence check if we want one more direct
+  product read on the new intake model
+- implement
+  [Phase 13 Socratic Focused Question Lobby Reset Spec](/home/thetu/planner/docs/phase-13-socratic-realtime-workspace-deltas-and-warm-prompt-library-spec.md)
+  when we are ready to replace the split-pane lobby with a focused question
+  canvas and revealable map/context surfaces
+- keep further visual work behind a fresh bounded spec rather than reopening
   the completed design-system queue
-- keep the manual Socratic lobby confidence check as the current non-coding
-  verification checkpoint before promoting any new follow-on slice
 
-If Socratic work resumes in parallel, keep using the live lobby verification
-checkpoint above or add a new bounded Socratic spec rather than reopening the
-completed Phase 11 slice.
+If Socratic work resumes in parallel, keep using the lobby/workspace
+verification checkpoint above or add a new bounded Socratic spec rather than
+reopening the completed Phase 12 slice directly.
 
 Use
 [Phase 08 Socratic Category Drill-Down Implementation](/home/thetu/planner/docs/phase-08-socratic-category-drilldown-implementation.md)

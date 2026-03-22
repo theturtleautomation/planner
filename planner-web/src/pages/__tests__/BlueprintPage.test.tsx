@@ -28,19 +28,19 @@ vi.mock('../../components/BlueprintOverview.tsx', () => ({
 }));
 
 vi.mock('../../components/BlueprintGraph.tsx', () => ({
-  default: () => null,
+  default: () => <div data-testid="blueprint-graph-view">Graph View</div>,
 }));
 
 vi.mock('../../components/TableView.tsx', () => ({
-  default: () => null,
+  default: () => <div data-testid="blueprint-table-view">Inventory View</div>,
 }));
 
 vi.mock('../../components/TraceabilityView.tsx', () => ({
-  default: () => null,
+  default: () => <div data-testid="blueprint-traceability-view">Traceability View</div>,
 }));
 
 vi.mock('../../components/DependenciesView.tsx', () => ({
-  default: () => null,
+  default: () => <div data-testid="blueprint-dependencies-view">Dependencies View</div>,
 }));
 
 vi.mock('../../components/DetailDrawer.tsx', () => ({
@@ -154,6 +154,7 @@ describe('BlueprintPage Phase 4 contextual links', () => {
       expect(mockGetBlueprint).toHaveBeenCalledTimes(1);
     });
 
+    await user.click(screen.getByRole('button', { name: /^overview$/i }));
     await user.click(screen.getByRole('button', { name: /select task node/i }));
     await user.click(screen.getByRole('button', { name: /view related knowledge/i }));
 
@@ -168,7 +169,7 @@ describe('BlueprintPage Phase 4 contextual links', () => {
     expect(params.from_label).toBe('Blueprint');
   });
 
-  it('defaults to the overview-first navigation model', async () => {
+  it('defaults to the graph-first navigation model', async () => {
     render(
       <MemoryRouter initialEntries={['/blueprint']}>
         <Routes>
@@ -177,10 +178,38 @@ describe('BlueprintPage Phase 4 contextual links', () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByRole('button', { name: /^overview$/i })).toHaveClass('active');
+    expect(await screen.findByRole('button', { name: /^map$/i })).toHaveClass('active');
+    expect(screen.getByTestId('blueprint-graph-view')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^overview$/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^traceability$/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^dependencies$/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^map$/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^inventory$/i })).toBeInTheDocument();
+  });
+
+  it('preserves multi-view behavior after the graph-first default opens', async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={['/blueprint']}>
+        <Routes>
+          <Route path="/blueprint" element={<BlueprintPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByTestId('blueprint-graph-view')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /^overview$/i }));
+    expect(screen.getByRole('button', { name: /^overview$/i })).toHaveClass('active');
+    expect(screen.getByRole('button', { name: /^map$/i })).not.toHaveClass('active');
+    expect(screen.getByRole('button', { name: /select task node/i })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /^traceability$/i }));
+    expect(screen.getByTestId('blueprint-traceability-view')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /^dependencies$/i }));
+    expect(screen.getByTestId('blueprint-dependencies-view')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /^inventory$/i }));
+    expect(screen.getByTestId('blueprint-table-view')).toBeInTheDocument();
   });
 });

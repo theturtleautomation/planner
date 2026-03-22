@@ -419,6 +419,9 @@ export default function ProjectSessionsPage() {
       : importStateBusy
         ? 'A fresh import run is underway. The queue keeps import state visible without overtaking the session workspace.'
         : 'Source attachment and import history remain available without becoming the primary surface.';
+  const importShouldLead = importStateStatus === 'review_pending'
+    || importStateStatus === 'failed'
+    || importStateBusy;
   const resumableSessionCount = sessions.filter((session) => (
     session.can_resume_checkpoint
     || session.can_resume_live
@@ -428,6 +431,12 @@ export default function ProjectSessionsPage() {
   const activeSessionCount = sessions.filter((session) => (
     session.intake_phase === 'interviewing' || session.intake_phase === 'pipeline_running'
   )).length;
+  const workingSetTitle = importShouldLead
+    ? 'Session work stays attached to the project.'
+    : 'Keep active work central and import review off to the side.';
+  const workingSetCopy = importShouldLead
+    ? 'Import work currently deserves first attention. Session resumability and live work remain visible as supporting context.'
+    : 'This project route holds active sessions, resumability, and import governance in one bounded workspace without turning import history into the default focal point.';
   const selectedHistoryComparisonNotes = [
     importComparison?.current_import_job_uses_selection_filter
       ? 'Current import comparison uses selected nodes from saved merge controls.'
@@ -472,12 +481,12 @@ export default function ProjectSessionsPage() {
         </header>
 
         <section className="command-hero-grid">
-          <div className="command-surface-strong">
+          <div className={importShouldLead ? 'command-surface-soft' : 'command-surface-strong'}>
             <div className="command-surface-copy">
               <span className="page-kicker">Working set</span>
-              <h2 className="section-heading" style={{ margin: 0 }}>Keep active work central and import review off to the side.</h2>
+              <h2 className="section-heading" style={{ margin: 0 }}>{workingSetTitle}</h2>
               <p className="section-copy" style={{ margin: 0 }}>
-                This project route holds active sessions, resumability, and import governance in one bounded workspace without turning import history into the default focal point.
+                {workingSetCopy}
               </p>
             </div>
             <div className="command-info-grid">
@@ -499,9 +508,9 @@ export default function ProjectSessionsPage() {
             </div>
           </div>
 
-          <aside className="command-surface-soft">
+          <aside className={importShouldLead ? 'command-surface-strong' : 'command-surface-soft'}>
             <div className="command-surface-copy">
-              <span className="page-kicker">Import state</span>
+              <span className="page-kicker">{importShouldLead ? 'Current priority' : 'Import state'}</span>
               <h2 className="section-heading" style={{ margin: 0 }}>
                 {importHeroTitle}
               </h2>

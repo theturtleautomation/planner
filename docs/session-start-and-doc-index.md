@@ -48,6 +48,19 @@ Read these when the task touches the relevant area.
 - [phase-09-socratic-recursive-category-synthesis-spec.md](/home/thetu/planner/docs/phase-09-socratic-recursive-category-synthesis-spec.md)
 - [phase-10-socratic-category-status-and-refresh-spec.md](/home/thetu/planner/docs/phase-10-socratic-category-status-and-refresh-spec.md)
 - [phase-11-socratic-category-replay-and-validation-spec.md](/home/thetu/planner/docs/phase-11-socratic-category-replay-and-validation-spec.md)
+- [phase-12-socratic-live-question-workspace-spec.md](/home/thetu/planner/docs/phase-12-socratic-live-question-workspace-spec.md)
+- [phase-13-socratic-realtime-workspace-deltas-and-warm-prompt-library-spec.md](/home/thetu/planner/docs/phase-13-socratic-realtime-workspace-deltas-and-warm-prompt-library-spec.md)
+- [planner-ui-reset-route-by-route-spec-queue.md](/home/thetu/planner/docs/planner-ui-reset-route-by-route-spec-queue.md)
+- [planner-ui-reset-phase-00-shell-navigation-and-auth-spec.md](/home/thetu/planner/docs/planner-ui-reset-phase-00-shell-navigation-and-auth-spec.md)
+- [planner-ui-reset-phase-01-home-hub-spec.md](/home/thetu/planner/docs/planner-ui-reset-phase-01-home-hub-spec.md)
+- [planner-ui-reset-phase-02-projects-directory-spec.md](/home/thetu/planner/docs/planner-ui-reset-phase-02-projects-directory-spec.md)
+- [planner-ui-reset-phase-03-project-workspace-spec.md](/home/thetu/planner/docs/planner-ui-reset-phase-03-project-workspace-spec.md)
+- [planner-ui-reset-phase-04-sessions-queue-spec.md](/home/thetu/planner/docs/planner-ui-reset-phase-04-sessions-queue-spec.md)
+- [planner-ui-reset-phase-06-knowledge-workspace-spec.md](/home/thetu/planner/docs/planner-ui-reset-phase-06-knowledge-workspace-spec.md)
+- [planner-ui-reset-phase-07-blueprint-workspace-spec.md](/home/thetu/planner/docs/planner-ui-reset-phase-07-blueprint-workspace-spec.md)
+- [planner-ui-reset-phase-08-discovery-review-workspace-spec.md](/home/thetu/planner/docs/planner-ui-reset-phase-08-discovery-review-workspace-spec.md)
+- [planner-ui-reset-phase-09-events-timeline-workspace-spec.md](/home/thetu/planner/docs/planner-ui-reset-phase-09-events-timeline-workspace-spec.md)
+- [planner-ui-reset-phase-10-admin-operations-workspace-spec.md](/home/thetu/planner/docs/planner-ui-reset-phase-10-admin-operations-workspace-spec.md)
 - [planner-design-system-command-center-plan.md](/home/thetu/planner/docs/planner-design-system-command-center-plan.md)
 - [planner-design-system-phase-1-tonal-foundation-spec.md](/home/thetu/planner/docs/planner-design-system-phase-1-tonal-foundation-spec.md)
 - [planner-design-system-phase-2-editorial-typography-and-cta-spec.md](/home/thetu/planner/docs/planner-design-system-phase-2-editorial-typography-and-cta-spec.md)
@@ -82,6 +95,8 @@ Read these when the task touches the relevant area.
 ### Planning integrity and audit remediation
 
 - [planning-status-audit-remediation-spec.md](/home/thetu/planner/docs/planning-status-audit-remediation-spec.md)
+- [planner-ui-reset-tranche-audit-remediation-spec.md](/home/thetu/planner/docs/planner-ui-reset-tranche-audit-remediation-spec.md)
+- [planner-ui-reset-residual-corrections-spec.md](/home/thetu/planner/docs/planner-ui-reset-residual-corrections-spec.md)
 
 ### Execution checklists and follow-up implementation docs
 

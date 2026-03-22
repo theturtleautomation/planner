@@ -810,6 +810,7 @@ describe('SessionPage resume behavior', () => {
   });
 
   it('renders the category navigator during category-driven intake', async () => {
+    const user = userEvent.setup();
     const session = makeSession({
       intake_phase: 'interviewing',
       pipeline_running: false,
@@ -911,8 +912,13 @@ describe('SessionPage resume behavior', () => {
       expect(mockGetSession).toHaveBeenCalledWith('abc');
     });
 
-    expect(screen.getByText(/live question workspace/i)).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: /explore missing areas/i }).length).toBeGreaterThan(0);
+    expect(screen.getByText(/focused question lobby/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /question map/i })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /question map/i }));
+
+    expect(screen.getByLabelText('Question map')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /focus/i }).length).toBeGreaterThan(0);
   });
 
   it('does not expose a build completion button while a scoped prompt is active', async () => {

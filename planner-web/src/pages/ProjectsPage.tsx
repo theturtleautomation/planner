@@ -235,14 +235,11 @@ export default function ProjectsPage() {
             <span className="page-kicker">Project directory</span>
             <h1 className="display-heading" style={{ margin: 0 }}>Projects</h1>
             <p className="section-copy" style={{ margin: 0 }}>
-              Project directory for sessions, blueprint, knowledge, and events.
+              Scan projects as working objects, then open the project workspace when you are ready to move into sessions, knowledge, blueprint, or events.
             </p>
           </div>
 
           <div className="command-page-header-actions">
-            <button className="btn btn-outline" onClick={() => { void navigate('/sessions'); }}>
-              Open Sessions
-            </button>
             <button className="btn btn-outline" onClick={() => setImportModalOpen(true)}>
               Import Existing Project
             </button>
@@ -288,83 +285,83 @@ export default function ProjectsPage() {
           </div>
         )}
 
-        <section className="command-hero-grid">
-          <div className="command-surface-strong">
+        <section className="command-surface-subtle">
+          <div className="command-surface-header">
             <div className="command-surface-copy">
               <span className="page-kicker">Directory focus</span>
               <h2 className="section-heading" style={{ margin: 0 }}>Scan the project queue from one line of sight.</h2>
               <p className="section-copy" style={{ margin: 0 }}>
-                Creation and import stay route-level. The list below exposes freshness, status, and the next move without falling back to a card gallery.
+                Creation and import stay route-level. The list below carries freshness, archive state, and next move without falling back to card clutter.
               </p>
             </div>
-            <div className="command-input-row">
-              <input
-                value={query}
-                onChange={(event) => {
-                  const next = event.target.value;
-                  const nextParams = new URLSearchParams(searchParams);
-                  if (next.trim()) {
-                    nextParams.set('query', next);
-                  } else {
-                    nextParams.delete('query');
-                  }
-                  setSearchParams(nextParams, { replace: true });
-                }}
-                placeholder="Search projects by name, slug, or description"
-                aria-label="Search projects"
-                className="command-input"
-              />
-              {query && (
-                <button
-                  className="btn"
-                  onClick={() => {
-                    const nextParams = new URLSearchParams(searchParams);
-                    nextParams.delete('query');
-                    setSearchParams(nextParams, { replace: true });
-                  }}
-                >
-                  Clear
-                </button>
+            <div className="directory-row-meta" style={{ alignSelf: 'flex-start' }}>
+              <span className="directory-row-highlight" data-tone="primary">
+                Visible {filtered.length}
+              </span>
+              <span className="directory-row-highlight" data-tone={archivedCount > 0 ? 'warning' : 'default'}>
+                Archived {archivedCount}
+              </span>
+              {showArchived && (
+                <span className="directory-row-highlight" data-tone="warning">
+                  Archived mode
+                </span>
               )}
-            </div>
-            <div className="command-pill-matrix">
-              <label className="command-tab active" style={{ cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={showArchived}
-                  onChange={(event) => {
-                    const nextParams = new URLSearchParams(searchParams);
-                    if (event.target.checked) {
-                      nextParams.set('show_archived', 'true');
-                    } else {
-                      nextParams.delete('show_archived');
-                    }
-                    setSearchParams(nextParams, { replace: true });
-                  }}
-                  style={{ marginRight: '8px' }}
-                />
-                Show archived
-              </label>
             </div>
           </div>
 
-          <aside className="command-surface-soft">
-            <div className="command-info-grid">
-              <div className="command-info-cell">
-                <span className="command-info-label">Visible projects</span>
-                <span className="command-info-value">{filtered.length}</span>
-                <span className="command-info-copy">Current directory results after search and archive filters.</span>
-              </div>
-              <div className="command-info-cell">
-                <span className="command-info-label">Archived</span>
-                <span className="command-info-value">{archivedCount}</span>
-                <span className="command-info-copy">Archived records remain available without dominating the primary list.</span>
-              </div>
-            </div>
+          <div className="command-input-row">
+            <input
+              value={query}
+              onChange={(event) => {
+                const next = event.target.value;
+                const nextParams = new URLSearchParams(searchParams);
+                if (next.trim()) {
+                  nextParams.set('query', next);
+                } else {
+                  nextParams.delete('query');
+                }
+                setSearchParams(nextParams, { replace: true });
+              }}
+              placeholder="Search projects by name, slug, or description"
+              aria-label="Search projects"
+              className="command-input"
+            />
+            {query && (
+              <button
+                className="btn"
+                onClick={() => {
+                  const nextParams = new URLSearchParams(searchParams);
+                  nextParams.delete('query');
+                  setSearchParams(nextParams, { replace: true });
+                }}
+              >
+                Clear
+              </button>
+            )}
+          </div>
+
+          <div className="command-pill-matrix" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+            <label className="command-tab active" style={{ cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={showArchived}
+                onChange={(event) => {
+                  const nextParams = new URLSearchParams(searchParams);
+                  if (event.target.checked) {
+                    nextParams.set('show_archived', 'true');
+                  } else {
+                    nextParams.delete('show_archived');
+                  }
+                  setSearchParams(nextParams, { replace: true });
+                }}
+                style={{ marginRight: '8px' }}
+              />
+              Show archived
+            </label>
             <div className="utility-note" style={{ margin: 0 }}>
-              Project creation and import stay at the top of the route so per-row controls can stay tighter and quieter.
+              Route-level controls stay here so the list can stay focused on the next project move.
             </div>
-          </aside>
+          </div>
         </section>
 
         {loading && <div style={{ color: 'var(--color-text-muted)' }}>Loading projects…</div>}
@@ -452,21 +449,12 @@ export default function ProjectsPage() {
                       <span className="utility-pill">Events</span>
                     </div>
                     <div className="section-copy" style={{ margin: 0 }}>
-                      Project-scoped planning workspace with attached route surfaces.
+                      Open the project workspace first, then branch into attached route surfaces from project context.
                     </div>
                   </div>
                   <div className="directory-row-actions">
-                    <button className="btn btn-outline" onClick={() => { void navigate(projectSessionsPath(project.slug)); }}>
+                    <button className="btn btn-primary" onClick={() => { void navigate(projectSessionsPath(project.slug)); }}>
                       Open
-                    </button>
-                    <button className="btn" onClick={() => { void navigate(`/projects/${encodeURIComponent(project.slug)}/knowledge`); }}>
-                      Knowledge
-                    </button>
-                    <button className="btn" onClick={() => { void navigate(`/projects/${encodeURIComponent(project.slug)}/blueprint`); }}>
-                      Blueprint
-                    </button>
-                    <button className="btn" onClick={() => { void navigate(`/projects/${encodeURIComponent(project.slug)}/events`); }}>
-                      Events
                     </button>
                     {!project.archived_at && (
                       <button

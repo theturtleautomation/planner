@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
@@ -240,5 +240,99 @@ describe('DiscoveryPage Phase 4 contextual links', () => {
     await user.click(await screen.findByRole('button', { name: /accept edge/i }));
 
     expect(mockAcceptEdgeProposal).toHaveBeenCalledWith('edge-proposal-1');
+  });
+
+  it('groups pending and reviewed proposals when all statuses are visible', async () => {
+    const user = userEvent.setup();
+    const reviewedProposal = {
+      ...makeProposal(),
+      id: 'proposal-reviewed',
+      status: 'accepted' as const,
+      reviewed_at: '2026-03-08T00:00:00Z',
+      node: {
+        ...makeProposal().node,
+        id: 'comp-reviewed-widget',
+        name: 'Reviewed Widget',
+      },
+    };
+
+    mockListProposedNodes
+      .mockResolvedValueOnce({
+        proposals: [makeProposal()],
+        total: 1,
+      })
+      .mockResolvedValueOnce({
+        proposals: [makeProposal(), reviewedProposal],
+        total: 2,
+      });
+
+    render(
+      <MemoryRouter initialEntries={['/discovery']}>
+        <Routes>
+          <Route path="/discovery" element={<DiscoveryPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(mockListProposedNodes).toHaveBeenCalledTimes(1);
+    });
+
+    await user.click(screen.getByRole('button', { name: /^all$/i }));
+
+    await waitFor(() => {
+      expect(mockListProposedNodes).toHaveBeenCalledTimes(2);
+    });
+
+    expect(screen.getByRole('heading', { name: /pending review/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /^reviewed$/i })).toBeInTheDocument();
+    expect(screen.getByText('Reviewed Widget')).toBeInTheDocument();
+  });
+
+  it('shows the empty-state review copy when no proposals are present', async () => {
+    mockListProposedNodes.mockResolvedValueOnce({
+      proposals: [],
+      total: 0,
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/discovery']}>
+        <Routes>
+          <Route path="/discovery" element={<DiscoveryPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText(/no pending proposals\./i)).toBeInTheDocument();
+  });
+
+  it('shows scan-in-progress feedback while a discovery scan is running', async () => {
+    const user = userEvent.setup();
+    let resolveScan: ((value: { results: never[]; total_proposed: number; total_edge_proposed: number }) => void) | null = null;
+    mockRunDiscoveryScan.mockImplementationOnce(() => (
+      new Promise((resolve) => {
+        resolveScan = resolve;
+      })
+    ));
+
+    render(
+      <MemoryRouter initialEntries={['/discovery']}>
+        <Routes>
+          <Route path="/discovery" element={<DiscoveryPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(mockListProposedNodes).toHaveBeenCalledTimes(1);
+    });
+
+    await user.click(screen.getByRole('button', { name: /run discovery scan/i }));
+
+    expect(screen.getByRole('button', { name: /scanning/i })).toBeDisabled();
+
+    await act(async () => {
+      resolveScan?.({ results: [], total_proposed: 0, total_edge_proposed: 0 });
+    });
   });
 });

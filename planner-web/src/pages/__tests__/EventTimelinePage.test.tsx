@@ -104,6 +104,17 @@ function LocationSnapshot() {
   );
 }
 
+function renderEventTimeline() {
+  render(
+    <MemoryRouter initialEntries={['/events']}>
+      <Routes>
+        <Route path="/events" element={<EventTimelinePage />} />
+        <Route path="/knowledge/projects/:projectId" element={<LocationSnapshot />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
 describe('EventTimelinePage related knowledge links', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -118,14 +129,7 @@ describe('EventTimelinePage related knowledge links', () => {
       total: 1,
     });
 
-    render(
-      <MemoryRouter initialEntries={['/events']}>
-        <Routes>
-          <Route path="/events" element={<EventTimelinePage />} />
-          <Route path="/knowledge/projects/:projectId" element={<LocationSnapshot />} />
-        </Routes>
-      </MemoryRouter>,
-    );
+    renderEventTimeline();
 
     await waitFor(() => {
       expect(mockListBlueprintEvents).toHaveBeenCalledTimes(1);
@@ -151,14 +155,7 @@ describe('EventTimelinePage related knowledge links', () => {
       total: 1,
     });
 
-    render(
-      <MemoryRouter initialEntries={['/events']}>
-        <Routes>
-          <Route path="/events" element={<EventTimelinePage />} />
-          <Route path="/knowledge/projects/:projectId" element={<LocationSnapshot />} />
-        </Routes>
-      </MemoryRouter>,
-    );
+    renderEventTimeline();
 
     await waitFor(() => {
       expect(mockListBlueprintEvents).toHaveBeenCalledTimes(1);
@@ -171,5 +168,83 @@ describe('EventTimelinePage related knowledge links', () => {
     expect(params.project).toBe('proj-task-tracker');
     expect(params.from).toBe('/events');
     expect(params.from_label).toBe('Event Timeline');
+  });
+
+  it('groups the stream by day and supports event-type filtering', async () => {
+    const user = userEvent.setup();
+    mockListBlueprintEvents.mockResolvedValue({
+      events: [
+        {
+          ...makeScopedUpdateEvent(),
+          timestamp: '2026-03-07T18:00:00Z',
+        },
+        {
+          ...makeExportEvent(),
+          timestamp: '2026-03-06T18:00:00Z',
+        },
+      ],
+      total: 2,
+    });
+
+    renderEventTimeline();
+
+    const march7 = new Date('2026-03-07T18:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    const march6 = new Date('2026-03-06T18:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+    expect(await screen.findByRole('heading', { name: march7 })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: march6 })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /^updated$/i }));
+
+    expect(screen.getByText(/updated component 'comp-task-widget'/i)).toBeInTheDocument();
+    expect(screen.queryByText(/recorded scoped view export/i)).not.toBeInTheDocument();
+  });
+
+  it('shows the empty snapshots state and can create a snapshot from snapshots mode', async () => {
+    const user = userEvent.setup();
+    let snapshotCreated = false;
+    mockCreateBlueprintSnapshot.mockImplementationOnce(async () => {
+      snapshotCreated = true;
+      return { timestamp: '2026-03-07T12:00:00Z', filename: 'snapshot.json' };
+    });
+    mockListBlueprintEvents.mockResolvedValue({ events: [], total: 0 });
+    mockListBlueprintHistory.mockImplementation(async () => ({
+      snapshots: snapshotCreated
+        ? [
+            {
+              timestamp: '2026-03-07T12:00:00Z',
+              filename: 'snapshot.json',
+            },
+          ]
+        : [],
+    }));
+
+    renderEventTimeline();
+
+    await waitFor(() => {
+      expect(mockListBlueprintEvents).toHaveBeenCalledTimes(1);
+    });
+
+    await user.click(screen.getByRole('button', { name: /^snapshots$/i }));
+
+    expect(await screen.findByText(/no snapshots saved yet/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /create snapshot/i }));
+
+    await waitFor(() => {
+      expect(mockCreateBlueprintSnapshot).toHaveBeenCalledTimes(1);
+    });
+    await waitFor(() => {
+      expect(screen.getByText('snapshot.json')).toBeInTheDocument();
+    });
+  });
+
+  it('surfaces fetch failures from the event stream state model', async () => {
+    mockListBlueprintEvents.mockRejectedValue(new Error('events unavailable'));
+
+    renderEventTimeline();
+
+    expect(await screen.findByText(/failed to load events: events unavailable/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument();
   });
 });

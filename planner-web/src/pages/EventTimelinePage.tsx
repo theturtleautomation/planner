@@ -18,6 +18,12 @@ const EVENT_TYPES: { key: BlueprintEventType | 'all'; label: string }[] = [
   { key: 'export_recorded', label: 'Exports' },
 ];
 
+function eventDayLabel(timestamp: string): string {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return timestamp;
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
 // ─── Page Component ──────────────────────────────────────────────────────────
 
 export default function EventTimelinePage() {
@@ -88,6 +94,23 @@ export default function EventTimelinePage() {
     if (filterType === 'all') return events;
     return events.filter(e => e.event_type === filterType);
   }, [events, filterType]);
+  const groupedEvents = useMemo(() => {
+    const groups: Array<{ key: string; label: string; events: BlueprintEventPayload[] }> = [];
+    for (const event of filtered) {
+      const label = eventDayLabel(event.timestamp);
+      const existing = groups.at(-1);
+      if (existing && existing.label === label) {
+        existing.events.push(event);
+      } else {
+        groups.push({
+          key: `${label}-${groups.length}`,
+          label,
+          events: [event],
+        });
+      }
+    }
+    return groups;
+  }, [filtered]);
 
   const eventKnowledgeLink = useCallback((evt: BlueprintEventPayload): string | null => {
     const readString = (value: unknown): string | null => (
@@ -279,8 +302,15 @@ export default function EventTimelinePage() {
 
       {/* Event list */}
       {!loading && !error && filtered.length > 0 && (
-          <div className="global-event-timeline">
-            {filtered.map((evt, i) => {
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+            {groupedEvents.map((group) => (
+              <section key={group.key} className="command-surface-soft">
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'baseline', flexWrap: 'wrap', marginBottom: 'var(--space-3)' }}>
+                  <h2 className="section-heading" style={{ margin: 0 }}>{group.label}</h2>
+                  <span className="utility-pill">{group.events.length} {group.events.length === 1 ? 'event' : 'events'}</span>
+                </div>
+                <div className="global-event-timeline">
+            {group.events.map((evt, i) => {
             const relatedKnowledgeLink = eventKnowledgeLink(evt);
             const before = evt.event_type === 'node_updated' && evt.data?.before
               ? evt.data.before as Record<string, unknown> : null;
@@ -363,7 +393,10 @@ export default function EventTimelinePage() {
             </div>
             );
           })}
-        </div>
+                </div>
+              </section>
+            ))}
+          </div>
       )}
 
         </section>

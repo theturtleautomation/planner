@@ -9,14 +9,13 @@ import { useAuth0 } from '@auth0/auth0-react';
 // This means LoginPageDev renders, which navigates on button click.
 
 describe('LoginPage (dev mode - AUTH0_ENABLED=false)', () => {
-  it('renders the ASCII PLANNER banner', () => {
+  it('renders the Planner entry title', () => {
     render(
       <MemoryRouter>
         <LoginPage />
       </MemoryRouter>,
     );
-    // The banner is an ASCII art <pre> with aria-label="Planner"
-    expect(screen.getByLabelText('Planner')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /enter planner/i })).toBeInTheDocument();
   });
 
   it('renders a button', () => {
@@ -34,17 +33,17 @@ describe('LoginPage (dev mode - AUTH0_ENABLED=false)', () => {
         <LoginPage />
       </MemoryRouter>,
     );
-    expect(screen.getByText(/auth0 not configured/i)).toBeInTheDocument();
+    expect(screen.getByText(/auth0 is not configured/i)).toBeInTheDocument();
   });
 
-  it('renders feature list items', () => {
+  it('renders project-first entry pills', () => {
     render(
       <MemoryRouter>
         <LoginPage />
       </MemoryRouter>,
     );
-    expect(screen.getByText(/real-time pipeline visualization/i)).toBeInTheDocument();
-    expect(screen.getByText(/socratic dialogue/i)).toBeInTheDocument();
+    expect(screen.getByText(/project-centered workspace/i)).toBeInTheDocument();
+    expect(screen.getByText(/socratic planning flow/i)).toBeInTheDocument();
   });
 
   it('button is clickable (not disabled)', () => {
@@ -57,49 +56,31 @@ describe('LoginPage (dev mode - AUTH0_ENABLED=false)', () => {
     expect(button).not.toBeDisabled();
   });
 
-  it('renders the terminal window title bar text', () => {
+  it('renders the project-first description text', () => {
     render(
       <MemoryRouter>
         <LoginPage />
       </MemoryRouter>,
     );
-    expect(screen.getByText(/planner-v2.*socratic-lobby/i)).toBeInTheDocument();
+    expect(screen.getByText(/start from project context/i)).toBeInTheDocument();
   });
 
-  it('renders planning description text', () => {
+  it('renders the development-mode note', () => {
     render(
       <MemoryRouter>
         <LoginPage />
       </MemoryRouter>,
     );
-    expect(screen.getByText(/socratic AI planning tool/i)).toBeInTheDocument();
+    expect(screen.getByText(/local development mode/i)).toBeInTheDocument();
   });
 
-  it('button text says "enter  (dev mode)" when AUTH0_ENABLED is false', () => {
+  it('button text says "Enter Planner" when AUTH0_ENABLED is false', () => {
     render(
       <MemoryRouter>
         <LoginPage />
       </MemoryRouter>,
     );
-    expect(screen.getByRole('button')).toHaveTextContent(/enter.*dev mode/i);
-  });
-
-  it('renders the live WebSocket updates feature', () => {
-    render(
-      <MemoryRouter>
-        <LoginPage />
-      </MemoryRouter>,
-    );
-    expect(screen.getByText(/live WebSocket updates/i)).toBeInTheDocument();
-  });
-
-  it('renders the 12-stage pipeline feature', () => {
-    render(
-      <MemoryRouter>
-        <LoginPage />
-      </MemoryRouter>,
-    );
-    expect(screen.getByText(/12-stage compilation pipeline/i)).toBeInTheDocument();
+    expect(screen.getByRole('button')).toHaveTextContent(/enter planner/i);
   });
 });
 

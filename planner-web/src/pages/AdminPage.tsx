@@ -355,6 +355,38 @@ export default function AdminPage() {
   }, [eventsData, levelFilter]);
   const errorEventCount = filteredEvents.filter((event) => event.level === 'error').length;
   const warnEventCount = filteredEvents.filter((event) => event.level === 'warn').length;
+  const unavailableProviderCount = status?.providers?.filter((provider) => !provider.available).length ?? 0;
+  const operatorSummary = useMemo(() => {
+    if (!status) {
+      return {
+        title: 'Loading operational posture.',
+        detail: 'Planner is still fetching runtime health and recent operator events.',
+        tone: 'default' as const,
+      };
+    }
+
+    if (status.status !== 'ok' || errorEventCount > 0 || unavailableProviderCount > 0) {
+      return {
+        title: 'Operator attention is required.',
+        detail: `${errorEventCount} visible error event${errorEventCount === 1 ? '' : 's'} and ${unavailableProviderCount} unavailable provider${unavailableProviderCount === 1 ? '' : 's'} are affecting the current posture.`,
+        tone: 'error' as const,
+      };
+    }
+
+    if (warnEventCount > 0) {
+      return {
+        title: 'Runtime is healthy, but warnings need review.',
+        detail: `${warnEventCount} warning event${warnEventCount === 1 ? '' : 's'} are visible in the current working slice.`,
+        tone: 'warning' as const,
+      };
+    }
+
+    return {
+      title: 'Runtime is healthy.',
+      detail: 'No current operator issues are visible from runtime health, provider availability, or the filtered event stream.',
+      tone: 'success' as const,
+    };
+  }, [errorEventCount, status, unavailableProviderCount, warnEventCount]);
 
   return (
     <Layout>
@@ -398,43 +430,63 @@ export default function AdminPage() {
             )}
 
             {status && (
-              <div className="command-info-grid">
-                <div className="command-info-cell">
-                  <span className="command-info-label">Status</span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '7px', marginTop: '6px' }}>
-                    <StatusDot ok={status.status === 'ok'} />
-                    <span style={{
-                      color: status.status === 'ok' ? 'var(--color-success)' : 'var(--color-gold)',
-                      fontSize: '14px',
-                      fontFamily: 'var(--font-mono)',
-                      fontWeight: 700,
-                      textTransform: 'uppercase',
-                    }}>
-                      {status.status}
+              <>
+                <div
+                  className="utility-note"
+                  style={{
+                    margin: 0,
+                    background: operatorSummary.tone === 'error'
+                      ? 'rgba(255,68,68,0.08)'
+                      : operatorSummary.tone === 'warning'
+                        ? 'rgba(255,215,0,0.08)'
+                        : 'rgba(0,255,136,0.08)',
+                    color: operatorSummary.tone === 'error'
+                      ? 'var(--color-error)'
+                      : operatorSummary.tone === 'warning'
+                        ? 'var(--color-gold)'
+                        : 'var(--color-success)',
+                  }}
+                >
+                  <strong>{operatorSummary.title}</strong> {operatorSummary.detail}
+                </div>
+                <div className="command-info-grid">
+                  <div className="command-info-cell">
+                    <span className="command-info-label">Status</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '7px', marginTop: '6px' }}>
+                      <StatusDot ok={status.status === 'ok'} />
+                      <span style={{
+                        color: status.status === 'ok' ? 'var(--color-success)' : 'var(--color-gold)',
+                        fontSize: '14px',
+                        fontFamily: 'var(--font-mono)',
+                        fontWeight: 700,
+                        textTransform: 'uppercase',
+                      }}>
+                        {status.status}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="command-info-cell">
+                    <span className="command-info-label">Version</span>
+                    <span className="command-info-value" style={{ fontSize: 'clamp(1.15rem, 1rem + 0.5vw, 1.5rem)', fontFamily: 'var(--font-mono)' }}>
+                      {status.version}
                     </span>
                   </div>
+                  <div className="command-info-cell">
+                    <span className="command-info-label">Uptime</span>
+                    <span className="command-info-value" style={{ fontSize: 'clamp(1.15rem, 1rem + 0.5vw, 1.5rem)', fontFamily: 'var(--font-mono)' }}>
+                      {formatUptime(status.uptime_secs)}
+                    </span>
+                  </div>
+                  <div className="command-info-cell">
+                    <span className="command-info-label">Active sessions</span>
+                    <span className="command-info-value">{status.sessions.active}</span>
+                  </div>
+                  <div className="command-info-cell">
+                    <span className="command-info-label">Total events</span>
+                    <span className="command-info-value">{status.sessions.total_events}</span>
+                  </div>
                 </div>
-                <div className="command-info-cell">
-                  <span className="command-info-label">Version</span>
-                  <span className="command-info-value" style={{ fontSize: 'clamp(1.15rem, 1rem + 0.5vw, 1.5rem)', fontFamily: 'var(--font-mono)' }}>
-                    {status.version}
-                  </span>
-                </div>
-                <div className="command-info-cell">
-                  <span className="command-info-label">Uptime</span>
-                  <span className="command-info-value" style={{ fontSize: 'clamp(1.15rem, 1rem + 0.5vw, 1.5rem)', fontFamily: 'var(--font-mono)' }}>
-                    {formatUptime(status.uptime_secs)}
-                  </span>
-                </div>
-                <div className="command-info-cell">
-                  <span className="command-info-label">Active sessions</span>
-                  <span className="command-info-value">{status.sessions.active}</span>
-                </div>
-                <div className="command-info-cell">
-                  <span className="command-info-label">Total events</span>
-                  <span className="command-info-value">{status.sessions.total_events}</span>
-                </div>
-              </div>
+              </>
             )}
           </div>
 

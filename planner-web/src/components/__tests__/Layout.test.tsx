@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, it, expect } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import Layout from '../Layout';
@@ -28,13 +29,14 @@ describe('Layout', () => {
     expect(screen.getByText('Planner')).toBeInTheDocument();
   });
 
-  it('renders sidebar navigation links', () => {
+  it('renders persistent shell navigation links', () => {
     renderLayout({});
     expect(screen.getByText('Home')).toBeInTheDocument();
     expect(screen.getByText('Projects')).toBeInTheDocument();
     expect(screen.getByText('Sessions')).toBeInTheDocument();
     expect(screen.getByText('Knowledge')).toBeInTheDocument();
-    expect(screen.getByText('Admin')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /more/i })).toBeInTheDocument();
+    expect(screen.queryByText('Admin')).not.toBeInTheDocument();
   });
 
   it('renders main element for content area', () => {
@@ -55,26 +57,28 @@ describe('Layout', () => {
     expect(sessionsLink?.className).toContain('active');
   });
 
-  it('shows connection status when sessionId is provided and connected', () => {
-    renderLayout({ sessionId: 'abc', isConnected: true });
-    expect(screen.getByText('connected')).toBeInTheDocument();
-  });
-
-  it('shows disconnected status when isConnected is false', () => {
-    renderLayout({ sessionId: 'abc', isConnected: false });
-    expect(screen.getByText('disconnected')).toBeInTheDocument();
-  });
-
-  it('does NOT show connection status when sessionId is undefined', () => {
-    renderLayout({});
-    expect(screen.queryByText('connected')).not.toBeInTheDocument();
-    expect(screen.queryByText('disconnected')).not.toBeInTheDocument();
-  });
-
   it('renders theme toggle button', () => {
     renderLayout({});
     // Theme toggle has aria-label "Switch to light mode" or "Switch to dark mode"
     expect(screen.getByRole('button', { name: /switch to/i })).toBeInTheDocument();
+  });
+
+  it('reveals utility routes from the More control', async () => {
+    const user = userEvent.setup();
+    renderLayout({});
+    await user.click(screen.getByRole('button', { name: /more/i }));
+    expect(screen.getByText('Admin')).toBeInTheDocument();
+    expect(screen.getByText('Events')).toBeInTheDocument();
+    expect(screen.getByText('Blueprint')).toBeInTheDocument();
+    expect(screen.getByText('Discovery')).toBeInTheDocument();
+  });
+
+  it('expands utility routes when a utility destination is active', () => {
+    renderLayout({}, '/admin');
+    const moreButton = screen.getByRole('button', { name: /more/i });
+    expect(moreButton).toHaveAttribute('aria-expanded', 'true');
+    const adminLink = screen.getByText('Admin').closest('a');
+    expect(adminLink?.className).toContain('active');
   });
 });
 

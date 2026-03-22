@@ -161,8 +161,8 @@ const LIFECYCLE_FILTERS: { value: LifecycleFilter; label: string }[] = [
 ];
 
 const PROJECT_SECTION_TABS: { value: ProjectSection; label: string }[] = [
-  { value: 'overview', label: 'Overview' },
   { value: 'inventory', label: 'Inventory' },
+  { value: 'overview', label: 'Overview' },
   { value: 'architecture', label: 'Architecture' },
   { value: 'quality', label: 'Quality' },
   { value: 'activity', label: 'Activity' },
@@ -1047,7 +1047,7 @@ export default function KnowledgeLibraryPage() {
   const [scopedFilters, setScopedFilters] = useState<ScopedFiltersState>(() => readScopedFilters(projectId));
   const [actionBusy, setActionBusy] = useState<'archive' | 'restore' | 'export' | 'branch' | 'create' | null>(null);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
-  const [projectSection, setProjectSection] = useState<ProjectSection>('overview');
+  const [projectSection, setProjectSection] = useState<ProjectSection>('inventory');
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [projectEvents, setProjectEvents] = useState<ProjectEventEntry[]>([]);
   const [rawBlueprintEvents, setRawBlueprintEvents] = useState<BlueprintEventPayload[]>([]);
@@ -1168,7 +1168,7 @@ export default function KnowledgeLibraryPage() {
     setSelectedNodeIds(previous => (previous.length === 0 ? previous : []));
     setActionNotice(previous => (previous === null ? previous : null));
     setProjectEvents([]);
-    setProjectSection('overview');
+    setProjectSection('inventory');
   }, [projectId]);
 
   useEffect(() => {
@@ -1290,7 +1290,7 @@ export default function KnowledgeLibraryPage() {
     if (!isProjectScoped) return filteredNodes;
     switch (projectSection) {
       case 'inventory':
-        return filteredNodes.filter(node => node.node_type === 'component' || node.node_type === 'technology');
+        return filteredNodes;
       case 'architecture':
         return filteredNodes.filter(node => (
           node.node_type === 'decision'
@@ -2800,6 +2800,28 @@ export default function KnowledgeLibraryPage() {
 
           {!loading && !error && blueprint && isProjectScoped && (
             <>
+              <div className="command-surface-subtle" style={{ marginBottom: 'var(--space-4)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
+                  <div style={{ display: 'grid', gap: '4px' }}>
+                    <span className="page-kicker">Knowledge inventory</span>
+                    <h2 className="section-heading" style={{ margin: 0 }}>
+                      {scopedProjectName ?? projectId}
+                    </h2>
+                    <p className="section-copy" style={{ margin: 0 }}>
+                      Inventory stays primary here. Overview, quality, architecture, and activity remain available as supporting project context.
+                    </p>
+                  </div>
+                  <div className="directory-row-meta">
+                    <span className="utility-pill">{visibleNodesForView.length} visible</span>
+                    <span className="utility-pill">{nodes.length} total records</span>
+                    <span className="utility-pill">{lifecycleCounts.active} active</span>
+                    {selectedNodeIds.length > 0 && (
+                      <span className="utility-pill">{selectedNodeIds.length} selected</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
               <div className="knowledge-section-tabs">
                 {PROJECT_SECTION_TABS.map(section => (
                   <button
@@ -3287,7 +3309,7 @@ export default function KnowledgeLibraryPage() {
             </div>
           )}
 
-          {!loading && !error && blueprint && !isProjectLanding && (!isProjectScoped || projectSection !== 'activity') && (
+          {!loading && !error && blueprint && !isProjectLanding && (!isProjectScoped || (projectSection !== 'activity' && projectSection !== 'overview')) && (
             <NodeListPanel
               nodes={visibleNodesForView}
               edges={visibleEdgesForView}
@@ -3300,7 +3322,7 @@ export default function KnowledgeLibraryPage() {
           )}
         </div>
 
-        {!isProjectLanding && (
+        {!isProjectLanding && (!isProjectScoped || projectSection !== 'overview') && (
           <DetailDrawer
             nodeId={selectedNodeId}
             allNodes={nodes}

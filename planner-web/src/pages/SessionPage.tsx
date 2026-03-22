@@ -254,10 +254,12 @@ export default function SessionPage() {
     'restart' | 'retry' | 'rename' | 'duplicate' | 'archive' | 'export' | null
   >(null);
 
-  // Right panel tab: 'belief' | 'draft' | 'events'
-  type RightPanelTab = 'belief' | 'draft' | 'events';
+  // Context shelf tab: 'belief' | 'draft' | 'events' | 'transcript'
+  type RightPanelTab = 'belief' | 'draft' | 'events' | 'transcript';
   const [rightTab, setRightTab] = useState<RightPanelTab>('belief');
   const [eventUnreadCount, setEventUnreadCount] = useState(0);
+  const [contextShelfOpen, setContextShelfOpen] = useState(false);
+  const [questionMapOpen, setQuestionMapOpen] = useState(false);
 
   // Helper to switch to draft tab
   const setShowDraft = (v: boolean) => setRightTab(v ? 'draft' : 'belief');
@@ -311,6 +313,8 @@ export default function SessionPage() {
     previousEventCountRef.current = 0;
     setEventUnreadCount(0);
     autoForegroundEventsRef.current = null;
+    setContextShelfOpen(false);
+    setQuestionMapOpen(false);
   }, [sessionId]);
 
   // Track whether we've triggered attach for an existing session
@@ -693,6 +697,10 @@ export default function SessionPage() {
 
   // ── Right panel content ──
   const rightPanelContent = (() => {
+    if (rightTab === 'transcript') {
+      return <ChatPanel messages={socratic.messages} />;
+    }
+
     if (rightTab === 'events') {
       const retryCategorySummary = retryFeedbackSummary
         ? Object.entries(retryFeedbackSummary.categories)
@@ -790,7 +798,7 @@ export default function SessionPage() {
     }
     if (rightTab === 'draft' && socratic.speculativeDraft) {
       return (
-        <SpeculativeDraftView
+                <SpeculativeDraftView
           draft={socratic.speculativeDraft}
           onBack={() => setRightTab('belief')}
         />
@@ -1055,6 +1063,7 @@ export default function SessionPage() {
   const isPipelineRunning = effectivePhase === 'pipeline_running';
   const isComplete = effectivePhase === 'complete';
   const isError = effectivePhase === 'error';
+  const showFocusedLobby = isInterviewing && Boolean(socratic.currentWorkspace);
   const interviewResumeNotice =
     isExistingSessionRoute &&
     session?.intake_phase === 'interviewing' &&
@@ -1253,207 +1262,394 @@ export default function SessionPage() {
           <PipelineBar stages={socratic.stages} />
         )}
 
-        {/* Split pane */}
-        <div className="split-pane">
-          {/* Left: Chat + Input */}
-          <div className="pane-left">
-            <ChatPanel messages={socratic.messages} />
+        {showFocusedLobby ? (
+          <div style={{ position: 'relative', display: 'grid', minHeight: 0, overflow: 'visible' }}>
+            <SocraticWorkspace
+              workspace={socratic.currentWorkspace!}
+              currentPrompt={socratic.currentPrompt}
+              pendingCategoryId={socratic.pendingCategoryId}
+              workspaceNotice={socratic.workspaceNotice}
+              currentStep={socratic.currentStep}
+              events={socratic.events}
+              disabled={!socratic.isConnected}
+              onFocusCategory={socratic.enterCategory}
+              onShowAll={socratic.backToCategories}
+              onSubmitAnswers={socratic.submitPromptAnswers}
+              onDone={socratic.sendDone}
+              isQuestionMapOpen={questionMapOpen}
+              onToggleQuestionMap={() => setQuestionMapOpen((value) => !value)}
+              isContextOpen={contextShelfOpen}
+              onToggleContext={() => setContextShelfOpen((value) => !value)}
+              contextUnreadCount={eventUnreadCount}
+              hasDraft={Boolean(socratic.speculativeDraft)}
+            />
 
-            {/* Pipeline complete summary */}
-            {isComplete && socratic.pipelineSummary && (
-              <div style={{
-                padding: '12px 16px',
-                background: 'color-mix(in srgb, var(--color-success-highlight) 72%, transparent)',
-                color: 'var(--color-success)',
-                fontSize: '12px',
-                flexShrink: 0,
-                lineHeight: '1.5',
-              }}>
-                <span style={{ fontWeight: 700, letterSpacing: '0.04em' }}>Pipeline complete — </span>
-                {socratic.pipelineSummary}
-              </div>
-            )}
-
-            {isInterviewing ? (
-              <>
-                {socratic.currentWorkspace ? (
-                  <SocraticWorkspace
-                    workspace={socratic.currentWorkspace}
-                    currentPrompt={socratic.currentPrompt}
-                    pendingCategoryId={socratic.pendingCategoryId}
-                    workspaceNotice={socratic.workspaceNotice}
-                    currentStep={socratic.currentStep}
-                    events={socratic.events}
-                    disabled={!socratic.isConnected}
-                    onFocusCategory={socratic.enterCategory}
-                    onShowAll={socratic.backToCategories}
-                    onSubmitAnswers={socratic.submitPromptAnswers}
-                    onDone={socratic.sendDone}
-                  />
-                ) : socratic.currentCategorySnapshot && (
-                  <CategoryNavigator
-                    snapshot={socratic.currentCategorySnapshot}
-                    onEnterCategory={socratic.enterCategory}
-                    onBack={socratic.backToCategories}
-                    onDone={socratic.sendDone}
-                    disabled={!socratic.isConnected}
-                  />
-                )}
-                {!socratic.currentWorkspace && socratic.currentPrompt ? (
-                  <PromptBatchPanel
-                    prompt={socratic.currentPrompt}
-                    onSubmit={(_promptId, answers) => socratic.submitPromptAnswers(answers)}
-                    disabled={!socratic.isConnected}
-                  />
-                ) : !socratic.currentWorkspace && !socratic.currentCategorySnapshot ? (
-                  <InterviewProgressPanel
-                    currentStep={socratic.currentStep}
-                    events={socratic.events}
-                    isConnected={socratic.isConnected}
-                  />
-                ) : null}
-              </>
-            ) : (
-              <MessageInput
-                onSend={() => undefined}
-                intakePhase={effectivePhase}
-                onDone={socratic.sendDone}
-                disabled={true}
-                pipelineRunning={isPipelineRunning}
-                convergencePct={socratic.convergencePct * 100}
-              />
-            )}
-          </div>
-
-          {/* Right: tabbed panel — Belief State | Draft | Events */}
-          <div className="pane-right" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            {/* Tab bar */}
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0',
-                background: 'var(--color-surface-offset)',
-                flexShrink: 0,
-                overflowX: 'auto',
-                padding: '6px 8px',
-              }}
-            >
-              {/* Belief State tab */}
-              <button
-                onClick={() => setRightTab('belief')}
+            {contextShelfOpen && (
+              <aside
+                aria-label="Context shelf"
                 style={{
-                  background: rightTab === 'belief' ? 'var(--color-surface-2)' : 'transparent',
-                  border: 'none',
-                  color: rightTab === 'belief' ? 'var(--color-primary)' : 'var(--color-text-muted)',
-                  fontSize: '11px',
-                  fontWeight: rightTab === 'belief' ? 700 : 400,
-                  fontFamily: 'inherit',
-                  padding: '8px 14px',
-                  cursor: 'pointer',
-                  letterSpacing: '0.03em',
-                  transition: 'color 0.15s, background 0.15s',
-                  borderRadius: '999px',
-                  boxShadow: rightTab === 'belief' ? 'var(--shadow-sm)' : 'none',
+                  position: 'absolute',
+                  top: '96px',
+                  right: '18px',
+                  width: 'min(420px, calc(100vw - 48px))',
+                  maxHeight: 'calc(100% - 112px)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  overflow: 'hidden',
+                  borderRadius: '20px',
+                  background: 'color-mix(in srgb, var(--color-surface) 96%, transparent)',
+                  boxShadow: 'var(--shadow-lg)',
+                  border: '1px solid var(--color-divider)',
+                  zIndex: 25,
                 }}
               >
-                Belief State
-              </button>
-
-              {/* Draft tab */}
-              <button
-                onClick={() => socratic.speculativeDraft && setRightTab('draft')}
-                disabled={!socratic.speculativeDraft}
-                title={!socratic.speculativeDraft ? 'No draft available yet' : undefined}
-                style={{
-                  background: rightTab === 'draft' ? 'var(--color-surface-2)' : 'transparent',
-                  border: 'none',
-                  color: !socratic.speculativeDraft
-                    ? 'var(--color-text-muted)'
-                    : rightTab === 'draft'
-                    ? 'var(--color-primary)'
-                    : 'var(--color-text-muted)',
-                  fontSize: '11px',
-                  fontWeight: rightTab === 'draft' ? 700 : 400,
-                  fontFamily: 'inherit',
-                  padding: '8px 14px',
-                  cursor: !socratic.speculativeDraft ? 'not-allowed' : 'pointer',
-                  letterSpacing: '0.03em',
-                  opacity: !socratic.speculativeDraft ? 0.4 : 1,
-                  transition: 'color 0.15s, background 0.15s, opacity 0.15s',
-                  borderRadius: '999px',
-                  boxShadow: rightTab === 'draft' ? 'var(--shadow-sm)' : 'none',
-                }}
-              >
-                Draft
-                {socratic.speculativeDraft && rightTab !== 'draft' && (
-                  <span
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '12px',
+                    padding: '14px 16px 0',
+                  }}
+                >
+                  <div style={{ display: 'grid', gap: '4px' }}>
+                    <span style={{ fontSize: '11px', color: 'var(--color-primary)', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                      Context shelf
+                    </span>
+                    <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>
+                      Belief state, draft, transcript, and events stay hidden until requested.
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setContextShelfOpen(false)}
                     style={{
-                      marginLeft: '5px',
-                      display: 'inline-block',
-                      width: '5px',
-                      height: '5px',
-                      borderRadius: '50%',
-                      background: 'var(--color-primary)',
-                      verticalAlign: 'middle',
-                      marginBottom: '1px',
-                    }}
-                  />
-                )}
-              </button>
-
-              <button
-                onClick={() => {
-                  setRightTab('events');
-                  setEventUnreadCount(0);
-                }}
-                style={{
-                  background: rightTab === 'events' ? 'var(--color-surface-2)' : 'transparent',
-                  border: 'none',
-                  color: rightTab === 'events' ? 'var(--color-primary)' : 'var(--color-text-muted)',
-                  fontSize: '11px',
-                  fontWeight: rightTab === 'events' ? 700 : 400,
-                  fontFamily: 'inherit',
-                  padding: '8px 14px',
-                  cursor: 'pointer',
-                  letterSpacing: '0.03em',
-                  transition: 'color 0.15s, background 0.15s',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  whiteSpace: 'nowrap',
-                  borderRadius: '999px',
-                  boxShadow: rightTab === 'events' ? 'var(--shadow-sm)' : 'none',
-                }}
-              >
-                Events
-                {eventUnreadCount > 0 && rightTab !== 'events' && (
-                  <span
-                    style={{
-                      display: 'inline-flex',
-                      minWidth: '16px',
-                      justifyContent: 'center',
-                      padding: '0 4px',
+                      background: 'var(--color-surface-2)',
+                      boxShadow: 'inset 0 0 0 1px var(--color-ghost-border)',
                       borderRadius: '999px',
-                      background: 'var(--color-primary-highlight)',
-                      color: 'var(--color-primary)',
-                      fontSize: '10px',
+                      color: 'var(--color-text)',
+                      fontSize: '11px',
                       fontWeight: 700,
-                      lineHeight: 1.4,
+                      padding: '6px 12px',
                     }}
                   >
-                    {eventUnreadCount}
-                  </span>
-                )}
-              </button>
+                    Close
+                  </button>
+                </div>
+
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0',
+                    background: 'var(--color-surface-offset)',
+                    flexShrink: 0,
+                    overflowX: 'auto',
+                    margin: '14px 16px 0',
+                    padding: '6px 8px',
+                    borderRadius: '999px',
+                  }}
+                >
+                  <button
+                    onClick={() => setRightTab('belief')}
+                    style={{
+                      background: rightTab === 'belief' ? 'var(--color-surface-2)' : 'transparent',
+                      border: 'none',
+                      color: rightTab === 'belief' ? 'var(--color-primary)' : 'var(--color-text-muted)',
+                      fontSize: '11px',
+                      fontWeight: rightTab === 'belief' ? 700 : 400,
+                      fontFamily: 'inherit',
+                      padding: '8px 14px',
+                      cursor: 'pointer',
+                      letterSpacing: '0.03em',
+                      transition: 'color 0.15s, background 0.15s',
+                      borderRadius: '999px',
+                      boxShadow: rightTab === 'belief' ? 'var(--shadow-sm)' : 'none',
+                    }}
+                  >
+                    Belief State
+                  </button>
+                  <button
+                    onClick={() => socratic.speculativeDraft && setRightTab('draft')}
+                    disabled={!socratic.speculativeDraft}
+                    title={!socratic.speculativeDraft ? 'No draft available yet' : undefined}
+                    style={{
+                      background: rightTab === 'draft' ? 'var(--color-surface-2)' : 'transparent',
+                      border: 'none',
+                      color: !socratic.speculativeDraft
+                        ? 'var(--color-text-muted)'
+                        : rightTab === 'draft'
+                          ? 'var(--color-primary)'
+                          : 'var(--color-text-muted)',
+                      fontSize: '11px',
+                      fontWeight: rightTab === 'draft' ? 700 : 400,
+                      fontFamily: 'inherit',
+                      padding: '8px 14px',
+                      cursor: !socratic.speculativeDraft ? 'not-allowed' : 'pointer',
+                      letterSpacing: '0.03em',
+                      opacity: !socratic.speculativeDraft ? 0.4 : 1,
+                      transition: 'color 0.15s, background 0.15s, opacity 0.15s',
+                      borderRadius: '999px',
+                      boxShadow: rightTab === 'draft' ? 'var(--shadow-sm)' : 'none',
+                    }}
+                  >
+                    Draft
+                  </button>
+                  <button
+                    onClick={() => setRightTab('transcript')}
+                    style={{
+                      background: rightTab === 'transcript' ? 'var(--color-surface-2)' : 'transparent',
+                      border: 'none',
+                      color: rightTab === 'transcript' ? 'var(--color-primary)' : 'var(--color-text-muted)',
+                      fontSize: '11px',
+                      fontWeight: rightTab === 'transcript' ? 700 : 400,
+                      fontFamily: 'inherit',
+                      padding: '8px 14px',
+                      cursor: 'pointer',
+                      letterSpacing: '0.03em',
+                      transition: 'color 0.15s, background 0.15s',
+                      borderRadius: '999px',
+                      boxShadow: rightTab === 'transcript' ? 'var(--shadow-sm)' : 'none',
+                    }}
+                  >
+                    Transcript
+                  </button>
+                  <button
+                    onClick={() => {
+                      setRightTab('events');
+                      setEventUnreadCount(0);
+                    }}
+                    style={{
+                      background: rightTab === 'events' ? 'var(--color-surface-2)' : 'transparent',
+                      border: 'none',
+                      color: rightTab === 'events' ? 'var(--color-primary)' : 'var(--color-text-muted)',
+                      fontSize: '11px',
+                      fontWeight: rightTab === 'events' ? 700 : 400,
+                      fontFamily: 'inherit',
+                      padding: '8px 14px',
+                      cursor: 'pointer',
+                      letterSpacing: '0.03em',
+                      transition: 'color 0.15s, background 0.15s',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      whiteSpace: 'nowrap',
+                      borderRadius: '999px',
+                      boxShadow: rightTab === 'events' ? 'var(--shadow-sm)' : 'none',
+                    }}
+                  >
+                    Events
+                    {eventUnreadCount > 0 && rightTab !== 'events' && (
+                      <span
+                        style={{
+                          display: 'inline-flex',
+                          minWidth: '16px',
+                          justifyContent: 'center',
+                          padding: '0 4px',
+                          borderRadius: '999px',
+                          background: 'var(--color-primary-highlight)',
+                          color: 'var(--color-primary)',
+                          fontSize: '10px',
+                          fontWeight: 700,
+                          lineHeight: 1.4,
+                        }}
+                      >
+                        {eventUnreadCount}
+                      </span>
+                    )}
+                  </button>
+                </div>
+
+                <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0, padding: '12px 0 0' }}>
+                  {rightPanelContent}
+                </div>
+              </aside>
+            )}
+          </div>
+        ) : (
+          <div className="split-pane">
+            <div className="pane-left">
+              <ChatPanel messages={socratic.messages} />
+
+              {isComplete && socratic.pipelineSummary && (
+                <div style={{
+                  padding: '12px 16px',
+                  background: 'color-mix(in srgb, var(--color-success-highlight) 72%, transparent)',
+                  color: 'var(--color-success)',
+                  fontSize: '12px',
+                  flexShrink: 0,
+                  lineHeight: '1.5',
+                }}>
+                  <span style={{ fontWeight: 700, letterSpacing: '0.04em' }}>Pipeline complete - </span>
+                  {socratic.pipelineSummary}
+                </div>
+              )}
+
+              {isInterviewing ? (
+                <>
+                  {socratic.currentCategorySnapshot && (
+                    <CategoryNavigator
+                      snapshot={socratic.currentCategorySnapshot}
+                      onEnterCategory={socratic.enterCategory}
+                      onBack={socratic.backToCategories}
+                      onDone={socratic.sendDone}
+                      disabled={!socratic.isConnected}
+                    />
+                  )}
+                  {!socratic.currentWorkspace && socratic.currentPrompt ? (
+                    <PromptBatchPanel
+                      prompt={socratic.currentPrompt}
+                      onSubmit={(_promptId, answers) => socratic.submitPromptAnswers(answers)}
+                      disabled={!socratic.isConnected}
+                    />
+                  ) : !socratic.currentWorkspace && !socratic.currentCategorySnapshot ? (
+                    <InterviewProgressPanel
+                      currentStep={socratic.currentStep}
+                      events={socratic.events}
+                      isConnected={socratic.isConnected}
+                    />
+                  ) : null}
+                </>
+              ) : (
+                <MessageInput
+                  onSend={() => undefined}
+                  intakePhase={effectivePhase}
+                  onDone={socratic.sendDone}
+                  disabled={true}
+                  pipelineRunning={isPipelineRunning}
+                  convergencePct={socratic.convergencePct * 100}
+                />
+              )}
             </div>
 
-            {/* Panel content */}
-            <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-              {rightPanelContent}
+            <div className="pane-right" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0',
+                  background: 'var(--color-surface-offset)',
+                  flexShrink: 0,
+                  overflowX: 'auto',
+                  padding: '6px 8px',
+                }}
+              >
+                <button
+                  onClick={() => setRightTab('belief')}
+                  style={{
+                    background: rightTab === 'belief' ? 'var(--color-surface-2)' : 'transparent',
+                    border: 'none',
+                    color: rightTab === 'belief' ? 'var(--color-primary)' : 'var(--color-text-muted)',
+                    fontSize: '11px',
+                    fontWeight: rightTab === 'belief' ? 700 : 400,
+                    fontFamily: 'inherit',
+                    padding: '8px 14px',
+                    cursor: 'pointer',
+                    letterSpacing: '0.03em',
+                    transition: 'color 0.15s, background 0.15s',
+                    borderRadius: '999px',
+                    boxShadow: rightTab === 'belief' ? 'var(--shadow-sm)' : 'none',
+                  }}
+                >
+                  Belief State
+                </button>
+                <button
+                  onClick={() => socratic.speculativeDraft && setRightTab('draft')}
+                  disabled={!socratic.speculativeDraft}
+                  title={!socratic.speculativeDraft ? 'No draft available yet' : undefined}
+                  style={{
+                    background: rightTab === 'draft' ? 'var(--color-surface-2)' : 'transparent',
+                    border: 'none',
+                    color: !socratic.speculativeDraft
+                      ? 'var(--color-text-muted)'
+                      : rightTab === 'draft'
+                        ? 'var(--color-primary)'
+                        : 'var(--color-text-muted)',
+                    fontSize: '11px',
+                    fontWeight: rightTab === 'draft' ? 700 : 400,
+                    fontFamily: 'inherit',
+                    padding: '8px 14px',
+                    cursor: !socratic.speculativeDraft ? 'not-allowed' : 'pointer',
+                    letterSpacing: '0.03em',
+                    opacity: !socratic.speculativeDraft ? 0.4 : 1,
+                    transition: 'color 0.15s, background 0.15s, opacity 0.15s',
+                    borderRadius: '999px',
+                    boxShadow: rightTab === 'draft' ? 'var(--shadow-sm)' : 'none',
+                  }}
+                >
+                  Draft
+                </button>
+                <button
+                  onClick={() => setRightTab('transcript')}
+                  style={{
+                    background: rightTab === 'transcript' ? 'var(--color-surface-2)' : 'transparent',
+                    border: 'none',
+                    color: rightTab === 'transcript' ? 'var(--color-primary)' : 'var(--color-text-muted)',
+                    fontSize: '11px',
+                    fontWeight: rightTab === 'transcript' ? 700 : 400,
+                    fontFamily: 'inherit',
+                    padding: '8px 14px',
+                    cursor: 'pointer',
+                    letterSpacing: '0.03em',
+                    transition: 'color 0.15s, background 0.15s',
+                    borderRadius: '999px',
+                    boxShadow: rightTab === 'transcript' ? 'var(--shadow-sm)' : 'none',
+                  }}
+                >
+                  Transcript
+                </button>
+                <button
+                  onClick={() => {
+                    setRightTab('events');
+                    setEventUnreadCount(0);
+                  }}
+                  style={{
+                    background: rightTab === 'events' ? 'var(--color-surface-2)' : 'transparent',
+                    border: 'none',
+                    color: rightTab === 'events' ? 'var(--color-primary)' : 'var(--color-text-muted)',
+                    fontSize: '11px',
+                    fontWeight: rightTab === 'events' ? 700 : 400,
+                    fontFamily: 'inherit',
+                    padding: '8px 14px',
+                    cursor: 'pointer',
+                    letterSpacing: '0.03em',
+                    transition: 'color 0.15s, background 0.15s',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    whiteSpace: 'nowrap',
+                    borderRadius: '999px',
+                    boxShadow: rightTab === 'events' ? 'var(--shadow-sm)' : 'none',
+                  }}
+                >
+                  Events
+                  {eventUnreadCount > 0 && rightTab !== 'events' && (
+                    <span
+                      style={{
+                        display: 'inline-flex',
+                        minWidth: '16px',
+                        justifyContent: 'center',
+                        padding: '0 4px',
+                        borderRadius: '999px',
+                        background: 'var(--color-primary-highlight)',
+                        color: 'var(--color-primary)',
+                        fontSize: '10px',
+                        fontWeight: 700,
+                        lineHeight: 1.4,
+                      }}
+                    >
+                      {eventUnreadCount}
+                    </span>
+                  )}
+                </button>
+              </div>
+
+              <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                {rightPanelContent}
+              </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
     </Layout>
   );

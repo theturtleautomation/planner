@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, useParams } from 'react-router-dom';
 import { AUTH0_ENABLED } from './config.ts';
+import EntryShell from './components/EntryShell.tsx';
 import Dashboard from './pages/Dashboard.tsx';
 import SessionPage from './pages/SessionPage.tsx';
 import AdminPage from './pages/AdminPage.tsx';
@@ -28,13 +29,13 @@ const LazyRootPageAuth0 = lazy(() =>
 
 function AuthLoadingFallback() {
   return (
-    <div style={{
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      height: '100vh', background: 'var(--color-bg, #111110)', color: 'var(--color-text-muted, #8a8987)',
-      fontFamily: "'Inter', system-ui, sans-serif", fontSize: '13px',
-    }}>
-      loading…
-    </div>
+    <EntryShell
+      badge="Planner"
+      kicker="Loading"
+      title="Preparing workspace"
+      description="Planner is loading the route shell and preparing the current entry flow."
+      note="This should only take a moment."
+    />
   );
 }
 
