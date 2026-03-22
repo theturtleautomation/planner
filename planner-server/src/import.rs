@@ -615,8 +615,14 @@ impl ProjectImportStore {
 
         self.update_selection(job_id, |selection| {
             if included {
-                selection.excluded_node_ids.retain(|current| current != node_id);
-            } else if !selection.excluded_node_ids.iter().any(|current| current == node_id) {
+                selection
+                    .excluded_node_ids
+                    .retain(|current| current != node_id);
+            } else if !selection
+                .excluded_node_ids
+                .iter()
+                .any(|current| current == node_id)
+            {
                 selection.excluded_node_ids.push(node_id.to_string());
             }
             selection.excluded_node_ids.sort();
@@ -702,11 +708,12 @@ impl ProjectImportStore {
         Ok(())
     }
 
-    fn persist_selection(
-        &self,
-        selection: &ProjectImportReviewSelection,
-    ) -> std::io::Result<()> {
-        persist_record(&self.selections_dir, &selection.job_id.to_string(), selection)?;
+    fn persist_selection(&self, selection: &ProjectImportReviewSelection) -> std::io::Result<()> {
+        persist_record(
+            &self.selections_dir,
+            &selection.job_id.to_string(),
+            selection,
+        )?;
         Ok(())
     }
 

@@ -226,7 +226,15 @@ All configuration lives in `/etc/planner/planner.env`. The file is preserved acr
 - **Server** — Port, bind address
 - **Logging** — `RUST_LOG` with per-crate granularity
 - **Authentication** — Auth0 JWT (optional; omit for dev mode)
-- **LLM Providers** — No API keys needed; authenticate CLIs as the service user:
+- **LLM Providers** — No API keys needed. `deploy/install.sh` now attempts a
+  best-effort import of provider auth credentials from the invoking sudo user's
+  home into the isolated service homes under
+  `/opt/planner/cli-home/`. If no usable auth is present there, authenticate
+  the CLIs as the service user. The installer intentionally does not import
+  personal Claude/Gemini/Codex config, plugins, MCP servers, or history. Once
+  a provider has been logged in successfully inside `/opt/planner/cli-home/`,
+  future `--update` runs preserve that service-local auth instead of
+  overwriting it from the invoking user's home:
   ```bash
   sudo -u planner /bin/bash --noprofile --norc -lc 'cd /opt/planner && HOME=/opt/planner/cli-home/claude /opt/planner/bin/claude login'
   sudo -u planner /bin/bash --noprofile --norc -lc 'cd /opt/planner && HOME=/opt/planner/cli-home/gemini /opt/planner/bin/gemini'

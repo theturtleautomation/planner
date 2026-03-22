@@ -1409,7 +1409,10 @@ fn build_import_review_selection_response(
         .iter()
         .filter(|node| excluded.contains(&node.id().to_string()))
         .count();
-    let included_node_count = draft.discovered_nodes.len().saturating_sub(excluded_node_count);
+    let included_node_count = draft
+        .discovered_nodes
+        .len()
+        .saturating_sub(excluded_node_count);
     ProjectImportReviewSelectionResponse {
         job_id: selection.job_id,
         excluded_node_ids: selection.excluded_node_ids.clone(),
@@ -1537,20 +1540,23 @@ fn build_import_history_selection_summary(
     import_job: &ProjectImportJob,
     draft: &ProjectImportDraft,
 ) -> Option<(usize, usize)> {
-    state.imports.get_review_selection(import_job.id).map(|selection| {
-        let node_ids = draft
-            .discovered_nodes
-            .iter()
-            .map(|node| node.id().to_string())
-            .collect::<std::collections::HashSet<_>>();
-        let excluded_count = selection
-            .excluded_node_ids
-            .into_iter()
-            .filter(|node_id| node_ids.contains(node_id))
-            .count();
-        let included_count = draft.discovered_nodes.len().saturating_sub(excluded_count);
-        (included_count, excluded_count)
-    })
+    state
+        .imports
+        .get_review_selection(import_job.id)
+        .map(|selection| {
+            let node_ids = draft
+                .discovered_nodes
+                .iter()
+                .map(|node| node.id().to_string())
+                .collect::<std::collections::HashSet<_>>();
+            let excluded_count = selection
+                .excluded_node_ids
+                .into_iter()
+                .filter(|node_id| node_ids.contains(node_id))
+                .count();
+            let included_count = draft.discovered_nodes.len().saturating_sub(excluded_count);
+            (included_count, excluded_count)
+        })
 }
 
 fn build_project_import_history_response(
@@ -2805,7 +2811,10 @@ async fn restore_project_import_history_entry_for_review(
 
     let restored_job = state.imports.get_job(restore_job.id).ok_or_else(|| {
         internal_error_response(
-            format!("Restored applied import review job {} disappeared", restore_job.id),
+            format!(
+                "Restored applied import review job {} disappeared",
+                restore_job.id
+            ),
             "PROJECT_IMPORT_RESTORE_FOR_REVIEW_JOB_MISSING",
         )
     })?;
@@ -2853,7 +2862,10 @@ async fn update_project_import_review_selection(
         .iter()
         .any(|node| node.id().to_string() == req.node_id)
     {
-        return Err(import_review_node_not_found_response(&project_ref, &req.node_id));
+        return Err(import_review_node_not_found_response(
+            &project_ref,
+            &req.node_id,
+        ));
     }
 
     state
@@ -6978,7 +6990,8 @@ mod tests {
                 analysis_summary: "Pending import with exclusions.".into(),
                 source_metadata: crate::import::ImportDraftSourceMetadata {
                     provider: ImportProvider::GitHub,
-                    canonical_ref: "https://github.com/example/import-history-selection-summary".into(),
+                    canonical_ref: "https://github.com/example/import-history-selection-summary"
+                        .into(),
                     local_root: format!("/tmp/imports/{}", project.slug),
                     default_branch: Some("main".into()),
                     head_revision: Some("deadbeef".into()),
@@ -7002,12 +7015,7 @@ mod tests {
             .unwrap();
         let _ = state
             .imports
-            .set_review_node_included(
-                pending_job.id,
-                project.id,
-                "tech-rust-b2c3d4e5",
-                false,
-            )
+            .set_review_node_included(pending_job.id, project.id, "tech-rust-b2c3d4e5", false)
             .unwrap();
 
         let app = routes(state);
@@ -7131,13 +7139,20 @@ mod tests {
         let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
             .await
             .unwrap();
-        let payload: ProjectImportHistoryComparisonResponse = serde_json::from_slice(&body).unwrap();
+        let payload: ProjectImportHistoryComparisonResponse =
+            serde_json::from_slice(&body).unwrap();
         assert_eq!(payload.selected_entry.import_job.id, applied_job.id);
         assert_eq!(payload.current_import_job.id, pending_job.id);
         assert!(!payload.selected_entry_uses_selection_filter);
         assert!(!payload.current_import_job_uses_selection_filter);
-        assert_eq!(payload.diff_summary.current_job_id, pending_job.id.to_string());
-        assert_eq!(payload.diff_summary.compared_to_job_id, applied_job.id.to_string());
+        assert_eq!(
+            payload.diff_summary.current_job_id,
+            pending_job.id.to_string()
+        );
+        assert_eq!(
+            payload.diff_summary.compared_to_job_id,
+            applied_job.id.to_string()
+        );
         assert_eq!(payload.diff_summary.added_nodes.len(), 1);
         assert_eq!(payload.diff_summary.added_nodes[0].node_name, "Rust");
         assert!(payload.diff_summary.removed_nodes.is_empty());
@@ -7147,10 +7162,14 @@ mod tests {
     #[tokio::test]
     async fn test_compare_project_import_history_entry_rejects_missing_historical_draft() {
         let state = test_state();
-        let project =
-            state
-                .projects
-                .create("dev|local", "Import Compare Missing", None, None, Vec::new(), None);
+        let project = state.projects.create(
+            "dev|local",
+            "Import Compare Missing",
+            None,
+            None,
+            Vec::new(),
+            None,
+        );
         let seeded_pending = state.sessions.create("dev|local");
         let (pending_job, _) = state
             .imports
@@ -7215,10 +7234,14 @@ mod tests {
     #[tokio::test]
     async fn test_compare_project_import_history_entries_returns_pair_diff_without_mutation() {
         let state = test_state();
-        let project =
-            state
-                .projects
-                .create("dev|local", "Import Pair Compare", None, None, Vec::new(), None);
+        let project = state.projects.create(
+            "dev|local",
+            "Import Pair Compare",
+            None,
+            None,
+            Vec::new(),
+            None,
+        );
         let seeded_first = state.sessions.create("dev|local");
         let (first_job, _) = state
             .imports
@@ -7320,8 +7343,14 @@ mod tests {
         assert_eq!(payload.compared_entry.import_job.id, second_job.id);
         assert!(!payload.baseline_entry_uses_selection_filter);
         assert!(!payload.compared_entry_uses_selection_filter);
-        assert_eq!(payload.diff_summary.current_job_id, second_job.id.to_string());
-        assert_eq!(payload.diff_summary.compared_to_job_id, first_job.id.to_string());
+        assert_eq!(
+            payload.diff_summary.current_job_id,
+            second_job.id.to_string()
+        );
+        assert_eq!(
+            payload.diff_summary.compared_to_job_id,
+            first_job.id.to_string()
+        );
         assert!(payload.diff_summary.added_nodes.is_empty());
         assert_eq!(payload.diff_summary.removed_nodes.len(), 1);
         assert_eq!(payload.diff_summary.removed_nodes[0].node_name, "Rust");
@@ -7502,12 +7531,7 @@ mod tests {
             .unwrap();
         let _ = state
             .imports
-            .set_review_node_included(
-                pending_job.id,
-                project.id,
-                "tech-rust-b2c3d4e5",
-                false,
-            )
+            .set_review_node_included(pending_job.id, project.id, "tech-rust-b2c3d4e5", false)
             .unwrap();
 
         let counts_before = state.blueprints.counts();
@@ -7525,7 +7549,8 @@ mod tests {
         let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
             .await
             .unwrap();
-        let payload: ProjectImportHistoryComparisonResponse = serde_json::from_slice(&body).unwrap();
+        let payload: ProjectImportHistoryComparisonResponse =
+            serde_json::from_slice(&body).unwrap();
         assert!(payload.current_import_job_uses_selection_filter);
         assert!(!payload.selected_entry_uses_selection_filter);
         assert!(payload.diff_summary.added_nodes.is_empty());
@@ -7589,12 +7614,7 @@ mod tests {
             .unwrap();
         let _ = state
             .imports
-            .set_review_node_included(
-                baseline_job.id,
-                project.id,
-                "tech-rust-b2c3d4e5",
-                false,
-            )
+            .set_review_node_included(baseline_job.id, project.id, "tech-rust-b2c3d4e5", false)
             .unwrap();
 
         let seeded_compared = state.sessions.create("dev|local");
@@ -8304,7 +8324,10 @@ mod tests {
 
         let req = Request::builder()
             .method("POST")
-            .uri(format!("/projects/{}/import-review-selection", project.slug))
+            .uri(format!(
+                "/projects/{}/import-review-selection",
+                project.slug
+            ))
             .header("content-type", "application/json")
             .body(Body::from(
                 serde_json::json!({
@@ -8814,7 +8837,8 @@ mod tests {
     async fn test_restore_project_import_history_entry_for_review_reopens_applied_job_without_mutating_blueprint(
     ) {
         let state = test_state();
-        let (project, applied_job, applied_draft) = seed_review_pending_import(&state, "Imported Repo");
+        let (project, applied_job, applied_draft) =
+            seed_review_pending_import(&state, "Imported Repo");
         let app = routes(state.clone());
 
         let first_apply = Request::builder()

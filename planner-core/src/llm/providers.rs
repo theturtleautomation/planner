@@ -20,6 +20,8 @@
 use async_trait::async_trait;
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
@@ -48,7 +50,7 @@ const DEFAULT_TIMEOUT_SECS: u64 = 300;
 //
 //   1. env_clear() — start with a blank environment (no inherited vars)
 //   2. Inject only the vars each CLI needs (PATH, HOME, auth config paths)
-//   3. Set provider-specific isolation flags (CLAUDE_CODE_SIMPLE, -e none, etc.)
+//   3. Set provider-specific isolation flags (-e none, explicit MCP disable, etc.)
 //   4. Set CWD to a known-empty directory (/opt/planner/cli-sandbox)
 //
 // Auth credentials are stored in /opt/planner/cli-home/<provider>/ and
@@ -79,6 +81,9 @@ const GEMINI_EMPTY_TOOLS_REPLACEMENTS: [(&str, &str); 2] = [
         "return toolDeclarations.length > 0 ? [{ functionDeclarations: toolDeclarations }] : undefined;",
     ),
 ];
+const CLAUDE_CONFIG_FILE_NAME: &str = ".claude.json";
+const CLAUDE_CONFIG_BACKUP_PREFIX: &str = ".claude.json.backup.";
+const CLAUDE_MINIMAL_CONFIG: &str = "{}\n";
 
 /// Ensure the CLI sandbox directory exists and is a git repository.
 ///
@@ -167,6 +172,53 @@ pub fn ensure_sandbox_git_init() {
     });
 }
 
+fn latest_claude_config_backup(backups_dir: &Path) -> io::Result<Option<PathBuf>> {
+    if !backups_dir.exists() {
+        return Ok(None);
+    }
+
+    let mut latest: Option<(std::time::SystemTime, PathBuf)> = None;
+    for entry in fs::read_dir(backups_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if !name.starts_with(CLAUDE_CONFIG_BACKUP_PREFIX) {
+            continue;
+        }
+
+        let modified = entry
+            .metadata()
+            .and_then(|metadata| metadata.modified())
+            .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+
+        match &latest {
+            Some((current_modified, _)) if modified <= *current_modified => {}
+            _ => latest = Some((modified, path)),
+        }
+    }
+
+    Ok(latest.map(|(_, path)| path))
+}
+
+fn ensure_claude_runtime_config(config_dir: &Path) -> io::Result<()> {
+    fs::create_dir_all(config_dir)?;
+
+    let config_path = config_dir.join(CLAUDE_CONFIG_FILE_NAME);
+    if config_path.exists() {
+        return Ok(());
+    }
+
+    let backups_dir = config_dir.join("backups");
+    if let Some(backup_path) = latest_claude_config_backup(&backups_dir)? {
+        fs::copy(&backup_path, &config_path)?;
+        return Ok(());
+    }
+
+    fs::write(config_path, CLAUDE_MINIMAL_CONFIG)
+}
+
 /// Execution environment for an isolated CLI invocation.
 #[derive(Debug, Clone)]
 pub struct CliEnvironment {
@@ -208,8 +260,6 @@ impl CliEnvironment {
     /// Build an isolated environment for the Anthropic `claude` CLI.
     ///
     /// Isolation strategy:
-    /// - `CLAUDE_CODE_SIMPLE=true` — disables MCP servers, plugins, hooks,
-    ///   CLAUDE.md loading, session memory, attachments. Fully minimal mode.
     /// - `CLAUDE_CONFIG_DIR` — points to our isolated config directory
     ///   where auth credentials are stored.
     /// - `HOME` — set to the provider's isolated home so ~/.claude.json
@@ -222,9 +272,10 @@ impl CliEnvironment {
 
         env.insert("HOME".into(), home.clone());
         env.insert("CLAUDE_CONFIG_DIR".into(), format!("{}/.claude", home));
-        env.insert("CLAUDE_CODE_SIMPLE".into(), "true".into());
 
-        // Disable MCP servers explicitly (belt and suspenders with SIMPLE mode)
+        // Disable Claude.ai MCP servers explicitly while preserving the
+        // normal auth/runtime path. CLAUDE_CODE_SIMPLE caused authenticated
+        // headless calls to fail in the isolated service home.
         env.insert("ENABLE_CLAUDEAI_MCP_SERVERS".into(), "false".into());
 
         CliEnvironment {
@@ -731,6 +782,15 @@ struct ClaudeResult {
 #[async_trait]
 impl LlmClient for AnthropicCliClient {
     async fn complete(&self, request: CompletionRequest) -> Result<CompletionResponse, LlmError> {
+        if let Some(config_dir) = self.env.env.get("CLAUDE_CONFIG_DIR") {
+            ensure_claude_runtime_config(Path::new(config_dir)).map_err(|error| {
+                LlmError::Other(format!(
+                    "Failed to prepare Claude runtime config in {}: {}",
+                    config_dir, error
+                ))
+            })?;
+        }
+
         let prompt = build_prompt(&request);
 
         // Use acceptEdits permission mode: auto-approves file edits,
@@ -1478,6 +1538,52 @@ const tools = toolDeclarations.length > 0 ? [{ functionDeclarations: toolDeclara
 
         let found = find_gemini_package_root(binary.to_str().unwrap()).expect("package root");
         assert_eq!(found, package_root);
+
+        let _ = fs::remove_dir_all(temp_root);
+    }
+
+    #[test]
+    fn ensure_claude_runtime_config_restores_latest_backup_when_missing() {
+        let temp_root = std::env::temp_dir().join(format!(
+            "planner-claude-config-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let config_dir = temp_root.join(".claude");
+        let backups_dir = config_dir.join("backups");
+        fs::create_dir_all(&backups_dir).unwrap();
+
+        fs::write(
+            backups_dir.join(".claude.json.backup.old"),
+            "{\"restored\":\"old\"}\n",
+        )
+        .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        fs::write(
+            backups_dir.join(".claude.json.backup.new"),
+            "{\"restored\":\"new\"}\n",
+        )
+        .unwrap();
+
+        ensure_claude_runtime_config(&config_dir).unwrap();
+
+        let config = fs::read_to_string(config_dir.join(".claude.json")).unwrap();
+        assert_eq!(config, "{\"restored\":\"new\"}\n");
+
+        let _ = fs::remove_dir_all(temp_root);
+    }
+
+    #[test]
+    fn ensure_claude_runtime_config_writes_minimal_file_without_backup() {
+        let temp_root = std::env::temp_dir().join(format!(
+            "planner-claude-config-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let config_dir = temp_root.join(".claude");
+
+        ensure_claude_runtime_config(&config_dir).unwrap();
+
+        let config = fs::read_to_string(config_dir.join(".claude.json")).unwrap();
+        assert_eq!(config, CLAUDE_MINIMAL_CONFIG);
 
         let _ = fs::remove_dir_all(temp_root);
     }

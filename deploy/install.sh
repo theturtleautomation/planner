@@ -110,6 +110,9 @@ setup_cli_isolation() {
 
     # Claude
     mkdir -p "${cli_home}/claude/.claude"
+    cat > "${cli_home}/claude/.claude/.claude.json" << 'CLAUDE_CONFIG'
+{}
+CLAUDE_CONFIG
 
     # Gemini
     mkdir -p "${cli_home}/gemini/.gemini"
@@ -250,6 +253,109 @@ CODEX_CONFIG
     chown -R "${SERVICE_USER}:${SERVICE_USER}" "${sandbox}"
 
     info "CLI isolation ready: ${cli_home}"
+}
+
+resolve_invoking_user_home() {
+    local source_user="${SUDO_USER:-}"
+    if [[ -z "${source_user}" || "${source_user}" == "root" || "${source_user}" == "${SERVICE_USER}" ]]; then
+        return 1
+    fi
+
+    local home
+    home="$(getent passwd "${source_user}" | cut -d: -f6)"
+    if [[ -z "${home}" || ! -d "${home}" ]]; then
+        return 1
+    fi
+
+    printf '%s\n' "${home}"
+}
+
+copy_auth_file_if_present() {
+    local source_path="${1}"
+    local target_path="${2}"
+
+    if [[ ! -f "${source_path}" || ! -s "${source_path}" ]]; then
+        return 1
+    fi
+
+    mkdir -p "$(dirname "${target_path}")"
+    cp "${source_path}" "${target_path}"
+    chmod 600 "${target_path}" 2>/dev/null || true
+    return 0
+}
+
+target_auth_exists() {
+    local target_path="${1}"
+    [[ -f "${target_path}" && -s "${target_path}" ]]
+}
+
+import_cli_auth_from_invoking_user() {
+    local source_home
+    if ! source_home="$(resolve_invoking_user_home)"; then
+        info "No invoking user home available for auth import; keeping isolated CLI homes empty."
+        return 0
+    fi
+
+    local cli_home="${INSTALL_DIR}/cli-home"
+    local imported_any=0
+
+    info "Importing CLI auth from ${source_home} into isolated service homes when available..."
+
+    # Claude: keep the service home free of personal config/MCP state on first
+    # import, but never clobber a service-local login that already exists.
+    # Once the service user authenticates successfully, /opt/planner/cli-home is
+    # the source of truth and should survive future --update runs.
+    local claude_imported=0
+    if target_auth_exists "${cli_home}/claude/.claude/.credentials.json"; then
+        info "  Preserving existing Claude auth in isolated service home"
+    else
+        rm -f "${cli_home}/claude/.claude/.claude.json" "${cli_home}/claude/.claude.json"
+        rm -rf "${cli_home}/claude/.claude/plugins" "${cli_home}/claude/.claude/agents" "${cli_home}/claude/.claude/commands" "${cli_home}/claude/.claude/commands.backup_20250914_000545"
+        cat > "${cli_home}/claude/.claude/.claude.json" << 'CLAUDE_CONFIG'
+{}
+CLAUDE_CONFIG
+
+        # Claude: import only the OAuth credential file.
+        copy_auth_file_if_present "${source_home}/.claude/.credentials.json" "${cli_home}/claude/.claude/.credentials.json" && claude_imported=1
+    fi
+    if [[ ${claude_imported} -eq 1 ]]; then
+        info "  Imported Claude auth credentials"
+        imported_any=1
+    fi
+
+    # Gemini: OAuth credentials are the portable auth boundary.
+    local gemini_imported=0
+    if target_auth_exists "${cli_home}/gemini/.gemini/oauth_creds.json" || target_auth_exists "${cli_home}/gemini/.gemini/google_accounts.json"; then
+        info "  Preserving existing Gemini auth in isolated service home"
+    else
+        copy_auth_file_if_present "${source_home}/.gemini/oauth_creds.json" "${cli_home}/gemini/.gemini/oauth_creds.json" && gemini_imported=1
+        copy_auth_file_if_present "${source_home}/.gemini/google_accounts.json" "${cli_home}/gemini/.gemini/google_accounts.json" && gemini_imported=1
+    fi
+    if [[ ${gemini_imported} -eq 1 ]]; then
+        info "  Imported Gemini OAuth artifacts"
+        imported_any=1
+    fi
+
+    # Codex: import auth only, not the user's broader config/rules/history.
+    local codex_imported=0
+    if target_auth_exists "${cli_home}/codex/.codex/auth.json" || target_auth_exists "${cli_home}/codex/.codex/.credentials.json"; then
+        info "  Preserving existing Codex auth in isolated service home"
+    else
+        copy_auth_file_if_present "${source_home}/.codex/auth.json" "${cli_home}/codex/.codex/auth.json" && codex_imported=1
+        copy_auth_file_if_present "${source_home}/.codex/.credentials.json" "${cli_home}/codex/.codex/.credentials.json" && codex_imported=1
+    fi
+    if [[ ${codex_imported} -eq 1 ]]; then
+        info "  Imported Codex auth artifacts"
+        imported_any=1
+    fi
+
+    # Re-point the Gemini CGC profile at the possibly imported auth files.
+    ln -sfn "${cli_home}/gemini/.gemini/oauth_creds.json" "${cli_home}/gemini-codegraph/.gemini/oauth_creds.json"
+    ln -sfn "${cli_home}/gemini/.gemini/google_accounts.json" "${cli_home}/gemini-codegraph/.gemini/google_accounts.json"
+
+    if [[ ${imported_any} -eq 0 ]]; then
+        warn "  No provider auth artifacts were found under ${source_home}"
+    fi
 }
 
 # ---------------------------------------------------------------------------
@@ -625,7 +731,41 @@ GEMINI_CGC_WRAPPER
 # probe for Gemini so install/update output distinguishes "credential files
 # exist" from "Planner can actually invoke the CLI".
 #
+CLAUDE_PROBE_ERROR=""
 GEMINI_PROBE_ERROR=""
+
+probe_claude_runtime() {
+    local planner_bin="${INSTALL_DIR}/bin"
+    local cli_home="${INSTALL_DIR}/cli-home"
+    local timeout_cmd=()
+    local output=""
+    local status=0
+    local shell_cmd="cd ${INSTALL_DIR}/cli-sandbox && HOME=${cli_home}/claude CLAUDE_CONFIG_DIR=${cli_home}/claude/.claude ENABLE_CLAUDEAI_MCP_SERVERS=false ${planner_bin}/claude -p \"Reply with OK only.\" --permission-mode acceptEdits --output-format stream-json --verbose --model claude-opus-4-6"
+
+    CLAUDE_PROBE_ERROR=""
+
+    if ! [[ -x "${planner_bin}/claude" ]]; then
+        CLAUDE_PROBE_ERROR="claude binary not found at ${planner_bin}/claude"
+        return 1
+    fi
+
+    if command -v timeout >/dev/null 2>&1; then
+        timeout_cmd=(timeout 30s)
+    fi
+
+    output="$("${timeout_cmd[@]}" sudo -u "${SERVICE_USER}" /bin/bash --noprofile --norc -lc "${shell_cmd}" 2>&1)"
+    status=$?
+    if [[ ${status} -eq 0 ]]; then
+        if grep -q '"type":"result"' <<< "${output}"; then
+            return 0
+        fi
+        CLAUDE_PROBE_ERROR="runtime probe returned unexpected output: $(echo "${output}" | tr '\n' ' ' | sed 's/[[:space:]]\\+/ /g' | cut -c1-220)"
+        return 1
+    fi
+
+    CLAUDE_PROBE_ERROR="runtime probe failed (exit ${status}): $(echo "${output}" | tr '\n' ' ' | sed 's/[[:space:]]\\+/ /g' | cut -c1-220)"
+    return 1
+}
 
 probe_gemini_runtime() {
     local planner_bin="${INSTALL_DIR}/bin"
@@ -646,7 +786,9 @@ probe_gemini_runtime() {
         timeout_cmd=(timeout 30s)
     fi
 
-    if output="$("${timeout_cmd[@]}" sudo -u "${SERVICE_USER}" /bin/bash --noprofile --norc -lc "${shell_cmd}" 2>&1)"; then
+    output="$("${timeout_cmd[@]}" sudo -u "${SERVICE_USER}" /bin/bash --noprofile --norc -lc "${shell_cmd}" 2>&1)"
+    status=$?
+    if [[ ${status} -eq 0 ]]; then
         if grep -qE '"(response|result)"[[:space:]]*:' <<< "${output}"; then
             return 0
         fi
@@ -654,7 +796,6 @@ probe_gemini_runtime() {
         return 1
     fi
 
-    status=$?
     GEMINI_PROBE_ERROR="runtime probe failed (exit ${status}): $(echo "${output}" | tr '\n' ' ' | sed 's/[[:space:]]\\+/ /g' | cut -c1-220)"
     return 1
 }
@@ -673,9 +814,15 @@ check_llm_auth() {
     # --- Claude ---
     if [[ -x "${planner_bin}/claude" ]]; then
         installed=$((installed + 1))
-        if [[ -d "${cli_home}/claude/.claude" ]] &&              find "${cli_home}/claude/.claude" -name "*.json" -size +0c 2>/dev/null | grep -q .; then
-            info "  \u2713 claude  — credentials found in ${cli_home}/claude/"
-            authed=$((authed + 1))
+        if [[ -d "${cli_home}/claude/.claude" ]] && find "${cli_home}/claude/.claude" -name "*.json" -size +0c 2>/dev/null | grep -q .; then
+            if probe_claude_runtime; then
+                info "  \u2713 claude  — credentials found and headless prompt probe passed"
+                authed=$((authed + 1))
+            else
+                warn "  \u26a0 claude  — credentials found, but headless prompt probe failed"
+                warn "      ${CLAUDE_PROBE_ERROR}"
+                unhealthy+=(claude)
+            fi
         else
             warn "  \u2717 claude  — NOT AUTHENTICATED"
             unauthenticated+=(claude)
@@ -739,6 +886,9 @@ check_llm_auth() {
         info "Gemini health check command:"
         warn "  sudo -u ${SERVICE_USER} /bin/bash --noprofile --norc -lc 'cd ${INSTALL_DIR} && HOME=${cli_home}/gemini GEMINI_CLI_SYSTEM_SETTINGS_PATH=${cli_home}/gemini/settings.json ${planner_bin}/gemini --prompt \"Reply with OK only.\" --output-format json --model gemini-2.5-flash-lite'"
         echo ""
+        info "Claude health check command:"
+        warn "  sudo -u ${SERVICE_USER} /bin/bash --noprofile --norc -lc 'cd ${INSTALL_DIR}/cli-sandbox && HOME=${cli_home}/claude CLAUDE_CONFIG_DIR=${cli_home}/claude/.claude ENABLE_CLAUDEAI_MCP_SERVERS=false ${planner_bin}/claude -p \"Reply with OK only.\" --permission-mode acceptEdits --output-format stream-json --verbose --model claude-opus-4-6'"
+        echo ""
     fi
 
     if [[ ${#unauthenticated[@]} -eq 0 ]] && [[ ${#unhealthy[@]} -eq 0 ]] && [[ $installed -gt 0 ]]; then
@@ -792,6 +942,7 @@ do_install() {
 
     # Set up CLI isolation directories
     setup_cli_isolation
+    import_cli_auth_from_invoking_user
 
     # Stop service before replacing binary (avoids "Text file busy")
     if systemctl is-active --quiet "${SERVICE_NAME}" 2>/dev/null; then
