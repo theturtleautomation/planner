@@ -113,6 +113,30 @@ impl planner_core::pipeline::steps::socratic::SocraticIO for TuiSocraticIO {
         );
     }
 
+    async fn send_category_state(&self, snapshot: &planner_schemas::SocraticCategorySnapshot) {
+        let _ = self.event_tx.send(SocraticEvent::CategoryState {
+            snapshot: snapshot.clone(),
+        });
+
+        self.event_sink.emit(
+            PlannerEvent::info(
+                EventSource::SocraticEngine,
+                "socratic.category_state.generated",
+                format!(
+                    "Category state generated with {} visible node(s)",
+                    snapshot.root_category_ids.len()
+                ),
+            )
+            .with_session(self.session_id)
+            .with_metadata(serde_json::json!({
+                "revision": snapshot.revision.clone(),
+                "root_category_count": snapshot.root_category_ids.len(),
+                "active_category_depth": snapshot.active_category_path.len(),
+                "build_ready": snapshot.build_ready,
+            })),
+        );
+    }
+
     async fn send_belief_state(&self, state: &planner_schemas::RequirementsBeliefState) {
         let _ = self.event_tx.send(SocraticEvent::BeliefStateUpdate {
             state: state.clone(),
@@ -192,32 +216,71 @@ impl planner_core::pipeline::steps::socratic::SocraticIO for TuiSocraticIO {
         );
     }
 
-    /// Block until the TUI sends a reply (or the sender is dropped → None).
-    async fn receive_prompt_response(
+    async fn receive_interview_input(
         &self,
-        prompt: &planner_schemas::PromptEnvelope,
-    ) -> Option<planner_schemas::PromptResponse> {
+        prompt: Option<&planner_schemas::PromptEnvelope>,
+        snapshot: Option<&planner_schemas::SocraticCategorySnapshot>,
+    ) -> Option<planner_core::pipeline::steps::socratic::SocraticInteractiveInput> {
         let mut rx = self.input_rx.lock().await;
         let raw = rx.recv().await?;
         if let Ok(response) = serde_json::from_str::<planner_schemas::PromptResponse>(&raw) {
-            return Some(response);
+            return Some(
+                planner_core::pipeline::steps::socratic::SocraticInteractiveInput::PromptResponse(
+                    response,
+                ),
+            );
         }
 
-        let first_item = prompt.items.first()?;
         let trimmed = raw.trim().to_string();
+        let normalized = trimmed.to_lowercase();
+        if normalized == "back" {
+            return Some(
+                planner_core::pipeline::steps::socratic::SocraticInteractiveInput::BackToCategories,
+            );
+        }
+        if normalized == "done" || normalized == "build" {
+            return Some(planner_core::pipeline::steps::socratic::SocraticInteractiveInput::Done);
+        }
+
+        if let Some(snapshot) = snapshot {
+            let visible_category_ids =
+                planner_core::pipeline::steps::socratic::visible_category_ids(snapshot);
+            if let Some(index) = normalized
+                .strip_prefix("open ")
+                .or_else(|| normalized.strip_prefix("select "))
+                .and_then(|value| value.trim().parse::<usize>().ok())
+                .or_else(|| normalized.parse::<usize>().ok())
+            {
+                if let Some(category_id) = visible_category_ids.get(index.saturating_sub(1)) {
+                    return Some(
+                        planner_core::pipeline::steps::socratic::SocraticInteractiveInput::EnterCategory {
+                            category_id: category_id.clone(),
+                            revision: snapshot.revision.clone(),
+                        },
+                    );
+                }
+            }
+        }
+
+        let prompt = prompt?;
+        let first_item = prompt.items.first()?;
         let is_skip = matches!(trimmed.to_lowercase().as_str(), "skip" | "next" | "pass");
 
-        Some(planner_schemas::PromptResponse {
-            prompt_id: prompt.prompt_id.clone(),
-            answers: vec![planner_schemas::PromptAnswer {
-                item_id: first_item.item_id.clone(),
-                selected_option_id: None,
-                custom_text: (!trimmed.is_empty() && !is_skip).then_some(trimmed),
-                skipped: is_skip,
-            }],
-            submitted_at: chrono::Utc::now().to_rfc3339(),
-            client_context: None,
-        })
+        Some(
+            planner_core::pipeline::steps::socratic::SocraticInteractiveInput::PromptResponse(
+                planner_schemas::PromptResponse {
+                    prompt_id: prompt.prompt_id.clone(),
+                    answers: vec![planner_schemas::PromptAnswer {
+                        item_id: first_item.item_id.clone(),
+                        selected_option_id: None,
+                        custom_text: (!trimmed.is_empty() && !is_skip).then_some(trimmed),
+                        skipped: is_skip,
+                    }],
+                    submitted_at: chrono::Utc::now().to_rfc3339(),
+                    client_context: None,
+                },
+            ),
+        )
     }
 
     async fn send_event(&self, event: &SocraticEvent) {

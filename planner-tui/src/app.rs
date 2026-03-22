@@ -20,7 +20,8 @@ use uuid::Uuid;
 
 use planner_core::blueprint::BlueprintStore;
 use planner_schemas::{
-    DomainClassification, QuestionOutput, RequirementsBeliefState, SocraticEvent, SpeculativeDraft,
+    DomainClassification, QuestionOutput, RequirementsBeliefState, SocraticCategoryNode,
+    SocraticCategorySnapshot, SocraticEvent, SpeculativeDraft,
 };
 
 use crate::blueprint_table::BlueprintTableState;
@@ -191,6 +192,9 @@ pub struct App {
     /// The current question being asked by the Socratic engine.
     pub current_question: Option<QuestionOutput>,
 
+    /// The current category navigation snapshot, if the interview is waiting on a category choice.
+    pub current_category_snapshot: Option<SocraticCategorySnapshot>,
+
     /// The most recent speculative draft, if any.
     pub speculative_draft: Option<SpeculativeDraft>,
 
@@ -354,6 +358,7 @@ impl App {
             belief_state: None,
             classification: None,
             current_question: None,
+            current_category_snapshot: None,
             speculative_draft: None,
             convergence_pct: 0.0,
             pending_socratic_message: None,
@@ -422,6 +427,7 @@ impl App {
             "Answering — {} prompt item(s) available",
             prompt.items.len()
         );
+        self.current_category_snapshot = None;
 
         if let Some(item) = prompt.items.first() {
             self.add_planner_message(&item.text);
@@ -469,10 +475,96 @@ impl App {
             .map(|question| !question.quick_options.is_empty())
             .unwrap_or(false)
         {
-            self.status_message = "Answering — [Esc] Skip  [Ctrl+D] Done  [1-9] Quick pick".into();
+            self.status_message = "Answering — [Esc] Skip  [1-9] Quick pick".into();
         } else {
-            self.status_message = "Answering — [Esc] Skip  [Ctrl+D] Done".into();
+            self.status_message = "Answering — [Esc] Skip".into();
         }
+    }
+
+    fn apply_category_state(&mut self, snapshot: &SocraticCategorySnapshot) {
+        self.current_question = None;
+        self.speculative_draft = None;
+        self.current_category_snapshot = Some(snapshot.clone());
+        self.status_message = if snapshot.active_category_path.is_empty() {
+            "Choose a category — type 1, 2, 3… to drill down".into()
+        } else {
+            "Category drill-down — type a number to go deeper, 'back' to return".into()
+        };
+
+        let visible_titles = Self::visible_category_nodes(snapshot)
+            .into_iter()
+            .enumerate()
+            .map(|(index, node)| {
+                let mut suffix = format!(
+                    " [{}]",
+                    match node.status {
+                        planner_schemas::SocraticCategoryStatus::Pending => "pending",
+                        planner_schemas::SocraticCategoryStatus::Active => "active",
+                        planner_schemas::SocraticCategoryStatus::Ready => "ready",
+                        planner_schemas::SocraticCategoryStatus::Complete => "complete",
+                        planner_schemas::SocraticCategoryStatus::Blocked => "blocked",
+                    }
+                );
+                if snapshot
+                    .newly_available_category_ids
+                    .iter()
+                    .any(|category_id| category_id == &node.category_id)
+                {
+                    suffix.push_str(" [new]");
+                }
+                format!("{}. {} — {}{}", index + 1, node.title, node.summary, suffix)
+            })
+            .collect::<Vec<_>>();
+
+        let header = if snapshot.active_category_path.is_empty() {
+            "Categories:"
+        } else {
+            "Subcategories:"
+        };
+        let body = if visible_titles.is_empty() {
+            if snapshot.build_ready {
+                "No more categories remain. Type 'done' to start the build.".to_string()
+            } else {
+                snapshot.build_readiness_message.clone()
+            }
+        } else {
+            let mut lines = visible_titles;
+            if !snapshot.build_readiness_message.is_empty()
+                && snapshot.active_category_path.is_empty()
+            {
+                lines.push(String::new());
+                lines.push(format!("Build: {}", snapshot.build_readiness_message));
+            }
+            lines.join("\n")
+        };
+        self.add_planner_message(&format!("{header}\n{body}"));
+    }
+
+    fn visible_category_nodes<'a>(
+        snapshot: &'a SocraticCategorySnapshot,
+    ) -> Vec<&'a SocraticCategoryNode> {
+        let Some(active_id) = snapshot
+            .active_category_path
+            .last()
+            .map(|entry| entry.category_id.as_str())
+        else {
+            return snapshot
+                .root_category_ids
+                .iter()
+                .filter_map(|category_id| {
+                    snapshot
+                        .nodes
+                        .iter()
+                        .find(|node| &node.category_id == category_id)
+                })
+                .collect();
+        };
+
+        snapshot
+            .nodes
+            .iter()
+            .filter(|node| node.parent_category_id.as_deref() == Some(active_id))
+            .collect()
     }
 
     // -----------------------------------------------------------------------
@@ -910,11 +1002,11 @@ impl App {
         }
     }
 
-    /// Signal the Socratic engine that the user wants to stop early (Ctrl+D).
+    /// Request build/start from the current interview surface (Ctrl+D).
     fn stop_interview(&mut self) {
         if let Some(ref tx) = self.socratic_tx {
-            let _ = tx.send("just build it".to_string());
-            self.add_system_message("(Interview stopped — proceeding to pipeline)");
+            let _ = tx.send("done".to_string());
+            self.add_system_message("(Build requested)");
         }
     }
 
@@ -1077,6 +1169,10 @@ impl App {
                 self.apply_prompt_generated(&prompt);
             }
 
+            SocraticEvent::CategoryState { snapshot } => {
+                self.apply_category_state(&snapshot);
+            }
+
             SocraticEvent::ContradictionDetected { contradiction } => {
                 self.add_planner_message(&format!(
                     "Contradiction detected: {} vs {}\n{}",
@@ -1093,6 +1189,7 @@ impl App {
                 ));
                 self.convergence_pct = result.convergence_pct;
                 self.current_question = None;
+                self.current_category_snapshot = None;
                 self.intake_phase = IntakePhase::PipelineRunning;
                 self.pipeline_running = true;
                 self.stages[0].status = StageStatus::Running;
@@ -1582,6 +1679,8 @@ mod tests {
             kind: PromptKind::QuestionBatch,
             title: "Continue".into(),
             instructions: None,
+            origin_category_id: None,
+            category_path: Vec::new(),
             items: vec![PromptItem {
                 item_id: "item-goal".into(),
                 kind: PromptItemKind::Discovery,
@@ -1629,6 +1728,164 @@ mod tests {
         let last = app.messages.last().unwrap();
         assert_eq!(last.role, MessageRole::Planner);
         assert!(last.content.contains("main goal"));
+    }
+
+    #[tokio::test]
+    async fn tick_socratic_category_state_shows_active_branch_children() {
+        use planner_schemas::{
+            Dimension, SocraticCategoryNode, SocraticCategoryPathEntry, SocraticCategorySnapshot,
+            SocraticCategoryStatus,
+        };
+
+        let mut app = App::new();
+        app.intake_phase = IntakePhase::Interviewing;
+
+        let (tx, rx) = mpsc::unbounded_channel::<SocraticEvent>();
+        app.socratic_events_rx = Some(rx);
+
+        tx.send(SocraticEvent::CategoryState {
+            snapshot: SocraticCategorySnapshot {
+                revision: "category-1".into(),
+                root_category_ids: vec!["root-discovery".into()],
+                nodes: vec![
+                    SocraticCategoryNode {
+                        category_id: "root-discovery".into(),
+                        parent_category_id: None,
+                        title: "Explore missing areas".into(),
+                        summary: "1 area still needs discovery.".into(),
+                        status: SocraticCategoryStatus::Ready,
+                        depth: 0,
+                        mapped_dimensions: Vec::new(),
+                        has_children: true,
+                        has_prompt_ready: false,
+                        item_count_hint: 1,
+                    },
+                    SocraticCategoryNode {
+                        category_id: "root-discovery::dimension::goal".into(),
+                        parent_category_id: Some("root-discovery".into()),
+                        title: "Goal / Purpose".into(),
+                        summary: "1 discovery branch under Goal / Purpose.".into(),
+                        status: SocraticCategoryStatus::Ready,
+                        depth: 1,
+                        mapped_dimensions: vec![Dimension::Goal],
+                        has_children: true,
+                        has_prompt_ready: false,
+                        item_count_hint: 1,
+                    },
+                ],
+                active_category_path: vec![SocraticCategoryPathEntry {
+                    category_id: "root-discovery".into(),
+                    title: "Explore missing areas".into(),
+                }],
+                newly_available_category_ids: vec!["root-discovery::dimension::goal".into()],
+                build_ready: false,
+                build_readiness_message: "Build is blocked until 1 remaining area is explored."
+                    .into(),
+            },
+        })
+        .unwrap();
+
+        app.tick_socratic();
+
+        let last = app.messages.last().expect("planner message should exist");
+        assert!(last.content.contains("Subcategories:"));
+        assert!(last.content.contains("Goal / Purpose"));
+        assert!(last.content.contains("[ready] [new]"));
+        assert!(!last.content.contains("1. Explore missing areas"));
+    }
+
+    #[tokio::test]
+    async fn tick_socratic_category_state_refresh_replaces_deep_branch_with_main_screen() {
+        use planner_schemas::{
+            Dimension, SocraticCategoryNode, SocraticCategoryPathEntry, SocraticCategorySnapshot,
+            SocraticCategoryStatus,
+        };
+
+        let mut app = App::new();
+        app.intake_phase = IntakePhase::Interviewing;
+
+        let (tx, rx) = mpsc::unbounded_channel::<SocraticEvent>();
+        app.socratic_events_rx = Some(rx);
+
+        tx.send(SocraticEvent::CategoryState {
+            snapshot: SocraticCategorySnapshot {
+                revision: "category-deep-1".into(),
+                root_category_ids: vec!["root-discovery".into()],
+                nodes: vec![
+                    SocraticCategoryNode {
+                        category_id: "root-discovery".into(),
+                        parent_category_id: None,
+                        title: "Explore missing areas".into(),
+                        summary: "1 area still needs discovery.".into(),
+                        status: SocraticCategoryStatus::Active,
+                        depth: 0,
+                        mapped_dimensions: Vec::new(),
+                        has_children: true,
+                        has_prompt_ready: false,
+                        item_count_hint: 1,
+                    },
+                    SocraticCategoryNode {
+                        category_id: "root-discovery::dimension::security".into(),
+                        parent_category_id: Some("root-discovery".into()),
+                        title: "Security".into(),
+                        summary: "Authentication model still needs definition.".into(),
+                        status: SocraticCategoryStatus::Ready,
+                        depth: 1,
+                        mapped_dimensions: vec![Dimension::Security],
+                        has_children: false,
+                        has_prompt_ready: true,
+                        item_count_hint: 1,
+                    },
+                ],
+                active_category_path: vec![SocraticCategoryPathEntry {
+                    category_id: "root-discovery".into(),
+                    title: "Explore missing areas".into(),
+                }],
+                newly_available_category_ids: Vec::new(),
+                build_ready: false,
+                build_readiness_message:
+                    "Build is blocked until the remaining category is explored.".into(),
+            },
+        })
+        .unwrap();
+        app.tick_socratic();
+
+        tx.send(SocraticEvent::CategoryState {
+            snapshot: SocraticCategorySnapshot {
+                revision: "category-main-2".into(),
+                root_category_ids: vec!["root-discovery".into()],
+                nodes: vec![SocraticCategoryNode {
+                    category_id: "root-discovery".into(),
+                    parent_category_id: None,
+                    title: "Explore missing areas".into(),
+                    summary: "1 area still needs discovery.".into(),
+                    status: SocraticCategoryStatus::Ready,
+                    depth: 0,
+                    mapped_dimensions: Vec::new(),
+                    has_children: true,
+                    has_prompt_ready: false,
+                    item_count_hint: 1,
+                }],
+                active_category_path: Vec::new(),
+                newly_available_category_ids: Vec::new(),
+                build_ready: false,
+                build_readiness_message:
+                    "Build is blocked until the remaining category is explored.".into(),
+            },
+        })
+        .unwrap();
+        app.tick_socratic();
+
+        let last = app.messages.last().expect("planner message should exist");
+        assert!(last.content.contains("Categories:"));
+        assert!(last.content.contains("1. Explore missing areas"));
+        assert!(!last.content.contains("Subcategories:"));
+        assert_eq!(
+            app.current_category_snapshot
+                .as_ref()
+                .map(|snapshot| snapshot.active_category_path.len()),
+            Some(0)
+        );
     }
 
     #[tokio::test]

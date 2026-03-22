@@ -426,19 +426,20 @@ export default function ProjectSessionsPage() {
         style={{
           flex: 1,
           overflow: 'auto',
-          padding: '30px 24px',
+          padding: '40px 24px 56px',
           maxWidth: '1040px',
           margin: '0 auto',
           width: '100%',
           display: 'flex',
           flexDirection: 'column',
-          gap: '14px',
+          gap: '24px',
         }}
       >
         <header
           style={{
-            borderBottom: '1px solid var(--color-border)',
-            paddingBottom: '12px',
+            background: 'var(--color-surface-offset)',
+            borderRadius: '18px',
+            padding: '24px',
             display: 'flex',
             alignItems: 'flex-end',
             justifyContent: 'space-between',
@@ -475,8 +476,9 @@ export default function ProjectSessionsPage() {
               className={({ isActive }) => `btn${isActive ? ' btn-outline' : ''}`}
               style={({ isActive }) => ({
                 textDecoration: 'none',
-                borderColor: isActive ? 'var(--color-primary)' : undefined,
                 color: isActive ? 'var(--color-primary)' : undefined,
+                background: isActive ? 'var(--color-surface-2)' : undefined,
+                boxShadow: isActive ? 'inset 0 0 0 1px var(--color-ghost-border)' : undefined,
               })}
             >
               {tab.label}
@@ -497,13 +499,13 @@ export default function ProjectSessionsPage() {
             {importState && (
               <section
                 style={{
-                  border: '1px solid var(--color-border)',
-                  borderRadius: '10px',
+                  borderRadius: '16px',
                   background: 'var(--color-surface)',
-                  padding: '16px',
+                  padding: '18px',
                   display: 'flex',
                   flexDirection: 'column',
                   gap: '10px',
+                  boxShadow: 'var(--shadow-md)',
                 }}
               >
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -557,13 +559,13 @@ export default function ProjectSessionsPage() {
 
           <section
             style={{
-              border: '1px solid var(--color-border)',
-              borderRadius: '10px',
+              borderRadius: '16px',
               background: 'var(--color-surface)',
-              padding: '16px',
+              padding: '18px',
               display: 'flex',
               flexDirection: 'column',
               gap: '10px',
+              boxShadow: 'var(--shadow-md)',
             }}
           >
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -628,9 +630,9 @@ export default function ProjectSessionsPage() {
             {importStatus === 'review_pending' && importReviewNodes.length > 0 && (
               <div
                 style={{
-                  border: '1px solid var(--color-border)',
-                  borderRadius: '8px',
-                  padding: '12px',
+                  background: 'var(--color-surface-offset)',
+                  borderRadius: '14px',
+                  padding: '14px',
                   display: 'flex',
                   flexDirection: 'column',
                   gap: '8px',
@@ -647,9 +649,9 @@ export default function ProjectSessionsPage() {
                     <div
                       key={node.node_id}
                       style={{
-                        border: '1px solid var(--color-border)',
-                        borderRadius: '8px',
-                        padding: '10px',
+                        background: 'var(--color-surface-2)',
+                        borderRadius: '12px',
+                        padding: '12px',
                         display: 'flex',
                         justifyContent: 'space-between',
                         gap: '10px',
@@ -686,13 +688,13 @@ export default function ProjectSessionsPage() {
         {!loading && !error && !importReview && importState && (
           <section
             style={{
-              border: '1px solid var(--color-border)',
-              borderRadius: '10px',
+              borderRadius: '16px',
               background: 'var(--color-surface)',
-              padding: '16px',
+              padding: '18px',
               display: 'flex',
               flexDirection: 'column',
               gap: '10px',
+              boxShadow: 'var(--shadow-md)',
             }}
           >
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -747,13 +749,13 @@ export default function ProjectSessionsPage() {
         {!loading && !error && importHistory && importHistoryEntries.length > 0 && (
           <section
             style={{
-              border: '1px solid var(--color-border)',
-              borderRadius: '10px',
+              borderRadius: '16px',
               background: 'var(--color-surface)',
-              padding: '16px',
+              padding: '18px',
               display: 'flex',
               flexDirection: 'column',
               gap: '12px',
+              boxShadow: 'var(--shadow-md)',
             }}
           >
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -771,9 +773,9 @@ export default function ProjectSessionsPage() {
             {importDiffSummary && (
               <div
                 style={{
-                  border: '1px solid var(--color-border)',
-                  borderRadius: '8px',
-                  padding: '12px',
+                  background: 'var(--color-surface-offset)',
+                  borderRadius: '14px',
+                  padding: '14px',
                   display: 'flex',
                   flexDirection: 'column',
                   gap: '6px',
@@ -819,9 +821,9 @@ export default function ProjectSessionsPage() {
             {selectedHistoryComparison && (
               <div
                 style={{
-                  border: '1px solid var(--color-border)',
-                  borderRadius: '8px',
-                  padding: '12px',
+                  background: 'var(--color-surface-offset)',
+                  borderRadius: '14px',
+                  padding: '14px',
                   display: 'flex',
                   flexDirection: 'column',
                   gap: '6px',
@@ -875,9 +877,9 @@ export default function ProjectSessionsPage() {
             {selectedPairComparison && (
               <div
                 style={{
-                  border: '1px solid var(--color-border)',
-                  borderRadius: '8px',
-                  padding: '12px',
+                  background: 'var(--color-surface-offset)',
+                  borderRadius: '14px',
+                  padding: '14px',
                   display: 'flex',
                   flexDirection: 'column',
                   gap: '6px',
@@ -933,9 +935,9 @@ export default function ProjectSessionsPage() {
                 <article
                   key={entry.import_job.id}
                   style={{
-                    border: '1px solid var(--color-border)',
-                    borderRadius: '8px',
-                    padding: '12px',
+                    background: 'var(--color-surface-offset)',
+                    borderRadius: '14px',
+                    padding: '14px',
                     display: 'flex',
                     flexDirection: 'column',
                     gap: '6px',
@@ -1048,9 +1050,9 @@ export default function ProjectSessionsPage() {
         {!loading && !error && sessions.length === 0 && (
           <div
             style={{
-              border: '1px dashed var(--color-border)',
-              borderRadius: '8px',
-              padding: '18px',
+              background: 'var(--color-surface-offset)',
+              borderRadius: '14px',
+              padding: '20px',
               color: 'var(--color-text-muted)',
               display: 'flex',
               flexDirection: 'column',
@@ -1076,15 +1078,15 @@ export default function ProjectSessionsPage() {
               <article
                 key={session.id}
                 style={{
-                  border: '1px solid var(--color-border)',
-                  borderRadius: '8px',
+                  borderRadius: '14px',
                   background: 'var(--color-surface)',
-                  padding: '12px',
+                  padding: '14px 16px',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
                   gap: '10px',
                   flexWrap: 'wrap',
+                  boxShadow: 'var(--shadow-md)',
                 }}
               >
                 <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: '4px' }}>

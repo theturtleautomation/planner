@@ -229,13 +229,13 @@ export default function ProjectsPage() {
         style={{
           flex: 1,
           overflow: 'auto',
-          padding: '30px 24px',
+          padding: '40px 24px 56px',
           maxWidth: '1100px',
           margin: '0 auto',
           width: '100%',
           display: 'flex',
           flexDirection: 'column',
-          gap: '16px',
+          gap: '24px',
         }}
       >
         <header
@@ -245,8 +245,9 @@ export default function ProjectsPage() {
             justifyContent: 'space-between',
             gap: '12px',
             flexWrap: 'wrap',
-            borderBottom: '1px solid var(--color-border)',
-            paddingBottom: '12px',
+            background: 'var(--color-surface-offset)',
+            borderRadius: '18px',
+            padding: '24px',
           }}
         >
           <div>
@@ -272,13 +273,13 @@ export default function ProjectsPage() {
         {latestImport && (
           <div
             style={{
-              border: '1px solid var(--color-border)',
-              borderRadius: '8px',
+              borderRadius: '16px',
               background: 'var(--color-surface)',
-              padding: '12px 14px',
+              padding: '16px 18px',
               display: 'flex',
               flexDirection: 'column',
-              gap: '6px',
+              gap: '8px',
+              boxShadow: 'var(--shadow-md)',
             }}
           >
             <div style={{ color: 'var(--color-text)', fontWeight: 700 }}>
@@ -333,11 +334,12 @@ export default function ProjectsPage() {
             style={{
               flex: '1 1 280px',
               minWidth: '220px',
-              background: 'var(--color-bg)',
-              border: '1px solid var(--color-border)',
-              borderRadius: '6px',
+              background: 'var(--color-surface-2)',
+              border: 'none',
+              boxShadow: 'inset 0 0 0 1px var(--color-ghost-border)',
+              borderRadius: '10px',
               color: 'var(--color-text)',
-              padding: '10px 12px',
+              padding: '12px 14px',
               fontSize: '13px',
             }}
           />
@@ -348,11 +350,11 @@ export default function ProjectsPage() {
               gap: '6px',
               color: 'var(--color-text-muted)',
               fontSize: '12px',
-              border: '1px solid var(--color-border)',
-              borderRadius: '6px',
+              borderRadius: '999px',
               padding: '0 10px',
               minHeight: '38px',
               background: 'var(--color-surface)',
+              boxShadow: 'inset 0 0 0 1px var(--color-divider)',
             }}
           >
             <input
@@ -395,9 +397,9 @@ export default function ProjectsPage() {
         {!loading && filtered.length === 0 && (
           <div
             style={{
-              border: '1px dashed var(--color-border)',
-              borderRadius: '8px',
-              padding: '18px',
+              background: 'var(--color-surface-offset)',
+              borderRadius: '14px',
+              padding: '20px',
               color: 'var(--color-text-muted)',
               fontSize: '13px',
               display: 'flex',
@@ -440,13 +442,13 @@ export default function ProjectsPage() {
                 <article
                   key={project.id}
                   style={{
-                    border: '1px solid var(--color-border)',
-                    borderRadius: '10px',
-                    padding: '14px',
+                    borderRadius: '16px',
+                    padding: '16px',
                     background: 'var(--color-surface)',
                     display: 'flex',
                     flexDirection: 'column',
                     gap: '10px',
+                    boxShadow: 'var(--shadow-md)',
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
@@ -506,7 +508,11 @@ export default function ProjectsPage() {
                       className="btn btn-outline"
                       onClick={() => { void handleDeleteProject(project); }}
                       disabled={isMutating}
-                      style={{ borderColor: 'var(--color-error)', color: 'var(--color-error)' }}
+                      style={{
+                        color: 'var(--color-error)',
+                        background: 'rgba(209, 99, 167, 0.08)',
+                        boxShadow: 'inset 0 0 0 1px rgba(209, 99, 167, 0.18)',
+                      }}
                     >
                       {isDeleting ? 'Deleting…' : 'Delete'}
                     </button>

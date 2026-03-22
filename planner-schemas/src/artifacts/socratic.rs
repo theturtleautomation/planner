@@ -517,6 +517,12 @@ pub struct PromptEnvelope {
     /// Optional extra guidance for this batch.
     #[serde(default)]
     pub instructions: Option<String>,
+    /// Category that originated this prompt, when the interview is in scoped drill-down mode.
+    #[serde(default)]
+    pub origin_category_id: Option<String>,
+    /// Active category breadcrumb path for the prompt.
+    #[serde(default)]
+    pub category_path: Vec<SocraticCategoryPathEntry>,
     /// Prompt items answerable within this batch.
     pub items: Vec<PromptItem>,
     /// Optional draft snapshot rendered alongside draft-review prompts.
@@ -533,6 +539,63 @@ pub struct PromptEnvelope {
     pub based_on_turn: u32,
     /// RFC3339 creation timestamp.
     pub created_at: String,
+}
+
+/// Snapshot of the current category-navigation state for Socratic intake.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SocraticCategorySnapshot {
+    /// Revision token used by clients to reject stale navigation actions.
+    pub revision: String,
+    /// IDs of the top-level categories in the current tree.
+    pub root_category_ids: Vec<String>,
+    /// All category nodes known in this snapshot.
+    pub nodes: Vec<SocraticCategoryNode>,
+    /// Breadcrumb path for the currently active category scope.
+    #[serde(default)]
+    pub active_category_path: Vec<SocraticCategoryPathEntry>,
+    /// Visible categories that were not present in the prior snapshot.
+    #[serde(default)]
+    pub newly_available_category_ids: Vec<String>,
+    /// Whether the user may intentionally finish intake from the main screen.
+    pub build_ready: bool,
+    /// High-level explanation of why build is ready or blocked.
+    #[serde(default)]
+    pub build_readiness_message: String,
+}
+
+/// A visible category node in the Socratic drill-down tree.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SocraticCategoryNode {
+    pub category_id: String,
+    #[serde(default)]
+    pub parent_category_id: Option<String>,
+    pub title: String,
+    pub summary: String,
+    pub status: SocraticCategoryStatus,
+    pub depth: u32,
+    #[serde(default)]
+    pub mapped_dimensions: Vec<Dimension>,
+    pub has_children: bool,
+    pub has_prompt_ready: bool,
+    pub item_count_hint: u32,
+}
+
+/// Breadcrumb entry for the active category path.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SocraticCategoryPathEntry {
+    pub category_id: String,
+    pub title: String,
+}
+
+/// UI-facing state of a category node.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SocraticCategoryStatus {
+    Pending,
+    Active,
+    Ready,
+    Complete,
+    Blocked,
 }
 
 /// Prompt category for workflow and UI decisions.
@@ -915,6 +978,10 @@ pub enum SocraticEvent {
     #[serde(rename = "belief_state_update")]
     BeliefStateUpdate { state: RequirementsBeliefState },
 
+    /// Category-navigation state updated after planning the next drill-down step.
+    #[serde(rename = "category_state")]
+    CategoryState { snapshot: SocraticCategorySnapshot },
+
     /// Prompt envelope generated for the next user submission.
     #[serde(rename = "prompt_generated")]
     PromptGenerated { prompt: PromptEnvelope },
@@ -1170,6 +1237,8 @@ mod tests {
             kind: PromptKind::VerificationBatch,
             title: "Verify key details".into(),
             instructions: Some("Answer only what you know now.".into()),
+            origin_category_id: None,
+            category_path: Vec::new(),
             items: vec![PromptItem {
                 item_id: "item-1".into(),
                 kind: PromptItemKind::Verification,

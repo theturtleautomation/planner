@@ -10183,6 +10183,8 @@ mod tests {
                 kind: planner_schemas::PromptKind::QuestionBatch,
                 title: "Continue interview".into(),
                 instructions: None,
+                origin_category_id: None,
+                category_path: Vec::new(),
                 items: vec![planner_schemas::PromptItem {
                     item_id: "item-1".into(),
                     kind: planner_schemas::PromptItemKind::Discovery,

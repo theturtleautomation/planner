@@ -44,6 +44,12 @@ Read these when the task touches the relevant area.
 - [phase-05-session-lobby-events-implementation.md](/home/thetu/planner/docs/phase-05-session-lobby-events-implementation.md)
 - [phase-06-project-archive-delete-implementation.md](/home/thetu/planner/docs/phase-06-project-archive-delete-implementation.md)
 - [phase-07-socratic-prompt-protocol-redesign-implementation.md](/home/thetu/planner/docs/phase-07-socratic-prompt-protocol-redesign-implementation.md)
+- [phase-08-socratic-category-drilldown-implementation.md](/home/thetu/planner/docs/phase-08-socratic-category-drilldown-implementation.md)
+- [phase-09-socratic-recursive-category-synthesis-spec.md](/home/thetu/planner/docs/phase-09-socratic-recursive-category-synthesis-spec.md)
+- [phase-10-socratic-category-status-and-refresh-spec.md](/home/thetu/planner/docs/phase-10-socratic-category-status-and-refresh-spec.md)
+- [phase-11-socratic-category-replay-and-validation-spec.md](/home/thetu/planner/docs/phase-11-socratic-category-replay-and-validation-spec.md)
+- [planner-design-system-command-center-plan.md](/home/thetu/planner/docs/planner-design-system-command-center-plan.md)
+- [planner-design-system-phase-1-tonal-foundation-spec.md](/home/thetu/planner/docs/planner-design-system-phase-1-tonal-foundation-spec.md)
 
 ### Import and blueprint work
 

@@ -51,6 +51,8 @@ fn benchmark_prompt(item_count: usize) -> PromptEnvelope {
         kind: PromptKind::VerificationBatch,
         title: "Benchmark".into(),
         instructions: None,
+        origin_category_id: None,
+        category_path: Vec::new(),
         items,
         draft_snapshot: None,
         required_item_ids: Vec::new(),

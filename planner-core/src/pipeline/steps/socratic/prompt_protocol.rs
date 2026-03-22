@@ -114,6 +114,8 @@ mod tests {
             kind: PromptKind::QuestionBatch,
             title: "Test".into(),
             instructions: None,
+            origin_category_id: None,
+            category_path: Vec::new(),
             items: vec![
                 PromptItem {
                     item_id: "item-a".into(),

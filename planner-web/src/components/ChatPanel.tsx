@@ -113,8 +113,10 @@ function MessageItem({ msg }: { msg: ChatMessage }) {
           color: 'var(--color-text)',
           fontSize: '13px',
           lineHeight: '1.7',
-          paddingLeft: '8px',
-          borderLeft: '2px solid var(--color-primary)',
+          padding: '10px 12px',
+          background: 'var(--color-surface)',
+          borderRadius: '12px',
+          boxShadow: 'var(--shadow-sm)',
         }}>
           <ReactMarkdown
             rehypePlugins={[rehypeSanitize]}
@@ -133,10 +135,9 @@ function MessageItem({ msg }: { msg: ChatMessage }) {
               ),
               pre: ({ children }) => (
                 <pre style={{
-                  background: 'var(--color-surface-2)',
-                  border: '1px solid var(--color-border)',
+                  background: 'var(--color-surface-offset)',
                   padding: '10px 14px',
-                  borderRadius: '3px',
+                  borderRadius: '10px',
                   overflow: 'auto',
                   fontSize: '12px',
                   margin: '8px 0',
@@ -166,8 +167,10 @@ function MessageItem({ msg }: { msg: ChatMessage }) {
         <div style={{
           color: 'var(--color-text)',
           fontSize: '13px',
-          paddingLeft: '8px',
-          borderLeft: '2px solid var(--color-success)',
+          padding: '10px 12px',
+          background: 'var(--color-surface-2)',
+          borderRadius: '12px',
+          boxShadow: 'inset 0 0 0 1px var(--color-divider)',
           whiteSpace: 'pre-wrap',
           wordBreak: 'break-word',
         }}>

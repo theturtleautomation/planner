@@ -17,6 +17,8 @@ const mockDuplicateSession = vi.fn();
 const mockExportSession = vi.fn();
 const mockAttach = vi.fn();
 const mockSendDescription = vi.fn();
+const mockEnterCategory = vi.fn();
+const mockBackToCategories = vi.fn();
 const mockGetAccessToken = vi.fn().mockResolvedValue('mock-token');
 
 vi.mock('../../api/client.ts', () => ({
@@ -122,6 +124,7 @@ describe('SessionPage resume behavior', () => {
       classification: null,
       beliefState: null,
       convergencePct: 0,
+      currentCategorySnapshot: null,
       currentPrompt: null,
       speculativeDraft: null,
       confirmedSections: new Set(),
@@ -134,6 +137,8 @@ describe('SessionPage resume behavior', () => {
       attach: mockAttach,
       sendDescription: mockSendDescription,
       submitPromptAnswers: vi.fn(),
+      enterCategory: mockEnterCategory,
+      backToCategories: mockBackToCategories,
       sendDone: vi.fn(),
       sendDimensionEdit: vi.fn(),
     });
@@ -305,6 +310,7 @@ describe('SessionPage resume behavior', () => {
           kind: 'draft_review',
           title: 'Review draft',
           instructions: null,
+          category_path: [],
           items: [{
             item_id: 'item-1',
             kind: 'draft_section',
@@ -576,6 +582,7 @@ describe('SessionPage resume behavior', () => {
       classification: null,
       beliefState: null,
       convergencePct: 0.8,
+      currentCategorySnapshot: null,
       currentPrompt: null,
       speculativeDraft: null,
       confirmedSections: new Set(),
@@ -597,6 +604,8 @@ describe('SessionPage resume behavior', () => {
       attach: mockAttach,
       sendDescription: mockSendDescription,
       submitPromptAnswers: vi.fn(),
+      enterCategory: mockEnterCategory,
+      backToCategories: mockBackToCategories,
       sendDone: vi.fn(),
       sendDimensionEdit: vi.fn(),
     });
@@ -631,6 +640,7 @@ describe('SessionPage resume behavior', () => {
       classification: null,
       beliefState: null,
       convergencePct: 0.8,
+      currentCategorySnapshot: null,
       currentPrompt: null,
       speculativeDraft: null,
       confirmedSections: new Set(),
@@ -652,6 +662,8 @@ describe('SessionPage resume behavior', () => {
       attach: mockAttach,
       sendDescription: mockSendDescription,
       submitPromptAnswers: vi.fn(),
+      enterCategory: mockEnterCategory,
+      backToCategories: mockBackToCategories,
       sendDone: vi.fn(),
       sendDimensionEdit: vi.fn(),
     });
@@ -681,6 +693,7 @@ describe('SessionPage resume behavior', () => {
       classification: null,
       beliefState: null,
       convergencePct: 0.8,
+      currentCategorySnapshot: null,
       currentPrompt: null,
       speculativeDraft: null,
       confirmedSections: new Set(),
@@ -728,6 +741,8 @@ describe('SessionPage resume behavior', () => {
       attach: mockAttach,
       sendDescription: mockSendDescription,
       submitPromptAnswers: vi.fn(),
+      enterCategory: mockEnterCategory,
+      backToCategories: mockBackToCategories,
       sendDone: vi.fn(),
       sendDimensionEdit: vi.fn(),
     });
@@ -743,6 +758,211 @@ describe('SessionPage resume behavior', () => {
     expect(screen.getByText(/runtime: 1/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/artifact persistence summary/i)).toBeInTheDocument();
     expect(screen.getByText(/2 artifacts persisted/i)).toBeInTheDocument();
+  });
+
+  it('shows explicit interview progress while waiting for the first prompt batch', async () => {
+    const session = makeSession({
+      intake_phase: 'interviewing',
+      pipeline_running: false,
+      can_resume_live: false,
+      resume_status: 'interview_attached',
+    });
+    mockGetSession.mockResolvedValue({ session });
+    vi.mocked(useSocraticWebSocket).mockReturnValue({
+      isConnected: true,
+      reconnectFailed: false,
+      intakePhase: 'interviewing',
+      messages: [
+        { id: 'planner-1', role: 'planner', content: 'Analyzing your project description...', timestamp: new Date().toISOString() },
+      ],
+      classification: null,
+      beliefState: null,
+      convergencePct: 0.15,
+      currentCategorySnapshot: null,
+      currentPrompt: null,
+      speculativeDraft: null,
+      confirmedSections: new Set(),
+      contradictions: [],
+      stages: [],
+      pipelineComplete: false,
+      pipelineSummary: null,
+      events: [
+        {
+          id: 'evt-1',
+          timestamp: new Date().toISOString(),
+          level: 'info',
+          source: 'socratic_engine',
+          step: 'socratic.response.adjudicated',
+          message: 'Prompt response adjudicated at 15% convergence',
+          metadata: {},
+        },
+      ],
+      currentStep: 'socratic.response.adjudicated',
+      attach: mockAttach,
+      sendDescription: mockSendDescription,
+      submitPromptAnswers: vi.fn(),
+      enterCategory: mockEnterCategory,
+      backToCategories: mockBackToCategories,
+      sendDone: vi.fn(),
+      sendDimensionEdit: vi.fn(),
+    });
+
+    renderSessionPage('/session/abc');
+
+    await waitFor(() => {
+      expect(mockGetSession).toHaveBeenCalledWith('abc');
+    });
+
+    expect(screen.getByRole('region', { name: /interview progress/i })).toBeInTheDocument();
+    expect(screen.getByText(/generating your next questions/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/planning the next question batch/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/prompt response adjudicated at 15% convergence/i)).toBeInTheDocument();
+  });
+
+  it('renders the category navigator during category-driven intake', async () => {
+    const session = makeSession({
+      intake_phase: 'interviewing',
+      pipeline_running: false,
+      can_resume_live: false,
+      resume_status: 'interview_attached',
+    });
+    mockGetSession.mockResolvedValue({ session });
+    vi.mocked(useSocraticWebSocket).mockReturnValue({
+      isConnected: true,
+      reconnectFailed: false,
+      intakePhase: 'interviewing',
+      messages: [],
+      classification: null,
+      beliefState: null,
+      convergencePct: 0.4,
+      currentCategorySnapshot: {
+        revision: 'category-1',
+        root_category_ids: ['root-discovery'],
+        nodes: [
+          {
+            category_id: 'root-discovery',
+            parent_category_id: null,
+            title: 'Explore missing areas',
+            summary: '1 area still needs discovery.',
+            status: 'ready',
+            depth: 0,
+            mapped_dimensions: [],
+            has_children: true,
+            has_prompt_ready: false,
+            item_count_hint: 1,
+          },
+        ],
+        active_category_path: [],
+        newly_available_category_ids: [],
+        build_ready: false,
+        build_readiness_message: 'Build is blocked until 1 remaining area is explored.',
+      },
+      currentPrompt: null,
+      speculativeDraft: null,
+      confirmedSections: new Set(),
+      contradictions: [],
+      stages: [],
+      pipelineComplete: false,
+      pipelineSummary: null,
+      events: [],
+      currentStep: 'socratic.category_state.generated',
+      attach: mockAttach,
+      sendDescription: mockSendDescription,
+      submitPromptAnswers: vi.fn(),
+      enterCategory: mockEnterCategory,
+      backToCategories: mockBackToCategories,
+      sendDone: vi.fn(),
+      sendDimensionEdit: vi.fn(),
+    });
+
+    renderSessionPage('/session/abc');
+
+    await waitFor(() => {
+      expect(mockGetSession).toHaveBeenCalledWith('abc');
+    });
+
+    expect(screen.getByRole('region', { name: /interview categories/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /explore missing areas/i })).toBeInTheDocument();
+  });
+
+  it('does not expose a build completion button while a scoped prompt is active', async () => {
+    const session = makeSession({
+      intake_phase: 'interviewing',
+      pipeline_running: false,
+      can_resume_live: false,
+      resume_status: 'interview_attached',
+    });
+    mockGetSession.mockResolvedValue({ session });
+    vi.mocked(useSocraticWebSocket).mockReturnValue({
+      isConnected: true,
+      reconnectFailed: false,
+      intakePhase: 'interviewing',
+      messages: [],
+      classification: null,
+      beliefState: null,
+      convergencePct: 0.4,
+      currentCategorySnapshot: null,
+      currentPrompt: {
+        prompt_id: 'prompt-deep-1',
+        kind: 'question_batch',
+        title: 'Clarify security',
+        instructions: 'Answer the scoped security question.',
+        origin_category_id: 'root-discovery::dimension::security::auth',
+        category_path: [
+          { category_id: 'root-discovery', title: 'Explore missing areas' },
+          { category_id: 'root-discovery::dimension::security', title: 'Security' },
+          { category_id: 'root-discovery::dimension::security::auth', title: 'Authentication model' },
+        ],
+        items: [
+          {
+            item_id: 'item-security',
+            kind: 'discovery',
+            target_dimension: 'Security',
+            section_ref: null,
+            text: 'How should authentication work?',
+            options: [],
+            response_mode: 'single_select_with_custom_text',
+            required: false,
+            priority: 100,
+            dependency_item_ids: [],
+          },
+        ],
+        draft_snapshot: null,
+        required_item_ids: [],
+        allow_partial_submit: true,
+        ui_hints: {
+          preferred_layout: 'cards',
+          show_draft_sidebar: false,
+        },
+        based_on_turn: 2,
+        created_at: '2026-03-21T00:00:00Z',
+      },
+      speculativeDraft: null,
+      confirmedSections: new Set(),
+      contradictions: [],
+      stages: [],
+      pipelineComplete: false,
+      pipelineSummary: null,
+      events: [],
+      currentStep: null,
+      attach: mockAttach,
+      sendDescription: mockSendDescription,
+      submitPromptAnswers: vi.fn(),
+      enterCategory: mockEnterCategory,
+      backToCategories: mockBackToCategories,
+      sendDone: vi.fn(),
+      sendDimensionEdit: vi.fn(),
+    });
+
+    renderSessionPage('/session/abc');
+
+    await waitFor(() => {
+      expect(mockGetSession).toHaveBeenCalledWith('abc');
+    });
+
+    expect(screen.getByText(/clarify security/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /submit prompt answers/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /done with interview/i })).not.toBeInTheDocument();
   });
 
   it('keeps legacy event-role chat messages out of the conversation pane', async () => {
@@ -762,6 +982,7 @@ describe('SessionPage resume behavior', () => {
       classification: null,
       beliefState: null,
       convergencePct: 0.8,
+      currentCategorySnapshot: null,
       currentPrompt: null,
       speculativeDraft: null,
       confirmedSections: new Set(),
@@ -774,6 +995,8 @@ describe('SessionPage resume behavior', () => {
       attach: mockAttach,
       sendDescription: mockSendDescription,
       submitPromptAnswers: vi.fn(),
+      enterCategory: mockEnterCategory,
+      backToCategories: mockBackToCategories,
       sendDone: vi.fn(),
       sendDimensionEdit: vi.fn(),
     });

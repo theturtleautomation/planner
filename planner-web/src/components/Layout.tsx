@@ -18,7 +18,8 @@ function UserInfoDev() {
     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
       <span style={{
         width: '24px', height: '24px', borderRadius: '50%',
-        background: 'var(--color-surface-dynamic)', border: '1px solid var(--color-border)',
+        background: 'var(--color-surface-2)',
+        boxShadow: 'inset 0 0 0 1px var(--color-divider)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         fontSize: '10px', color: 'var(--color-gold)', fontWeight: 700,
       }}>

@@ -520,6 +520,8 @@ mod tests {
             kind: PromptKind::QuestionBatch,
             title: "Prompt".into(),
             instructions: None,
+            origin_category_id: None,
+            category_path: Vec::new(),
             items,
             draft_snapshot: None,
             required_item_ids: Vec::new(),

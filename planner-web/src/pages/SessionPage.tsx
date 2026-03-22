@@ -5,6 +5,8 @@ import ChatPanel from '../components/ChatPanel.tsx';
 import PipelineBar from '../components/PipelineBar.tsx';
 import MessageInput from '../components/MessageInput.tsx';
 import PromptBatchPanel from '../components/PromptBatchPanel.tsx';
+import CategoryNavigator from '../components/CategoryNavigator.tsx';
+import InterviewProgressPanel from '../components/InterviewProgressPanel.tsx';
 import ConvergenceBar from '../components/ConvergenceBar.tsx';
 import BeliefStatePanel from '../components/BeliefStatePanel.tsx';
 import SpeculativeDraftView from '../components/SpeculativeDraftView.tsx';
@@ -719,10 +721,9 @@ export default function SessionPage() {
                 <section
                   aria-label="Retry feedback summary"
                   style={{
-                    border: '1px solid var(--color-border)',
-                    borderRadius: '4px',
-                    padding: '10px 12px',
-                    background: 'var(--color-surface)',
+                    borderRadius: '14px',
+                    padding: '12px 14px',
+                    background: 'var(--color-surface-offset)',
                     display: 'flex',
                     flexDirection: 'column',
                     gap: '6px',
@@ -751,10 +752,9 @@ export default function SessionPage() {
                 <section
                   aria-label="Artifact persistence summary"
                   style={{
-                    border: '1px solid var(--color-border)',
-                    borderRadius: '4px',
-                    padding: '10px 12px',
-                    background: 'var(--color-surface)',
+                    borderRadius: '14px',
+                    padding: '12px 14px',
+                    background: 'var(--color-surface-offset)',
                     display: 'flex',
                     flexDirection: 'column',
                     gap: '6px',
@@ -831,14 +831,14 @@ export default function SessionPage() {
             onClick={() => void navigate(fallbackPath)}
             style={{
               marginTop: '8px',
-              background: 'transparent',
-              border: '1px solid var(--color-border)',
+              background: 'var(--color-surface)',
+              boxShadow: 'inset 0 0 0 1px var(--color-divider)',
               color: 'var(--color-text-muted)',
               padding: '7px 16px',
               fontSize: '12px',
               cursor: 'pointer',
               fontFamily: 'inherit',
-              borderRadius: '2px',
+              borderRadius: '8px',
             }}
           >
             {`← back to ${fallbackLabel}`}
@@ -871,7 +871,7 @@ export default function SessionPage() {
     <div style={{
       padding: '8px 16px',
       background: 'rgba(255,68,68,0.10)',
-      borderBottom: '1px solid var(--color-error)',
+      boxShadow: 'inset 0 -1px 0 rgba(209, 99, 167, 0.24)',
       color: 'var(--color-error)',
       fontSize: '12px',
       textAlign: 'center',
@@ -885,7 +885,7 @@ export default function SessionPage() {
     <div style={{
       padding: '8px 16px',
       background: 'rgba(255,68,68,0.10)',
-      borderBottom: '1px solid var(--color-error)',
+      boxShadow: 'inset 0 -1px 0 rgba(209, 99, 167, 0.24)',
       color: 'var(--color-error)',
       fontSize: '12px',
       textAlign: 'center',
@@ -922,19 +922,19 @@ export default function SessionPage() {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            padding: '24px',
+            padding: '32px',
             overflow: 'auto',
           }}>
             <div style={{
               width: '100%',
               maxWidth: '600px',
               background: 'var(--color-surface)',
-              border: '1px solid var(--color-border)',
-              borderRadius: '4px',
-              padding: '28px 32px',
+              borderRadius: '20px',
+              padding: '32px 36px',
               display: 'flex',
               flexDirection: 'column',
-              gap: '16px',
+              gap: '18px',
+              boxShadow: 'var(--shadow-lg)',
             }}>
               {/* Header */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -968,11 +968,11 @@ export default function SessionPage() {
 
               {/* Textarea */}
               <div style={{
-                background: 'var(--color-surface-2)',
-                border: `1px solid ${description.trim() ? 'var(--color-primary)' : 'var(--color-border)'}`,
-                borderRadius: '3px',
-                padding: '10px 14px',
-                transition: 'border-color 0.18s',
+                background: 'var(--color-surface-offset)',
+                boxShadow: `inset 0 0 0 1px ${description.trim() ? 'var(--color-primary)' : 'var(--color-ghost-border)'}`,
+                borderRadius: '14px',
+                padding: '12px 16px',
+                transition: 'box-shadow 0.18s',
               }}>
                 <textarea
                   ref={textareaRef}
@@ -1028,10 +1028,10 @@ export default function SessionPage() {
               {/* Error */}
               {startError && (
                 <div style={{
-                  padding: '8px 12px',
+                  padding: '10px 12px',
                   background: 'rgba(255,68,68,0.10)',
-                  border: '1px solid var(--color-error)',
-                  borderRadius: '3px',
+                  borderRadius: '10px',
+                  boxShadow: 'inset 0 0 0 1px rgba(209, 99, 167, 0.24)',
                   color: 'var(--color-error)',
                   fontSize: '12px',
                 }}>
@@ -1046,11 +1046,11 @@ export default function SessionPage() {
                 style={{
                   alignSelf: 'flex-end',
                   background: !description.trim() || isStarting
-                    ? 'transparent'
+                    ? 'var(--color-surface-offset)'
                     : 'var(--color-primary)',
-                  border: `1px solid ${!description.trim() || isStarting
-                    ? 'var(--color-border)'
-                    : 'var(--color-primary)'}`,
+                  boxShadow: !description.trim() || isStarting
+                    ? 'inset 0 0 0 1px var(--color-divider)'
+                    : 'var(--shadow-sm)',
                   color: !description.trim() || isStarting
                     ? 'var(--color-text-muted)'
                     : 'var(--color-bg)',
@@ -1058,9 +1058,9 @@ export default function SessionPage() {
                   fontSize: '13px',
                   fontWeight: 700,
                   fontFamily: 'inherit',
-                  borderRadius: '3px',
+                  borderRadius: '10px',
                   cursor: !description.trim() || isStarting ? 'not-allowed' : 'pointer',
-                  transition: 'background 0.18s, border-color 0.18s, color 0.18s',
+                  transition: 'background 0.18s, box-shadow 0.18s, color 0.18s',
                   letterSpacing: '0.03em',
                 }}
               >
@@ -1119,14 +1119,14 @@ export default function SessionPage() {
         {session && sessionTitle && (
           <div
             style={{
-              padding: '12px 16px',
+              padding: '16px 18px',
               background: 'var(--color-surface)',
-              borderBottom: '1px solid var(--color-border)',
               display: 'flex',
               alignItems: 'flex-end',
               justifyContent: 'space-between',
               gap: '12px',
               flexWrap: 'wrap',
+              boxShadow: 'var(--shadow-sm)',
             }}
           >
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -1155,7 +1155,7 @@ export default function SessionPage() {
                   alignItems: 'center',
                   padding: '5px 10px',
                   borderRadius: '999px',
-                  border: '1px solid rgba(136,136,160,0.25)',
+                  background: 'rgba(152, 176, 212, 0.12)',
                   color: 'var(--color-text-muted)',
                   fontSize: '10px',
                   fontWeight: 700,
@@ -1174,7 +1174,7 @@ export default function SessionPage() {
           <div style={{
             padding: '12px 16px',
             background: 'rgba(255,68,68,0.10)',
-            borderBottom: '1px solid var(--color-error)',
+            boxShadow: 'inset 0 -1px 0 rgba(209, 99, 167, 0.24)',
             color: 'var(--color-error)',
             fontSize: '12px',
             textAlign: 'center',
@@ -1193,9 +1193,9 @@ export default function SessionPage() {
                 void navigate(target);
               }}
               style={{
-                background: 'transparent',
-                border: '1px solid var(--color-error)',
-                borderRadius: '3px',
+                background: 'rgba(209, 99, 167, 0.12)',
+                boxShadow: 'inset 0 0 0 1px rgba(209, 99, 167, 0.24)',
+                borderRadius: '999px',
                 color: 'var(--color-error)',
                 fontSize: '11px',
                 fontFamily: 'inherit',
@@ -1215,9 +1215,9 @@ export default function SessionPage() {
             background: interviewResumeNotice.tone === 'warning'
               ? 'rgba(255,215,0,0.08)'
               : 'rgba(0,212,255,0.08)',
-            borderBottom: interviewResumeNotice.tone === 'warning'
-              ? '1px solid rgba(255,215,0,0.35)'
-              : '1px solid rgba(0,212,255,0.35)',
+            boxShadow: interviewResumeNotice.tone === 'warning'
+              ? 'inset 0 -1px 0 rgba(255,215,0,0.24)'
+              : 'inset 0 -1px 0 rgba(63, 118, 246, 0.24)',
             color: interviewResumeNotice.tone === 'warning'
               ? 'var(--color-gold)'
               : 'var(--color-primary)',
@@ -1232,8 +1232,8 @@ export default function SessionPage() {
         {detachedCheckpoint && (
           <div style={{
             padding: '10px 16px',
-            background: 'rgba(0,212,255,0.06)',
-            borderBottom: '1px solid rgba(0,212,255,0.30)',
+            background: 'rgba(63, 118, 246, 0.08)',
+            boxShadow: 'inset 0 -1px 0 rgba(63, 118, 246, 0.24)',
             color: 'var(--color-text)',
             fontSize: '12px',
             lineHeight: '1.45',
@@ -1302,7 +1302,7 @@ export default function SessionPage() {
               <div style={{
                 padding: '12px 16px',
                 background: 'rgba(0,255,136,0.06)',
-                borderTop: '1px solid var(--color-success)',
+                boxShadow: 'inset 0 1px 0 rgba(109, 170, 69, 0.32)',
                 color: 'var(--color-success)',
                 fontSize: '12px',
                 flexShrink: 0,
@@ -1313,13 +1313,31 @@ export default function SessionPage() {
               </div>
             )}
 
-            {isInterviewing && socratic.currentPrompt ? (
-              <PromptBatchPanel
-                prompt={socratic.currentPrompt}
-                onSubmit={(_promptId, answers) => socratic.submitPromptAnswers(answers)}
-                onDone={socratic.sendDone}
-                disabled={!socratic.isConnected}
-              />
+            {isInterviewing ? (
+              <>
+                {socratic.currentCategorySnapshot && (
+                  <CategoryNavigator
+                    snapshot={socratic.currentCategorySnapshot}
+                    onEnterCategory={socratic.enterCategory}
+                    onBack={socratic.backToCategories}
+                    onDone={socratic.sendDone}
+                    disabled={!socratic.isConnected}
+                  />
+                )}
+                {socratic.currentPrompt ? (
+                  <PromptBatchPanel
+                    prompt={socratic.currentPrompt}
+                    onSubmit={(_promptId, answers) => socratic.submitPromptAnswers(answers)}
+                    disabled={!socratic.isConnected}
+                  />
+                ) : !socratic.currentCategorySnapshot ? (
+                  <InterviewProgressPanel
+                    currentStep={socratic.currentStep}
+                    events={socratic.events}
+                    isConnected={socratic.isConnected}
+                  />
+                ) : null}
+              </>
             ) : (
               <MessageInput
                 onSend={() => undefined}
@@ -1340,27 +1358,28 @@ export default function SessionPage() {
                 display: 'flex',
                 alignItems: 'center',
                 gap: '0',
-                borderBottom: '1px solid var(--color-border)',
-                background: 'var(--color-surface)',
+                background: 'var(--color-surface-offset)',
                 flexShrink: 0,
                 overflowX: 'auto',
+                padding: '6px 8px',
               }}
             >
               {/* Belief State tab */}
               <button
                 onClick={() => setRightTab('belief')}
                 style={{
-                  background: 'transparent',
+                  background: rightTab === 'belief' ? 'var(--color-surface-2)' : 'transparent',
                   border: 'none',
-                  borderBottom: rightTab === 'belief' ? '2px solid var(--color-primary)' : '2px solid transparent',
                   color: rightTab === 'belief' ? 'var(--color-primary)' : 'var(--color-text-muted)',
                   fontSize: '11px',
                   fontWeight: rightTab === 'belief' ? 700 : 400,
                   fontFamily: 'inherit',
-                  padding: '7px 14px',
+                  padding: '8px 14px',
                   cursor: 'pointer',
                   letterSpacing: '0.03em',
-                  transition: 'color 0.15s, border-color 0.15s',
+                  transition: 'color 0.15s, background 0.15s',
+                  borderRadius: '999px',
+                  boxShadow: rightTab === 'belief' ? 'var(--shadow-sm)' : 'none',
                 }}
               >
                 Belief State
@@ -1372,9 +1391,8 @@ export default function SessionPage() {
                 disabled={!socratic.speculativeDraft}
                 title={!socratic.speculativeDraft ? 'No draft available yet' : undefined}
                 style={{
-                  background: 'transparent',
+                  background: rightTab === 'draft' ? 'var(--color-surface-2)' : 'transparent',
                   border: 'none',
-                  borderBottom: rightTab === 'draft' ? '2px solid var(--color-primary)' : '2px solid transparent',
                   color: !socratic.speculativeDraft
                     ? 'var(--color-text-muted)'
                     : rightTab === 'draft'
@@ -1383,11 +1401,13 @@ export default function SessionPage() {
                   fontSize: '11px',
                   fontWeight: rightTab === 'draft' ? 700 : 400,
                   fontFamily: 'inherit',
-                  padding: '7px 14px',
+                  padding: '8px 14px',
                   cursor: !socratic.speculativeDraft ? 'not-allowed' : 'pointer',
                   letterSpacing: '0.03em',
                   opacity: !socratic.speculativeDraft ? 0.4 : 1,
-                  transition: 'color 0.15s, border-color 0.15s, opacity 0.15s',
+                  transition: 'color 0.15s, background 0.15s, opacity 0.15s',
+                  borderRadius: '999px',
+                  boxShadow: rightTab === 'draft' ? 'var(--shadow-sm)' : 'none',
                 }}
               >
                 Draft
@@ -1413,21 +1433,22 @@ export default function SessionPage() {
                   setEventUnreadCount(0);
                 }}
                 style={{
-                  background: 'transparent',
+                  background: rightTab === 'events' ? 'var(--color-surface-2)' : 'transparent',
                   border: 'none',
-                  borderBottom: rightTab === 'events' ? '2px solid var(--color-primary)' : '2px solid transparent',
                   color: rightTab === 'events' ? 'var(--color-primary)' : 'var(--color-text-muted)',
                   fontSize: '11px',
                   fontWeight: rightTab === 'events' ? 700 : 400,
                   fontFamily: 'inherit',
-                  padding: '7px 14px',
+                  padding: '8px 14px',
                   cursor: 'pointer',
                   letterSpacing: '0.03em',
-                  transition: 'color 0.15s, border-color 0.15s',
+                  transition: 'color 0.15s, background 0.15s',
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: '6px',
                   whiteSpace: 'nowrap',
+                  borderRadius: '999px',
+                  boxShadow: rightTab === 'events' ? 'var(--shadow-sm)' : 'none',
                 }}
               >
                 Events

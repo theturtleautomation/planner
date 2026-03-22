@@ -28,6 +28,7 @@ import type {
   PipelineStageName,
   PlannerEvent,
   PromptAnswer,
+  SocraticCategorySnapshot,
   PromptEnvelope,
   ServerWsMessage,
   Session,
@@ -305,6 +306,7 @@ export interface UseSocraticWebSocketResult {
   classification: Classification | null;
   beliefState: BeliefState | null;
   convergencePct: number;
+  currentCategorySnapshot: SocraticCategorySnapshot | null;
   currentPrompt: PromptEnvelope | null;
   speculativeDraft: SpeculativeDraft | null;
   confirmedSections: Set<string>;
@@ -323,6 +325,8 @@ export interface UseSocraticWebSocketResult {
   attach: () => void;
   sendDescription: (description: string) => void;
   submitPromptAnswers: (answers: PromptAnswer[]) => void;
+  enterCategory: (categoryId: string, revision: string) => void;
+  backToCategories: () => void;
   sendDone: () => void;
   sendDimensionEdit: (dimension: string, newValue: string) => void;
 }
@@ -357,6 +361,7 @@ export function useSocraticWebSocket({
   const [classification, setClassification] = useState<Classification | null>(null);
   const [beliefState, setBeliefState] = useState<BeliefState | null>(null);
   const [convergencePct, setConvergencePct] = useState(0);
+  const [currentCategorySnapshot, setCurrentCategorySnapshot] = useState<SocraticCategorySnapshot | null>(null);
   const [currentPrompt, setCurrentPrompt] = useState<PromptEnvelope | null>(null);
   const [speculativeDraft, setSpeculativeDraft] = useState<SpeculativeDraft | null>(null);
   const [contradictions, setContradictions] = useState<Contradiction[]>([]);
@@ -380,12 +385,14 @@ export function useSocraticWebSocket({
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
   const sessionIdRef = useRef(sessionId);
+  const intakePhaseRef = useRef<IntakePhase>('waiting');
   const currentPromptRef = useRef<PromptEnvelope | null>(null);
   const uiCapabilitiesRef = useRef(buildUiCapabilities());
   const lastSentUiCapabilitiesRef = useRef<typeof uiCapabilitiesRef.current | null>(null);
   const hydratedSnapshotRef = useRef<string | null>(null);
 
   useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
+  useEffect(() => { intakePhaseRef.current = intakePhase; }, [intakePhase]);
   useEffect(() => { currentPromptRef.current = currentPrompt; }, [currentPrompt]);
 
   const clearRetryTimer = (): void => {
@@ -434,6 +441,16 @@ export function useSocraticWebSocket({
       case 'prompt': {
         const prompt = msg.prompt;
         setCurrentPrompt(prompt);
+        if (prompt.category_path.length > 0) {
+          setCurrentCategorySnapshot((previous) => (
+            previous
+              ? {
+                ...previous,
+                active_category_path: prompt.category_path,
+              }
+              : previous
+          ));
+        }
         setSpeculativeDraft(hydrateDraftFromPrompt(prompt));
 
         const promptSummary = prompt.items?.length === 1
@@ -450,8 +467,16 @@ export function useSocraticWebSocket({
         break;
       }
 
+      case 'category_state': {
+        setCurrentCategorySnapshot(msg.snapshot);
+        setCurrentPrompt(null);
+        setSpeculativeDraft(null);
+        break;
+      }
+
       case 'converged': {
         setConvergencePct(msg.convergence_pct);
+        setCurrentCategorySnapshot(null);
         setCurrentPrompt(null);
         setIntakePhase('pipeline_running');
         setMessages((prev) => [...prev, {
@@ -512,6 +537,8 @@ export function useSocraticWebSocket({
       case 'pipeline_complete': {
         setPipelineComplete(true);
         setPipelineSummary(msg.summary);
+        intakePhaseRef.current = 'complete';
+        clearRetryTimer();
         setIntakePhase('complete');
         break;
       }
@@ -524,9 +551,15 @@ export function useSocraticWebSocket({
           content: `Error: ${msg.message}`,
           timestamp: new Date().toISOString(),
         }]);
-        // If we haven't progressed past interviewing, mark as error
+        if (intakePhaseRef.current !== 'complete') {
+          intakePhaseRef.current = 'error';
+          clearRetryTimer();
+        }
         setIntakePhase((prev) => {
-          if (prev === 'waiting' || prev === 'interviewing') return 'error';
+          if (prev === 'complete') return prev;
+          if (prev === 'waiting' || prev === 'interviewing' || prev === 'pipeline_running') {
+            return 'error';
+          }
           return prev;
         });
         break;
@@ -620,6 +653,11 @@ export function useSocraticWebSocket({
       setIsConnected(false);
       wsRef.current = null;
 
+      if (intakePhaseRef.current === 'complete' || intakePhaseRef.current === 'error') {
+        clearRetryTimer();
+        return;
+      }
+
       if (retryCountRef.current < MAX_RETRIES) {
         const delay = BASE_DELAY_MS * Math.pow(2, retryCountRef.current);
         retryCountRef.current += 1;
@@ -684,6 +722,7 @@ export function useSocraticWebSocket({
     setClassification(null);
     setBeliefState(null);
     setConvergencePct(0);
+    setCurrentCategorySnapshot(null);
     setCurrentPrompt(null);
     setSpeculativeDraft(null);
     setConfirmedSections(new Set());
@@ -717,6 +756,7 @@ export function useSocraticWebSocket({
     const checkpoint = initialSession.checkpoint ?? null;
     const checkpointBeliefState = checkpoint?.belief_state ?? null;
     const checkpointPrompt = checkpoint?.current_prompt ?? null;
+    const checkpointCategorySnapshot = checkpoint?.current_category_snapshot ?? null;
 
     const hydratedDraft: SpeculativeDraft | null = hydrateDraftFromPrompt(checkpointPrompt);
 
@@ -738,6 +778,7 @@ export function useSocraticWebSocket({
     setEvents(dedupeEventsById(initialSession.events ?? []));
     setCurrentStep(initialSession.current_step ?? null);
     setConvergencePct((initialSession.belief_state ?? checkpointBeliefState)?.convergence_pct ?? 0);
+    setCurrentCategorySnapshot(checkpointCategorySnapshot);
     setCurrentPrompt(checkpointPrompt);
     setSpeculativeDraft(hydratedDraft);
     setConfirmedSections(new Set());
@@ -794,6 +835,18 @@ export function useSocraticWebSocket({
     if (normalizedAnswers.length === 0) return;
     sendPromptResponse(prompt.prompt_id, normalizedAnswers);
   }, [sendPromptResponse]);
+
+  const enterCategory = useCallback((categoryId: string, revision: string): void => {
+    sendRaw({
+      type: 'enter_category',
+      category_id: categoryId,
+      revision,
+    });
+  }, [sendRaw]);
+
+  const backToCategories = useCallback((): void => {
+    sendRaw({ type: 'back_to_categories' });
+  }, [sendRaw]);
 
   /** Send the initial project description — this starts the interview. */
   const sendDescription = useCallback((description: string): void => {
@@ -856,6 +909,7 @@ export function useSocraticWebSocket({
     classification,
     beliefState,
     convergencePct,
+    currentCategorySnapshot,
     currentPrompt,
     speculativeDraft,
     confirmedSections,
@@ -868,6 +922,8 @@ export function useSocraticWebSocket({
     attach,
     sendDescription,
     submitPromptAnswers,
+    enterCategory,
+    backToCategories,
     sendDone,
     sendDimensionEdit,
   };

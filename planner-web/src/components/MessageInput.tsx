@@ -89,12 +89,12 @@ export default function MessageInput({
   }
 
   const showDone = intakePhase === 'interviewing' && onDone;
+  const readyToBuild = convergencePct >= 80;
 
   return (
     <div style={{
       padding: '12px 16px',
-      background: 'var(--color-surface)',
-      borderTop: '1px solid var(--color-border)',
+      background: 'var(--color-surface-offset)',
       flexShrink: 0,
     }}>
       {/* Main input row */}
@@ -102,11 +102,11 @@ export default function MessageInput({
         display: 'flex',
         gap: '10px',
         alignItems: 'flex-end',
-        background: 'var(--color-surface-2)',
-        border: `1px solid ${isBlocked ? 'var(--color-border)' : 'var(--color-primary)'}`,
-        borderRadius: '3px',
-        padding: '8px 12px',
-        transition: 'border-color 0.18s',
+        background: 'var(--color-surface)',
+        boxShadow: `inset 0 0 0 1px ${isBlocked ? 'var(--color-divider)' : 'var(--color-primary)'}`,
+        borderRadius: '14px',
+        padding: '10px 12px',
+        transition: 'box-shadow 0.18s',
       }}>
         <textarea
           ref={textareaRef}
@@ -138,16 +138,16 @@ export default function MessageInput({
           disabled={isBlocked || !hasPendingSubmission}
           aria-label="Send message"
           style={{
-            background: isBlocked || !hasPendingSubmission ? 'transparent' : 'var(--color-primary)',
-            border: `1px solid ${isBlocked || !hasPendingSubmission ? 'var(--color-border)' : 'var(--color-primary)'}`,
+            background: isBlocked || !hasPendingSubmission ? 'var(--color-surface-offset)' : 'var(--color-primary)',
+            boxShadow: isBlocked || !hasPendingSubmission ? 'inset 0 0 0 1px var(--color-divider)' : 'var(--shadow-sm)',
             color: isBlocked || !hasPendingSubmission ? 'var(--color-text-muted)' : 'var(--color-bg)',
             padding: '5px 14px',
             fontSize: '12px',
             cursor: isBlocked || !hasPendingSubmission ? 'not-allowed' : 'pointer',
-            borderRadius: '2px',
+            borderRadius: '10px',
             fontFamily: 'inherit',
             fontWeight: 600,
-            transition: 'background 0.18s, border-color 0.18s, color 0.18s',
+            transition: 'background 0.18s, box-shadow 0.18s, color 0.18s',
             flexShrink: 0,
           }}
         >
@@ -167,9 +167,9 @@ export default function MessageInput({
             className={convergencePct >= 80 ? 'done-btn-ready' : undefined}
             aria-label="Done with interview"
             style={{
-              background: 'transparent',
-              border: '1px solid var(--color-success)',
-              borderRadius: '3px',
+              background: readyToBuild ? 'rgba(109, 170, 69, 0.12)' : 'rgba(109, 170, 69, 0.08)',
+              boxShadow: 'inset 0 0 0 1px rgba(109, 170, 69, 0.2)',
+              borderRadius: '999px',
               color: 'var(--color-success)',
               fontSize: '11px',
               fontFamily: 'inherit',
@@ -179,10 +179,10 @@ export default function MessageInput({
               transition: 'background 0.15s ease, color 0.15s ease',
             }}
             onMouseEnter={(e) => {
-              (e.currentTarget as HTMLButtonElement).style.background = 'rgba(0,255,136,0.08)';
+              (e.currentTarget as HTMLButtonElement).style.background = 'rgba(109, 170, 69, 0.16)';
             }}
             onMouseLeave={(e) => {
-              (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
+              (e.currentTarget as HTMLButtonElement).style.background = readyToBuild ? 'rgba(109, 170, 69, 0.12)' : 'rgba(109, 170, 69, 0.08)';
             }}
           >
             Done — start building

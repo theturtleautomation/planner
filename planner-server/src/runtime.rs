@@ -23,6 +23,11 @@ const DEFAULT_BROADCAST_BUFFER: usize = 128;
 #[derive(Debug, Clone)]
 pub enum SocraticRuntimeInput {
     PromptResponse(PromptResponse),
+    EnterCategory {
+        category_id: String,
+        revision: String,
+    },
+    BackToCategories,
     Done,
     DimensionEdit {
         dimension: String,

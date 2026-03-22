@@ -10,6 +10,7 @@ function makePrompt(overrides: Partial<PromptEnvelope> = {}): PromptEnvelope {
     kind: 'question_batch',
     title: 'Clarify requirements',
     instructions: 'Answer any cards you can.',
+    category_path: [],
     items: [
       {
         item_id: 'item-1',
@@ -116,5 +117,49 @@ describe('PromptBatchPanel', () => {
         custom_text: 'SSO can wait for enterprise tier.',
       },
     ]);
+  });
+
+  it('promotes done as the primary action for untouched draft-review prompts', () => {
+    render(
+      <PromptBatchPanel
+        prompt={makePrompt({
+          kind: 'draft_review',
+          title: 'Review and refine draft',
+        })}
+        onSubmit={vi.fn()}
+        onDone={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(/no more draft changes to send\? finish intake and start building\./i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /done with interview/i })).toHaveTextContent('Done - start building');
+    expect(screen.getByRole('button', { name: /done with interview/i })).toHaveStyle({
+      background: 'var(--color-success)',
+      color: 'var(--color-bg)',
+    });
+  });
+
+  it('keeps submit as the active action once a draft-review answer is selected', async () => {
+    const user = userEvent.setup();
+
+    render(
+      <PromptBatchPanel
+        prompt={makePrompt({
+          kind: 'draft_review',
+          title: 'Review and refine draft',
+        })}
+        onSubmit={vi.fn()}
+        onDone={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole('radio', { name: /web app/i }));
+
+    expect(screen.getByText(/submit any answered cards\. unanswered cards can be sent later\./i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /submit prompt answers/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /done with interview/i })).toHaveStyle({
+      background: 'transparent',
+      color: 'var(--color-success)',
+    });
   });
 });

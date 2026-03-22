@@ -20,6 +20,7 @@
 //! the TUI and WebSocket server. This keeps the engine IO-agnostic.
 
 pub mod belief_state;
+pub mod category_planner;
 pub mod constitution;
 pub mod convergence;
 pub mod domain_classifier;
@@ -34,6 +35,10 @@ pub mod speculative_draft;
 pub use belief_state::{
     format_belief_state_for_llm, persist_to_cxdb, restore_from_cxdb, verify_and_update,
 };
+pub use category_planner::{
+    active_leaf_category_id, build_category_snapshot, filter_candidates_for_active_category,
+    resolve_category_path, visible_category_ids,
+};
 pub use constitution::{check_coverage, evaluate_question, load_constitution};
 pub use convergence::check_convergence;
 pub use domain_classifier::classify_domain;
@@ -43,6 +48,6 @@ pub use prompt_response_adjudicator::{adjudicate_prompt_response, PromptAdjudica
 pub use question_planner::{plan_next_question, select_target_dimension};
 pub use socratic_engine::{
     run_interview, run_interview_from_checkpoint, session_to_intake, CheckpointResumeState,
-    ResumePendingPrompt, SocraticIO,
+    ResumePendingPrompt, SocraticIO, SocraticInteractiveInput,
 };
 pub use speculative_draft::{format_draft_for_display, generate_draft, should_trigger_draft};

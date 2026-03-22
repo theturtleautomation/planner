@@ -9,6 +9,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { PlannerEvent } from '../types.ts';
+import { formatWorkflowStep } from '../lib/workflowStatus.ts';
 
 export type SessionHeaderActionTone = 'default' | 'primary' | 'danger';
 
@@ -105,6 +106,7 @@ export default function SessionStatusHeader({
 
   const dotColor = statusDotColor(events, isError);
   const llmCalls = countLlmCalls(events);
+  const readableStep = formatWorkflowStep(currentStep);
   const derivedSummary = eventSummary ?? {
     total: events.length,
     warnings: events.filter((event) => event.level === 'warn').length,
@@ -169,7 +171,7 @@ export default function SessionStatusHeader({
         ) : (
           <>
             {/* Current step */}
-            {currentStep ? (
+            {readableStep ? (
               <span
                 style={{
                   fontSize: '11px',
@@ -178,7 +180,7 @@ export default function SessionStatusHeader({
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap',
                 }}
-                title={currentStep}
+                title={currentStep ?? readableStep}
               >
                 <span
                   style={{
@@ -187,7 +189,7 @@ export default function SessionStatusHeader({
                     marginRight: '3px',
                   }}
                 >
-                  {currentStep}
+                  {readableStep}
                 </span>
               </span>
             ) : (
@@ -204,7 +206,7 @@ export default function SessionStatusHeader({
             )}
 
             {/* Elapsed */}
-            {currentStep && elapsed > 0 && (
+            {readableStep && elapsed > 0 && (
               <span
                 style={{
                   fontSize: '10px',

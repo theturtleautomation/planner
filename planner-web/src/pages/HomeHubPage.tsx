@@ -134,24 +134,23 @@ export default function HomeHubPage() {
         style={{
           flex: 1,
           overflow: 'auto',
-          padding: '32px 24px',
+          padding: '40px 24px 56px',
           maxWidth: '1080px',
           margin: '0 auto',
           width: '100%',
           display: 'flex',
           flexDirection: 'column',
-          gap: '20px',
+          gap: '28px',
         }}
       >
         <section
           style={{
-            background: 'var(--color-surface)',
-            border: '1px solid var(--color-border)',
-            borderRadius: '10px',
-            padding: '18px 18px 16px',
+            background: 'var(--color-surface-offset)',
+            borderRadius: '18px',
+            padding: '24px',
             display: 'flex',
             flexDirection: 'column',
-            gap: '12px',
+            gap: '16px',
           }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
@@ -165,7 +164,7 @@ export default function HomeHubPage() {
               <span
                 style={{
                   alignSelf: 'flex-start',
-                  border: '1px solid rgba(255,215,0,0.35)',
+                  background: 'rgba(209, 153, 0, 0.12)',
                   color: 'var(--color-gold)',
                   borderRadius: '999px',
                   padding: '5px 10px',
@@ -195,11 +194,12 @@ export default function HomeHubPage() {
               style={{
                 flex: '1 1 360px',
                 minWidth: '220px',
-                background: 'var(--color-bg)',
-                border: '1px solid var(--color-border)',
-                borderRadius: '6px',
+                background: 'var(--color-surface-2)',
+                boxShadow: 'inset 0 0 0 1px var(--color-ghost-border)',
+                border: 'none',
+                borderRadius: '10px',
                 color: 'var(--color-text)',
-                padding: '10px 12px',
+                padding: '12px 14px',
                 fontSize: '13px',
               }}
             />
@@ -224,12 +224,12 @@ export default function HomeHubPage() {
         <section
           style={{
             background: 'var(--color-surface)',
-            border: '1px solid var(--color-border)',
-            borderRadius: '10px',
-            padding: '16px',
+            borderRadius: '18px',
+            padding: '20px',
             display: 'flex',
             flexDirection: 'column',
-            gap: '12px',
+            gap: '16px',
+            boxShadow: 'var(--shadow-md)',
           }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
@@ -255,9 +255,9 @@ export default function HomeHubPage() {
           {!loading && !error && recentProjects.length === 0 && (
             <div
               style={{
-                border: '1px dashed var(--color-border)',
-                borderRadius: '8px',
-                padding: '18px',
+                background: 'var(--color-surface-offset)',
+                borderRadius: '14px',
+                padding: '20px',
                 color: 'var(--color-text-muted)',
                 display: 'flex',
                 flexDirection: 'column',
@@ -283,13 +283,12 @@ export default function HomeHubPage() {
                 <article
                   key={project.id}
                   style={{
-                    border: '1px solid var(--color-border)',
-                    borderRadius: '8px',
-                    padding: '12px',
-                    background: 'var(--color-surface-2)',
+                    borderRadius: '14px',
+                    padding: '14px',
+                    background: 'var(--color-surface-offset)',
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: '8px',
+                    gap: '10px',
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>

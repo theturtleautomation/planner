@@ -1,5 +1,5 @@
 /* ============================================
-   PLANNER v2 — NEXUS DARK-FIRST DESIGN SYSTEM
+   PLANNER v2 — COMMAND CENTER FOUNDATION
    ============================================ */
 
 /* ── Google Fonts ─────────────────────────────── */
@@ -40,22 +40,23 @@
 
 /* ── Dark Theme (default) ─────────────────────── */
 [data-theme="dark"] {
-  --color-bg:               #111110;
-  --color-surface:          #1a1918;
-  --color-surface-2:        #201f1d;
-  --color-surface-offset:   #1d1c1a;
-  --color-surface-offset-2: #252422;
-  --color-surface-dynamic:  #2d2c2a;
-  --color-divider:          #2a2928;
-  --color-border:           #363533;
-  --color-text:             #cdccca;
-  --color-text-muted:       #8a8987;
-  --color-text-faint:       #5a5957;
-  --color-text-inverse:     #1a1918;
-  --color-primary:          #4f98a3;
-  --color-primary-hover:    #3ab0be;
-  --color-primary-active:   #1a626b;
-  --color-primary-highlight:#1e3234;
+  --color-bg:               #0d1118;
+  --color-surface:          #161d28;
+  --color-surface-2:        #1d2633;
+  --color-surface-offset:   #111822;
+  --color-surface-offset-2: #202b3a;
+  --color-surface-dynamic:  #2a3647;
+  --color-divider:          rgba(152, 176, 212, 0.10);
+  --color-border:           rgba(152, 176, 212, 0.22);
+  --color-ghost-border:     rgba(164, 190, 231, 0.28);
+  --color-text:             #e7edf6;
+  --color-text-muted:       #a5b1c1;
+  --color-text-faint:       #6f7b8f;
+  --color-text-inverse:     #0d1118;
+  --color-primary:          #3f76f6;
+  --color-primary-hover:    #5d8bfb;
+  --color-primary-active:   #2857c8;
+  --color-primary-highlight:rgba(63, 118, 246, 0.16);
   --color-warning:          #bb653b;
   --color-warning-hover:    #d4783f;
   --color-warning-highlight:#3d2a1e;
@@ -76,29 +77,30 @@
   --color-gold-highlight:   #3a3020;
   --color-orange:           #fdab43;
 
-  --shadow-sm: 0 1px 2px rgba(0,0,0,0.3);
-  --shadow-md: 0 4px 12px rgba(0,0,0,0.4);
-  --shadow-lg: 0 12px 32px rgba(0,0,0,0.5);
+  --shadow-sm: 0 16px 34px -28px rgba(20, 34, 58, 0.7);
+  --shadow-md: 0 24px 54px -30px rgba(16, 29, 52, 0.62);
+  --shadow-lg: 0 40px 88px -44px rgba(10, 20, 37, 0.72);
 }
 
 /* ── Light Theme ──────────────────────────────── */
 [data-theme="light"] {
-  --color-bg:               #f7f6f2;
-  --color-surface:          #ffffff;
-  --color-surface-2:        #fbfbf9;
-  --color-surface-offset:   #f0ede8;
-  --color-surface-offset-2: #e8e5e0;
-  --color-surface-dynamic:  #dddbd6;
-  --color-divider:          #d4d1ca;
-  --color-border:           #c4c1ba;
-  --color-text:             #1a1918;
-  --color-text-muted:       #6b6a68;
-  --color-text-faint:       #a0a09e;
-  --color-text-inverse:     #f7f6f2;
-  --color-primary:          #01696f;
-  --color-primary-hover:    #0c4e54;
-  --color-primary-active:   #0f3638;
-  --color-primary-highlight:#cedcd8;
+  --color-bg:               #eef2f7;
+  --color-surface:          #f8fafc;
+  --color-surface-2:        #ffffff;
+  --color-surface-offset:   #e2e9f1;
+  --color-surface-offset-2: #d7e0eb;
+  --color-surface-dynamic:  #c6d3e2;
+  --color-divider:          rgba(70, 92, 130, 0.10);
+  --color-border:           rgba(70, 92, 130, 0.22);
+  --color-ghost-border:     rgba(57, 92, 160, 0.24);
+  --color-text:             #111927;
+  --color-text-muted:       #566377;
+  --color-text-faint:       #8a95a7;
+  --color-text-inverse:     #f8fafc;
+  --color-primary:          #2257d6;
+  --color-primary-hover:    #1844ae;
+  --color-primary-active:   #143680;
+  --color-primary-highlight:rgba(34, 87, 214, 0.12);
   --color-warning:          #964219;
   --color-warning-hover:    #713417;
   --color-warning-highlight:#ddcfc6;
@@ -119,9 +121,9 @@
   --color-gold-highlight:   #e9e0c6;
   --color-orange:           #da7101;
 
-  --shadow-sm: 0 1px 2px rgba(0,0,0,0.06);
-  --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
-  --shadow-lg: 0 12px 32px rgba(0,0,0,0.12);
+  --shadow-sm: 0 14px 28px -26px rgba(45, 63, 96, 0.22);
+  --shadow-md: 0 24px 52px -32px rgba(45, 63, 96, 0.2);
+  --shadow-lg: 0 36px 84px -40px rgba(45, 63, 96, 0.26);
 }
 
 /* ── Base Reset ───────────────────────────────── */
@@ -136,7 +138,9 @@ body {
   font-family: var(--font-body);
   font-size: var(--text-sm);
   color: var(--color-text);
-  background-color: var(--color-bg);
+  background:
+    radial-gradient(circle at top left, rgba(63, 118, 246, 0.12), transparent 28%),
+    linear-gradient(180deg, var(--color-bg) 0%, var(--color-surface-offset) 100%);
   line-height: 1.5;
 }
 button { cursor: pointer; background: none; border: none; font: inherit; color: inherit; }
@@ -158,25 +162,28 @@ a:hover { text-decoration: underline; }
   grid-template-columns: 240px 1fr;
   height: 100dvh;
   overflow: hidden;
+  background: transparent;
 }
 
 /* ── Sidebar ──────────────────────────────────── */
 .sidebar {
-  background: var(--color-surface);
-  border-right: 1px solid var(--color-divider);
+  background: linear-gradient(180deg, var(--color-surface-offset) 0%, var(--color-surface) 100%);
   display: flex;
   flex-direction: column;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: var(--space-4) 0;
+  padding: var(--space-5) 0;
   user-select: none;
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.03);
 }
 .sidebar-brand {
   padding: var(--space-2) var(--space-5);
-  margin-bottom: var(--space-6);
+  margin: 0 var(--space-4) var(--space-8);
   display: flex;
   align-items: center;
   gap: var(--space-3);
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: var(--radius-xl);
 }
 .sidebar-brand svg { flex-shrink: 0; }
 .sidebar-wordmark {
@@ -204,8 +211,8 @@ a:hover { text-decoration: underline; }
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-1) var(--space-2);
-  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-lg);
   font-size: var(--text-xs);
   font-weight: 500;
   color: var(--color-text-muted);
@@ -216,11 +223,12 @@ a:hover { text-decoration: underline; }
 }
 .sidebar-item:hover {
   color: var(--color-text);
-  background: var(--color-surface-dynamic);
+  background: rgba(255, 255, 255, 0.045);
 }
 .sidebar-item.active {
   color: var(--color-primary);
-  background: var(--color-primary-highlight);
+  background: linear-gradient(180deg, var(--color-primary-highlight), rgba(255, 255, 255, 0.02));
+  box-shadow: var(--shadow-sm);
 }
 .sidebar-item .count {
   margin-left: auto;
@@ -328,20 +336,30 @@ a:hover { text-decoration: underline; }
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-1) var(--space-3);
+  padding: calc(var(--space-1) + 1px) var(--space-3);
   border-radius: var(--radius-md);
   font-size: var(--text-xs);
   font-weight: 500;
   transition: all var(--transition-interactive);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--color-text);
 }
 .btn-ghost { color: var(--color-text-muted); }
 .btn-ghost:hover { color: var(--color-text); background: var(--color-surface-dynamic); }
-.btn-primary { background: var(--color-primary); color: #fff; }
+.btn-primary { background: var(--color-primary); color: #fff; box-shadow: var(--shadow-sm); }
 .btn-primary:hover { background: var(--color-primary-hover); }
 .btn-warning { background: var(--color-warning); color: #fff; }
 .btn-warning:hover { background: var(--color-warning-hover); }
-.btn-outline { border: 1px solid var(--color-border); color: var(--color-text-muted); }
-.btn-outline:hover { color: var(--color-text); border-color: var(--color-text-muted); }
+.btn-outline {
+  background: var(--color-surface-2);
+  color: var(--color-text-muted);
+  box-shadow: inset 0 0 0 1px var(--color-divider);
+}
+.btn-outline:hover {
+  color: var(--color-text);
+  background: var(--color-surface);
+  box-shadow: inset 0 0 0 1px var(--color-ghost-border);
+}
 
 /* ── Badges ───────────────────────────────────── */
 .badge {
@@ -1010,13 +1028,14 @@ textarea.field-input { resize: vertical; min-height: 60px; }
   flex: 1;
   display: flex;
   flex-direction: column;
-  border-right: 1px solid var(--color-divider);
+  background: var(--color-surface-offset);
   overflow: hidden;
 }
 .split-pane > .pane-right {
   flex: 1;
   display: flex;
   flex-direction: column;
+  background: var(--color-surface);
   overflow: hidden;
 }
 

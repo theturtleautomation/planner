@@ -213,6 +213,8 @@ fn checkpoint_question_prompt(
         kind: planner_schemas::PromptKind::QuestionBatch,
         title: "Continue interview".into(),
         instructions: None,
+        origin_category_id: None,
+        category_path: Vec::new(),
         items: vec![planner_schemas::PromptItem {
             item_id: item_id.clone(),
             kind: planner_schemas::PromptItemKind::Discovery,
@@ -251,6 +253,8 @@ fn checkpoint_draft_prompt(
         instructions: Some(
             "Confirm accurate sections and provide corrections where needed.".into(),
         ),
+        origin_category_id: None,
+        category_path: Vec::new(),
         items: vec![planner_schemas::PromptItem {
             item_id: "item-draft-1".into(),
             kind: planner_schemas::PromptItemKind::DraftSection,

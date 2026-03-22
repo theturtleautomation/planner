@@ -77,6 +77,11 @@ export default function PromptBatchPanel({
   const canSubmit = !disabled
     && answers.length > 0
     && (prompt.allow_partial_submit || missingRequiredCount === 0);
+  const highlightDoneCta = Boolean(onDone)
+    && prompt.kind === 'draft_review'
+    && prompt.allow_partial_submit
+    && requiredItemIds.length === 0
+    && answers.length === 0;
 
   const submit = (): void => {
     if (!canSubmit) return;
@@ -98,13 +103,13 @@ export default function PromptBatchPanel({
   return (
     <div
       style={{
-        borderTop: '1px solid var(--color-border)',
         background: 'var(--color-surface)',
         display: 'flex',
         flexDirection: 'column',
         gap: '12px',
-        padding: '12px 16px',
+        padding: '14px 16px',
         flexShrink: 0,
+        boxShadow: 'var(--shadow-sm)',
       }}
     >
       <header style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -175,11 +180,13 @@ export default function PromptBatchPanel({
         }}
       >
         <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>
-          {prompt.allow_partial_submit
-            ? 'Submit any answered cards. Unanswered cards can be sent later.'
-            : missingRequiredCount > 0
-              ? `Answer ${missingRequiredCount} required card${missingRequiredCount === 1 ? '' : 's'} before submitting.`
-              : 'All required cards are answered.'}
+          {highlightDoneCta
+            ? 'No more draft changes to send? Finish intake and start building.'
+            : prompt.allow_partial_submit
+              ? 'Submit any answered cards. Unanswered cards can be sent later.'
+              : missingRequiredCount > 0
+                ? `Answer ${missingRequiredCount} required card${missingRequiredCount === 1 ? '' : 's'} before submitting.`
+                : 'All required cards are answered.'}
         </span>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -188,19 +195,23 @@ export default function PromptBatchPanel({
               type="button"
               onClick={onDone}
               disabled={disabled}
+              aria-label="Done with interview"
               style={{
-                background: 'transparent',
-                border: '1px solid var(--color-success)',
-                borderRadius: '3px',
-                color: 'var(--color-success)',
-                fontSize: '11px',
+                background: highlightDoneCta ? 'var(--color-success)' : 'transparent',
+                boxShadow: highlightDoneCta
+                  ? 'var(--shadow-sm), inset 0 0 0 1px rgba(109, 170, 69, 0.22)'
+                  : 'inset 0 0 0 1px rgba(109, 170, 69, 0.2)',
+                borderRadius: '999px',
+                color: highlightDoneCta ? 'var(--color-bg)' : 'var(--color-success)',
+                fontSize: highlightDoneCta ? '12px' : '11px',
+                fontWeight: 700,
                 fontFamily: 'inherit',
                 letterSpacing: '0.04em',
-                padding: '6px 12px',
+                padding: highlightDoneCta ? '7px 14px' : '6px 12px',
                 cursor: disabled ? 'not-allowed' : 'pointer',
               }}
             >
-              Done
+              Done - start building
             </button>
           )}
 
@@ -210,8 +221,8 @@ export default function PromptBatchPanel({
             disabled={!canSubmit}
             style={{
               background: canSubmit ? 'var(--color-primary)' : 'transparent',
-              border: `1px solid ${canSubmit ? 'var(--color-primary)' : 'var(--color-border)'}`,
-              borderRadius: '3px',
+              boxShadow: canSubmit ? 'var(--shadow-sm)' : 'inset 0 0 0 1px var(--color-divider)',
+              borderRadius: '10px',
               color: canSubmit ? 'var(--color-bg)' : 'var(--color-text-muted)',
               fontSize: '12px',
               fontWeight: 700,

@@ -50,10 +50,9 @@ export default function PromptCard({
   return (
     <article
       style={{
-        border: '1px solid var(--color-border)',
-        background: 'var(--color-surface)',
-        borderRadius: '4px',
-        padding: '12px',
+        background: 'var(--color-surface-offset)',
+        borderRadius: '14px',
+        padding: '14px',
         display: 'flex',
         flexDirection: 'column',
         gap: '10px',
@@ -97,9 +96,9 @@ export default function PromptCard({
                 style={{
                   fontSize: '10px',
                   color: 'var(--color-text-muted)',
-                  border: '1px solid var(--color-border)',
                   borderRadius: '999px',
                   padding: '2px 8px',
+                  background: 'var(--color-surface-2)',
                 }}
               >
                 {targetLabel}
@@ -110,9 +109,9 @@ export default function PromptCard({
                 style={{
                   fontSize: '10px',
                   color: 'var(--color-text-muted)',
-                  border: '1px solid var(--color-border)',
                   borderRadius: '999px',
                   padding: '2px 8px',
+                  background: 'var(--color-surface-2)',
                 }}
               >
                 {item.section_ref}
@@ -153,8 +152,9 @@ export default function PromptCard({
             width: '100%',
             boxSizing: 'border-box',
             background: 'var(--color-surface-2)',
-            border: '1px solid var(--color-border)',
-            borderRadius: '3px',
+            border: 'none',
+            boxShadow: 'inset 0 0 0 1px var(--color-ghost-border)',
+            borderRadius: '10px',
             color: 'var(--color-text)',
             fontSize: '12px',
             lineHeight: 1.45,

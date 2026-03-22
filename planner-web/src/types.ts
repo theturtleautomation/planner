@@ -114,6 +114,36 @@ export interface SpeculativeDraft {
   not_discussed: string[];
 }
 
+export type SocraticCategoryStatus = 'pending' | 'active' | 'ready' | 'complete' | 'blocked';
+
+export interface SocraticCategoryPathEntry {
+  category_id: string;
+  title: string;
+}
+
+export interface SocraticCategoryNode {
+  category_id: string;
+  parent_category_id?: string | null;
+  title: string;
+  summary: string;
+  status: SocraticCategoryStatus;
+  depth: number;
+  mapped_dimensions: Array<string | Record<string, unknown>>;
+  has_children: boolean;
+  has_prompt_ready: boolean;
+  item_count_hint: number;
+}
+
+export interface SocraticCategorySnapshot {
+  revision: string;
+  root_category_ids: string[];
+  nodes: SocraticCategoryNode[];
+  active_category_path: SocraticCategoryPathEntry[];
+  newly_available_category_ids: string[];
+  build_ready: boolean;
+  build_readiness_message: string;
+}
+
 export type PromptKind =
   | 'question_batch'
   | 'verification_batch'
@@ -162,6 +192,8 @@ export interface PromptEnvelope {
   kind: PromptKind;
   title: string;
   instructions?: string | null;
+  origin_category_id?: string | null;
+  category_path: SocraticCategoryPathEntry[];
   items: PromptItem[];
   draft_snapshot?: SpeculativeDraft | null;
   required_item_ids: string[];
@@ -207,6 +239,7 @@ export interface InterviewCheckpoint {
   classification?: Classification | null;
   belief_state?: BeliefState | null;
   current_prompt?: PromptEnvelope | null;
+  current_category_snapshot?: SocraticCategorySnapshot | null;
   contradictions: CheckpointContradiction[];
   stale_turns: number;
   draft_shown_at_turn?: number | null;
@@ -575,6 +608,7 @@ export type ServerWsMessage =
   // Socratic interview messages
   | { type: 'classified'; project_type: string; complexity: string }
   | { type: 'belief_state_update'; filled: Record<string, unknown>; uncertain: Record<string, unknown>; missing: string[]; out_of_scope: string[]; convergence_pct: number }
+  | { type: 'category_state'; snapshot: SocraticCategorySnapshot }
   | { type: 'prompt'; prompt: PromptEnvelope }
   | { type: 'converged'; reason: string; convergence_pct: number }
   // Contradiction detection
@@ -602,6 +636,8 @@ export type ClientWsMessage =
     max_visible_items: number;
     supports_split_draft_view: boolean;
   }
+  | { type: 'enter_category'; category_id: string; revision: string }
+  | { type: 'back_to_categories' }
   | { type: 'done' }
   // Dimension editing
   | { type: 'dimension_edit'; dimension: string; new_value: string };

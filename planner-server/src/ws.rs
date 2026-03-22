@@ -16,7 +16,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use planner_schemas::{
-    PromptEnvelope, PromptResponse as StructuredPromptResponse,
+    PromptEnvelope, PromptResponse as StructuredPromptResponse, SocraticCategorySnapshot,
     UiCapabilities as ClientUiCapabilities,
 };
 
@@ -85,6 +85,10 @@ pub enum ServerMessage {
     #[serde(rename = "prompt")]
     Prompt { prompt: PromptEnvelope },
 
+    /// Current Socratic category-navigation state.
+    #[serde(rename = "category_state")]
+    CategoryState { snapshot: SocraticCategorySnapshot },
+
     /// Interview converged — ready to build.
     #[serde(rename = "converged")]
     Converged {
@@ -130,6 +134,17 @@ pub enum ClientMessage {
         #[serde(flatten)]
         capabilities: ClientUiCapabilities,
     },
+
+    /// Enter a category from the current snapshot revision.
+    #[serde(rename = "enter_category")]
+    EnterCategory {
+        category_id: String,
+        revision: String,
+    },
+
+    /// Return to the main category screen.
+    #[serde(rename = "back_to_categories")]
+    BackToCategories,
 
     /// User says "done, start building".
     #[serde(rename = "done")]
@@ -284,6 +299,8 @@ pub async fn handle_ws(mut socket: WebSocket, state: Arc<AppState>, session_id: 
                                 // ignore them in the pipeline-phase handler.
                                 ClientMessage::PromptResponse { .. }
                                 | ClientMessage::UiCapabilities { .. }
+                                | ClientMessage::EnterCategory { .. }
+                                | ClientMessage::BackToCategories
                                 | ClientMessage::Done
                                 | ClientMessage::DimensionEdit { .. } => {}
                             }
@@ -438,6 +455,8 @@ mod tests {
                 kind: planner_schemas::PromptKind::QuestionBatch,
                 title: "Continue interview".into(),
                 instructions: Some("Answer what you can.".into()),
+                origin_category_id: None,
+                category_path: Vec::new(),
                 items: vec![planner_schemas::PromptItem {
                     item_id: "item-1".into(),
                     kind: planner_schemas::PromptItemKind::Discovery,

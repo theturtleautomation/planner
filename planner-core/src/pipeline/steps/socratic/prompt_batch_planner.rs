@@ -6,7 +6,8 @@ use chrono::Utc;
 use planner_schemas::{
     Contradiction, Dimension, InterviewerConstitution, PromptDirectEffect, PromptEnvelope,
     PromptItem, PromptItemKind, PromptKind, PromptOption, PromptPreferredLayout,
-    PromptResponseMode, PromptUiHints, RequirementsBeliefState, SocraticTurn, SpeculativeDraft,
+    PromptResponseMode, PromptUiHints, RequirementsBeliefState, SocraticCategoryPathEntry,
+    SocraticTurn, SpeculativeDraft,
 };
 
 use super::super::StepResult;
@@ -190,6 +191,29 @@ pub async fn plan_prompt_batch(
     draft: Option<&SpeculativeDraft>,
 ) -> StepResult<Option<PromptEnvelope>> {
     let candidates = select_prompt_candidates(state, draft, max_visible_items);
+    plan_prompt_batch_from_candidates(
+        router,
+        state,
+        constitution,
+        conversation_history,
+        candidates,
+        draft,
+        None,
+        Vec::new(),
+    )
+    .await
+}
+
+pub async fn plan_prompt_batch_from_candidates(
+    router: &LlmRouter,
+    state: &RequirementsBeliefState,
+    constitution: &InterviewerConstitution,
+    conversation_history: &[SocraticTurn],
+    candidates: Vec<PromptCandidate>,
+    draft: Option<&SpeculativeDraft>,
+    origin_category_id: Option<String>,
+    category_path: Vec<SocraticCategoryPathEntry>,
+) -> StepResult<Option<PromptEnvelope>> {
     if candidates.is_empty() {
         return Ok(None);
     }
@@ -262,6 +286,8 @@ pub async fn plan_prompt_batch(
         kind,
         title,
         instructions,
+        origin_category_id,
+        category_path,
         items,
         draft_snapshot: has_draft_candidates.then(|| draft.cloned()).flatten(),
         required_item_ids,
@@ -606,7 +632,7 @@ fn short_hash(input: &str) -> String {
     hex.chars().take(10).collect()
 }
 
-fn candidate_identity_key(candidate: &PromptCandidate) -> String {
+pub(crate) fn candidate_identity_key(candidate: &PromptCandidate) -> String {
     match (&candidate.kind, &candidate.source) {
         (PromptItemKind::Contradiction, _) => {
             let contradiction = candidate
@@ -664,7 +690,7 @@ fn candidate_identity_key(candidate: &PromptCandidate) -> String {
     }
 }
 
-fn deterministic_item_id(candidate: &PromptCandidate) -> String {
+pub(crate) fn deterministic_item_id(candidate: &PromptCandidate) -> String {
     let key = candidate_identity_key(candidate);
     match (&candidate.kind, &candidate.source) {
         (PromptItemKind::Contradiction, _) => format!("contradiction-{}", short_hash(&key)),

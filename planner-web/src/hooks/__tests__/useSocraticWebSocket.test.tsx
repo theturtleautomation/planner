@@ -54,6 +54,7 @@ describe('useSocraticWebSocket', () => {
 
   afterEach(() => {
     globalThis.WebSocket = originalWebSocket;
+    vi.useRealTimers();
   });
 
   it('sendDone only sends protocol message and does not append optimistic transcript text', async () => {
@@ -236,6 +237,309 @@ describe('useSocraticWebSocket', () => {
     ).toBe('complete');
   });
 
+  it('hydrates category state and sends category navigation actions', async () => {
+    const getToken = vi.fn().mockResolvedValue('token');
+    const { result } = renderHook(() => useSocraticWebSocket({
+      sessionId: 'session-category',
+      getToken,
+      initialSession: null,
+    }));
+
+    act(() => {
+      result.current.attach();
+    });
+
+    await waitFor(() => {
+      expect(mockSockets.length).toBeGreaterThan(0);
+    });
+
+    const socket = mockSockets.at(-1)!;
+    act(() => {
+      socket.open();
+      socket.emit({
+        type: 'category_state',
+        snapshot: {
+          revision: 'category-1',
+          root_category_ids: ['root-discovery'],
+          nodes: [
+            {
+              category_id: 'root-discovery',
+              parent_category_id: null,
+              title: 'Explore missing areas',
+              summary: '1 area still needs discovery.',
+              status: 'ready',
+              depth: 0,
+              mapped_dimensions: [],
+              has_children: true,
+              has_prompt_ready: false,
+              item_count_hint: 1,
+            },
+          ],
+          active_category_path: [],
+          newly_available_category_ids: [],
+          build_ready: false,
+          build_readiness_message: 'Build is blocked until 1 remaining area is explored.',
+        },
+      });
+    });
+
+    expect(result.current.currentCategorySnapshot?.revision).toBe('category-1');
+
+    act(() => {
+      result.current.enterCategory('root-discovery', 'category-1');
+      result.current.backToCategories();
+    });
+
+    expect(
+      socket.sent.some((payload) => {
+        const parsed = JSON.parse(payload);
+        return parsed.type === 'enter_category' && parsed.category_id === 'root-discovery';
+      }),
+    ).toBe(true);
+    expect(
+      socket.sent.some((payload) => JSON.parse(payload).type === 'back_to_categories'),
+    ).toBe(true);
+  });
+
+  it('reconnect replay restores deep category state without reviving a stale prompt', async () => {
+    const getToken = vi.fn().mockResolvedValue('token');
+    const { result } = renderHook(() => useSocraticWebSocket({
+      sessionId: 'session-category-replay',
+      getToken,
+      initialSession: null,
+    }));
+
+    act(() => {
+      result.current.attach();
+    });
+
+    await waitFor(() => {
+      expect(mockSockets.length).toBe(1);
+    });
+
+    const socket = mockSockets[0];
+    act(() => {
+      socket.open();
+      socket.emit({
+        type: 'category_state',
+        snapshot: {
+          revision: 'category-deep-1',
+          root_category_ids: ['root-discovery'],
+          nodes: [
+            {
+              category_id: 'root-discovery',
+              parent_category_id: null,
+              title: 'Explore missing areas',
+              summary: '1 area still needs discovery.',
+              status: 'active',
+              depth: 0,
+              mapped_dimensions: [],
+              has_children: true,
+              has_prompt_ready: false,
+              item_count_hint: 1,
+            },
+            {
+              category_id: 'root-discovery::dimension::security',
+              parent_category_id: 'root-discovery',
+              title: 'Security',
+              summary: 'Authentication model still needs definition.',
+              status: 'ready',
+              depth: 1,
+              mapped_dimensions: ['Security'],
+              has_children: false,
+              has_prompt_ready: true,
+              item_count_hint: 1,
+            },
+          ],
+          active_category_path: [
+            { category_id: 'root-discovery', title: 'Explore missing areas' },
+          ],
+          newly_available_category_ids: [],
+          build_ready: false,
+          build_readiness_message: 'Build is blocked until the remaining category is explored.',
+        },
+      });
+    });
+
+    expect(result.current.currentCategorySnapshot?.revision).toBe('category-deep-1');
+    expect(result.current.currentPrompt).toBeNull();
+
+    act(() => {
+      socket.close();
+    });
+
+    await new Promise((resolve) => {
+      setTimeout(resolve, 1200);
+    });
+    expect(mockSockets.length).toBe(2);
+
+    const replaySocket = mockSockets[1];
+    act(() => {
+      replaySocket.open();
+      replaySocket.emit({
+        type: 'category_state',
+        snapshot: {
+          revision: 'category-deep-1',
+          root_category_ids: ['root-discovery'],
+          nodes: [
+            {
+              category_id: 'root-discovery',
+              parent_category_id: null,
+              title: 'Explore missing areas',
+              summary: '1 area still needs discovery.',
+              status: 'active',
+              depth: 0,
+              mapped_dimensions: [],
+              has_children: true,
+              has_prompt_ready: false,
+              item_count_hint: 1,
+            },
+            {
+              category_id: 'root-discovery::dimension::security',
+              parent_category_id: 'root-discovery',
+              title: 'Security',
+              summary: 'Authentication model still needs definition.',
+              status: 'ready',
+              depth: 1,
+              mapped_dimensions: ['Security'],
+              has_children: false,
+              has_prompt_ready: true,
+              item_count_hint: 1,
+            },
+          ],
+          active_category_path: [
+            { category_id: 'root-discovery', title: 'Explore missing areas' },
+          ],
+          newly_available_category_ids: [],
+          build_ready: false,
+          build_readiness_message: 'Build is blocked until the remaining category is explored.',
+        },
+      });
+    });
+
+    expect(result.current.currentCategorySnapshot?.active_category_path).toEqual([
+      { category_id: 'root-discovery', title: 'Explore missing areas' },
+    ]);
+    expect(result.current.currentPrompt).toBeNull();
+  });
+
+  it('reconnect replay restores prompt state with deep category breadcrumbs', async () => {
+    const getToken = vi.fn().mockResolvedValue('token');
+    const { result } = renderHook(() => useSocraticWebSocket({
+      sessionId: 'session-prompt-replay',
+      getToken,
+      initialSession: null,
+    }));
+
+    act(() => {
+      result.current.attach();
+    });
+
+    await waitFor(() => {
+      expect(mockSockets.length).toBeGreaterThan(0);
+    });
+
+    const socket = mockSockets[0];
+    act(() => {
+      socket.open();
+      socket.emit({
+        type: 'prompt',
+        prompt: {
+          prompt_id: 'prompt-deep-1',
+          kind: 'question_batch',
+          title: 'Clarify security',
+          instructions: 'Answer the scoped security question.',
+          origin_category_id: 'root-discovery::dimension::security::auth',
+          category_path: [
+            { category_id: 'root-discovery', title: 'Explore missing areas' },
+            { category_id: 'root-discovery::dimension::security', title: 'Security' },
+            { category_id: 'root-discovery::dimension::security::auth', title: 'Authentication model' },
+          ],
+          items: [
+            {
+              item_id: 'item-security',
+              kind: 'discovery',
+              target_dimension: 'Security',
+              text: 'How should authentication work?',
+              options: [],
+              response_mode: 'single_select_with_custom_text',
+              required: false,
+              priority: 100,
+              dependency_item_ids: [],
+            },
+          ],
+          required_item_ids: [],
+          allow_partial_submit: true,
+          ui_hints: {
+            preferred_layout: 'cards',
+            show_draft_sidebar: false,
+          },
+          based_on_turn: 2,
+          created_at: '2026-03-21T00:00:00Z',
+        },
+      });
+    });
+
+    expect(result.current.currentPrompt?.prompt_id).toBe('prompt-deep-1');
+    expect(result.current.currentPrompt?.category_path).toHaveLength(3);
+
+    act(() => {
+      socket.close();
+    });
+
+    await new Promise((resolve) => {
+      setTimeout(resolve, 1200);
+    });
+    expect(mockSockets.length).toBe(2);
+
+    const replaySocket = mockSockets[1];
+    act(() => {
+      replaySocket.open();
+      replaySocket.emit({
+        type: 'prompt',
+        prompt: {
+          prompt_id: 'prompt-deep-1',
+          kind: 'question_batch',
+          title: 'Clarify security',
+          instructions: 'Answer the scoped security question.',
+          origin_category_id: 'root-discovery::dimension::security::auth',
+          category_path: [
+            { category_id: 'root-discovery', title: 'Explore missing areas' },
+            { category_id: 'root-discovery::dimension::security', title: 'Security' },
+            { category_id: 'root-discovery::dimension::security::auth', title: 'Authentication model' },
+          ],
+          items: [
+            {
+              item_id: 'item-security',
+              kind: 'discovery',
+              target_dimension: 'Security',
+              text: 'How should authentication work?',
+              options: [],
+              response_mode: 'single_select_with_custom_text',
+              required: false,
+              priority: 100,
+              dependency_item_ids: [],
+            },
+          ],
+          required_item_ids: [],
+          allow_partial_submit: true,
+          ui_hints: {
+            preferred_layout: 'cards',
+            show_draft_sidebar: false,
+          },
+          based_on_turn: 2,
+          created_at: '2026-03-21T00:00:00Z',
+        },
+      });
+    });
+
+    expect(result.current.currentPrompt?.category_path).toEqual([
+      { category_id: 'root-discovery', title: 'Explore missing areas' },
+      { category_id: 'root-discovery::dimension::security', title: 'Security' },
+      { category_id: 'root-discovery::dimension::security::auth', title: 'Authentication model' },
+    ]);
+  });
+
   it('handles retry-heavy planner_event sequences without losing stage coherence', async () => {
     const getToken = vi.fn().mockResolvedValue('token');
     const { result } = renderHook(() => useSocraticWebSocket({
@@ -312,5 +616,53 @@ describe('useSocraticWebSocket', () => {
     expect(
       result.current.stages.find((stage) => stage.name === 'Validate')?.status,
     ).toBe('complete');
+  });
+
+  it('does not reconnect after a terminal pipeline error closes the socket', async () => {
+    const getToken = vi.fn().mockResolvedValue('token');
+    const { result } = renderHook(() => useSocraticWebSocket({
+      sessionId: 'session-error',
+      getToken,
+      initialSession: null,
+    }));
+
+    act(() => {
+      result.current.attach();
+    });
+
+    await waitFor(() => {
+      expect(mockSockets.length).toBe(1);
+    });
+
+    const socket = mockSockets[0];
+    vi.useFakeTimers();
+
+    act(() => {
+      socket.open();
+      socket.emit({
+        type: 'planner_event',
+        id: 'evt-pipeline-start',
+        timestamp: new Date().toISOString(),
+        level: 'info',
+        source: 'pipeline',
+        step: 'pipeline.stage.started',
+        message: 'Chunk stage started',
+        metadata: { stage: 'Chunk' },
+      });
+      socket.emit({
+        type: 'error',
+        message: 'Pipeline failed: LLM call failed: Not logged in',
+      });
+      socket.close();
+    });
+
+    expect(result.current.intakePhase).toBe('error');
+
+    act(() => {
+      vi.advanceTimersByTime(10_000);
+    });
+
+    expect(mockSockets).toHaveLength(1);
+    expect(result.current.reconnectFailed).toBe(false);
   });
 });

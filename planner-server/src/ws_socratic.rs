@@ -33,11 +33,13 @@ use planner_core::observability::EventSink;
 use planner_core::pipeline::steps::socratic::convergence;
 use planner_core::pipeline::steps::socratic::{
     run_interview_from_checkpoint, CheckpointResumeState, ResumePendingPrompt,
+    SocraticInteractiveInput,
 };
 
 use planner_schemas::{
     ConvergenceResult, DomainClassification, PromptAnswer, PromptEnvelope, PromptResponse,
-    RequirementsBeliefState, SocraticEvent, UiCapabilities, ViewportClass,
+    RequirementsBeliefState, SocraticCategorySnapshot, SocraticEvent, UiCapabilities,
+    ViewportClass,
 };
 
 use crate::runtime::{AttachError, RuntimeAttachment, SessionRuntime, SocraticRuntimeInput};
@@ -256,6 +258,32 @@ impl planner_core::pipeline::steps::socratic::SocraticIO for WsSocraticIO {
         }
     }
 
+    async fn send_category_state(&self, snapshot: &SocraticCategorySnapshot) {
+        self.send(ServerMessage::CategoryState {
+            snapshot: snapshot.clone(),
+        });
+
+        if let Some(ref sink) = self.event_sink {
+            sink.emit(
+                planner_core::observability::PlannerEvent::info(
+                    planner_core::observability::EventSource::SocraticEngine,
+                    "socratic.category_state.generated",
+                    format!(
+                        "Category state generated with {} visible node(s)",
+                        snapshot.root_category_ids.len()
+                    ),
+                )
+                .with_session(self.session_id)
+                .with_metadata(serde_json::json!({
+                    "revision": snapshot.revision.clone(),
+                    "root_category_count": snapshot.root_category_ids.len(),
+                    "active_category_depth": snapshot.active_category_path.len(),
+                    "build_ready": snapshot.build_ready,
+                })),
+            );
+        }
+    }
+
     async fn send_belief_state(&self, state: &RequirementsBeliefState) {
         // Serialize the HashMap keys as strings for JSON compatibility.
         let filled: serde_json::Map<String, serde_json::Value> = state
@@ -391,11 +419,18 @@ impl planner_core::pipeline::steps::socratic::SocraticIO for WsSocraticIO {
         }
     }
 
-    async fn receive_prompt_response(&self, prompt: &PromptEnvelope) -> Option<PromptResponse> {
+    async fn receive_interview_input(
+        &self,
+        prompt: Option<&PromptEnvelope>,
+        _snapshot: Option<&SocraticCategorySnapshot>,
+    ) -> Option<SocraticInteractiveInput> {
         loop {
             let incoming = self.input_rx.lock().await.recv().await?;
             match incoming {
                 SocraticRuntimeInput::PromptResponse(response) => {
+                    let Some(prompt) = prompt else {
+                        continue;
+                    };
                     if response.prompt_id != prompt.prompt_id {
                         tracing::warn!(
                             "Session {}: ignoring prompt_response for stale prompt '{}' (expected '{}')",
@@ -406,9 +441,21 @@ impl planner_core::pipeline::steps::socratic::SocraticIO for WsSocraticIO {
                         continue;
                     }
                     self.emit_prompt_submission_event(prompt, &response);
-                    return Some(response);
+                    return Some(SocraticInteractiveInput::PromptResponse(response));
                 }
-                SocraticRuntimeInput::Done => return None,
+                SocraticRuntimeInput::EnterCategory {
+                    category_id,
+                    revision,
+                } => {
+                    return Some(SocraticInteractiveInput::EnterCategory {
+                        category_id,
+                        revision,
+                    });
+                }
+                SocraticRuntimeInput::BackToCategories => {
+                    return Some(SocraticInteractiveInput::BackToCategories);
+                }
+                SocraticRuntimeInput::Done => return Some(SocraticInteractiveInput::Done),
                 SocraticRuntimeInput::DimensionEdit { .. } => {
                     // Dimension edits are applied by the websocket handler and
                     // are not prompt answers for the Socratic engine.
@@ -487,6 +534,16 @@ fn update_session_ui_capabilities(
     });
 }
 
+fn can_finish_from_main_category_screen(state: &Arc<AppState>, session_id: Uuid) -> bool {
+    state
+        .sessions
+        .get(session_id)
+        .and_then(|session| session.checkpoint)
+        .and_then(|checkpoint| checkpoint.current_category_snapshot)
+        .map(|snapshot| snapshot.build_ready && snapshot.active_category_path.is_empty())
+        .unwrap_or(false)
+}
+
 fn prompt_answer_to_input_text(
     answer: &PromptAnswer,
     prompt: Option<&PromptEnvelope>,
@@ -535,25 +592,36 @@ fn prompt_response_to_input(
         .find_map(|answer| prompt_answer_to_input_text(answer, prompt))
 }
 
-async fn replay_current_prompt_if_present(
+async fn replay_current_interview_state_if_present(
     socket: &mut WebSocket,
     state: &Arc<AppState>,
     session_id: Uuid,
 ) -> Result<(), ()> {
-    if let Some(msg) = current_prompt_replay_message(state, session_id) {
+    if let Some(msg) = current_interview_replay_message(state, session_id) {
         send_ws_message(socket, &msg).await?;
     }
 
     Ok(())
 }
 
-fn current_prompt_replay_message(state: &Arc<AppState>, session_id: Uuid) -> Option<ServerMessage> {
+fn current_interview_replay_message(
+    state: &Arc<AppState>,
+    session_id: Uuid,
+) -> Option<ServerMessage> {
     state
         .sessions
         .get(session_id)
         .and_then(|session| session.checkpoint)
-        .and_then(|checkpoint| checkpoint.current_prompt)
-        .map(|prompt| ServerMessage::Prompt { prompt })
+        .and_then(|checkpoint| {
+            checkpoint
+                .current_prompt
+                .map(|prompt| ServerMessage::Prompt { prompt })
+                .or_else(|| {
+                    checkpoint
+                        .current_category_snapshot
+                        .map(|snapshot| ServerMessage::CategoryState { snapshot })
+                })
+        })
 }
 
 pub fn expire_detached_runtimes(state: &Arc<AppState>) {
@@ -625,6 +693,7 @@ fn apply_checkpoint_from_event(state: &Arc<AppState>, session_id: Uuid, event: &
             checkpoint.belief_state = Some(next_state.clone());
             checkpoint.contradictions = next_state.contradictions.clone();
             checkpoint.current_prompt = None;
+            checkpoint.current_category_snapshot = None;
             checkpoint.stale_turns = if is_stale_turn {
                 previous_stale_turns.saturating_add(1)
             } else {
@@ -632,9 +701,16 @@ fn apply_checkpoint_from_event(state: &Arc<AppState>, session_id: Uuid, event: &
             };
             checkpoint.touch();
         }
+        SocraticEvent::CategoryState { snapshot } => {
+            let checkpoint = s.ensure_checkpoint();
+            checkpoint.current_category_snapshot = Some(snapshot.clone());
+            checkpoint.current_prompt = None;
+            checkpoint.touch();
+        }
         SocraticEvent::PromptGenerated { prompt } => {
             let checkpoint = s.ensure_checkpoint();
             checkpoint.current_prompt = Some(prompt.clone());
+            checkpoint.current_category_snapshot = None;
             if prompt.draft_snapshot.is_some() {
                 checkpoint.draft_shown_at_turn = Some(prompt.based_on_turn);
             }
@@ -648,6 +724,7 @@ fn apply_checkpoint_from_event(state: &Arc<AppState>, session_id: Uuid, event: &
         SocraticEvent::Converged { .. } => {
             let checkpoint = s.ensure_checkpoint();
             checkpoint.current_prompt = None;
+            checkpoint.current_category_snapshot = None;
             checkpoint.touch();
         }
         SocraticEvent::SystemMessage { .. } | SocraticEvent::Error { .. } => {}
@@ -684,6 +761,7 @@ fn build_checkpoint_resume_state(
         stale_turns: checkpoint.stale_turns,
         draft_shown_at_turn: checkpoint.draft_shown_at_turn,
         pending_prompt,
+        category_snapshot: checkpoint.current_category_snapshot.clone(),
     })
 }
 
@@ -1051,6 +1129,9 @@ async fn wait_for_initial_description(
                 Ok(ClientMessage::UiCapabilities { capabilities }) => {
                     update_session_ui_capabilities(state, session_id, capabilities);
                 }
+                Ok(ClientMessage::EnterCategory { .. }) | Ok(ClientMessage::BackToCategories) => {
+                    continue;
+                }
                 Ok(ClientMessage::Done) => return None,
                 Ok(_) => continue,
                 Err(e) => {
@@ -1081,7 +1162,7 @@ async fn handle_live_runtime_ws(
     let mut shutdown_rx = runtime.subscribe_shutdown();
 
     mark_interview_runtime_attached(&state, session_id);
-    if replay_current_prompt_if_present(&mut socket, &state, session_id)
+    if replay_current_interview_state_if_present(&mut socket, &state, session_id)
         .await
         .is_err()
     {
@@ -1145,8 +1226,32 @@ async fn handle_live_runtime_ws(
                             Ok(ClientMessage::UiCapabilities { capabilities }) => {
                                 update_session_ui_capabilities(&state, session_id, capabilities);
                             }
+                            Ok(ClientMessage::EnterCategory { category_id, revision }) => {
+                                let _ = input_tx.send(SocraticRuntimeInput::EnterCategory {
+                                    category_id,
+                                    revision,
+                                });
+                            }
+                            Ok(ClientMessage::BackToCategories) => {
+                                let _ = input_tx.send(SocraticRuntimeInput::BackToCategories);
+                            }
                             Ok(ClientMessage::Done) => {
-                                let _ = input_tx.send(SocraticRuntimeInput::Done);
+                                if can_finish_from_main_category_screen(&state, session_id) {
+                                    let _ = input_tx.send(SocraticRuntimeInput::Done);
+                                } else {
+                                    state.sessions.update(session_id, |s| {
+                                        s.add_message(
+                                            "planner",
+                                            "Return to the main category screen before starting the build.",
+                                        );
+                                    });
+                                    runtime.publish(ServerMessage::ChatMessage {
+                                        id: Uuid::new_v4().to_string(),
+                                        role: "planner".into(),
+                                        content: "Return to the main category screen before starting the build.".into(),
+                                        timestamp: chrono::Utc::now().to_rfc3339(),
+                                    });
+                                }
                             }
                             Ok(ClientMessage::DimensionEdit { dimension, new_value }) => {
                                 state.sessions.update(session_id, |s| {
@@ -1475,7 +1580,8 @@ mod tests {
     use planner_schemas::{
         ComplexityTier, Dimension, DraftSection, ProjectType, PromptAnswer, PromptEnvelope,
         PromptItem, PromptItemKind, PromptKind, PromptOption, PromptPreferredLayout,
-        PromptResponse, PromptResponseMode, PromptUiHints, SpeculativeDraft, UiCapabilities,
+        PromptResponse, PromptResponseMode, PromptUiHints, SocraticCategoryNode,
+        SocraticCategoryPathEntry, SocraticCategoryStatus, SpeculativeDraft, UiCapabilities,
         ViewportClass,
     };
 
@@ -1506,6 +1612,8 @@ mod tests {
             kind: PromptKind::QuestionBatch,
             title: "Continue interview".into(),
             instructions: None,
+            origin_category_id: None,
+            category_path: Vec::new(),
             items: vec![PromptItem {
                 item_id: "item-1".into(),
                 kind: PromptItemKind::Discovery,
@@ -1553,6 +1661,8 @@ mod tests {
             instructions: Some(
                 "Confirm accurate sections and provide corrections where needed.".into(),
             ),
+            origin_category_id: None,
+            category_path: Vec::new(),
             items: vec![PromptItem {
                 item_id: "draft-item-1".into(),
                 kind: PromptItemKind::DraftSection,
@@ -1587,6 +1697,65 @@ mod tests {
             },
             based_on_turn: 2,
             created_at: "2026-03-08T00:00:00Z".into(),
+        }
+    }
+
+    fn test_category_snapshot() -> SocraticCategorySnapshot {
+        SocraticCategorySnapshot {
+            revision: "category-deep-1".into(),
+            root_category_ids: vec!["root-discovery".into()],
+            nodes: vec![
+                SocraticCategoryNode {
+                    category_id: "root-discovery".into(),
+                    parent_category_id: None,
+                    title: "Explore missing areas".into(),
+                    summary: "2 discovery branches remain.".into(),
+                    status: SocraticCategoryStatus::Active,
+                    depth: 0,
+                    mapped_dimensions: Vec::new(),
+                    has_children: true,
+                    has_prompt_ready: false,
+                    item_count_hint: 2,
+                },
+                SocraticCategoryNode {
+                    category_id: "root-discovery::dimension::security".into(),
+                    parent_category_id: Some("root-discovery".into()),
+                    title: "Security".into(),
+                    summary: "Authentication and access control are still open.".into(),
+                    status: SocraticCategoryStatus::Active,
+                    depth: 1,
+                    mapped_dimensions: vec![Dimension::Security],
+                    has_children: true,
+                    has_prompt_ready: false,
+                    item_count_hint: 1,
+                },
+                SocraticCategoryNode {
+                    category_id: "root-discovery::dimension::security::auth".into(),
+                    parent_category_id: Some("root-discovery::dimension::security".into()),
+                    title: "Authentication model".into(),
+                    summary: "Clarify the sign-in approach.".into(),
+                    status: SocraticCategoryStatus::Ready,
+                    depth: 2,
+                    mapped_dimensions: vec![Dimension::Security],
+                    has_children: false,
+                    has_prompt_ready: true,
+                    item_count_hint: 1,
+                },
+            ],
+            active_category_path: vec![
+                SocraticCategoryPathEntry {
+                    category_id: "root-discovery".into(),
+                    title: "Explore missing areas".into(),
+                },
+                SocraticCategoryPathEntry {
+                    category_id: "root-discovery::dimension::security".into(),
+                    title: "Security".into(),
+                },
+            ],
+            newly_available_category_ids: vec!["root-discovery::dimension::security::auth".into()],
+            build_ready: false,
+            build_readiness_message:
+                "Build is blocked until the remaining discovery branches are explored.".into(),
         }
     }
 
@@ -1695,11 +1864,14 @@ mod tests {
             .unwrap();
 
         use planner_core::pipeline::steps::socratic::SocraticIO;
-        let received = io.receive_prompt_response(&prompt).await;
+        let received = io.receive_interview_input(Some(&prompt), None).await;
         assert_eq!(
             received
                 .as_ref()
-                .and_then(|response| response.answers.first())
+                .and_then(|input| match input {
+                    SocraticInteractiveInput::PromptResponse(response) => response.answers.first(),
+                    _ => None,
+                })
                 .and_then(|answer| answer.custom_text.as_deref()),
             Some("hello world")
         );
@@ -1725,7 +1897,7 @@ mod tests {
 
         use planner_core::pipeline::steps::socratic::SocraticIO;
         let prompt = test_prompt("Test question");
-        let received = io.receive_prompt_response(&prompt).await;
+        let received = io.receive_interview_input(Some(&prompt), None).await;
         assert!(received.is_none());
     }
 
@@ -1761,8 +1933,8 @@ mod tests {
 
         use planner_core::pipeline::steps::socratic::SocraticIO;
         let prompt = test_prompt("Test question");
-        let received = io.receive_prompt_response(&prompt).await;
-        assert!(received.is_none());
+        let received = io.receive_interview_input(Some(&prompt), None).await;
+        assert!(matches!(received, Some(SocraticInteractiveInput::Done)));
     }
 
     #[tokio::test]
@@ -1815,8 +1987,11 @@ mod tests {
             .unwrap();
 
         use planner_core::pipeline::steps::socratic::SocraticIO;
-        let received = io.receive_prompt_response(&prompt).await;
-        assert!(received.is_some());
+        let received = io.receive_interview_input(Some(&prompt), None).await;
+        assert!(matches!(
+            received,
+            Some(SocraticInteractiveInput::PromptResponse(_))
+        ));
 
         let steps: Vec<Option<String>> =
             sink.events().into_iter().map(|event| event.step).collect();
@@ -2048,7 +2223,7 @@ mod tests {
     }
 
     #[test]
-    fn current_prompt_replay_message_replays_checkpoint_prompt() {
+    fn current_interview_replay_message_replays_checkpoint_prompt() {
         let state = test_state();
         let session = state.sessions.create("dev|local");
         let session_id = session.id;
@@ -2061,7 +2236,7 @@ mod tests {
             },
         );
 
-        let replay = current_prompt_replay_message(&state, session_id)
+        let replay = current_interview_replay_message(&state, session_id)
             .expect("checkpoint prompt should be replayable");
         match replay {
             ServerMessage::Prompt { prompt } => {
@@ -2073,6 +2248,83 @@ mod tests {
             }
             other => panic!("expected prompt replay message, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn current_interview_replay_message_replays_checkpoint_category_snapshot() {
+        let state = test_state();
+        let session = state.sessions.create("dev|local");
+        let session_id = session.id;
+
+        apply_checkpoint_from_event(
+            &state,
+            session_id,
+            &SocraticEvent::CategoryState {
+                snapshot: test_category_snapshot(),
+            },
+        );
+
+        let replay = current_interview_replay_message(&state, session_id)
+            .expect("checkpoint category snapshot should be replayable");
+        match replay {
+            ServerMessage::CategoryState { snapshot } => {
+                assert_eq!(snapshot.revision, "category-deep-1");
+                assert_eq!(snapshot.active_category_path.len(), 2);
+                assert_eq!(
+                    snapshot
+                        .active_category_path
+                        .last()
+                        .map(|entry| entry.category_id.as_str()),
+                    Some("root-discovery::dimension::security")
+                );
+            }
+            other => panic!("expected category replay message, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn build_checkpoint_resume_state_restores_deep_category_snapshot() {
+        let state = test_state();
+        let session = state.sessions.create("dev|local");
+        let session_id = session.id;
+
+        apply_checkpoint_from_event(
+            &state,
+            session_id,
+            &SocraticEvent::BeliefStateUpdate {
+                state: RequirementsBeliefState {
+                    filled: Default::default(),
+                    uncertain: Default::default(),
+                    missing: vec![Dimension::Security],
+                    out_of_scope: Vec::new(),
+                    contradictions: Vec::new(),
+                    required_dimensions: vec![Dimension::Security],
+                    turn_count: 0,
+                    classification: None,
+                },
+            },
+        );
+        apply_checkpoint_from_event(
+            &state,
+            session_id,
+            &SocraticEvent::CategoryState {
+                snapshot: test_category_snapshot(),
+            },
+        );
+
+        let session = state
+            .sessions
+            .get(session_id)
+            .expect("session should exist");
+        let resume_state =
+            build_checkpoint_resume_state(&session).expect("checkpoint resume state should exist");
+
+        let snapshot = resume_state
+            .category_snapshot
+            .expect("category snapshot should be restored");
+        assert_eq!(snapshot.revision, "category-deep-1");
+        assert_eq!(snapshot.active_category_path.len(), 2);
+        assert!(resume_state.pending_prompt.is_none());
     }
 
     #[test]

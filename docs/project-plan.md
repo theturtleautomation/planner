@@ -1,7 +1,7 @@
 # Project Plan
 
 **Status:** Active  
-**Date:** 2026-03-19
+**Date:** 2026-03-21
 
 ## Purpose
 
@@ -22,6 +22,13 @@ These are the main planning documents currently shaping the repo:
 - [Phase 00 Project Ownership Implementation](/home/thetu/planner/docs/phase-00-project-ownership-implementation.md)
 - [Phase 01 Root Landing And Navigation Implementation](/home/thetu/planner/docs/phase-01-root-landing-implementation.md)
 - [Session Workflow Web UI Implementation Plan](/home/thetu/planner/docs/session-workflow-webui-plan.md)
+- [Phase 07 Socratic Prompt Protocol Redesign Implementation](/home/thetu/planner/docs/phase-07-socratic-prompt-protocol-redesign-implementation.md)
+- [Phase 08 Socratic Category Drill-Down Implementation](/home/thetu/planner/docs/phase-08-socratic-category-drilldown-implementation.md)
+- [Phase 09 Socratic Recursive Category Synthesis Spec](/home/thetu/planner/docs/phase-09-socratic-recursive-category-synthesis-spec.md)
+- [Phase 10 Socratic Category Status And Refresh Spec](/home/thetu/planner/docs/phase-10-socratic-category-status-and-refresh-spec.md)
+- [Phase 11 Socratic Category Replay And Validation Spec](/home/thetu/planner/docs/phase-11-socratic-category-replay-and-validation-spec.md)
+- [Planner Design System Command Center Plan](/home/thetu/planner/docs/planner-design-system-command-center-plan.md)
+- [Planner Design System Phase 1 Tonal Foundation Spec](/home/thetu/planner/docs/planner-design-system-phase-1-tonal-foundation-spec.md)
 - [Knowledge Library Project Scope Plan](/home/thetu/planner/docs/knowledge-library-project-scope-plan.md)
 - [Import Existing Project Plan](/home/thetu/planner/docs/import-existing-project-plan.md)
 - [Import Existing Project Phase 1 Domain Skeleton Spec](/home/thetu/planner/docs/import-existing-project-phase-1-domain-skeleton-spec.md)
@@ -44,24 +51,113 @@ These are the main planning documents currently shaping the repo:
 
 ## Current Active Thread
 
-### Import Existing Project
+### Socratic Category Drill-Down
 
 Goal:
 
-- allow a user to import an existing codebase
-- analyze it
-- review imported structure before it becomes canonical blueprint knowledge
-- then enter the Socratic lobby against that imported project
+- replace the flat multi-area Socratic lobby batch with a category-first intake
+  flow
+- let users enter a category, answer scoped prompts, and explicitly return to a
+  refreshed main category screen
+- preserve dimension-based convergence and draft review as the hidden truth
+  model behind the new navigation layer
+
+Canonical planning doc:
+
+- [Phase 08 Socratic Category Drill-Down Implementation](/home/thetu/planner/docs/phase-08-socratic-category-drilldown-implementation.md)
+
+Supporting research doc:
+
+- [Phase 07 Socratic Prompt Protocol Redesign Implementation](/home/thetu/planner/docs/phase-07-socratic-prompt-protocol-redesign-implementation.md)
+
+Current completed slice:
+
+- prompt-envelope based Socratic intake is implemented and verified in
+  [Phase 07 Socratic Prompt Protocol Redesign Implementation](/home/thetu/planner/docs/phase-07-socratic-prompt-protocol-redesign-implementation.md)
+- category-driven interview navigation is implemented and verified in
+  [Phase 08 Socratic Category Drill-Down Implementation](/home/thetu/planner/docs/phase-08-socratic-category-drilldown-implementation.md)
+- recursive category synthesis and deep breadcrumb navigation are implemented
+  and verified in
+  [Phase 09 Socratic Recursive Category Synthesis Spec](/home/thetu/planner/docs/phase-09-socratic-recursive-category-synthesis-spec.md)
+- category status semantics, refresh cues, and build-gating explanation are
+  implemented and verified in
+  [Phase 10 Socratic Category Status And Refresh Spec](/home/thetu/planner/docs/phase-10-socratic-category-status-and-refresh-spec.md)
+- replay hardening, stale-revision refresh, and main-screen-only build
+  completion are implemented and verified in
+  [Phase 11 Socratic Category Replay And Validation Spec](/home/thetu/planner/docs/phase-11-socratic-category-replay-and-validation-spec.md)
+
+Current ready follow-on specs:
+
+- none queued yet
+
+Current agreed product constraints:
+
+- categories are synthesized server-side from the current interview state
+- clients render the latest category snapshot and do not invent hierarchy
+- recursive category paths are now supported beyond one root and one leaf level
+- users explicitly choose when to return to the main category screen
+- build/start remains valid only from the main category screen when the
+  underlying belief state is build-ready
+- category snapshots now carry server-authored status, new-category, and
+  build-guidance metadata for the current screen
+- draft review remains a separate later prompt flow, not a category
+- replay and validation hardening are now part of the implemented category flow
+
+Current next bounded slice:
+
+- no additional bounded Socratic follow-on spec is queued yet; the next move is
+  either manual confidence verification of the live lobby or a new spec for the
+  next product change
+
+### Planner Visual System Refresh
+
+Goal:
+
+- restyle the Planner React SPA into a calmer command-center visual system
+  grounded in tonal layering instead of border-heavy chrome
+- establish a transferable surface, spacing, and hierarchy foundation without
+  turning the work into an unbounded full-app redesign
+- phase typography, CTA treatment, and overlay depth so performance-sensitive
+  surfaces stay protected
+
+Canonical planning doc:
+
+- [Planner Design System Command Center Plan](/home/thetu/planner/docs/planner-design-system-command-center-plan.md)
+
+Current completed slice:
+
+- tonal shell and border-removal foundation is implemented and verified in
+  [Planner Design System Phase 1 Tonal Foundation Spec](/home/thetu/planner/docs/planner-design-system-phase-1-tonal-foundation-spec.md)
+
+Current ready slice:
+
+- none queued yet
+
+Current agreed product constraints:
+
+- phase 1 stays focused on tonal sectioning, shell treatment, and border removal
+  across the highest-value shared frontend surfaces
+- typography changes beyond token prep are deferred to a later phase
+- glass and blur remain restricted to later overlay-specific work
+- graph-heavy pages are not part of the first restyle slice
+
+Current next bounded slice:
+
+- create the Phase 2 editorial typography and CTA hierarchy spec before
+  resuming implementation
+
+### Import Existing Project
+
+Status:
+
+- implemented through the currently tracked history/review/reconciliation
+  slices
 
 Canonical planning doc:
 
 - [Import Existing Project Plan](/home/thetu/planner/docs/import-existing-project-plan.md)
 
-Supporting research doc:
-
-- [Import Existing Project Plan](/home/thetu/planner/docs/import-existing-project-plan.md)
-
-Current completed slice:
+Most recent completed slices include:
 
 - queued import domain skeleton is implemented and verified in
   [Import Existing Project Phase 1 Domain Skeleton Spec](/home/thetu/planner/docs/import-existing-project-phase-1-domain-skeleton-spec.md)
@@ -104,27 +200,6 @@ Current completed slice:
 - history selection summaries are implemented and verified in
   [Import Existing Project Phase 16 History Selection Summary Spec](/home/thetu/planner/docs/import-existing-project-phase-16-history-selection-summary-spec.md)
 
-Current agreed product constraints:
-
-- product framing: `Import Existing Project`
-- providers in v1:
-  - public GitHub repo import
-  - local repo import
-- clone/storage policy:
-  - managed clone under Planner data for GitHub
-  - validated local path for local import
-- import merge policy:
-  - auto-analyze
-  - do not auto-merge into canonical blueprint
-  - require import review before canonical blueprint commit
-
-Current next bounded slice:
-
-- no further import slice is currently promoted as ready for implementation
-- any later import-history or reconciliation refinement should be treated as a
-  fresh planning decision and promoted through a new bounded spec only if we
-  explicitly choose to keep investing here
-
 ## Immediate Bounded Closeout Slice
 
 The remaining planning-status drift surfaced by the 2026-03-19 audit is now
@@ -134,6 +209,21 @@ closed in:
 
 This was a cross-cutting documentation and verification slice. It did not
 replace the active product thread.
+
+## Current Manual Verification Checkpoint
+
+If manual product verification is resumed for the active Socratic thread, the
+next bounded check should be:
+
+- open the Socratic lobby
+- verify the main category list renders before a scoped prompt batch
+- enter a deep category path, answer at least one prompt, then return with
+  `Back`
+- confirm that the refreshed main category list and build gating update from
+  the latest interview state
+
+This is a manual confidence check only. It does not create a new implementation
+slice by itself.
 
 ## Working Rule
 
@@ -146,21 +236,23 @@ Keep planning and implementation aligned to artifact state:
 
 ## Next Expected Move
 
-For the import feature, the next move is the next bounded spec, not more
-unplanned implementation.
+For the active design-system thread, the next move is the next bounded spec,
+not unscoped visual churn across the app.
 
 The next move is:
 
-- decide whether the import thread should pause here as complete-for-now or
-  whether a new optional refinement spec should be promoted deliberately
+- write the Phase 2 design-system spec for editorial typography and CTA
+  hierarchy, then return to `delivery-cycle`
+  as the next bounded visual-system slice
 
-If we keep investing later, phase future work behind follow-on specs for:
-
-- broader historical reconciliation and history comparison behavior beyond
-  current restore flows, selected-entry comparison, arbitrary two-entry
-  comparison, selection-aware comparison, and history selection summaries
+If Socratic work resumes in parallel, keep using the live lobby verification
+checkpoint above or add a new bounded Socratic spec rather than reopening the
+completed Phase 11 slice.
 
 Use
-[Import Existing Project Plan](/home/thetu/planner/docs/import-existing-project-plan.md)
-as the source research document for later import phases, not as the direct
-execution artifact.
+[Phase 08 Socratic Category Drill-Down Implementation](/home/thetu/planner/docs/phase-08-socratic-category-drilldown-implementation.md)
+plus
+[Phase 07 Socratic Prompt Protocol Redesign Implementation](/home/thetu/planner/docs/phase-07-socratic-prompt-protocol-redesign-implementation.md)
+plus
+[Phase 09 Socratic Recursive Category Synthesis Spec](/home/thetu/planner/docs/phase-09-socratic-recursive-category-synthesis-spec.md)
+as the source planning spine for later Socratic follow-on work.

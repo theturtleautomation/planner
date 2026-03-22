@@ -58,12 +58,13 @@ export default function PromptOptionGroup({
               width: '100%',
               textAlign: 'left',
               background: isSelected
-                ? 'rgba(0,212,255,0.12)'
+                ? 'var(--color-primary-highlight)'
                 : isHovered
-                  ? 'rgba(0,212,255,0.07)'
+                  ? 'rgba(63, 118, 246, 0.08)'
                   : 'var(--color-surface-2)',
-              border: `1px solid ${isSelected || isHovered ? 'var(--color-primary)' : 'var(--color-border)'}`,
-              borderRadius: '3px',
+              border: 'none',
+              boxShadow: `inset 0 0 0 1px ${isSelected || isHovered ? 'var(--color-primary)' : 'var(--color-divider)'}`,
+              borderRadius: '10px',
               padding: '8px 10px',
               color: isSelected || isHovered ? 'var(--color-primary)' : 'var(--color-text)',
               fontSize: '12px',
@@ -80,7 +81,7 @@ export default function PromptOptionGroup({
                 width: '14px',
                 height: '14px',
                 borderRadius: '50%',
-                border: `1px solid ${isSelected ? 'var(--color-primary)' : 'var(--color-border)'}`,
+                border: `1px solid ${isSelected ? 'var(--color-primary)' : 'var(--color-ghost-border)'}`,
                 background: isSelected ? 'var(--color-primary)' : 'transparent',
                 flexShrink: 0,
               }}

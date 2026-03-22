@@ -25,6 +25,7 @@ use crate::llm::providers::LlmRouter;
 
 use super::super::StepResult;
 use super::belief_state;
+use super::category_planner;
 use super::constitution;
 use super::convergence;
 use super::domain_classifier;
@@ -50,6 +51,9 @@ pub trait SocraticIO: Send + Sync {
     /// Send a prompt envelope.
     async fn send_prompt(&self, prompt: &PromptEnvelope);
 
+    /// Send the current category-navigation state.
+    async fn send_category_state(&self, snapshot: &SocraticCategorySnapshot);
+
     /// Send a belief state update (for the right-pane display).
     async fn send_belief_state(&self, state: &RequirementsBeliefState);
 
@@ -59,9 +63,13 @@ pub trait SocraticIO: Send + Sync {
     /// Send the domain classification.
     async fn send_classification(&self, classification: &DomainClassification);
 
-    /// Receive a structured prompt response.
+    /// Receive the next user action for the interview.
     /// Returns None if the user disconnected or quit.
-    async fn receive_prompt_response(&self, prompt: &PromptEnvelope) -> Option<PromptResponse>;
+    async fn receive_interview_input(
+        &self,
+        prompt: Option<&PromptEnvelope>,
+        snapshot: Option<&SocraticCategorySnapshot>,
+    ) -> Option<SocraticInteractiveInput>;
 
     /// Current UI capabilities used for prompt batch planning.
     fn current_ui_capabilities(&self) -> UiCapabilities {
@@ -85,6 +93,8 @@ pub struct SocraticEngineState {
     pub session: SocraticSession,
     pub stale_turns: u32,
     pub draft_shown_at_turn: Option<u32>,
+    pub active_category_ids: Vec<String>,
+    pub last_category_snapshot: Option<SocraticCategorySnapshot>,
 }
 
 /// Pending prompt restored from a durable checkpoint.
@@ -101,6 +111,19 @@ pub struct CheckpointResumeState {
     pub stale_turns: u32,
     pub draft_shown_at_turn: Option<u32>,
     pub pending_prompt: Option<ResumePendingPrompt>,
+    pub category_snapshot: Option<SocraticCategorySnapshot>,
+}
+
+/// Navigation and submission actions available while the Socratic interview is active.
+#[derive(Debug, Clone)]
+pub enum SocraticInteractiveInput {
+    PromptResponse(PromptResponse),
+    EnterCategory {
+        category_id: String,
+        revision: String,
+    },
+    BackToCategories,
+    Done,
 }
 
 // ---------------------------------------------------------------------------
@@ -160,6 +183,8 @@ pub async fn run_interview<IO: SocraticIO, S: TurnStore>(
         },
         stale_turns: 0,
         draft_shown_at_turn: None,
+        active_category_ids: Vec::new(),
+        last_category_snapshot: None,
     };
 
     // --- Phase 3: Process initial message through verifier ---
@@ -252,6 +277,18 @@ pub async fn run_interview_from_checkpoint<IO: SocraticIO, S: TurnStore>(
         },
         stale_turns: resume_state.stale_turns,
         draft_shown_at_turn: resume_state.draft_shown_at_turn,
+        active_category_ids: resume_state
+            .category_snapshot
+            .as_ref()
+            .map(|snapshot| {
+                snapshot
+                    .active_category_path
+                    .iter()
+                    .map(|entry| entry.category_id.clone())
+                    .collect()
+            })
+            .unwrap_or_default(),
+        last_category_snapshot: resume_state.category_snapshot,
     };
 
     io.send_message("Resuming interview from saved checkpoint...")
@@ -316,18 +353,6 @@ async fn run_prompt_loop<IO: SocraticIO, S: TurnStore>(
                 false,
                 engine_state.stale_turns,
             );
-            if conv_result.is_done {
-                io.send_convergence(&conv_result).await;
-                io.send_event(&SocraticEvent::Converged {
-                    result: conv_result.clone(),
-                })
-                .await;
-                engine_state.session.is_complete = true;
-                engine_state.session.convergence_result = Some(conv_result);
-                engine_state.session.belief_state = belief_state.clone();
-                return Ok(engine_state.session.clone());
-            }
-
             let draft_already_shown = engine_state
                 .draft_shown_at_turn
                 .map(|turn| belief_state.turn_count.saturating_sub(turn) < 3)
@@ -340,11 +365,13 @@ async fn run_prompt_loop<IO: SocraticIO, S: TurnStore>(
                 .unwrap_or(0);
 
             let mut draft_for_planner: Option<SpeculativeDraft> = None;
-            if speculative_draft::should_trigger_draft(
-                belief_state,
-                last_msg_len,
-                draft_already_shown,
-            ) {
+            let should_show_draft = !conv_result.is_done
+                && speculative_draft::should_trigger_draft(
+                    belief_state,
+                    last_msg_len,
+                    draft_already_shown,
+                );
+            if should_show_draft {
                 match speculative_draft::generate_draft(router, belief_state).await {
                     Ok(draft) => {
                         draft_for_planner = Some(draft);
@@ -356,7 +383,7 @@ async fn run_prompt_loop<IO: SocraticIO, S: TurnStore>(
                 }
             }
 
-            if pending_prompt.is_none() {
+            if let Some(draft) = draft_for_planner.as_ref() {
                 let ui_capabilities = io.current_ui_capabilities();
                 pending_prompt = prompt_batch_planner::plan_prompt_batch(
                     router,
@@ -364,7 +391,7 @@ async fn run_prompt_loop<IO: SocraticIO, S: TurnStore>(
                     constitution,
                     &engine_state.session.conversation,
                     ui_capabilities.max_visible_items,
-                    draft_for_planner.as_ref(),
+                    Some(draft),
                 )
                 .await?;
                 if pending_prompt
@@ -374,36 +401,179 @@ async fn run_prompt_loop<IO: SocraticIO, S: TurnStore>(
                 {
                     engine_state.draft_shown_at_turn = Some(belief_state.turn_count);
                 }
+                if let Some(prompt) = pending_prompt.as_ref() {
+                    emit_prompt(io, engine_state, belief_state, prompt).await;
+                    continue;
+                }
             }
 
-            let Some(prompt) = pending_prompt.as_ref() else {
-                let conv_result = ConvergenceResult {
-                    is_done: true,
-                    reason: StoppingReason::CompletenessGate,
-                    convergence_pct: belief_state.convergence_pct(),
-                };
-                io.send_convergence(&conv_result).await;
-                io.send_event(&SocraticEvent::Converged {
-                    result: conv_result.clone(),
-                })
+            let mut category_snapshot = category_planner::build_category_snapshot(
+                belief_state,
+                &engine_state.active_category_ids,
+                conv_result.is_done,
+                engine_state.last_category_snapshot.as_ref(),
+            );
+            engine_state.active_category_ids = category_snapshot
+                .active_category_path
+                .iter()
+                .map(|entry| entry.category_id.clone())
+                .collect();
+
+            if let Some(active_category_id) =
+                category_planner::active_leaf_category_id(&category_snapshot)
+            {
+                let ui_capabilities = io.current_ui_capabilities();
+                let prompt_path = category_snapshot.active_category_path.clone();
+                let category_id = active_category_id.to_string();
+                let scoped_candidates = category_planner::filter_candidates_for_active_category(
+                    belief_state,
+                    category_id.as_str(),
+                    ui_capabilities.max_visible_items,
+                );
+                pending_prompt = prompt_batch_planner::plan_prompt_batch_from_candidates(
+                    router,
+                    belief_state,
+                    constitution,
+                    &engine_state.session.conversation,
+                    scoped_candidates,
+                    None,
+                    Some(category_id),
+                    prompt_path,
+                )
+                .await?;
+
+                if let Some(prompt) = pending_prompt.as_ref() {
+                    emit_prompt(io, engine_state, belief_state, prompt).await;
+                    continue;
+                }
+
+                engine_state.active_category_ids.pop();
+                category_snapshot = category_planner::build_category_snapshot(
+                    belief_state,
+                    &engine_state.active_category_ids,
+                    conv_result.is_done,
+                    engine_state.last_category_snapshot.as_ref(),
+                );
+            }
+
+            io.send_category_state(&category_snapshot).await;
+            io.send_event(&SocraticEvent::CategoryState {
+                snapshot: category_snapshot.clone(),
+            })
+            .await;
+            engine_state.last_category_snapshot = Some(category_snapshot.clone());
+
+            let Some(input) = io
+                .receive_interview_input(None, Some(&category_snapshot))
+                .await
+            else {
+                return finalize_convergence(
+                    io,
+                    belief_state,
+                    engine_state,
+                    convergence::check_convergence(
+                        belief_state,
+                        constitution,
+                        true,
+                        engine_state.stale_turns,
+                    ),
+                )
                 .await;
-                engine_state.session.is_complete = true;
-                engine_state.session.convergence_result = Some(conv_result);
-                engine_state.session.belief_state = belief_state.clone();
-                return Ok(engine_state.session.clone());
             };
 
-            emit_prompt(io, engine_state, belief_state, prompt).await;
+            match input {
+                SocraticInteractiveInput::EnterCategory {
+                    category_id,
+                    revision,
+                } => {
+                    if revision == category_snapshot.revision {
+                        if let Some(path) = category_planner::resolve_category_path(
+                            &category_snapshot,
+                            &category_id,
+                        ) {
+                            engine_state.active_category_ids = path;
+                        } else {
+                            io.send_message(
+                                "That category is no longer visible. Showing the latest category list.",
+                            )
+                            .await;
+                        }
+                    } else {
+                        io.send_message(
+                            "That category view is stale. Showing the latest category list.",
+                        )
+                        .await;
+                    }
+                }
+                SocraticInteractiveInput::BackToCategories => {
+                    engine_state.active_category_ids.clear();
+                }
+                SocraticInteractiveInput::Done => {
+                    if category_snapshot.build_ready && engine_state.active_category_ids.is_empty()
+                    {
+                        return finalize_convergence(
+                            io,
+                            belief_state,
+                            engine_state,
+                            ConvergenceResult {
+                                is_done: true,
+                                reason: StoppingReason::UserSignal,
+                                convergence_pct: belief_state.convergence_pct(),
+                            },
+                        )
+                        .await;
+                    }
+                    io.send_message(
+                        "Return to the main category screen and resolve the remaining work before starting the build.",
+                    )
+                    .await;
+                }
+                SocraticInteractiveInput::PromptResponse(_) => {
+                    io.send_message("Select a category before submitting answers.")
+                        .await;
+                }
+            }
+            continue;
         }
 
         let active_prompt = pending_prompt
             .clone()
             .expect("pending prompt should be present before waiting for response");
-        let response = match io.receive_prompt_response(&active_prompt).await {
-            Some(response) => response,
-            None => {
-                engine_state.session.belief_state = belief_state.clone();
-                return Ok(engine_state.session.clone());
+        let Some(input) = io.receive_interview_input(Some(&active_prompt), None).await else {
+            return finalize_convergence(
+                io,
+                belief_state,
+                engine_state,
+                convergence::check_convergence(
+                    belief_state,
+                    constitution,
+                    true,
+                    engine_state.stale_turns,
+                ),
+            )
+            .await;
+        };
+
+        let response = match input {
+            SocraticInteractiveInput::PromptResponse(response) => response,
+            SocraticInteractiveInput::BackToCategories => {
+                pending_prompt = None;
+                engine_state.active_category_ids.clear();
+                continue;
+            }
+            SocraticInteractiveInput::EnterCategory { category_id, .. } => {
+                pending_prompt = None;
+                engine_state.active_category_ids = vec![category_id];
+                continue;
+            }
+            SocraticInteractiveInput::Done => {
+                io.send_message(
+                    "Done is only available from the main category screen. Refreshing the latest category list.",
+                )
+                .await;
+                pending_prompt = None;
+                engine_state.active_category_ids.clear();
+                continue;
             }
         };
 
@@ -467,25 +637,39 @@ async fn run_prompt_loop<IO: SocraticIO, S: TurnStore>(
         }
 
         if user_wants_to_stop {
-            let conv_result = convergence::check_convergence(
+            return finalize_convergence(
+                io,
                 belief_state,
-                constitution,
-                true,
-                engine_state.stale_turns,
-            );
-            io.send_convergence(&conv_result).await;
-            io.send_event(&SocraticEvent::Converged {
-                result: conv_result.clone(),
-            })
+                engine_state,
+                convergence::check_convergence(
+                    belief_state,
+                    constitution,
+                    true,
+                    engine_state.stale_turns,
+                ),
+            )
             .await;
-            engine_state.session.is_complete = true;
-            engine_state.session.convergence_result = Some(conv_result);
-            engine_state.session.belief_state = belief_state.clone();
-            return Ok(engine_state.session.clone());
         }
 
         pending_prompt = None;
     }
+}
+
+async fn finalize_convergence<IO: SocraticIO>(
+    io: &IO,
+    belief_state: &RequirementsBeliefState,
+    engine_state: &mut SocraticEngineState,
+    conv_result: ConvergenceResult,
+) -> StepResult<SocraticSession> {
+    io.send_convergence(&conv_result).await;
+    io.send_event(&SocraticEvent::Converged {
+        result: conv_result.clone(),
+    })
+    .await;
+    engine_state.session.is_complete = true;
+    engine_state.session.convergence_result = Some(conv_result);
+    engine_state.session.belief_state = belief_state.clone();
+    Ok(engine_state.session.clone())
 }
 
 async fn emit_prompt<IO: SocraticIO>(
@@ -666,7 +850,7 @@ pub fn session_to_intake(session: &SocraticSession, project_id: Uuid) -> IntakeV
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
+    use std::collections::{HashMap, VecDeque};
     use std::sync::{
         atomic::{AtomicUsize, Ordering},
         Arc, Mutex,
@@ -777,6 +961,8 @@ mod tests {
 
         async fn send_prompt(&self, _prompt: &PromptEnvelope) {}
 
+        async fn send_category_state(&self, _snapshot: &SocraticCategorySnapshot) {}
+
         async fn send_belief_state(&self, _state: &RequirementsBeliefState) {}
 
         async fn send_convergence(&self, _result: &ConvergenceResult) {
@@ -785,14 +971,20 @@ mod tests {
 
         async fn send_classification(&self, _classification: &DomainClassification) {}
 
-        async fn receive_prompt_response(
+        async fn receive_interview_input(
             &self,
-            _prompt: &PromptEnvelope,
-        ) -> Option<PromptResponse> {
-            self.next_response
+            prompt: Option<&PromptEnvelope>,
+            _snapshot: Option<&SocraticCategorySnapshot>,
+        ) -> Option<SocraticInteractiveInput> {
+            let response = self
+                .next_response
                 .lock()
                 .expect("response mutex should not be poisoned")
-                .take()
+                .take();
+            match (prompt, response) {
+                (_, None) => None,
+                (_, Some(response)) => Some(SocraticInteractiveInput::PromptResponse(response)),
+            }
         }
 
         async fn send_event(&self, _event: &SocraticEvent) {}
@@ -822,6 +1014,128 @@ mod tests {
         fn provider_name(&self) -> &str {
             "mock"
         }
+    }
+
+    enum SequenceStep {
+        EnterVisible(usize),
+        EnterVisibleWithRevision(usize, String),
+        Done,
+        Disconnect,
+    }
+
+    struct SequencedIo {
+        steps: Mutex<VecDeque<SequenceStep>>,
+        snapshots: Mutex<Vec<SocraticCategorySnapshot>>,
+        prompts: Mutex<Vec<PromptEnvelope>>,
+        messages: Mutex<Vec<String>>,
+    }
+
+    impl SequencedIo {
+        fn new(steps: Vec<SequenceStep>) -> Self {
+            Self {
+                steps: Mutex::new(VecDeque::from(steps)),
+                snapshots: Mutex::new(Vec::new()),
+                prompts: Mutex::new(Vec::new()),
+                messages: Mutex::new(Vec::new()),
+            }
+        }
+
+        fn snapshots(&self) -> Vec<SocraticCategorySnapshot> {
+            self.snapshots
+                .lock()
+                .expect("snapshot mutex should not be poisoned")
+                .clone()
+        }
+
+        fn prompts(&self) -> Vec<PromptEnvelope> {
+            self.prompts
+                .lock()
+                .expect("prompt mutex should not be poisoned")
+                .clone()
+        }
+
+        fn messages(&self) -> Vec<String> {
+            self.messages
+                .lock()
+                .expect("message mutex should not be poisoned")
+                .clone()
+        }
+    }
+
+    #[async_trait]
+    impl SocraticIO for SequencedIo {
+        async fn send_message(&self, content: &str) {
+            self.messages
+                .lock()
+                .expect("message mutex should not be poisoned")
+                .push(content.to_string());
+        }
+
+        async fn send_prompt(&self, prompt: &PromptEnvelope) {
+            self.prompts
+                .lock()
+                .expect("prompt mutex should not be poisoned")
+                .push(prompt.clone());
+        }
+
+        async fn send_category_state(&self, snapshot: &SocraticCategorySnapshot) {
+            self.snapshots
+                .lock()
+                .expect("snapshot mutex should not be poisoned")
+                .push(snapshot.clone());
+        }
+
+        async fn send_belief_state(&self, _state: &RequirementsBeliefState) {}
+
+        async fn send_convergence(&self, _result: &ConvergenceResult) {}
+
+        async fn send_classification(&self, _classification: &DomainClassification) {}
+
+        async fn receive_interview_input(
+            &self,
+            prompt: Option<&PromptEnvelope>,
+            snapshot: Option<&SocraticCategorySnapshot>,
+        ) -> Option<SocraticInteractiveInput> {
+            let step = self
+                .steps
+                .lock()
+                .expect("steps mutex should not be poisoned")
+                .pop_front()?;
+
+            match step {
+                SequenceStep::EnterVisible(index) => {
+                    let snapshot = snapshot.expect("category step should receive a snapshot");
+                    let visible_category_ids = category_planner::visible_category_ids(snapshot);
+                    let category_id = visible_category_ids
+                        .get(index.saturating_sub(1))
+                        .expect("visible category should exist")
+                        .clone();
+                    Some(SocraticInteractiveInput::EnterCategory {
+                        category_id,
+                        revision: snapshot.revision.clone(),
+                    })
+                }
+                SequenceStep::EnterVisibleWithRevision(index, revision) => {
+                    let snapshot = snapshot.expect("category step should receive a snapshot");
+                    let visible_category_ids = category_planner::visible_category_ids(snapshot);
+                    let category_id = visible_category_ids
+                        .get(index.saturating_sub(1))
+                        .expect("visible category should exist")
+                        .clone();
+                    Some(SocraticInteractiveInput::EnterCategory {
+                        category_id,
+                        revision,
+                    })
+                }
+                SequenceStep::Done => {
+                    let _ = prompt;
+                    Some(SocraticInteractiveInput::Done)
+                }
+                SequenceStep::Disconnect => None,
+            }
+        }
+
+        async fn send_event(&self, _event: &SocraticEvent) {}
     }
 
     #[tokio::test]
@@ -857,6 +1171,8 @@ mod tests {
             kind: PromptKind::QuestionBatch,
             title: "Prompt".into(),
             instructions: None,
+            origin_category_id: None,
+            category_path: Vec::new(),
             items: vec![
                 PromptItem {
                     item_id: "item-goal".into(),
@@ -941,6 +1257,7 @@ mod tests {
             stale_turns: 0,
             draft_shown_at_turn: None,
             pending_prompt: Some(ResumePendingPrompt { prompt }),
+            category_snapshot: None,
         };
 
         let session = run_interview_from_checkpoint::<_, crate::cxdb::CxdbEngine>(
@@ -956,5 +1273,332 @@ mod tests {
         assert!(session.is_complete);
         assert_eq!(llm_calls.load(Ordering::SeqCst), 1);
         assert_eq!(io.convergence_calls(), 1);
+    }
+
+    #[tokio::test]
+    async fn done_during_prompt_loop_refreshes_main_category_screen() {
+        let router = LlmRouter::with_mock(Box::new(CountingMockClient {
+            calls: Arc::new(AtomicUsize::new(0)),
+            response_content: "{}".into(),
+        }));
+
+        let prompt = PromptEnvelope {
+            prompt_id: "prompt-test".into(),
+            kind: PromptKind::DraftReview,
+            title: "Review and refine draft".into(),
+            instructions: Some(
+                "Review draft sections and close uncertain or missing areas.".into(),
+            ),
+            origin_category_id: Some("root-discovery::dimension::security::missing".into()),
+            category_path: vec![
+                SocraticCategoryPathEntry {
+                    category_id: "root-discovery".into(),
+                    title: "Explore missing areas".into(),
+                },
+                SocraticCategoryPathEntry {
+                    category_id: "root-discovery::dimension::security".into(),
+                    title: "Security".into(),
+                },
+                SocraticCategoryPathEntry {
+                    category_id: "root-discovery::dimension::security::missing".into(),
+                    title: "Authentication model".into(),
+                },
+            ],
+            items: vec![PromptItem {
+                item_id: "item-goal".into(),
+                kind: PromptItemKind::DraftSection,
+                target_dimension: Some(Dimension::Goal),
+                section_ref: Some("Goal".into()),
+                text: "Review the goal section.".into(),
+                options: vec![PromptOption {
+                    option_id: "confirm".into(),
+                    label: "Looks correct".into(),
+                    semantic_value: "confirm".into(),
+                    direct_effect: None,
+                }],
+                response_mode: PromptResponseMode::SingleSelectWithCustomText,
+                required: false,
+                priority: 100,
+                dependency_item_ids: Vec::new(),
+            }],
+            draft_snapshot: None,
+            required_item_ids: Vec::new(),
+            allow_partial_submit: true,
+            ui_hints: PromptUiHints {
+                preferred_layout: PromptPreferredLayout::Review,
+                show_draft_sidebar: true,
+            },
+            based_on_turn: 0,
+            created_at: "2026-03-08T00:00:00Z".into(),
+        };
+
+        let io = SequencedIo::new(vec![SequenceStep::Done, SequenceStep::Disconnect]);
+
+        let resume_state = CheckpointResumeState {
+            belief_state: RequirementsBeliefState {
+                filled: HashMap::from([
+                    (
+                        Dimension::Goal,
+                        SlotValue {
+                            value: "Personal task widget".into(),
+                            source_turn: 1,
+                            source_quote: None,
+                        },
+                    ),
+                    (
+                        Dimension::CoreFeatures,
+                        SlotValue {
+                            value: "Track tasks and mark complete".into(),
+                            source_turn: 1,
+                            source_quote: None,
+                        },
+                    ),
+                ]),
+                uncertain: HashMap::new(),
+                missing: vec![Dimension::Security],
+                out_of_scope: Vec::new(),
+                contradictions: Vec::new(),
+                required_dimensions: vec![
+                    Dimension::Goal,
+                    Dimension::CoreFeatures,
+                    Dimension::Security,
+                ],
+                turn_count: 4,
+                classification: None,
+            },
+            classification: None,
+            stale_turns: 0,
+            draft_shown_at_turn: Some(4),
+            pending_prompt: Some(ResumePendingPrompt { prompt }),
+            category_snapshot: None,
+        };
+
+        let _session = run_interview_from_checkpoint::<_, crate::cxdb::CxdbEngine>(
+            &router,
+            &io,
+            None::<&crate::cxdb::CxdbEngine>,
+            Uuid::new_v4(),
+            resume_state,
+        )
+        .await
+        .expect("checkpoint resume interview should succeed");
+
+        let messages = io.messages();
+        assert!(messages.iter().any(|message| {
+            message.contains("Done is only available from the main category screen")
+        }));
+
+        let snapshots = io.snapshots();
+        assert!(!snapshots.is_empty());
+        assert!(snapshots
+            .last()
+            .is_some_and(|snapshot| snapshot.active_category_path.is_empty()));
+    }
+
+    #[tokio::test]
+    async fn recursive_category_entry_emits_nested_prompt_path() {
+        let router = LlmRouter::with_mock(Box::new(CountingMockClient {
+            calls: Arc::new(AtomicUsize::new(0)),
+            response_content: "{}".into(),
+        }));
+
+        let io = SequencedIo::new(vec![
+            SequenceStep::EnterVisible(1),
+            SequenceStep::EnterVisible(1),
+            SequenceStep::EnterVisible(1),
+            SequenceStep::EnterVisible(1),
+            SequenceStep::Disconnect,
+        ]);
+
+        let resume_state = CheckpointResumeState {
+            belief_state: RequirementsBeliefState {
+                filled: HashMap::new(),
+                uncertain: HashMap::new(),
+                missing: vec![Dimension::Goal],
+                out_of_scope: Vec::new(),
+                contradictions: vec![Contradiction {
+                    dimension_a: Dimension::Goal,
+                    value_a: "Internal planning hub".into(),
+                    dimension_b: Dimension::Platform,
+                    value_b: "Mobile-only native app".into(),
+                    explanation: "The requested planning hub needs desktop collaboration support."
+                        .into(),
+                    resolved: false,
+                }],
+                required_dimensions: vec![Dimension::Goal, Dimension::Platform],
+                turn_count: 0,
+                classification: None,
+            },
+            classification: None,
+            stale_turns: 0,
+            draft_shown_at_turn: None,
+            pending_prompt: None,
+            category_snapshot: None,
+        };
+
+        let _session = run_interview_from_checkpoint::<_, crate::cxdb::CxdbEngine>(
+            &router,
+            &io,
+            None::<&crate::cxdb::CxdbEngine>,
+            Uuid::new_v4(),
+            resume_state,
+        )
+        .await
+        .expect("recursive category interview should succeed");
+
+        let snapshots = io.snapshots();
+        assert!(snapshots
+            .iter()
+            .any(|snapshot| snapshot.active_category_path.len() == 3));
+
+        let prompts = io.prompts();
+        assert_eq!(prompts.len(), 1);
+        assert_eq!(prompts[0].category_path.len(), 4);
+        assert_eq!(
+            prompts[0]
+                .category_path
+                .last()
+                .map(|entry| entry.category_id.as_str()),
+            prompts[0].origin_category_id.as_deref()
+        );
+    }
+
+    #[tokio::test]
+    async fn checkpoint_resume_reemits_pending_prompt_with_deep_category_path() {
+        let router = LlmRouter::with_mock(Box::new(CountingMockClient {
+            calls: Arc::new(AtomicUsize::new(0)),
+            response_content: "{}".into(),
+        }));
+
+        let io = SequencedIo::new(vec![SequenceStep::Disconnect]);
+        let prompt = PromptEnvelope {
+            prompt_id: "prompt-resume-deep".into(),
+            kind: PromptKind::QuestionBatch,
+            title: "Clarify security".into(),
+            instructions: Some("Answer the scoped security question.".into()),
+            origin_category_id: Some("root-discovery::dimension::security::auth".into()),
+            category_path: vec![
+                SocraticCategoryPathEntry {
+                    category_id: "root-discovery".into(),
+                    title: "Explore missing areas".into(),
+                },
+                SocraticCategoryPathEntry {
+                    category_id: "root-discovery::dimension::security".into(),
+                    title: "Security".into(),
+                },
+                SocraticCategoryPathEntry {
+                    category_id: "root-discovery::dimension::security::auth".into(),
+                    title: "Authentication model".into(),
+                },
+            ],
+            items: vec![PromptItem {
+                item_id: "item-security".into(),
+                kind: PromptItemKind::Discovery,
+                target_dimension: Some(Dimension::Security),
+                section_ref: None,
+                text: "How should authentication work?".into(),
+                options: Vec::new(),
+                response_mode: PromptResponseMode::SingleSelectWithCustomText,
+                required: false,
+                priority: 100,
+                dependency_item_ids: Vec::new(),
+            }],
+            draft_snapshot: None,
+            required_item_ids: Vec::new(),
+            allow_partial_submit: true,
+            ui_hints: PromptUiHints {
+                preferred_layout: PromptPreferredLayout::Cards,
+                show_draft_sidebar: false,
+            },
+            based_on_turn: 2,
+            created_at: "2026-03-08T00:00:00Z".into(),
+        };
+
+        let resume_state = CheckpointResumeState {
+            belief_state: RequirementsBeliefState {
+                filled: HashMap::new(),
+                uncertain: HashMap::new(),
+                missing: vec![Dimension::Security],
+                out_of_scope: Vec::new(),
+                contradictions: Vec::new(),
+                required_dimensions: vec![Dimension::Security],
+                turn_count: 2,
+                classification: None,
+            },
+            classification: None,
+            stale_turns: 0,
+            draft_shown_at_turn: None,
+            pending_prompt: Some(ResumePendingPrompt {
+                prompt: prompt.clone(),
+            }),
+            category_snapshot: None,
+        };
+
+        let _session = run_interview_from_checkpoint::<_, crate::cxdb::CxdbEngine>(
+            &router,
+            &io,
+            None::<&crate::cxdb::CxdbEngine>,
+            Uuid::new_v4(),
+            resume_state,
+        )
+        .await
+        .expect("checkpoint resume interview should succeed");
+
+        let prompts = io.prompts();
+        assert_eq!(prompts.len(), 1);
+        assert_eq!(prompts[0].prompt_id, prompt.prompt_id);
+        assert_eq!(prompts[0].category_path, prompt.category_path);
+        assert_eq!(prompts[0].origin_category_id, prompt.origin_category_id);
+    }
+
+    #[tokio::test]
+    async fn stale_category_revision_replays_latest_snapshot() {
+        let router = LlmRouter::with_mock(Box::new(CountingMockClient {
+            calls: Arc::new(AtomicUsize::new(0)),
+            response_content: "{}".into(),
+        }));
+
+        let io = SequencedIo::new(vec![
+            SequenceStep::EnterVisibleWithRevision(1, "stale-revision".into()),
+            SequenceStep::Disconnect,
+        ]);
+
+        let resume_state = CheckpointResumeState {
+            belief_state: RequirementsBeliefState {
+                filled: HashMap::new(),
+                uncertain: HashMap::new(),
+                missing: vec![Dimension::Goal],
+                out_of_scope: Vec::new(),
+                contradictions: Vec::new(),
+                required_dimensions: vec![Dimension::Goal],
+                turn_count: 0,
+                classification: None,
+            },
+            classification: None,
+            stale_turns: 0,
+            draft_shown_at_turn: None,
+            pending_prompt: None,
+            category_snapshot: None,
+        };
+
+        let _session = run_interview_from_checkpoint::<_, crate::cxdb::CxdbEngine>(
+            &router,
+            &io,
+            None::<&crate::cxdb::CxdbEngine>,
+            Uuid::new_v4(),
+            resume_state,
+        )
+        .await
+        .expect("checkpoint resume interview should succeed");
+
+        let messages = io.messages();
+        assert!(messages
+            .iter()
+            .any(|message| message.contains("That category view is stale")));
+
+        let snapshots = io.snapshots();
+        assert!(snapshots.len() >= 2);
+        assert_eq!(snapshots[0].revision, snapshots[1].revision);
+        assert_eq!(snapshots[0].active_category_path, snapshots[1].active_category_path);
     }
 }

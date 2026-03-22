@@ -26,7 +26,7 @@ use uuid::Uuid;
 use planner_schemas::artifacts::socratic::{
     Contradiction, DomainClassification, PromptEnvelope, PromptItem, PromptItemKind, PromptKind,
     PromptOption, PromptPreferredLayout, PromptResponseMode, PromptUiHints, QuestionOutput,
-    RequirementsBeliefState, SpeculativeDraft, UiCapabilities,
+    RequirementsBeliefState, SocraticCategorySnapshot, SpeculativeDraft, UiCapabilities,
 };
 
 fn normalize_title(value: &str) -> Option<String> {
@@ -102,6 +102,8 @@ pub struct InterviewCheckpoint {
     pub belief_state: Option<RequirementsBeliefState>,
     /// Active prompt envelope, if waiting for user input.
     pub current_prompt: Option<PromptEnvelope>,
+    /// Latest category-navigation snapshot, if waiting on category selection.
+    pub current_category_snapshot: Option<SocraticCategorySnapshot>,
     /// Active contradictions captured so far.
     #[serde(default)]
     pub contradictions: Vec<Contradiction>,
@@ -124,6 +126,8 @@ struct InterviewCheckpointCurrentWire {
     pub belief_state: Option<RequirementsBeliefState>,
     #[serde(default)]
     pub current_prompt: Option<PromptEnvelope>,
+    #[serde(default)]
+    pub current_category_snapshot: Option<SocraticCategorySnapshot>,
     #[serde(default)]
     pub contradictions: Vec<Contradiction>,
     #[serde(default)]
@@ -201,6 +205,8 @@ mod legacy_checkpoint_prompt_adapter {
             kind: PromptKind::QuestionBatch,
             title: String::from("Continue interview"),
             instructions: None,
+            origin_category_id: None,
+            category_path: Vec::new(),
             items: vec![PromptItem {
                 item_id,
                 kind: PromptItemKind::Discovery,
@@ -259,6 +265,8 @@ mod legacy_checkpoint_prompt_adapter {
             instructions: Some(String::from(
                 "Confirm accurate sections and provide corrections where needed.",
             )),
+            origin_category_id: None,
+            category_path: Vec::new(),
             items: vec![PromptItem {
                 item_id,
                 kind: PromptItemKind::DraftSection,
@@ -321,6 +329,7 @@ impl<'de> Deserialize<'de> for InterviewCheckpoint {
                 classification: wire.classification,
                 belief_state: wire.belief_state,
                 current_prompt: wire.current_prompt,
+                current_category_snapshot: wire.current_category_snapshot,
                 contradictions: wire.contradictions,
                 stale_turns: wire.stale_turns,
                 draft_shown_at_turn: wire.draft_shown_at_turn,
@@ -345,6 +354,7 @@ impl<'de> Deserialize<'de> for InterviewCheckpoint {
                     classification: wire.classification,
                     belief_state: wire.belief_state,
                     current_prompt,
+                    current_category_snapshot: None,
                     contradictions: wire.contradictions,
                     stale_turns: wire.stale_turns,
                     draft_shown_at_turn: wire.draft_shown_at_turn,
@@ -362,6 +372,7 @@ impl InterviewCheckpoint {
             classification: None,
             belief_state: None,
             current_prompt: None,
+            current_category_snapshot: None,
             contradictions: Vec::new(),
             stale_turns: 0,
             draft_shown_at_turn: None,
@@ -1707,6 +1718,8 @@ mod tests {
             kind: PromptKind::QuestionBatch,
             title: "Continue interview".into(),
             instructions: None,
+            origin_category_id: None,
+            category_path: Vec::new(),
             items: vec![PromptItem {
                 item_id: "item-1".into(),
                 kind: PromptItemKind::Discovery,
@@ -2547,6 +2560,91 @@ mod tests {
             );
             assert_eq!(checkpoint.stale_turns, 2);
             assert_eq!(checkpoint.draft_shown_at_turn, Some(4));
+        }
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    fn disk_backed_store_persists_deep_category_checkpoint() {
+        let data_dir = temp_data_dir();
+        let run_id = Uuid::new_v4();
+        let session_id;
+
+        {
+            let store = SessionStore::open(&data_dir).unwrap();
+            let created = store.create("dev|local");
+            session_id = created.id;
+
+            store.update(session_id, |s| {
+                s.socratic_run_id = Some(run_id);
+                let checkpoint = s.ensure_checkpoint();
+                checkpoint.current_category_snapshot = Some(SocraticCategorySnapshot {
+                    revision: "category-deep-1".into(),
+                    root_category_ids: vec!["root-discovery".into()],
+                    nodes: vec![
+                        planner_schemas::SocraticCategoryNode {
+                            category_id: "root-discovery".into(),
+                            parent_category_id: None,
+                            title: "Explore missing areas".into(),
+                            summary: "1 area still needs discovery.".into(),
+                            status: planner_schemas::SocraticCategoryStatus::Active,
+                            depth: 0,
+                            mapped_dimensions: Vec::new(),
+                            has_children: true,
+                            has_prompt_ready: false,
+                            item_count_hint: 1,
+                        },
+                        planner_schemas::SocraticCategoryNode {
+                            category_id: "root-discovery::dimension::security".into(),
+                            parent_category_id: Some("root-discovery".into()),
+                            title: "Security".into(),
+                            summary: "Authentication model still needs definition.".into(),
+                            status: planner_schemas::SocraticCategoryStatus::Ready,
+                            depth: 1,
+                            mapped_dimensions: vec![planner_schemas::Dimension::Security],
+                            has_children: false,
+                            has_prompt_ready: true,
+                            item_count_hint: 1,
+                        },
+                    ],
+                    active_category_path: vec![planner_schemas::SocraticCategoryPathEntry {
+                        category_id: "root-discovery".into(),
+                        title: "Explore missing areas".into(),
+                    }],
+                    newly_available_category_ids: vec![
+                        "root-discovery::dimension::security".into(),
+                    ],
+                    build_ready: false,
+                    build_readiness_message:
+                        "Build is blocked until the remaining category is explored.".into(),
+                });
+                checkpoint.touch();
+            });
+
+            let (flushed, errors) = store.flush_dirty();
+            assert_eq!(flushed, 1);
+            assert_eq!(errors, 0);
+        }
+
+        {
+            let store = SessionStore::open(&data_dir).unwrap();
+            let loaded = store.get(session_id).expect("session should load");
+            let checkpoint = loaded.checkpoint.expect("checkpoint should persist");
+            let snapshot = checkpoint
+                .current_category_snapshot
+                .expect("category snapshot should persist");
+            assert_eq!(checkpoint.socratic_run_id, run_id);
+            assert_eq!(snapshot.revision, "category-deep-1");
+            assert_eq!(snapshot.active_category_path.len(), 1);
+            assert_eq!(
+                snapshot
+                    .active_category_path
+                    .first()
+                    .map(|entry| entry.category_id.as_str()),
+                Some("root-discovery")
+            );
+            assert_eq!(snapshot.newly_available_category_ids.len(), 1);
         }
 
         let _ = std::fs::remove_dir_all(&data_dir);
