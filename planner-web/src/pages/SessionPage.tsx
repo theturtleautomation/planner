@@ -933,35 +933,18 @@ export default function SessionPage() {
               padding: '32px 36px',
               display: 'flex',
               flexDirection: 'column',
-              gap: '18px',
+              gap: '20px',
               boxShadow: 'var(--shadow-lg)',
             }}>
               {/* Header */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <span style={{
-                  fontSize: '11px',
-                  fontWeight: 700,
-                  letterSpacing: '0.1em',
-                  textTransform: 'uppercase',
-                  color: 'var(--color-primary)',
-                }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <span className="page-kicker">
                   Planner v2
                 </span>
-                <h2 style={{
-                  margin: 0,
-                  fontSize: '18px',
-                  fontWeight: 700,
-                  color: 'var(--color-text)',
-                  fontFamily: 'inherit',
-                }}>
+                <h2 className="display-heading" style={{ margin: 0, fontSize: 'clamp(1.9rem, 1.55rem + 1vw, 2.5rem)' }}>
                   Describe your planning brief
                 </h2>
-                <p style={{
-                  margin: 0,
-                  fontSize: '13px',
-                  color: 'var(--color-text-muted)',
-                  lineHeight: '1.5',
-                }}>
+                <p className="section-copy" style={{ margin: 0 }}>
                   Give a brief overview — what you want to build, who it's for, and any important constraints. We'll ask focused questions to fill in the details.
                 </p>
               </div>
@@ -1041,30 +1024,15 @@ export default function SessionPage() {
 
               {/* Submit button */}
               <button
+                className={!description.trim() || isStarting ? 'btn' : 'btn btn-primary'}
                 onClick={() => void handleStartInterview()}
                 disabled={!description.trim() || isStarting}
                 style={{
                   alignSelf: 'flex-end',
-                  background: !description.trim() || isStarting
-                    ? 'var(--color-surface-offset)'
-                    : 'var(--color-primary)',
-                  boxShadow: !description.trim() || isStarting
-                    ? 'inset 0 0 0 1px var(--color-divider)'
-                    : 'var(--shadow-sm)',
-                  color: !description.trim() || isStarting
-                    ? 'var(--color-text-muted)'
-                    : 'var(--color-bg)',
-                  padding: '8px 20px',
-                  fontSize: '13px',
-                  fontWeight: 700,
-                  fontFamily: 'inherit',
-                  borderRadius: '10px',
-                  cursor: !description.trim() || isStarting ? 'not-allowed' : 'pointer',
-                  transition: 'background 0.18s, box-shadow 0.18s, color 0.18s',
-                  letterSpacing: '0.03em',
+                  minWidth: '182px',
                 }}
               >
-                {isStarting ? 'Starting…' : 'Start Interview →'}
+                {isStarting ? 'Starting…' : 'Start Session'}
               </button>
             </div>
           </div>

@@ -138,15 +138,18 @@ export default function MessageInput({
           disabled={isBlocked || !hasPendingSubmission}
           aria-label="Send message"
           style={{
-            background: isBlocked || !hasPendingSubmission ? 'var(--color-surface-offset)' : 'var(--color-primary)',
+            background: isBlocked || !hasPendingSubmission
+              ? 'var(--color-surface-offset)'
+              : 'linear-gradient(135deg, var(--color-primary-hover) 0%, var(--color-primary) 55%, var(--color-primary-active) 100%)',
             boxShadow: isBlocked || !hasPendingSubmission ? 'inset 0 0 0 1px var(--color-divider)' : 'var(--shadow-sm)',
             color: isBlocked || !hasPendingSubmission ? 'var(--color-text-muted)' : 'var(--color-bg)',
-            padding: '5px 14px',
+            padding: '7px 16px',
             fontSize: '12px',
             cursor: isBlocked || !hasPendingSubmission ? 'not-allowed' : 'pointer',
-            borderRadius: '10px',
+            borderRadius: '999px',
             fontFamily: 'inherit',
-            fontWeight: 600,
+            fontWeight: 700,
+            letterSpacing: '0.02em',
             transition: 'background 0.18s, box-shadow 0.18s, color 0.18s',
             flexShrink: 0,
           }}

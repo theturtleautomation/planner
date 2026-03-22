@@ -437,7 +437,12 @@ export default function CreateNodeModal({
         style={{ maxWidth: '520px', maxHeight: '80vh', overflow: 'auto' }}
       >
         <div className="modal-header">
-          <div className="modal-title">Create Node</div>
+          <div>
+            <div className="modal-title">Create Node</div>
+            <p className="modal-copy">
+              Add a new blueprint record without leaving the current planning view.
+            </p>
+          </div>
           <button className="modal-close" onClick={handleClose}>&times;</button>
         </div>
 
@@ -470,9 +475,9 @@ export default function CreateNodeModal({
 
           <div style={{
             padding: 'var(--space-3)',
-            borderRadius: 'var(--radius-md)',
-            border: '1px solid var(--color-border)',
-            background: 'var(--color-surface-offset)',
+            borderRadius: 'var(--radius-lg)',
+            boxShadow: 'inset 0 0 0 1px var(--color-ghost-border)',
+            background: 'color-mix(in srgb, var(--color-surface-offset) 84%, transparent)',
             display: 'grid',
             gap: 'var(--space-3)',
           }}>

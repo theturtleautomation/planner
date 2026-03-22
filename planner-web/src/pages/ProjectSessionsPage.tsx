@@ -439,7 +439,7 @@ export default function ProjectSessionsPage() {
           style={{
             background: 'var(--color-surface-offset)',
             borderRadius: '18px',
-            padding: '24px',
+            padding: '28px',
             display: 'flex',
             alignItems: 'flex-end',
             justifyContent: 'space-between',
@@ -447,11 +447,12 @@ export default function ProjectSessionsPage() {
             flexWrap: 'wrap',
           }}
         >
-          <div>
-            <h1 style={{ margin: 0, fontSize: '22px', color: 'var(--color-text)' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxWidth: '38rem' }}>
+            <span className="page-kicker">Project sessions</span>
+            <h1 className="display-heading" style={{ margin: 0 }}>
               {project?.name ?? 'Project Sessions'}
             </h1>
-            <p style={{ margin: '6px 0 0', color: 'var(--color-text-muted)', fontSize: '13px' }}>
+            <p className="section-copy" style={{ margin: 0 }}>
               {project?.description?.trim() || 'Project-local sessions and planning workflow.'}
             </p>
           </div>
@@ -1048,19 +1049,12 @@ export default function ProjectSessionsPage() {
         )}
 
         {!loading && !error && sessions.length === 0 && (
-          <div
-            style={{
-              background: 'var(--color-surface-offset)',
-              borderRadius: '14px',
-              padding: '20px',
-              color: 'var(--color-text-muted)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '8px',
-            }}
-          >
-            <span style={{ color: 'var(--color-text)', fontWeight: 600 }}>No sessions in this project yet</span>
-            <span>Create the first project session to begin intake and pipeline work.</span>
+          <div className="empty-state-card">
+            <span className="empty-state-kicker">Session intake</span>
+            <span className="empty-state-title">No sessions in this project yet.</span>
+            <span className="empty-state-body">
+              Start the first project session to open intake, build the planning brief, and move into the pipeline from project context.
+            </span>
             <div>
               <button
                 className="btn btn-primary"

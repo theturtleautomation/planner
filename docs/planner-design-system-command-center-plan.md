@@ -1,6 +1,6 @@
 # Planner Design System Command Center Plan
 
-**Status:** Active  
+**Status:** Implemented  
 **Date:** 2026-03-21  
 **Parent:** [Project Plan](/home/thetu/planner/docs/project-plan.md)
 
@@ -105,7 +105,8 @@ Primary surfaces:
 
 Status:
 
-- not yet spec'd
+- implemented and verified on 2026-03-22 in
+  [Planner Design System Phase 2 Editorial Typography And CTA Spec](/home/thetu/planner/docs/planner-design-system-phase-2-editorial-typography-and-cta-spec.md)
 
 ### Phase 3: Floating Depth And Glass Restraint
 
@@ -122,7 +123,8 @@ Primary surfaces:
 
 Status:
 
-- not yet spec'd
+- implemented and verified on 2026-03-22 in
+  [Planner Design System Phase 3 Overlay Depth And Restrained Glass Spec](/home/thetu/planner/docs/planner-design-system-phase-3-overlay-depth-and-restrained-glass-spec.md)
 
 ## Working Constraints
 
@@ -135,5 +137,8 @@ Status:
 
 ## Next Move
 
-The next bounded move is to create the Phase 2 spec for editorial typography
-and CTA hierarchy before any additional design-system implementation work.
+The current three-phase command-center refresh is implemented. The next move,
+if design work resumes, should be either:
+
+- a manual visual confidence sweep across light and dark overlay states, or
+- a new bounded spec for a later context-menu or popover primitive

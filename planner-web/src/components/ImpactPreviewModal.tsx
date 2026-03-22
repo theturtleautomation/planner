@@ -58,16 +58,23 @@ export default function ImpactPreviewModal({
     }
   };
 
+  if (!isOpen) return null;
+
   return (
     <div
-      className={`modal-overlay${isOpen ? ' open' : ''}`}
+      className="modal-backdrop"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="modal">
+      <div className="modal" onClick={(event) => event.stopPropagation()}>
         <div className="modal-header">
-          <div className="modal-title">Impact Preview</div>
+          <div>
+            <div className="modal-title">Impact Preview</div>
+            <p className="modal-copy">
+              Review the proposed graph changes before applying reconvergence.
+            </p>
+          </div>
           <button
-            className="drawer-close"
+            className="modal-close"
             onClick={onClose}
             aria-label="Close modal"
           >

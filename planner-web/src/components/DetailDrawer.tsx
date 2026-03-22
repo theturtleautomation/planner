@@ -29,11 +29,14 @@ const DEFAULT_SCOPE: NodeScope = {
 };
 
 const drawerActionButtonStyle: React.CSSProperties = {
-  border: '1px solid rgba(148, 163, 184, 0.35)',
-  background: 'rgba(15, 23, 42, 0.04)',
+  border: 'none',
+  boxShadow: 'inset 0 0 0 1px color-mix(in srgb, var(--color-ghost-border) 72%, transparent)',
+  background: 'color-mix(in srgb, var(--color-surface-2) 64%, transparent)',
   borderRadius: '999px',
-  padding: '0.25rem 0.65rem',
+  color: 'var(--color-text)',
+  padding: '0.38rem 0.75rem',
   fontSize: 'var(--text-xs)',
+  fontWeight: 600,
   cursor: 'pointer',
 };
 

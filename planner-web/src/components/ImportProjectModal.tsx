@@ -64,7 +64,12 @@ export default function ImportProjectModal({
     <div className="modal-backdrop" onClick={handleClose}>
       <div className="modal" onClick={(event) => event.stopPropagation()} style={{ maxWidth: '440px' }}>
         <div className="modal-header">
-          <div className="modal-title">Import Existing Project</div>
+          <div>
+            <div className="modal-title">Import Existing Project</div>
+            <p className="modal-copy">
+              Seed a planning-ready project from an existing repository without changing the surrounding workspace flow.
+            </p>
+          </div>
           <button className="modal-close" onClick={handleClose} disabled={saving}>&times;</button>
         </div>
         <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>

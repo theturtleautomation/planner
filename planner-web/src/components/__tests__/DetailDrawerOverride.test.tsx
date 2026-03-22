@@ -72,9 +72,9 @@ describe('DetailDrawer override visibility', () => {
 
     expect(await screen.findByText(/shared guidance \(shared-guidance\)/i)).toBeInTheDocument();
     expect(screen.getByText(/this project-local record is the effective version in alpha project/i)).toBeInTheDocument();
-    expect(screen.getByText(/override_reason/i)).toBeInTheDocument();
+    expect(screen.getByText(/override reason:/i)).toBeInTheDocument();
     expect(screen.getAllByText(/project-specific checkout flow/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/effective_from/i)).toBeInTheDocument();
+    expect(screen.getByText(/effective from:/i)).toBeInTheDocument();
     expect(screen.getAllByText(/2026-03-10/i).length).toBeGreaterThan(0);
 
     await user.click(screen.getByRole('button', { name: /view shared source/i }));

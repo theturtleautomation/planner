@@ -89,79 +89,92 @@ export default function AddEdgeModal({ isOpen, nodes, defaultSourceId, onClose, 
   const sortedNodes = [...nodes].sort((a, b) => a.name.localeCompare(b.name));
 
   return (
-    <>
-      <div className="modal-backdrop" onClick={handleClose} />
-      <div className="modal" style={{ maxWidth: '480px' }}>
-        <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-4)' }}>
-          <h3 style={{ margin: 0, fontSize: 'var(--text-base)', fontWeight: 600 }}>Add Edge</h3>
+    <div className="modal-backdrop" onClick={handleClose}>
+      <div className="modal" style={{ maxWidth: '480px' }} onClick={(event) => event.stopPropagation()}>
+        <div className="modal-header">
+          <div>
+            <div className="modal-title">Add Edge</div>
+            <p className="modal-copy">
+              Connect two blueprint nodes with an explicit relationship.
+            </p>
+          </div>
           <button className="modal-close" onClick={handleClose}>&times;</button>
         </div>
 
-        <label className="field-label">Source Node</label>
-        <select className="field-input" value={sourceId} onChange={e => setSourceId(e.target.value)}>
-          <option value="">Select source…</option>
-          {sortedNodes.map(n => (
-            <option key={n.id} value={n.id}>
-              [{labelNodeType(n.node_type, 'short')}] {n.name}
-            </option>
-          ))}
-        </select>
+        <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+          <label className="field-label">
+            Source Node
+            <select className="field-input" value={sourceId} onChange={e => setSourceId(e.target.value)}>
+              <option value="">Select source…</option>
+              {sortedNodes.map(n => (
+                <option key={n.id} value={n.id}>
+                  [{labelNodeType(n.node_type, 'short')}] {n.name}
+                </option>
+              ))}
+            </select>
+          </label>
 
-        <label className="field-label" style={{ marginTop: 'var(--space-3)' }}>Edge Type</label>
-        <select className="field-input" value={edgeType} onChange={e => setEdgeType(e.target.value as EdgeType)}>
-          {EDGE_TYPES.map(et => (
-            <option key={et.value} value={et.value}>
-              {et.label} — {et.description}
-            </option>
-          ))}
-        </select>
+          <label className="field-label">
+            Edge Type
+            <select className="field-input" value={edgeType} onChange={e => setEdgeType(e.target.value as EdgeType)}>
+              {EDGE_TYPES.map(et => (
+                <option key={et.value} value={et.value}>
+                  {et.label} — {et.description}
+                </option>
+              ))}
+            </select>
+          </label>
 
-        <label className="field-label" style={{ marginTop: 'var(--space-3)' }}>Target Node</label>
-        <select className="field-input" value={targetId} onChange={e => setTargetId(e.target.value)}>
-          <option value="">Select target…</option>
-          {sortedNodes.map(n => (
-            <option key={n.id} value={n.id}>
-              [{labelNodeType(n.node_type, 'short')}] {n.name}
-            </option>
-          ))}
-        </select>
+          <label className="field-label">
+            Target Node
+            <select className="field-input" value={targetId} onChange={e => setTargetId(e.target.value)}>
+              <option value="">Select target…</option>
+              {sortedNodes.map(n => (
+                <option key={n.id} value={n.id}>
+                  [{labelNodeType(n.node_type, 'short')}] {n.name}
+                </option>
+              ))}
+            </select>
+          </label>
 
-        <label className="field-label" style={{ marginTop: 'var(--space-3)' }}>Why this relationship? (optional)</label>
-        <input className="field-input" placeholder="e.g. 'primary data store', 'mandated by compliance'" value={metadata} onChange={e => setMetadata(e.target.value)} />
+          <label className="field-label">
+            Why this relationship? (optional)
+            <input className="field-input" placeholder="e.g. 'primary data store', 'mandated by compliance'" value={metadata} onChange={e => setMetadata(e.target.value)} />
+          </label>
 
-        {/* Visual preview */}
-        {sourceId && targetId && (
-          <div style={{
-            marginTop: 'var(--space-4)',
-            padding: 'var(--space-3)',
-            background: 'var(--color-surface-raised)',
-            borderRadius: 'var(--radius-md)',
-            fontSize: 'var(--text-xs)',
-            fontFamily: 'var(--font-mono)',
-            textAlign: 'center',
-            color: 'var(--color-text-muted)',
-          }}>
-            {nodes.find(n => n.id === sourceId)?.name ?? sourceId}
-            {' '}
-            <span style={{ color: 'var(--color-accent)' }}>—[{edgeType}]→</span>
-            {' '}
-            {nodes.find(n => n.id === targetId)?.name ?? targetId}
-          </div>
-        )}
+          {sourceId && targetId && (
+            <div style={{
+              padding: 'var(--space-3)',
+              background: 'color-mix(in srgb, var(--color-surface-raised) 86%, transparent)',
+              boxShadow: 'inset 0 0 0 1px var(--color-ghost-border)',
+              borderRadius: 'var(--radius-lg)',
+              fontSize: 'var(--text-xs)',
+              fontFamily: 'var(--font-mono)',
+              textAlign: 'center',
+              color: 'var(--color-text-muted)',
+            }}>
+              {nodes.find(n => n.id === sourceId)?.name ?? sourceId}
+              {' '}
+              <span style={{ color: 'var(--color-accent)' }}>—[{edgeType}]→</span>
+              {' '}
+              {nodes.find(n => n.id === targetId)?.name ?? targetId}
+            </div>
+          )}
 
-        {error && (
-          <div style={{ color: 'var(--color-error)', fontSize: 'var(--text-xs)', marginTop: 'var(--space-3)' }}>
-            {error}
-          </div>
-        )}
+          {error && (
+            <div style={{ color: 'var(--color-error)', fontSize: 'var(--text-xs)' }}>
+              {error}
+            </div>
+          )}
+        </div>
 
-        <div style={{ display: 'flex', gap: 'var(--space-3)', justifyContent: 'flex-end', marginTop: 'var(--space-5)' }}>
+        <div className="modal-footer">
           <button className="btn btn-outline" onClick={handleClose} disabled={creating}>Cancel</button>
           <button className="btn btn-primary" onClick={handleCreate} disabled={creating || !sourceId || !targetId}>
             {creating ? 'Creating…' : 'Create Edge'}
           </button>
         </div>
       </div>
-    </>
+    </div>
   );
 }

@@ -53,7 +53,12 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate }: Create
         style={{ maxWidth: '400px' }}
       >
         <div className="modal-header">
-          <div className="modal-title">Create Project</div>
+          <div>
+            <div className="modal-title">Create Project</div>
+            <p className="modal-copy">
+              Open a new workspace for sessions, blueprint state, project knowledge, and events.
+            </p>
+          </div>
           <button className="modal-close" onClick={handleClose}>&times;</button>
         </div>
         <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>

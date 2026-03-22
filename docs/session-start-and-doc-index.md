@@ -50,6 +50,8 @@ Read these when the task touches the relevant area.
 - [phase-11-socratic-category-replay-and-validation-spec.md](/home/thetu/planner/docs/phase-11-socratic-category-replay-and-validation-spec.md)
 - [planner-design-system-command-center-plan.md](/home/thetu/planner/docs/planner-design-system-command-center-plan.md)
 - [planner-design-system-phase-1-tonal-foundation-spec.md](/home/thetu/planner/docs/planner-design-system-phase-1-tonal-foundation-spec.md)
+- [planner-design-system-phase-2-editorial-typography-and-cta-spec.md](/home/thetu/planner/docs/planner-design-system-phase-2-editorial-typography-and-cta-spec.md)
+- [planner-design-system-phase-3-overlay-depth-and-restrained-glass-spec.md](/home/thetu/planner/docs/planner-design-system-phase-3-overlay-depth-and-restrained-glass-spec.md)
 
 ### Import and blueprint work
 

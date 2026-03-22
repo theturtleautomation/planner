@@ -48,7 +48,12 @@ export default function DeleteNodeDialog({
         style={{ maxWidth: '420px' }}
       >
         <div className="modal-header">
-          <div className="modal-title" style={{ color: 'var(--color-error)' }}>Delete Node</div>
+          <div>
+            <div className="modal-title" style={{ color: 'var(--color-error)' }}>Delete Node</div>
+            <p className="modal-copy">
+              Remove this blueprint node and its linked edges from the current graph.
+            </p>
+          </div>
           <button className="modal-close" onClick={handleClose}>&times;</button>
         </div>
 
@@ -84,13 +89,12 @@ export default function DeleteNodeDialog({
             Cancel
           </button>
           <button
-            className="btn"
+            className="btn btn-warning"
             onClick={handleConfirm}
             disabled={deleting}
             style={{
-              background: 'var(--color-error)',
+              background: 'linear-gradient(135deg, var(--color-error-hover) 0%, var(--color-error) 55%, #7d1e5e 100%)',
               color: '#fff',
-              border: 'none',
             }}
           >
             {deleting ? 'Deleting…' : 'Delete Node'}

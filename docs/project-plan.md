@@ -1,7 +1,7 @@
 # Project Plan
 
 **Status:** Active  
-**Date:** 2026-03-21
+**Date:** 2026-03-22
 
 ## Purpose
 
@@ -29,6 +29,8 @@ These are the main planning documents currently shaping the repo:
 - [Phase 11 Socratic Category Replay And Validation Spec](/home/thetu/planner/docs/phase-11-socratic-category-replay-and-validation-spec.md)
 - [Planner Design System Command Center Plan](/home/thetu/planner/docs/planner-design-system-command-center-plan.md)
 - [Planner Design System Phase 1 Tonal Foundation Spec](/home/thetu/planner/docs/planner-design-system-phase-1-tonal-foundation-spec.md)
+- [Planner Design System Phase 2 Editorial Typography And CTA Spec](/home/thetu/planner/docs/planner-design-system-phase-2-editorial-typography-and-cta-spec.md)
+- [Planner Design System Phase 3 Overlay Depth And Restrained Glass Spec](/home/thetu/planner/docs/planner-design-system-phase-3-overlay-depth-and-restrained-glass-spec.md)
 - [Knowledge Library Project Scope Plan](/home/thetu/planner/docs/knowledge-library-project-scope-plan.md)
 - [Import Existing Project Plan](/home/thetu/planner/docs/import-existing-project-plan.md)
 - [Import Existing Project Phase 1 Domain Skeleton Spec](/home/thetu/planner/docs/import-existing-project-phase-1-domain-skeleton-spec.md)
@@ -128,6 +130,12 @@ Current completed slice:
 
 - tonal shell and border-removal foundation is implemented and verified in
   [Planner Design System Phase 1 Tonal Foundation Spec](/home/thetu/planner/docs/planner-design-system-phase-1-tonal-foundation-spec.md)
+- editorial typography, CTA hierarchy, and in-scope empty-state refinement are
+  implemented and verified in
+  [Planner Design System Phase 2 Editorial Typography And CTA Spec](/home/thetu/planner/docs/planner-design-system-phase-2-editorial-typography-and-cta-spec.md)
+- overlay depth, restrained glass, and shared modal/drawer normalization are
+  implemented and verified in
+  [Planner Design System Phase 3 Overlay Depth And Restrained Glass Spec](/home/thetu/planner/docs/planner-design-system-phase-3-overlay-depth-and-restrained-glass-spec.md)
 
 Current ready slice:
 
@@ -137,14 +145,16 @@ Current agreed product constraints:
 
 - phase 1 stays focused on tonal sectioning, shell treatment, and border removal
   across the highest-value shared frontend surfaces
-- typography changes beyond token prep are deferred to a later phase
-- glass and blur remain restricted to later overlay-specific work
+- phase 2 kept display typography and CTA emphasis scoped to high-traffic
+  shell, project, session-entry, and related modal/input surfaces
+- phase 3 kept blur and translucency restricted to transient modal and drawer
+  overlays only
 - graph-heavy pages are not part of the first restyle slice
 
 Current next bounded slice:
 
-- create the Phase 2 editorial typography and CTA hierarchy spec before
-  resuming implementation
+- no additional design-system delivery slice is queued yet; the next move is a
+  manual visual confidence sweep or a new bounded follow-on spec
 
 ### Import Existing Project
 
@@ -236,14 +246,14 @@ Keep planning and implementation aligned to artifact state:
 
 ## Next Expected Move
 
-For the active design-system thread, the next move is the next bounded spec,
-not unscoped visual churn across the app.
+For the completed design-system thread, the next move is manual confidence
+verification or a new bounded spec, not unscoped visual churn across the app.
 
 The next move is:
 
-- write the Phase 2 design-system spec for editorial typography and CTA
-  hierarchy, then return to `delivery-cycle`
-  as the next bounded visual-system slice
+- run a manual light/dark overlay sweep, or
+- write a new bounded spec only if a later context-menu or popover pass is
+  actually desired
 
 If Socratic work resumes in parallel, keep using the live lobby verification
 checkpoint above or add a new bounded Socratic spec rather than reopening the

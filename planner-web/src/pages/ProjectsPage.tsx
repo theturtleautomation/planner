@@ -247,12 +247,13 @@ export default function ProjectsPage() {
             flexWrap: 'wrap',
             background: 'var(--color-surface-offset)',
             borderRadius: '18px',
-            padding: '24px',
+            padding: '28px',
           }}
         >
-          <div>
-            <h1 style={{ margin: 0, color: 'var(--color-text)', fontSize: '24px' }}>Projects</h1>
-            <p style={{ margin: '6px 0 0', color: 'var(--color-text-muted)', fontSize: '13px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxWidth: '38rem' }}>
+            <span className="page-kicker">Project directory</span>
+            <h1 className="display-heading" style={{ margin: 0 }}>Projects</h1>
+            <p className="section-copy" style={{ margin: 0 }}>
               Project directory for sessions, blueprint, knowledge, and events.
             </p>
           </div>
@@ -395,26 +396,28 @@ export default function ProjectsPage() {
         )}
 
         {!loading && filtered.length === 0 && (
-          <div
-            style={{
-              background: 'var(--color-surface-offset)',
-              borderRadius: '14px',
-              padding: '20px',
-              color: 'var(--color-text-muted)',
-              fontSize: '13px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '8px',
-            }}
-          >
-            <span style={{ color: 'var(--color-text)', fontWeight: 600 }}>
-              {projects.length === 0 ? 'No projects yet' : 'No projects match this query'}
+          <div className="empty-state-card">
+            <span className="empty-state-kicker">
+              {projects.length === 0 ? 'New workspace' : 'No match'}
             </span>
-            <span>
+            <span className="empty-state-title">
+              {projects.length === 0 ? 'Open a project workspace.' : 'No projects match this query.'}
+            </span>
+            <span className="empty-state-body">
               {projects.length === 0
                 ? 'Use the New Project button above to start project-scoped sessions and planning work.'
                 : 'Try a broader search or clear the current query.'}
             </span>
+            {projects.length === 0 && !query && (
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <button className="btn btn-primary" onClick={() => setCreateModalOpen(true)}>
+                  New Project
+                </button>
+                <button className="btn btn-outline" onClick={() => setImportModalOpen(true)}>
+                  Import Repository
+                </button>
+              </div>
+            )}
             {query && (
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                 <button

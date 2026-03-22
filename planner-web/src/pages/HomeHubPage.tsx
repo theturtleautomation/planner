@@ -117,12 +117,12 @@ export default function HomeHubPage() {
     void navigate(`/projects?query=${encodeURIComponent(raw)}`);
   }, [navigate, projects, prompt]);
 
-  const quickActions: Array<{ label: string; onClick: () => void; primary?: boolean }> = [
-    { label: 'Open Projects', onClick: () => { void navigate('/projects'); }, primary: true },
-    { label: 'New Project', onClick: () => { setCreateModalOpen(true); }, primary: true },
-    { label: 'Knowledge Library', onClick: () => { void navigate('/knowledge'); }, primary: true },
-    { label: 'Events', onClick: () => { void navigate('/events'); }, primary: true },
-    { label: 'Admin', onClick: () => { void navigate('/admin'); }, primary: true },
+  const quickActions: Array<{ label: string; onClick: () => void; variant?: 'primary' | 'outline' | 'default' }> = [
+    { label: 'New Project', onClick: () => { setCreateModalOpen(true); }, variant: 'primary' },
+    { label: 'Open Projects', onClick: () => { void navigate('/projects'); }, variant: 'outline' },
+    { label: 'Knowledge Library', onClick: () => { void navigate('/knowledge'); }, variant: 'outline' },
+    { label: 'Events', onClick: () => { void navigate('/events'); }, variant: 'default' },
+    { label: 'Admin', onClick: () => { void navigate('/admin'); }, variant: 'default' },
     { label: 'Open Sessions', onClick: () => { void navigate('/sessions'); } },
     { label: 'Blueprint', onClick: () => { void navigate('/blueprint'); } },
     { label: 'Discovery', onClick: () => { void navigate('/discovery'); } },
@@ -147,17 +147,18 @@ export default function HomeHubPage() {
           style={{
             background: 'var(--color-surface-offset)',
             borderRadius: '18px',
-            padding: '24px',
+            padding: '28px',
             display: 'flex',
             flexDirection: 'column',
-            gap: '16px',
+            gap: '18px',
           }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
-            <div>
-              <h1 style={{ margin: 0, fontSize: '22px', color: 'var(--color-text)' }}>Home</h1>
-              <p style={{ margin: '6px 0 0', color: 'var(--color-text-muted)', fontSize: '13px' }}>
-                Route quickly to projects and core planning surfaces.
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxWidth: '36rem' }}>
+              <span className="page-kicker">Command center</span>
+              <h1 className="display-heading" style={{ margin: 0 }}>Home</h1>
+              <p className="section-copy" style={{ margin: 0 }}>
+                Route quickly to active projects, planning sessions, and the core operating surfaces around them.
               </p>
             </div>
             {!AUTH0_ENABLED && (
@@ -212,7 +213,7 @@ export default function HomeHubPage() {
             {quickActions.map((action) => (
               <button
                 key={action.label}
-                className={action.primary ? 'btn btn-outline' : 'btn'}
+                className={`btn${action.variant === 'primary' ? ' btn-primary' : action.variant === 'outline' ? ' btn-outline' : ''}`}
                 onClick={action.onClick}
               >
                 {action.label}
@@ -233,9 +234,9 @@ export default function HomeHubPage() {
           }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
-            <div>
-              <h2 style={{ margin: 0, fontSize: '16px', color: 'var(--color-text)' }}>Recent Projects</h2>
-              <p style={{ margin: '4px 0 0', color: 'var(--color-text-muted)', fontSize: '12px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <h2 className="section-heading" style={{ margin: 0 }}>Recent Projects</h2>
+              <p className="section-copy" style={{ margin: 0 }}>
                 Project sessions, blueprint, knowledge, and events all start here.
               </p>
             </div>
@@ -253,19 +254,12 @@ export default function HomeHubPage() {
           )}
 
           {!loading && !error && recentProjects.length === 0 && (
-            <div
-              style={{
-                background: 'var(--color-surface-offset)',
-                borderRadius: '14px',
-                padding: '20px',
-                color: 'var(--color-text-muted)',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '8px',
-              }}
-            >
-              <span style={{ color: 'var(--color-text)', fontWeight: 600 }}>No projects yet</span>
-              <span>Sessions now live inside projects. Create a project to begin.</span>
+            <div className="empty-state-card">
+              <span className="empty-state-kicker">Start here</span>
+              <span className="empty-state-title">Create the first project shell.</span>
+              <span className="empty-state-body">
+                Sessions now live inside projects. Start a project space, then branch into sessions, blueprint, knowledge, and events from there.
+              </span>
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                 <button className="btn btn-primary" onClick={() => { setCreateModalOpen(true); }}>
                   Create your first project
