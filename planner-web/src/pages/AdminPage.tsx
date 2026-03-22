@@ -79,7 +79,6 @@ function LevelBadge({ level }: LevelBadgeProps) {
       alignItems: 'center',
       padding: '1px 7px',
       borderRadius: '9px',
-      border: `1px solid ${s.border}`,
       background: s.bg,
       color: s.color,
       fontSize: '10px',
@@ -103,8 +102,7 @@ function SourceBadge({ source }: SourceBadgeProps) {
       alignItems: 'center',
       padding: '1px 7px',
       borderRadius: '9px',
-      border: '1px solid rgba(136,136,160,0.25)',
-      background: 'rgba(136,136,160,0.07)',
+      background: 'color-mix(in srgb, var(--color-surface-offset) 82%, transparent)',
       color: 'var(--color-text-muted)',
       fontSize: '10px',
       fontWeight: 600,
@@ -134,13 +132,16 @@ function FilterBtn({ label, active, color, onClick }: FilterBtnProps) {
       onClick={onClick}
       style={{
         background: active ? `${color}22` : 'transparent',
-        border: active ? `1px solid ${color}` : '1px solid var(--color-border)',
+        border: 'none',
+        boxShadow: active
+          ? `inset 0 0 0 1px ${color}`
+          : 'inset 0 0 0 1px var(--color-ghost-border)',
         color: active ? color : 'var(--color-text-muted)',
-        padding: '3px 12px',
+        padding: '6px 12px',
         fontSize: '11px',
         fontWeight: 600,
         cursor: 'pointer',
-        borderRadius: '2px',
+        borderRadius: '999px',
         fontFamily: 'inherit',
         letterSpacing: '0.04em',
         transition: 'all 0.18s',
@@ -163,13 +164,16 @@ function EventRow({ event }: EventRowProps) {
       })
     : null;
 
+  const s = levelStyle(event.level);
+
   return (
     <div style={{
       display: 'flex',
       alignItems: 'flex-start',
       gap: '8px',
-      padding: '7px 12px',
-      borderBottom: '1px solid rgba(42,42,62,0.5)',
+      padding: '10px 12px',
+      borderRadius: '16px',
+      background: `linear-gradient(180deg, color-mix(in srgb, ${s.bg} 88%, var(--color-surface-2)), color-mix(in srgb, var(--color-surface) 92%, transparent))`,
       fontSize: '12px',
       lineHeight: 1.5,
     }}>
@@ -351,199 +355,117 @@ export default function AdminPage() {
 
   return (
     <Layout>
-      <div style={{
-        flex: 1,
-        overflow: 'auto',
-        padding: '28px 24px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '24px',
-        maxWidth: '1000px',
-        margin: '0 auto',
-        width: '100%',
-      }}>
-
-        {/* ── Header ── */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'baseline',
-          justifyContent: 'space-between',
-          borderBottom: '1px solid var(--color-border)',
-          paddingBottom: '12px',
-          gap: '16px',
-        }}>
-          <span style={{
-            color: 'var(--color-primary)',
-            fontSize: '14px',
-            fontWeight: 700,
-            fontFamily: 'monospace',
-            letterSpacing: '0.08em',
-          }}>
-            system administration
-          </span>
-          <a
-            href="/"
-            style={{
-              color: 'var(--color-text-muted)',
-              fontSize: '12px',
-              textDecoration: 'none',
-              fontFamily: 'monospace',
-              transition: 'color 0.18s',
-              flexShrink: 0,
-            }}
-            onMouseEnter={(e) => { (e.currentTarget as HTMLAnchorElement).style.color = 'var(--color-primary)'; }}
-            onMouseLeave={(e) => { (e.currentTarget as HTMLAnchorElement).style.color = 'var(--color-text-muted)'; }}
-          >
-            ← dashboard
-          </a>
+      <div className="command-page" style={{ maxWidth: '1000px' }}>
+        <div className="command-page-header">
+          <div className="command-page-header-copy">
+            <span className="page-kicker">Operations</span>
+            <h1 className="display-heading">Admin</h1>
+            <p className="section-copy">
+              Monitor provider availability, queue health, and live system events without dropping into a separate legacy console.
+            </p>
+          </div>
+          <div className="command-page-header-actions">
+            <a href="/" className="command-link">Home</a>
+            <a href="/sessions" className="command-link">Sessions</a>
+          </div>
         </div>
 
-        {/* ── System Health Card ── */}
-        <div style={{
-          background: 'var(--color-surface)',
-          border: '1px solid var(--color-border)',
-          borderRadius: '3px',
-          padding: '16px 20px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '12px',
-        }}>
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            borderBottom: '1px solid var(--color-border)',
-            paddingBottom: '10px',
-          }}>
-            <span style={{ color: 'var(--color-text-muted)', fontSize: '11px', letterSpacing: '0.08em', fontFamily: 'monospace' }}>
-              system health
-            </span>
+        <div className="utility-card utility-card-stack">
+          <div className="utility-card-header">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <span className="page-kicker" style={{ color: 'var(--color-text-muted)' }}>System health</span>
+              <h2 className="section-heading">Runtime status</h2>
+            </div>
             {statusUpdatedAt && (
-              <span style={{ color: 'var(--color-text-muted)', fontSize: '10px', opacity: 0.5, marginLeft: 'auto', fontFamily: 'monospace' }}>
+              <span style={{ color: 'var(--color-text-muted)', fontSize: '11px', fontFamily: 'var(--font-mono)' }}>
                 updated {secsAgo(statusUpdatedAt)}
               </span>
             )}
           </div>
 
           {statusError && (
-            <div style={{
-              color: 'var(--color-error)',
-              fontSize: '12px',
-              fontFamily: 'monospace',
-              padding: '8px 12px',
-              background: 'rgba(255,68,68,0.06)',
-              border: '1px solid rgba(255,68,68,0.25)',
-              borderRadius: '2px',
-            }}>
+            <div className="utility-note" style={{ background: 'rgba(255,68,68,0.06)', color: 'var(--color-error)', fontFamily: 'var(--font-mono)' }}>
               {statusError}
             </div>
           )}
 
           {!status && !statusError && (
-            <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>loading…</span>
+            <span style={{ color: 'var(--color-text-muted)', fontSize: '12px', fontFamily: 'var(--font-mono)' }}>loading…</span>
           )}
 
           {status && (
-            <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: '20px 40px' }}>
-              {/* Status */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <span style={{ color: 'var(--color-text-muted)', fontSize: '10px', letterSpacing: '0.06em', fontFamily: 'monospace' }}>status</span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+            <div className="utility-stat-grid">
+              <div className="utility-stat-card">
+                <div className="utility-stat-eyebrow" style={{ color: 'var(--color-text-muted)' }}>status</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '7px', marginTop: '10px' }}>
                   <StatusDot ok={status.status === 'ok'} />
                   <span style={{
                     color: status.status === 'ok' ? 'var(--color-success)' : 'var(--color-gold)',
-                    fontSize: '13px',
-                    fontFamily: 'monospace',
+                    fontSize: '14px',
+                    fontFamily: 'var(--font-mono)',
                     fontWeight: 700,
+                    textTransform: 'uppercase',
                   }}>
                     {status.status}
                   </span>
                 </div>
               </div>
-
-              {/* Version */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <span style={{ color: 'var(--color-text-muted)', fontSize: '10px', letterSpacing: '0.06em', fontFamily: 'monospace' }}>version</span>
-                <span style={{ color: 'var(--color-text)', fontSize: '13px', fontFamily: 'monospace', fontWeight: 600 }}>
+              <div className="utility-stat-card">
+                <div className="utility-stat-eyebrow" style={{ color: 'var(--color-text-muted)' }}>version</div>
+                <div className="utility-stat-value" style={{ fontSize: 'clamp(1.15rem, 1rem + 0.5vw, 1.5rem)', fontFamily: 'var(--font-mono)' }}>
                   {status.version}
-                </span>
+                </div>
               </div>
-
-              {/* Uptime */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <span style={{ color: 'var(--color-text-muted)', fontSize: '10px', letterSpacing: '0.06em', fontFamily: 'monospace' }}>uptime</span>
-                <span style={{ color: 'var(--color-text)', fontSize: '13px', fontFamily: 'monospace', fontWeight: 600 }}>
+              <div className="utility-stat-card">
+                <div className="utility-stat-eyebrow" style={{ color: 'var(--color-text-muted)' }}>uptime</div>
+                <div className="utility-stat-value" style={{ fontSize: 'clamp(1.15rem, 1rem + 0.5vw, 1.5rem)', fontFamily: 'var(--font-mono)' }}>
                   {formatUptime(status.uptime_secs)}
-                </span>
+                </div>
               </div>
-
-              {/* Active sessions */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <span style={{ color: 'var(--color-text-muted)', fontSize: '10px', letterSpacing: '0.06em', fontFamily: 'monospace' }}>active sessions</span>
-                <span style={{ color: 'var(--color-text)', fontSize: '13px', fontFamily: 'monospace', fontWeight: 600 }}>
-                  {status.sessions.active}
-                </span>
+              <div className="utility-stat-card">
+                <div className="utility-stat-eyebrow" style={{ color: 'var(--color-text-muted)' }}>active sessions</div>
+                <div className="utility-stat-value">{status.sessions.active}</div>
               </div>
-
-              {/* Total events */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <span style={{ color: 'var(--color-text-muted)', fontSize: '10px', letterSpacing: '0.06em', fontFamily: 'monospace' }}>total events</span>
-                <span style={{ color: 'var(--color-text)', fontSize: '13px', fontFamily: 'monospace', fontWeight: 600 }}>
-                  {status.sessions.total_events}
-                </span>
+              <div className="utility-stat-card">
+                <div className="utility-stat-eyebrow" style={{ color: 'var(--color-text-muted)' }}>total events</div>
+                <div className="utility-stat-value">{status.sessions.total_events}</div>
               </div>
             </div>
           )}
         </div>
 
-        {/* ── Provider Cards ── */}
         {status && status.providers && status.providers.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <span style={{ color: 'var(--color-text-muted)', fontSize: '11px', letterSpacing: '0.08em', fontFamily: 'monospace' }}>
-              llm providers
-            </span>
-            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' as const }}>
+          <div className="utility-card utility-card-stack">
+            <div className="utility-card-header">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <span className="page-kicker" style={{ color: 'var(--color-text-muted)' }}>Provider availability</span>
+                <h2 className="section-heading">LLM providers</h2>
+              </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '12px' }}>
               {status.providers.map((provider) => (
                 <div
                   key={provider.name}
+                  className="utility-stat-card"
                   style={{
-                    background: 'var(--color-surface)',
-                    border: provider.available
-                      ? '1px solid rgba(0,255,136,0.25)'
-                      : '1px solid rgba(255,68,68,0.25)',
-                    borderRadius: '3px',
-                    padding: '12px 18px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '6px',
-                    minWidth: '150px',
-                    flex: '1 1 150px',
-                    maxWidth: '220px',
+                    background: provider.available
+                      ? 'rgba(0,255,136,0.07)'
+                      : 'rgba(255,68,68,0.07)',
                   }}
                 >
-                  {/* Provider name */}
                   <span style={{
                     color: 'var(--color-text)',
                     fontSize: '13px',
-                    fontFamily: 'monospace',
+                    fontFamily: 'var(--font-mono)',
                     fontWeight: 700,
                     letterSpacing: '0.04em',
                   }}>
                     {provider.name}
                   </span>
-
-                  {/* Binary */}
-                  <span style={{
-                    color: 'var(--color-text-muted)',
-                    fontSize: '11px',
-                    fontFamily: 'monospace',
-                    opacity: 0.75,
-                  }}>
+                  <div className="utility-stat-copy" style={{ marginTop: '6px', fontFamily: 'var(--font-mono)' }}>
                     bin: {provider.binary}
-                  </span>
-
-                  {/* Status */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '10px' }}>
                     <span style={{
                       fontSize: '14px',
                       color: provider.available ? 'var(--color-success)' : 'var(--color-error)',
@@ -554,8 +476,10 @@ export default function AdminPage() {
                     <span style={{
                       color: provider.available ? 'var(--color-success)' : 'var(--color-error)',
                       fontSize: '11px',
-                      fontFamily: 'monospace',
+                      fontFamily: 'var(--font-mono)',
                       fontWeight: 600,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.04em',
                     }}>
                       {provider.available ? 'available' : 'unavailable'}
                     </span>
@@ -566,45 +490,18 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* ── Event Log ── */}
-        <div style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '10px',
-          flex: 1,
-          minHeight: 0,
-        }}>
-          {/* Log header */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '12px',
-            flexWrap: 'wrap' as const,
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span style={{ color: 'var(--color-text-muted)', fontSize: '11px', letterSpacing: '0.08em', fontFamily: 'monospace' }}>
-                event log
-              </span>
-              {eventsData && (
-                <span style={{
-                  color: 'var(--color-text-muted)',
-                  fontSize: '10px',
-                  fontFamily: 'monospace',
-                  opacity: 0.55,
-                }}>
-                  ({eventsData.total} total)
-                </span>
-              )}
-              {eventsUpdatedAt && (
-                <span style={{ color: 'var(--color-text-muted)', fontSize: '10px', opacity: 0.45, fontFamily: 'monospace' }}>
-                  · updated {secsAgo(eventsUpdatedAt)}
-                </span>
-              )}
+        <div className="utility-card utility-card-stack" style={{ flex: 1, minHeight: 0 }}>
+          <div className="utility-card-header">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <span className="page-kicker" style={{ color: 'var(--color-text-muted)' }}>System events</span>
+              <h2 className="section-heading">Event log</h2>
+              <p className="section-copy" style={{ fontFamily: 'var(--font-mono)', fontSize: '12px' }}>
+                {eventsData ? `${eventsData.total} total events` : 'Polling every 5 seconds'}
+                {eventsUpdatedAt ? ` · updated ${secsAgo(eventsUpdatedAt)}` : ''}
+              </p>
             </div>
 
-            {/* Filter buttons */}
-            <div style={{ display: 'flex', gap: '6px' }}>
+            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
               <FilterBtn label="all" active={levelFilter === 'all'} color="var(--color-text-muted)" onClick={() => setLevelFilter('all')} />
               <FilterBtn label="error" active={levelFilter === 'error'} color="#ff4444" onClick={() => setLevelFilter('error')} />
               <FilterBtn label="warn" active={levelFilter === 'warn'} color="#ffd700" onClick={() => setLevelFilter('warn')} />
@@ -612,30 +509,13 @@ export default function AdminPage() {
             </div>
           </div>
 
-          {/* Error banner */}
           {eventsError && (
-            <div style={{
-              color: 'var(--color-error)',
-              fontSize: '12px',
-              fontFamily: 'monospace',
-              padding: '8px 12px',
-              background: 'rgba(255,68,68,0.06)',
-              border: '1px solid rgba(255,68,68,0.25)',
-              borderRadius: '2px',
-            }}>
+            <div className="utility-note" style={{ background: 'rgba(255,68,68,0.06)', color: 'var(--color-error)', fontFamily: 'var(--font-mono)' }}>
               {eventsError}
             </div>
           )}
 
-          {/* Scrollable list */}
-          <div style={{
-            background: 'var(--color-surface)',
-            border: '1px solid var(--color-border)',
-            borderRadius: '3px',
-            overflow: 'auto',
-            maxHeight: '480px',
-            fontFamily: 'monospace',
-          }}>
+          <div className="utility-scroll-surface" style={{ overflow: 'auto', maxHeight: '520px', fontFamily: 'var(--font-mono)' }}>
             {!eventsData && !eventsError && (
               <div style={{ padding: '24px', color: 'var(--color-text-muted)', fontSize: '12px', textAlign: 'center' }}>
                 loading events…
@@ -648,12 +528,15 @@ export default function AdminPage() {
               </div>
             )}
 
-            {filteredEvents.map((event) => (
-              <EventRow key={event.id} event={event} />
-            ))}
+            {filteredEvents.length > 0 && (
+              <div className="utility-scroll-list">
+                {filteredEvents.map((event) => (
+                  <EventRow key={event.id} event={event} />
+                ))}
+              </div>
+            )}
           </div>
         </div>
-
       </div>
     </Layout>
   );

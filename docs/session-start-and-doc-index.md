@@ -52,6 +52,7 @@ Read these when the task touches the relevant area.
 - [planner-design-system-phase-1-tonal-foundation-spec.md](/home/thetu/planner/docs/planner-design-system-phase-1-tonal-foundation-spec.md)
 - [planner-design-system-phase-2-editorial-typography-and-cta-spec.md](/home/thetu/planner/docs/planner-design-system-phase-2-editorial-typography-and-cta-spec.md)
 - [planner-design-system-phase-3-overlay-depth-and-restrained-glass-spec.md](/home/thetu/planner/docs/planner-design-system-phase-3-overlay-depth-and-restrained-glass-spec.md)
+- [planner-design-system-phase-4-utility-route-consistency-spec.md](/home/thetu/planner/docs/planner-design-system-phase-4-utility-route-consistency-spec.md)
 
 ### Import and blueprint work
 

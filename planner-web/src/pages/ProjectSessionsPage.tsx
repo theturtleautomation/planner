@@ -426,25 +426,26 @@ export default function ProjectSessionsPage() {
         style={{
           flex: 1,
           overflow: 'auto',
-          padding: '40px 24px 56px',
+          padding: '48px 24px 72px',
           maxWidth: '1040px',
           margin: '0 auto',
           width: '100%',
           display: 'flex',
           flexDirection: 'column',
-          gap: '24px',
+          gap: '36px',
         }}
       >
         <header
           style={{
             background: 'var(--color-surface-offset)',
             borderRadius: '18px',
-            padding: '28px',
+            padding: '32px',
             display: 'flex',
             alignItems: 'flex-end',
             justifyContent: 'space-between',
             gap: '12px',
             flexWrap: 'wrap',
+            boxShadow: 'var(--shadow-md)',
           }}
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxWidth: '38rem' }}>

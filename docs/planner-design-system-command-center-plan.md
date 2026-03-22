@@ -1,7 +1,7 @@
 # Planner Design System Command Center Plan
 
 **Status:** Implemented  
-**Date:** 2026-03-21  
+**Date:** 2026-03-22  
 **Parent:** [Project Plan](/home/thetu/planner/docs/project-plan.md)
 
 ## Purpose
@@ -47,9 +47,14 @@ These findings are intentionally not treated as default requirements:
 - direct reuse of neon tertiary hues from the analyzed archive
 - asymmetry that reduces spatial predictability on productivity screens
 
-## Current Product Anchors
+## Original Product Anchors
 
-The existing visual system still carries the older dark-first dashboard shell:
+This section captures the pre-refresh baseline that motivated the phased
+command-center rollout. It is historical context, not the current rendered
+state after the implemented four-phase refresh.
+
+At planning time, the existing visual system still carried the older
+dark-first dashboard shell:
 
 - [index.css](/home/thetu/planner/planner-web/src/index.css)
   still defines the shared token system, border-heavy shell, and current shadow
@@ -67,7 +72,7 @@ The existing visual system still carries the older dark-first dashboard shell:
 
 ## Rollout Model
 
-This redesign should ship in three bounded phases.
+This redesign should ship in four bounded phases.
 
 ### Phase 1: Tonal Foundation And Border Removal
 
@@ -126,6 +131,25 @@ Status:
 - implemented and verified on 2026-03-22 in
   [Planner Design System Phase 3 Overlay Depth And Restrained Glass Spec](/home/thetu/planner/docs/planner-design-system-phase-3-overlay-depth-and-restrained-glass-spec.md)
 
+### Phase 4: Utility Route Consistency
+
+Goal:
+
+- migrate the remaining legacy utility routes and shared operational chrome into
+  the command-center system without reopening graph-density or backend work
+
+Primary surfaces:
+
+- sessions queue route
+- admin route
+- shared event log chrome
+- non-graph blueprint header and sidebar chrome
+
+Status:
+
+- implemented and verified on 2026-03-22 in
+  [Planner Design System Phase 4 Utility Route Consistency Spec](/home/thetu/planner/docs/planner-design-system-phase-4-utility-route-consistency-spec.md)
+
 ## Working Constraints
 
 - redesign slices must stay frontend-only unless a product contract forces
@@ -137,8 +161,14 @@ Status:
 
 ## Next Move
 
-The current three-phase command-center refresh is implemented. The next move,
-if design work resumes, should be either:
+The initial four-phase command-center refresh is implemented, including the
+utility-route cleanup validated against a fresh Vite-served Chromium sweep.
 
-- a manual visual confidence sweep across light and dark overlay states, or
-- a new bounded spec for a later context-menu or popover primitive
+The next move, if design work resumes, should be:
+
+- create a fresh bounded follow-on spec only if we decide to keep investing in
+  deeper data-density refinement, additional utility-route cleanup, or
+  Blueprint graph-specific visual work
+
+Later context-menu or popover work should remain a separate future slice rather
+than being bundled into the completed utility-route cleanup.

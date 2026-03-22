@@ -86,9 +86,8 @@ function MetadataView({ metadata }: { metadata: Record<string, unknown> }) {
       style={{
         marginTop: '6px',
         padding: '6px 8px',
-        background: 'var(--color-bg)',
-        border: '1px solid var(--color-border)',
-        borderRadius: '2px',
+        background: 'color-mix(in srgb, var(--color-surface-offset) 84%, transparent)',
+        borderRadius: '12px',
         display: 'flex',
         flexDirection: 'column',
         gap: '2px',
@@ -127,10 +126,12 @@ function EventRow({ event, relTs }: EventRowProps) {
     <div
       onClick={() => hasDetails && setExpanded((v) => !v)}
       style={{
-        padding: '5px 12px',
-        borderBottom: '1px solid var(--color-border)',
+        padding: '8px 12px',
+        borderRadius: '14px',
         cursor: hasDetails ? 'pointer' : 'default',
-        background: expanded ? 'rgba(255,255,255,0.02)' : 'transparent',
+        background: expanded
+          ? 'color-mix(in srgb, var(--color-surface-offset) 84%, transparent)'
+          : 'color-mix(in srgb, var(--color-surface) 94%, transparent)',
         transition: 'background 0.15s',
       }}
     >
@@ -167,9 +168,9 @@ function EventRow({ event, relTs }: EventRowProps) {
             letterSpacing: '0.06em',
             textTransform: 'uppercase',
             color,
-            border: `1px solid ${color}`,
             borderRadius: '2px',
-            padding: '0 4px',
+            background: `color-mix(in srgb, ${color} 18%, transparent)`,
+            padding: '1px 6px',
             opacity: 0.9,
           }}
         >
@@ -310,10 +311,9 @@ function ExpandedEventLog({ events }: { events: PlannerEvent[] }) {
           display: 'flex',
           alignItems: 'center',
           gap: '6px',
-          padding: '5px 12px',
-          borderBottom: '1px solid var(--color-border)',
+          padding: '8px 12px 4px',
           flexShrink: 0,
-          background: 'var(--color-surface)',
+          background: 'transparent',
         }}
       >
         <span
@@ -340,13 +340,16 @@ function ExpandedEventLog({ events }: { events: PlannerEvent[] }) {
               }}
               style={{
                 background: active ? 'var(--color-primary)' : 'transparent',
-                border: `1px solid ${active ? 'var(--color-primary)' : 'var(--color-border)'}`,
-                borderRadius: '2px',
+                border: 'none',
+                boxShadow: active
+                  ? 'inset 0 0 0 1px var(--color-primary)'
+                  : 'inset 0 0 0 1px var(--color-ghost-border)',
+                borderRadius: '999px',
                 color: active ? 'var(--color-bg)' : 'var(--color-text-muted)',
                 fontSize: '10px',
                 fontWeight: active ? 700 : 400,
                 fontFamily: 'inherit',
-                padding: '2px 8px',
+                padding: '4px 10px',
                 cursor: 'pointer',
                 transition: 'background 0.15s, border-color 0.15s, color 0.15s',
                 letterSpacing: '0.03em',
@@ -389,6 +392,10 @@ function ExpandedEventLog({ events }: { events: PlannerEvent[] }) {
           flex: 1,
           overflowY: 'auto',
           overscrollBehavior: 'contain',
+          padding: '6px 10px 10px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '6px',
         }}
       >
         {/* Empty state */}
@@ -401,6 +408,8 @@ function ExpandedEventLog({ events }: { events: PlannerEvent[] }) {
               alignItems: 'center',
               justifyContent: 'center',
               gap: '8px',
+              borderRadius: '14px',
+              background: 'color-mix(in srgb, var(--color-surface-offset) 82%, transparent)',
             }}
           >
             <span
@@ -447,8 +456,9 @@ export default function EventLogPanel({ events }: EventLogPanelProps) {
   return (
     <div
       style={{
-        borderTop: '1px solid var(--color-border)',
-        background: 'var(--color-surface)',
+        background: 'linear-gradient(180deg, color-mix(in srgb, var(--color-surface-2) 88%, transparent), color-mix(in srgb, var(--color-surface) 94%, transparent))',
+        borderRadius: '20px',
+        boxShadow: 'var(--shadow-sm)',
         display: 'flex',
         flexDirection: 'column',
         flexShrink: 0,
@@ -466,14 +476,13 @@ export default function EventLogPanel({ events }: EventLogPanelProps) {
           alignItems: 'center',
           gap: '8px',
           padding: '0 12px',
-          height: '28px',
+          minHeight: '36px',
           flexShrink: 0,
           cursor: 'pointer',
-          borderBottom: expanded ? '1px solid var(--color-border)' : 'none',
           transition: 'background 0.15s',
         }}
         onMouseEnter={(e) => {
-          (e.currentTarget as HTMLDivElement).style.background = 'rgba(255,255,255,0.02)';
+          (e.currentTarget as HTMLDivElement).style.background = 'color-mix(in srgb, var(--color-surface-offset) 72%, transparent)';
         }}
         onMouseLeave={(e) => {
           (e.currentTarget as HTMLDivElement).style.background = 'transparent';
@@ -523,9 +532,9 @@ export default function EventLogPanel({ events }: EventLogPanelProps) {
               fontSize: '9px',
               fontWeight: 700,
               color: 'var(--color-error)',
-              border: '1px solid var(--color-error)',
-              borderRadius: '2px',
-              padding: '0 4px',
+              background: 'color-mix(in srgb, var(--color-error) 16%, transparent)',
+              borderRadius: '999px',
+              padding: '2px 6px',
               letterSpacing: '0.04em',
             }}
           >
@@ -538,9 +547,9 @@ export default function EventLogPanel({ events }: EventLogPanelProps) {
               fontSize: '9px',
               fontWeight: 700,
               color: 'var(--color-gold)',
-              border: '1px solid var(--color-gold)',
-              borderRadius: '2px',
-              padding: '0 4px',
+              background: 'color-mix(in srgb, var(--color-gold) 16%, transparent)',
+              borderRadius: '999px',
+              padding: '2px 6px',
               letterSpacing: '0.04em',
             }}
           >

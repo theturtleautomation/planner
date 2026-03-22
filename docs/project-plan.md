@@ -31,6 +31,7 @@ These are the main planning documents currently shaping the repo:
 - [Planner Design System Phase 1 Tonal Foundation Spec](/home/thetu/planner/docs/planner-design-system-phase-1-tonal-foundation-spec.md)
 - [Planner Design System Phase 2 Editorial Typography And CTA Spec](/home/thetu/planner/docs/planner-design-system-phase-2-editorial-typography-and-cta-spec.md)
 - [Planner Design System Phase 3 Overlay Depth And Restrained Glass Spec](/home/thetu/planner/docs/planner-design-system-phase-3-overlay-depth-and-restrained-glass-spec.md)
+- [Planner Design System Phase 4 Utility Route Consistency Spec](/home/thetu/planner/docs/planner-design-system-phase-4-utility-route-consistency-spec.md)
 - [Knowledge Library Project Scope Plan](/home/thetu/planner/docs/knowledge-library-project-scope-plan.md)
 - [Import Existing Project Plan](/home/thetu/planner/docs/import-existing-project-plan.md)
 - [Import Existing Project Phase 1 Domain Skeleton Spec](/home/thetu/planner/docs/import-existing-project-phase-1-domain-skeleton-spec.md)
@@ -136,10 +137,13 @@ Current completed slice:
 - overlay depth, restrained glass, and shared modal/drawer normalization are
   implemented and verified in
   [Planner Design System Phase 3 Overlay Depth And Restrained Glass Spec](/home/thetu/planner/docs/planner-design-system-phase-3-overlay-depth-and-restrained-glass-spec.md)
+- utility-route command-center consistency cleanup is implemented and verified
+  in
+  [Planner Design System Phase 4 Utility Route Consistency Spec](/home/thetu/planner/docs/planner-design-system-phase-4-utility-route-consistency-spec.md)
 
 Current ready slice:
 
-- none queued yet
+- no additional bounded visual-system follow-on spec is queued yet
 
 Current agreed product constraints:
 
@@ -153,8 +157,9 @@ Current agreed product constraints:
 
 Current next bounded slice:
 
-- no additional design-system delivery slice is queued yet; the next move is a
-  manual visual confidence sweep or a new bounded follow-on spec
+- no additional bounded visual-system follow-on spec is queued yet; the next
+  move is either a new spec for deeper data-density or Blueprint-specific
+  visual work, or a stop after the completed four-phase refresh
 
 ### Import Existing Project
 
@@ -246,14 +251,14 @@ Keep planning and implementation aligned to artifact state:
 
 ## Next Expected Move
 
-For the completed design-system thread, the next move is manual confidence
-verification or a new bounded spec, not unscoped visual churn across the app.
+For the design-system thread, the four-phase command-center refresh is now
+implemented and verified. There is no currently queued follow-on spec.
 
 The next move is:
 
-- run a manual light/dark overlay sweep, or
-- write a new bounded spec only if a later context-menu or popover pass is
-  actually desired
+- create a fresh bounded follow-on spec only if we decide to keep investing in
+  deeper data-density refinement, remaining utility-route polish, or
+  Blueprint graph-specific visual work
 
 If Socratic work resumes in parallel, keep using the live lobby verification
 checkpoint above or add a new bounded Socratic spec rather than reopening the

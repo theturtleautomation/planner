@@ -225,6 +225,22 @@ describe('Dashboard workflow visibility', () => {
     expect(await screen.findByText('Archived session')).toBeInTheDocument();
   });
 
+  it('renders the command-center queue header and tonal empty state when no sessions exist', async () => {
+    mockListSessions.mockResolvedValue({ sessions: [] });
+
+    renderDashboard();
+
+    await waitFor(() => {
+      expect(mockListSessions).toHaveBeenCalledTimes(1);
+    });
+
+    expect(screen.getByText('Operational queue')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Sessions' })).toBeInTheDocument();
+    expect(screen.getByText(/watch resumability, interventions, and recent activity/i)).toBeInTheDocument();
+    expect(screen.getByText('No sessions yet.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /open projects/i })).toBeInTheDocument();
+  });
+
   it('opens project-scoped knowledge from the sessions board when project identity is available', async () => {
     const user = userEvent.setup();
     mockListSessions.mockResolvedValue({

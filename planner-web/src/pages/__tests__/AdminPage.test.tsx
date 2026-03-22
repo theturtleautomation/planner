@@ -51,6 +51,25 @@ describe('AdminPage', () => {
     });
   });
 
+  it('renders the command-center admin header and major operational zones', async () => {
+    mockAdminEvents.mockResolvedValue({
+      total: 0,
+      events: [],
+    });
+
+    renderAdminPage();
+
+    await waitFor(() => {
+      expect(mockAdminStatus).toHaveBeenCalledTimes(1);
+      expect(mockAdminEvents).toHaveBeenCalledWith({ limit: 200 });
+    });
+
+    expect(screen.getByText('Operations')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Admin' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Runtime status' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Event log' })).toBeInTheDocument();
+  });
+
   it('opens project-scoped knowledge from admin event rows when project identity is available', async () => {
     const user = userEvent.setup();
     mockAdminEvents.mockResolvedValue({

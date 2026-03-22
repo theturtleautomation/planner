@@ -316,8 +316,7 @@ function MetadataPill({ children }: { children: string }) {
         alignItems: 'center',
         padding: '4px 8px',
         borderRadius: '999px',
-        background: 'rgba(136,136,160,0.08)',
-        border: '1px solid rgba(136,136,160,0.18)',
+        background: 'color-mix(in srgb, var(--color-surface-offset) 78%, transparent)',
         color: 'var(--color-text-muted)',
         fontSize: '11px',
         lineHeight: 1.4,
@@ -356,8 +355,9 @@ function CardActionButton(
         onClick();
       }}
       style={{
-        background: 'transparent',
-        border: '1px solid rgba(136,136,160,0.25)',
+        background: 'color-mix(in srgb, var(--color-surface-2) 88%, transparent)',
+        border: 'none',
+        boxShadow: 'inset 0 0 0 1px var(--color-ghost-border)',
         color: disabled ? 'var(--color-text-muted)' : 'var(--color-text-muted)',
         padding: '5px 10px',
         borderRadius: '999px',
@@ -441,24 +441,23 @@ function SessionCard({
       style={{
         display: 'flex',
         flexDirection: 'column',
-        gap: '12px',
-        padding: '16px 18px',
-        background: 'var(--color-surface)',
-        border: `1px solid ${phaseConfig.borderColor}`,
-        borderLeft: `4px solid ${getBadgeStyle(needsAlertTone).color}`,
-        borderRadius: '8px',
+        gap: '14px',
+        padding: '18px 20px',
+        background: `linear-gradient(180deg, color-mix(in srgb, ${phaseConfig.bg} 72%, var(--color-surface-2)), color-mix(in srgb, var(--color-surface) 90%, transparent))`,
+        borderRadius: '22px',
+        boxShadow: 'var(--shadow-sm)',
         cursor: 'pointer',
-        transition: 'transform 0.18s ease, border-color 0.18s ease, background 0.18s ease',
+        transition: 'transform 0.18s ease, background 0.18s ease, box-shadow 0.18s ease',
       }}
       onMouseEnter={(event) => {
         const element = event.currentTarget as HTMLDivElement;
         element.style.transform = 'translateY(-1px)';
-        element.style.background = 'var(--color-surface-2)';
+        element.style.boxShadow = 'var(--shadow-md)';
       }}
       onMouseLeave={(event) => {
         const element = event.currentTarget as HTMLDivElement;
         element.style.transform = 'translateY(0)';
-        element.style.background = 'var(--color-surface)';
+        element.style.boxShadow = 'var(--shadow-sm)';
       }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
@@ -489,7 +488,6 @@ function SessionCard({
               alignItems: 'center',
               padding: '4px 9px',
               borderRadius: '999px',
-              border: `1px solid ${phaseConfig.borderColor}`,
               background: phaseConfig.bg,
               color: phaseConfig.color,
               fontSize: '10px',
@@ -573,13 +571,10 @@ function SessionCard({
         <div
           style={{
             padding: '10px 12px',
-            borderRadius: '6px',
+            borderRadius: '14px',
             background: attentionBadges.some((badge) => badge.tone === 'error')
               ? 'rgba(255,68,68,0.08)'
               : 'rgba(255,215,0,0.08)',
-            border: attentionBadges.some((badge) => badge.tone === 'error')
-              ? '1px solid rgba(255,68,68,0.28)'
-              : '1px solid rgba(255,215,0,0.28)',
             color: attentionBadges.some((badge) => badge.tone === 'error')
               ? 'var(--color-error)'
               : 'var(--color-gold)',
@@ -692,141 +687,72 @@ export default function Dashboard() {
 
   return (
     <Layout>
-      <div
-        style={{
-          flex: 1,
-          overflow: 'auto',
-          padding: '32px 24px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '24px',
-          maxWidth: '980px',
-          margin: '0 auto',
-          width: '100%',
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            borderBottom: '1px solid var(--color-border)',
-            paddingBottom: '12px',
-            gap: '12px',
-            flexWrap: 'wrap',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-            <span style={{ color: 'var(--color-text)', fontSize: '14px', fontWeight: 600 }}>
-              sessions
-            </span>
-            <a
-              href="/admin"
-              style={{
-                color: 'var(--color-text-muted)',
-                fontSize: '11px',
-                textDecoration: 'none',
-                opacity: 0.6,
-                transition: 'opacity 0.18s',
-                fontFamily: 'monospace',
-              }}
-              onMouseEnter={(event) => { (event.currentTarget as HTMLAnchorElement).style.opacity = '1'; }}
-              onMouseLeave={(event) => { (event.currentTarget as HTMLAnchorElement).style.opacity = '0.6'; }}
-            >
-              admin →
+      <div className="command-page" style={{ maxWidth: '980px' }}>
+        <div className="command-page-header">
+          <div className="command-page-header-copy">
+            <span className="page-kicker">Operational queue</span>
+            <h1 className="display-heading">Sessions</h1>
+            <p className="section-copy">
+              Watch resumability, interventions, and recent activity across the global session queue while new planning work starts from projects.
+            </p>
+          </div>
+
+          <div className="command-page-header-actions">
+            <a href="/admin" className="command-link">
+              Admin
             </a>
             <button
               type="button"
+              className="btn btn-outline"
+              aria-pressed={showArchived}
               onClick={() => setShowArchived((value) => !value)}
-              style={{
-                background: 'transparent',
-                border: '1px solid rgba(136,136,160,0.25)',
-                color: showArchived ? 'var(--color-primary)' : 'var(--color-text-muted)',
-                fontSize: '11px',
-                cursor: 'pointer',
-                letterSpacing: '0.04em',
-                borderRadius: '999px',
-                fontFamily: 'inherit',
-                padding: '4px 10px',
-              }}
+              style={showArchived ? { color: 'var(--color-primary)' } : undefined}
             >
               {showArchived ? 'hide archived' : 'show archived'}
             </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => void navigate('/projects')}
+            >
+              start from project
+            </button>
           </div>
-
-          <button
-            onClick={() => void navigate('/projects')}
-            style={{
-              background: 'var(--color-primary)',
-              border: 'none',
-              color: 'var(--color-bg)',
-              padding: '8px 18px',
-              fontSize: '12px',
-              fontWeight: 700,
-              cursor: 'pointer',
-              letterSpacing: '0.05em',
-              textTransform: 'uppercase',
-              borderRadius: '4px',
-              fontFamily: 'inherit',
-              transition: 'opacity 0.18s',
-            }}
-            onMouseEnter={(event) => { (event.currentTarget as HTMLButtonElement).style.opacity = '0.85'; }}
-            onMouseLeave={(event) => { (event.currentTarget as HTMLButtonElement).style.opacity = '1'; }}
-          >
-            start from project
-          </button>
         </div>
 
         {!loading && !fetchError && sessions.length > 0 && (
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-              gap: '12px',
-            }}
-          >
+          <div className="utility-stat-grid">
             <div
+              className="utility-stat-card"
               style={{
-                padding: '12px 14px',
-                borderRadius: '8px',
-                border: '1px solid rgba(0,212,255,0.22)',
                 background: 'rgba(0,212,255,0.05)',
               }}
             >
-              <div style={{ color: 'var(--color-primary)', fontSize: '10px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+              <div className="utility-stat-eyebrow" style={{ color: 'var(--color-primary)' }}>
                 actionable
               </div>
-              <div style={{ color: 'var(--color-text)', fontSize: '22px', fontWeight: 700, marginTop: '4px' }}>
+              <div className="utility-stat-value">
                 {actionableCount}
               </div>
             </div>
             <div
+              className="utility-stat-card"
               style={{
-                padding: '12px 14px',
-                borderRadius: '8px',
-                border: '1px solid rgba(255,215,0,0.22)',
                 background: 'rgba(255,215,0,0.05)',
               }}
             >
-              <div style={{ color: 'var(--color-gold)', fontSize: '10px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+              <div className="utility-stat-eyebrow" style={{ color: 'var(--color-gold)' }}>
                 attention needed
               </div>
-              <div style={{ color: 'var(--color-text)', fontSize: '22px', fontWeight: 700, marginTop: '4px' }}>
+              <div className="utility-stat-value">
                 {attentionCount}
               </div>
             </div>
-            <div
-              style={{
-                padding: '12px 14px',
-                borderRadius: '8px',
-                border: '1px solid rgba(136,136,160,0.22)',
-                background: 'rgba(136,136,160,0.05)',
-              }}
-            >
-              <div style={{ color: 'var(--color-text-muted)', fontSize: '10px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+            <div className="utility-stat-card" style={{ background: 'rgba(136,136,160,0.05)' }}>
+              <div className="utility-stat-eyebrow" style={{ color: 'var(--color-text-muted)' }}>
                 sort order
               </div>
-              <div style={{ color: 'var(--color-text)', fontSize: '13px', lineHeight: 1.5, marginTop: '6px' }}>
+              <div className="utility-stat-copy">
                 Attention and resumability first, then recent activity.
               </div>
             </div>
@@ -850,10 +776,8 @@ export default function Dashboard() {
 
         {!loading && fetchError && (
           <div
+            className="utility-card"
             style={{
-              padding: '16px',
-              border: '1px solid var(--color-error)',
-              borderRadius: '8px',
               background: 'rgba(255,68,68,0.06)',
               color: 'var(--color-error)',
               fontSize: '13px',
@@ -866,10 +790,8 @@ export default function Dashboard() {
 
         {!loading && !fetchError && actionError && (
           <div
+            className="utility-card"
             style={{
-              padding: '12px 14px',
-              border: '1px solid rgba(255,68,68,0.28)',
-              borderRadius: '8px',
               background: 'rgba(255,68,68,0.06)',
               color: 'var(--color-error)',
               fontSize: '12px',
@@ -880,46 +802,21 @@ export default function Dashboard() {
         )}
 
         {!loading && !fetchError && sessions.length === 0 && (
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: '60px 24px',
-              border: '1px dashed var(--color-border)',
-              borderRadius: '8px',
-              gap: '12px',
-            }}
-          >
-            <span style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>
-              {showArchived ? 'no sessions match this view' : 'no sessions yet'}
-            </span>
-            <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>
+          <div className="empty-state-card" style={{ alignItems: 'flex-start', paddingBlock: '40px' }}>
+            <span className="empty-state-kicker">Global queue</span>
+            <h2 className="empty-state-title" style={{ maxWidth: '28rem' }}>
+              {showArchived ? 'No sessions match this view.' : 'No sessions yet.'}
+            </h2>
+            <p className="empty-state-body">
               {showArchived
                 ? 'toggle archived sessions off or open project sessions to continue'
                 : 'sessions are now project-scoped. open projects to start planning'}
-            </span>
+            </p>
             <button
+              type="button"
+              className="btn btn-primary"
               onClick={() => void navigate('/projects')}
-              style={{
-                marginTop: '8px',
-                background: 'transparent',
-                border: '1px solid var(--color-primary)',
-                color: 'var(--color-primary)',
-                padding: '8px 20px',
-                fontSize: '12px',
-                cursor: 'pointer',
-                borderRadius: '4px',
-                fontFamily: 'inherit',
-                transition: 'background 0.18s',
-              }}
-              onMouseEnter={(event) => {
-                (event.currentTarget as HTMLButtonElement).style.background = 'rgba(0,212,255,0.08)';
-              }}
-              onMouseLeave={(event) => {
-                (event.currentTarget as HTMLButtonElement).style.background = 'transparent';
-              }}
+              style={{ marginTop: '4px' }}
             >
               open projects →
             </button>
@@ -956,17 +853,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        <div
-          style={{
-            padding: '14px 16px',
-            background: 'var(--color-surface)',
-            border: '1px solid var(--color-border)',
-            borderRadius: '8px',
-            fontSize: '12px',
-            color: 'var(--color-text-muted)',
-            lineHeight: 1.7,
-          }}
-        >
+        <div className="utility-note">
           <span style={{ color: 'var(--color-primary)', fontWeight: 600 }}>TIP</span>
           {' '}Sessions remain a global operational queue, while new planning work starts from projects.
         </div>

@@ -6,6 +6,11 @@
 **Previous Phase:** [Planner Design System Phase 2 Editorial Typography And CTA Spec](/home/thetu/planner/docs/planner-design-system-phase-2-editorial-typography-and-cta-spec.md)  
 **Source Research:** user-provided design-system analysis dated 2026-03-21
 
+> Alignment update (2026-03-22): remaining modal and drawer header/footer
+> inset divider lines were removed in favor of stronger tonal separation so the
+> floating-layer treatment stays consistent with the command-center no-line
+> direction.
+
 ## Objective
 
 Build the third bounded slice of the Planner visual-system refresh by improving

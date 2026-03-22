@@ -5,6 +5,11 @@
 **Parent:** [Planner Design System Command Center Plan](/home/thetu/planner/docs/planner-design-system-command-center-plan.md)  
 **Source Research:** user-provided design-system analysis dated 2026-03-21
 
+> Alignment update (2026-03-22): residual shell and session-surface inset
+> divider lines were removed, and the main command-center page wrappers were
+> loosened further to better match the original no-line and macro-spacing
+> acceptance criteria without broadening the scope beyond Phase 1 surfaces.
+
 ## Objective
 
 Establish the visual foundation of the new Planner design system by replacing

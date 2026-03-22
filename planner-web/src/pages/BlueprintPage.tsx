@@ -588,8 +588,9 @@ export default function BlueprintPage() {
           {/* Sidebar filter (inside content, not app-level sidebar) */}
           <div style={{
             width: '200px', flexShrink: 0,
-            borderRight: '1px solid var(--color-divider)',
-            background: 'var(--color-surface)',
+            background: 'linear-gradient(180deg, color-mix(in srgb, var(--color-surface-2) 86%, transparent), color-mix(in srgb, var(--color-surface) 92%, transparent))',
+            boxShadow: 'var(--shadow-sm)',
+            borderRadius: '20px',
             display: 'flex', flexDirection: 'column',
             padding: 'var(--space-3) 0',
             overflowY: 'auto', overscrollBehavior: 'contain',
@@ -619,7 +620,7 @@ export default function BlueprintPage() {
             {/* Edge legend (only when graph is active) */}
             {viewMode === 'graph' && (
               <>
-                <div style={{ margin: 'var(--space-4) 0 var(--space-1)', borderTop: '1px solid var(--color-divider)' }} />
+                <div style={{ margin: 'var(--space-5) 0 var(--space-2)' }} />
                 <div className="sidebar-label" style={{ padding: 'var(--space-1) var(--space-4)' }}>
                   Edge Types
                 </div>
@@ -668,17 +669,17 @@ export default function BlueprintPage() {
                     pointerEvents: 'auto',
                   }}
                 >
-                  <span className="badge" style={{ border: '1px solid var(--color-border)' }}>
+                  <span className="badge" style={{ background: 'color-mix(in srgb, var(--color-surface-offset) 82%, transparent)', color: 'var(--color-text-muted)' }}>
                     {hygieneSummary.archived} archived{showArchived ? ' shown' : ' hidden'}
                   </span>
-                  <span className="badge" style={{ border: '1px solid var(--color-border)' }}>
+                  <span className="badge" style={{ background: 'color-mix(in srgb, var(--color-surface-offset) 82%, transparent)', color: 'var(--color-text-muted)' }}>
                     {hygieneSummary.unscoped} unscoped
                   </span>
-                  <span className="badge" style={{ border: '1px solid var(--color-border)' }}>
+                  <span className="badge" style={{ background: 'color-mix(in srgb, var(--color-surface-offset) 82%, transparent)', color: 'var(--color-text-muted)' }}>
                     {hygieneSummary.factoryHistory} factory history
                   </span>
                   {hygieneSummary.scopeDrift > 0 && (
-                    <span className="badge" style={{ border: '1px solid var(--color-warning)', color: 'var(--color-warning)' }}>
+                    <span className="badge" style={{ background: 'color-mix(in srgb, var(--color-warning) 16%, transparent)', color: 'var(--color-warning)' }}>
                       {hygieneSummary.scopeDrift} scope name drift
                     </span>
                   )}

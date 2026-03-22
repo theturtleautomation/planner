@@ -870,8 +870,7 @@ export default function SessionPage() {
   const reconnectBanner = socratic.reconnectFailed && (
     <div style={{
       padding: '8px 16px',
-      background: 'rgba(255,68,68,0.10)',
-      boxShadow: 'inset 0 -1px 0 rgba(209, 99, 167, 0.24)',
+      background: 'color-mix(in srgb, var(--color-error-highlight) 72%, transparent)',
       color: 'var(--color-error)',
       fontSize: '12px',
       textAlign: 'center',
@@ -884,8 +883,7 @@ export default function SessionPage() {
   const workflowErrorBanner = workflowError && (
     <div style={{
       padding: '8px 16px',
-      background: 'rgba(255,68,68,0.10)',
-      boxShadow: 'inset 0 -1px 0 rgba(209, 99, 167, 0.24)',
+      background: 'color-mix(in srgb, var(--color-error-highlight) 72%, transparent)',
       color: 'var(--color-error)',
       fontSize: '12px',
       textAlign: 'center',
@@ -1141,8 +1139,7 @@ export default function SessionPage() {
         {isError && (
           <div style={{
             padding: '12px 16px',
-            background: 'rgba(255,68,68,0.10)',
-            boxShadow: 'inset 0 -1px 0 rgba(209, 99, 167, 0.24)',
+            background: 'color-mix(in srgb, var(--color-error-highlight) 72%, transparent)',
             color: 'var(--color-error)',
             fontSize: '12px',
             textAlign: 'center',
@@ -1181,11 +1178,8 @@ export default function SessionPage() {
           <div style={{
             padding: '10px 16px',
             background: interviewResumeNotice.tone === 'warning'
-              ? 'rgba(255,215,0,0.08)'
-              : 'rgba(0,212,255,0.08)',
-            boxShadow: interviewResumeNotice.tone === 'warning'
-              ? 'inset 0 -1px 0 rgba(255,215,0,0.24)'
-              : 'inset 0 -1px 0 rgba(63, 118, 246, 0.24)',
+              ? 'color-mix(in srgb, var(--color-gold-highlight) 76%, transparent)'
+              : 'color-mix(in srgb, var(--color-primary-highlight) 68%, transparent)',
             color: interviewResumeNotice.tone === 'warning'
               ? 'var(--color-gold)'
               : 'var(--color-primary)',
@@ -1200,8 +1194,7 @@ export default function SessionPage() {
         {detachedCheckpoint && (
           <div style={{
             padding: '10px 16px',
-            background: 'rgba(63, 118, 246, 0.08)',
-            boxShadow: 'inset 0 -1px 0 rgba(63, 118, 246, 0.24)',
+            background: 'color-mix(in srgb, var(--color-primary-highlight) 68%, transparent)',
             color: 'var(--color-text)',
             fontSize: '12px',
             lineHeight: '1.45',
@@ -1269,8 +1262,7 @@ export default function SessionPage() {
             {isComplete && socratic.pipelineSummary && (
               <div style={{
                 padding: '12px 16px',
-                background: 'rgba(0,255,136,0.06)',
-                boxShadow: 'inset 0 1px 0 rgba(109, 170, 69, 0.32)',
+                background: 'color-mix(in srgb, var(--color-success-highlight) 72%, transparent)',
                 color: 'var(--color-success)',
                 fontSize: '12px',
                 flexShrink: 0,
