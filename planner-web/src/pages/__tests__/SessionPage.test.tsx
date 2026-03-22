@@ -108,6 +108,41 @@ function renderSessionPage(path = '/session/abc') {
   );
 }
 
+function makeMockSocraticState(
+  overrides: Partial<ReturnType<typeof useSocraticWebSocket>> = {},
+): ReturnType<typeof useSocraticWebSocket> {
+  return {
+    isConnected: false,
+    reconnectFailed: false,
+    intakePhase: 'waiting',
+    messages: [],
+    classification: null,
+    beliefState: null,
+    convergencePct: 0,
+    currentCategorySnapshot: null,
+    currentWorkspace: null,
+    pendingCategoryId: null,
+    workspaceNotice: null,
+    currentPrompt: null,
+    speculativeDraft: null,
+    confirmedSections: new Set(),
+    contradictions: [],
+    stages: [],
+    pipelineComplete: false,
+    pipelineSummary: null,
+    events: [],
+    currentStep: null,
+    attach: mockAttach,
+    sendDescription: mockSendDescription,
+    submitPromptAnswers: vi.fn(),
+    enterCategory: mockEnterCategory,
+    backToCategories: mockBackToCategories,
+    sendDone: vi.fn(),
+    sendDimensionEdit: vi.fn(),
+    ...overrides,
+  };
+}
+
 describe('SessionPage resume behavior', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -116,32 +151,7 @@ describe('SessionPage resume behavior', () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true);
     vi.spyOn(window.URL, 'createObjectURL').mockReturnValue('blob:session-export');
     vi.spyOn(window.URL, 'revokeObjectURL').mockImplementation(() => undefined);
-    vi.mocked(useSocraticWebSocket).mockReturnValue({
-      isConnected: false,
-      reconnectFailed: false,
-      intakePhase: 'waiting',
-      messages: [],
-      classification: null,
-      beliefState: null,
-      convergencePct: 0,
-      currentCategorySnapshot: null,
-      currentPrompt: null,
-      speculativeDraft: null,
-      confirmedSections: new Set(),
-      contradictions: [],
-      stages: [],
-      pipelineComplete: false,
-      pipelineSummary: null,
-      events: [],
-      currentStep: null,
-      attach: mockAttach,
-      sendDescription: mockSendDescription,
-      submitPromptAnswers: vi.fn(),
-      enterCategory: mockEnterCategory,
-      backToCategories: mockBackToCategories,
-      sendDone: vi.fn(),
-      sendDimensionEdit: vi.fn(),
-    });
+    vi.mocked(useSocraticWebSocket).mockReturnValue(makeMockSocraticState());
     mockGetSessionEvents.mockResolvedValue({ session_id: 'abc', events: [], count: 0 });
   });
 
@@ -572,7 +582,7 @@ describe('SessionPage resume behavior', () => {
       resume_status: 'live_attach_available',
     });
     mockGetSession.mockResolvedValue({ session });
-    vi.mocked(useSocraticWebSocket).mockReturnValue({
+    vi.mocked(useSocraticWebSocket).mockReturnValue(makeMockSocraticState({
       isConnected: true,
       reconnectFailed: false,
       intakePhase: 'pipeline_running',
@@ -603,12 +613,7 @@ describe('SessionPage resume behavior', () => {
       currentStep: 'pipeline.wait',
       attach: mockAttach,
       sendDescription: mockSendDescription,
-      submitPromptAnswers: vi.fn(),
-      enterCategory: mockEnterCategory,
-      backToCategories: mockBackToCategories,
-      sendDone: vi.fn(),
-      sendDimensionEdit: vi.fn(),
-    });
+    }));
 
     renderSessionPage('/session/abc');
 
@@ -632,7 +637,7 @@ describe('SessionPage resume behavior', () => {
       resume_status: 'live_attach_available',
     });
     mockGetSession.mockResolvedValue({ session });
-    vi.mocked(useSocraticWebSocket).mockReturnValue({
+    vi.mocked(useSocraticWebSocket).mockReturnValue(makeMockSocraticState({
       isConnected: true,
       reconnectFailed: false,
       intakePhase: 'pipeline_running',
@@ -661,12 +666,7 @@ describe('SessionPage resume behavior', () => {
       currentStep: 'pipeline.stage.started',
       attach: mockAttach,
       sendDescription: mockSendDescription,
-      submitPromptAnswers: vi.fn(),
-      enterCategory: mockEnterCategory,
-      backToCategories: mockBackToCategories,
-      sendDone: vi.fn(),
-      sendDimensionEdit: vi.fn(),
-    });
+    }));
 
     renderSessionPage('/session/abc');
 
@@ -685,7 +685,7 @@ describe('SessionPage resume behavior', () => {
       resume_status: 'live_attach_available',
     });
     mockGetSession.mockResolvedValue({ session });
-    vi.mocked(useSocraticWebSocket).mockReturnValue({
+    vi.mocked(useSocraticWebSocket).mockReturnValue(makeMockSocraticState({
       isConnected: true,
       reconnectFailed: false,
       intakePhase: 'pipeline_running',
@@ -740,12 +740,7 @@ describe('SessionPage resume behavior', () => {
       currentStep: 'pipeline.retry.feedback',
       attach: mockAttach,
       sendDescription: mockSendDescription,
-      submitPromptAnswers: vi.fn(),
-      enterCategory: mockEnterCategory,
-      backToCategories: mockBackToCategories,
-      sendDone: vi.fn(),
-      sendDimensionEdit: vi.fn(),
-    });
+    }));
 
     renderSessionPage('/session/abc');
 
@@ -768,7 +763,7 @@ describe('SessionPage resume behavior', () => {
       resume_status: 'interview_attached',
     });
     mockGetSession.mockResolvedValue({ session });
-    vi.mocked(useSocraticWebSocket).mockReturnValue({
+    vi.mocked(useSocraticWebSocket).mockReturnValue(makeMockSocraticState({
       isConnected: true,
       reconnectFailed: false,
       intakePhase: 'interviewing',
@@ -800,12 +795,7 @@ describe('SessionPage resume behavior', () => {
       currentStep: 'socratic.response.adjudicated',
       attach: mockAttach,
       sendDescription: mockSendDescription,
-      submitPromptAnswers: vi.fn(),
-      enterCategory: mockEnterCategory,
-      backToCategories: mockBackToCategories,
-      sendDone: vi.fn(),
-      sendDimensionEdit: vi.fn(),
-    });
+    }));
 
     renderSessionPage('/session/abc');
 
@@ -827,7 +817,7 @@ describe('SessionPage resume behavior', () => {
       resume_status: 'interview_attached',
     });
     mockGetSession.mockResolvedValue({ session });
-    vi.mocked(useSocraticWebSocket).mockReturnValue({
+    vi.mocked(useSocraticWebSocket).mockReturnValue(makeMockSocraticState({
       isConnected: true,
       reconnectFailed: false,
       intakePhase: 'interviewing',
@@ -857,6 +847,51 @@ describe('SessionPage resume behavior', () => {
         build_ready: false,
         build_readiness_message: 'Build is blocked until 1 remaining area is explored.',
       },
+      currentWorkspace: {
+        revision: 'workspace-1',
+        focused_category_id: null,
+        branch_notice: null,
+        category_snapshot: {
+          revision: 'category-1',
+          root_category_ids: ['root-discovery'],
+          nodes: [
+            {
+              category_id: 'root-discovery',
+              parent_category_id: null,
+              title: 'Explore missing areas',
+              summary: '1 area still needs discovery.',
+              status: 'ready',
+              depth: 0,
+              mapped_dimensions: [],
+              has_children: true,
+              has_prompt_ready: false,
+              item_count_hint: 1,
+            },
+          ],
+          active_category_path: [],
+          newly_available_category_ids: [],
+          build_ready: false,
+          build_readiness_message: 'Build is blocked until 1 remaining area is explored.',
+        },
+        groups: [
+          {
+            category_id: 'root-discovery',
+            title: 'Explore missing areas',
+            summary: '1 area still needs discovery.',
+            status: 'ready',
+            question_count: 1,
+            is_focused: false,
+            is_new: false,
+            preview_items: [
+              {
+                item_id: 'root-discovery::preview::0',
+                kind: 'discovery',
+                text: 'Clarify the remaining area.',
+              },
+            ],
+          },
+        ],
+      },
       currentPrompt: null,
       speculativeDraft: null,
       confirmedSections: new Set(),
@@ -868,12 +903,7 @@ describe('SessionPage resume behavior', () => {
       currentStep: 'socratic.category_state.generated',
       attach: mockAttach,
       sendDescription: mockSendDescription,
-      submitPromptAnswers: vi.fn(),
-      enterCategory: mockEnterCategory,
-      backToCategories: mockBackToCategories,
-      sendDone: vi.fn(),
-      sendDimensionEdit: vi.fn(),
-    });
+    }));
 
     renderSessionPage('/session/abc');
 
@@ -881,8 +911,8 @@ describe('SessionPage resume behavior', () => {
       expect(mockGetSession).toHaveBeenCalledWith('abc');
     });
 
-    expect(screen.getByRole('region', { name: /interview categories/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /explore missing areas/i })).toBeInTheDocument();
+    expect(screen.getByText(/live question workspace/i)).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /explore missing areas/i }).length).toBeGreaterThan(0);
   });
 
   it('does not expose a build completion button while a scoped prompt is active', async () => {
@@ -893,7 +923,7 @@ describe('SessionPage resume behavior', () => {
       resume_status: 'interview_attached',
     });
     mockGetSession.mockResolvedValue({ session });
-    vi.mocked(useSocraticWebSocket).mockReturnValue({
+    vi.mocked(useSocraticWebSocket).mockReturnValue(makeMockSocraticState({
       isConnected: true,
       reconnectFailed: false,
       intakePhase: 'interviewing',
@@ -947,12 +977,7 @@ describe('SessionPage resume behavior', () => {
       currentStep: null,
       attach: mockAttach,
       sendDescription: mockSendDescription,
-      submitPromptAnswers: vi.fn(),
-      enterCategory: mockEnterCategory,
-      backToCategories: mockBackToCategories,
-      sendDone: vi.fn(),
-      sendDimensionEdit: vi.fn(),
-    });
+    }));
 
     renderSessionPage('/session/abc');
 
@@ -971,7 +996,7 @@ describe('SessionPage resume behavior', () => {
       pipeline_running: true,
     });
     mockGetSession.mockResolvedValue({ session });
-    vi.mocked(useSocraticWebSocket).mockReturnValue({
+    vi.mocked(useSocraticWebSocket).mockReturnValue(makeMockSocraticState({
       isConnected: true,
       reconnectFailed: false,
       intakePhase: 'pipeline_running',
@@ -994,12 +1019,7 @@ describe('SessionPage resume behavior', () => {
       currentStep: 'pipeline.wait',
       attach: mockAttach,
       sendDescription: mockSendDescription,
-      submitPromptAnswers: vi.fn(),
-      enterCategory: mockEnterCategory,
-      backToCategories: mockBackToCategories,
-      sendDone: vi.fn(),
-      sendDimensionEdit: vi.fn(),
-    });
+    }));
 
     renderSessionPage('/session/abc');
 

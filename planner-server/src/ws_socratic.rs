@@ -38,8 +38,8 @@ use planner_core::pipeline::steps::socratic::{
 
 use planner_schemas::{
     ConvergenceResult, DomainClassification, PromptAnswer, PromptEnvelope, PromptResponse,
-    RequirementsBeliefState, SocraticCategorySnapshot, SocraticEvent, UiCapabilities,
-    ViewportClass,
+    RequirementsBeliefState, SocraticCategorySnapshot, SocraticEvent,
+    SocraticWorkspaceSnapshot, UiCapabilities, ViewportClass,
 };
 
 use crate::runtime::{AttachError, RuntimeAttachment, SessionRuntime, SocraticRuntimeInput};
@@ -279,6 +279,32 @@ impl planner_core::pipeline::steps::socratic::SocraticIO for WsSocraticIO {
                     "root_category_count": snapshot.root_category_ids.len(),
                     "active_category_depth": snapshot.active_category_path.len(),
                     "build_ready": snapshot.build_ready,
+                })),
+            );
+        }
+    }
+
+    async fn send_workspace_state(&self, workspace: &SocraticWorkspaceSnapshot) {
+        self.send(ServerMessage::WorkspaceState {
+            workspace: workspace.clone(),
+        });
+
+        if let Some(ref sink) = self.event_sink {
+            sink.emit(
+                planner_core::observability::PlannerEvent::info(
+                    planner_core::observability::EventSource::SocraticEngine,
+                    "socratic.workspace.generated",
+                    format!(
+                        "Workspace generated with {} question group(s)",
+                        workspace.groups.len()
+                    ),
+                )
+                .with_session(self.session_id)
+                .with_metadata(serde_json::json!({
+                    "revision": workspace.category_snapshot.revision.clone(),
+                    "group_count": workspace.groups.len(),
+                    "focused_category_id": workspace.focused_category_id.clone(),
+                    "has_branch_notice": workspace.branch_notice.is_some(),
                 })),
             );
         }

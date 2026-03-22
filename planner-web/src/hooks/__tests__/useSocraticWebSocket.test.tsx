@@ -301,6 +301,221 @@ describe('useSocraticWebSocket', () => {
     ).toBe(true);
   });
 
+  it('keeps category focus pending until workspace state or prompt resolves it', async () => {
+    const getToken = vi.fn().mockResolvedValue('token');
+    const { result } = renderHook(() => useSocraticWebSocket({
+      sessionId: 'session-workspace',
+      getToken,
+      initialSession: null,
+    }));
+
+    act(() => {
+      result.current.attach();
+    });
+
+    await waitFor(() => {
+      expect(mockSockets.length).toBeGreaterThan(0);
+    });
+
+    const socket = mockSockets.at(-1)!;
+    act(() => {
+      socket.open();
+    });
+
+    act(() => {
+      result.current.enterCategory('root-discovery::dimension::security', 'category-2');
+    });
+
+    expect(result.current.pendingCategoryId).toBe('root-discovery::dimension::security');
+
+    act(() => {
+      socket.emit({
+        type: 'category_state',
+        snapshot: {
+          revision: 'category-2',
+          root_category_ids: ['root-discovery'],
+          nodes: [
+            {
+              category_id: 'root-discovery',
+              parent_category_id: null,
+              title: 'Explore missing areas',
+              summary: '1 area still needs discovery.',
+              status: 'active',
+              depth: 0,
+              mapped_dimensions: [],
+              has_children: true,
+              has_prompt_ready: false,
+              item_count_hint: 1,
+            },
+            {
+              category_id: 'root-discovery::dimension::security',
+              parent_category_id: 'root-discovery',
+              title: 'Security',
+              summary: 'Authentication still needs definition.',
+              status: 'ready',
+              depth: 1,
+              mapped_dimensions: ['Security'],
+              has_children: false,
+              has_prompt_ready: true,
+              item_count_hint: 2,
+            },
+          ],
+          active_category_path: [
+            { category_id: 'root-discovery', title: 'Explore missing areas' },
+          ],
+          newly_available_category_ids: [],
+          build_ready: false,
+          build_readiness_message: 'Build is blocked until security is clarified.',
+        },
+      });
+    });
+
+    expect(result.current.pendingCategoryId).toBe('root-discovery::dimension::security');
+
+    act(() => {
+      socket.emit({
+        type: 'workspace_state',
+        workspace: {
+          revision: 'workspace-2',
+          focused_category_id: 'root-discovery::dimension::security',
+          branch_notice: null,
+          category_snapshot: {
+            revision: 'category-2',
+            root_category_ids: ['root-discovery'],
+            nodes: [
+              {
+                category_id: 'root-discovery',
+                parent_category_id: null,
+                title: 'Explore missing areas',
+                summary: '1 area still needs discovery.',
+                status: 'active',
+                depth: 0,
+                mapped_dimensions: [],
+                has_children: true,
+                has_prompt_ready: false,
+                item_count_hint: 1,
+              },
+              {
+                category_id: 'root-discovery::dimension::security',
+                parent_category_id: 'root-discovery',
+                title: 'Security',
+                summary: 'Authentication still needs definition.',
+                status: 'ready',
+                depth: 1,
+                mapped_dimensions: ['Security'],
+                has_children: false,
+                has_prompt_ready: true,
+                item_count_hint: 2,
+              },
+            ],
+            active_category_path: [
+              { category_id: 'root-discovery', title: 'Explore missing areas' },
+              { category_id: 'root-discovery::dimension::security', title: 'Security' },
+            ],
+            newly_available_category_ids: ['root-discovery::dimension::security'],
+            build_ready: false,
+            build_readiness_message: 'Build is blocked until security is clarified.',
+          },
+          groups: [
+            {
+              category_id: 'root-discovery::dimension::security',
+              title: 'Security',
+              summary: 'Authentication still needs definition.',
+              status: 'ready',
+              question_count: 2,
+              is_focused: true,
+              is_new: true,
+              preview_items: [
+                {
+                  item_id: 'root-discovery::dimension::security::preview::0',
+                  kind: 'discovery',
+                  text: 'How should authentication work?',
+                },
+              ],
+            },
+          ],
+        },
+      });
+    });
+
+    expect(result.current.pendingCategoryId).toBeNull();
+    expect(result.current.currentWorkspace?.focused_category_id).toBe('root-discovery::dimension::security');
+  });
+
+  it('stores workspace state and branch notices from websocket updates', async () => {
+    const getToken = vi.fn().mockResolvedValue('token');
+    const { result } = renderHook(() => useSocraticWebSocket({
+      sessionId: 'session-workspace-branch',
+      getToken,
+      initialSession: null,
+    }));
+
+    act(() => {
+      result.current.attach();
+    });
+
+    await waitFor(() => {
+      expect(mockSockets.length).toBeGreaterThan(0);
+    });
+
+    const socket = mockSockets.at(-1)!;
+    act(() => {
+      socket.open();
+      socket.emit({
+        type: 'workspace_state',
+        workspace: {
+          revision: 'workspace-branch-1',
+          focused_category_id: null,
+          branch_notice: '"Authentication model" no longer has active questions. Review the updated workspace for the remaining work.',
+          category_snapshot: {
+            revision: 'category-branch-1',
+            root_category_ids: ['root-discovery'],
+            nodes: [
+              {
+                category_id: 'root-discovery',
+                parent_category_id: null,
+                title: 'Explore missing areas',
+                summary: 'Review the remaining branches.',
+                status: 'active',
+                depth: 0,
+                mapped_dimensions: [],
+                has_children: true,
+                has_prompt_ready: false,
+                item_count_hint: 1,
+              },
+            ],
+            active_category_path: [],
+            newly_available_category_ids: [],
+            build_ready: false,
+            build_readiness_message: 'Build is blocked until the remaining branch is reviewed.',
+          },
+          groups: [
+            {
+              category_id: 'root-discovery',
+              title: 'Explore missing areas',
+              summary: 'Review the remaining branches.',
+              status: 'active',
+              question_count: 1,
+              is_focused: false,
+              is_new: false,
+              preview_items: [
+                {
+                  item_id: 'root-discovery::preview::0',
+                  kind: 'discovery',
+                  text: 'Clarify the remaining branch.',
+                },
+              ],
+            },
+          ],
+        },
+      });
+    });
+
+    expect(result.current.currentWorkspace?.revision).toBe('workspace-branch-1');
+    expect(result.current.currentCategorySnapshot?.revision).toBe('category-branch-1');
+    expect(result.current.workspaceNotice).toMatch(/no longer has active questions/i);
+  });
+
   it('reconnect replay restores deep category state without reviving a stale prompt', async () => {
     const getToken = vi.fn().mockResolvedValue('token');
     const { result } = renderHook(() => useSocraticWebSocket({

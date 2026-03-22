@@ -399,13 +399,6 @@ function SessionCard({
   const stateBadge = getStateBadge(session);
   const attentionBadges = getAttentionBadges(session);
   const title = getSessionTitle(session);
-  const needsAlertTone = attentionBadges.some((badge) => badge.tone === 'error')
-    ? 'error'
-    : attentionBadges.length > 0
-      ? 'warning'
-      : session.can_resume_checkpoint || session.can_resume_live
-        ? 'primary'
-        : 'default';
   const lastActivity = `${formatRelativeTime(session.last_activity_at)} · ${formatDate(session.last_activity_at)}`;
   const description = getDescriptionSnippet(session.project_description);
   const workflowSummary = getWorkflowSummary(session);

@@ -6,6 +6,7 @@ import PipelineBar from '../components/PipelineBar.tsx';
 import MessageInput from '../components/MessageInput.tsx';
 import PromptBatchPanel from '../components/PromptBatchPanel.tsx';
 import CategoryNavigator from '../components/CategoryNavigator.tsx';
+import SocraticWorkspace from '../components/SocraticWorkspace.tsx';
 import InterviewProgressPanel from '../components/InterviewProgressPanel.tsx';
 import ConvergenceBar from '../components/ConvergenceBar.tsx';
 import BeliefStatePanel from '../components/BeliefStatePanel.tsx';
@@ -1275,7 +1276,21 @@ export default function SessionPage() {
 
             {isInterviewing ? (
               <>
-                {socratic.currentCategorySnapshot && (
+                {socratic.currentWorkspace ? (
+                  <SocraticWorkspace
+                    workspace={socratic.currentWorkspace}
+                    currentPrompt={socratic.currentPrompt}
+                    pendingCategoryId={socratic.pendingCategoryId}
+                    workspaceNotice={socratic.workspaceNotice}
+                    currentStep={socratic.currentStep}
+                    events={socratic.events}
+                    disabled={!socratic.isConnected}
+                    onFocusCategory={socratic.enterCategory}
+                    onShowAll={socratic.backToCategories}
+                    onSubmitAnswers={socratic.submitPromptAnswers}
+                    onDone={socratic.sendDone}
+                  />
+                ) : socratic.currentCategorySnapshot && (
                   <CategoryNavigator
                     snapshot={socratic.currentCategorySnapshot}
                     onEnterCategory={socratic.enterCategory}
@@ -1284,13 +1299,13 @@ export default function SessionPage() {
                     disabled={!socratic.isConnected}
                   />
                 )}
-                {socratic.currentPrompt ? (
+                {!socratic.currentWorkspace && socratic.currentPrompt ? (
                   <PromptBatchPanel
                     prompt={socratic.currentPrompt}
                     onSubmit={(_promptId, answers) => socratic.submitPromptAnswers(answers)}
                     disabled={!socratic.isConnected}
                   />
-                ) : !socratic.currentCategorySnapshot ? (
+                ) : !socratic.currentWorkspace && !socratic.currentCategorySnapshot ? (
                   <InterviewProgressPanel
                     currentStep={socratic.currentStep}
                     events={socratic.events}

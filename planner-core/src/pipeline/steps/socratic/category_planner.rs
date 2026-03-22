@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 use planner_schemas::{
     Dimension, PromptItemKind, RequirementsBeliefState, SocraticCategoryNode,
     SocraticCategoryPathEntry, SocraticCategorySnapshot, SocraticCategoryStatus,
+    SocraticWorkspaceGroup, SocraticWorkspaceItemPreview, SocraticWorkspaceSnapshot,
 };
 
 use super::prompt_batch_planner::{self, PromptCandidate};
@@ -207,6 +208,55 @@ pub fn filter_candidates_for_active_category(
         .filter(|candidate| category_id_for_candidate(candidate) == category_id)
         .take(max_visible_items.max(1) as usize)
         .collect()
+}
+
+pub fn build_workspace_snapshot(
+    state: &RequirementsBeliefState,
+    snapshot: &SocraticCategorySnapshot,
+    focused_category_id: Option<&str>,
+    branch_notice: Option<String>,
+    max_visible_items: u32,
+) -> SocraticWorkspaceSnapshot {
+    let groups = snapshot
+        .nodes
+        .iter()
+        .filter(|node| node.has_prompt_ready)
+        .map(|node| {
+            let preview_candidates =
+                filter_candidates_for_active_category(state, &node.category_id, max_visible_items);
+            let question_count = preview_candidates.len() as u32;
+            let preview_items = preview_candidates
+                .into_iter()
+                .enumerate()
+                .map(|(index, candidate)| SocraticWorkspaceItemPreview {
+                    item_id: format!("{}::preview::{}", node.category_id, index),
+                    kind: candidate.kind,
+                    text: candidate.rationale,
+                })
+                .collect::<Vec<_>>();
+
+            SocraticWorkspaceGroup {
+                category_id: node.category_id.clone(),
+                title: node.title.clone(),
+                summary: node.summary.clone(),
+                status: node.status.clone(),
+                question_count,
+                preview_items,
+                is_focused: focused_category_id == Some(node.category_id.as_str()),
+                is_new: snapshot
+                    .newly_available_category_ids
+                    .iter()
+                    .any(|category_id| category_id == &node.category_id),
+            }
+        })
+        .collect();
+
+    SocraticWorkspaceSnapshot {
+        category_snapshot: snapshot.clone(),
+        groups,
+        focused_category_id: focused_category_id.map(ToOwned::to_owned),
+        branch_notice,
+    }
 }
 
 fn insert_candidate_path(

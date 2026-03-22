@@ -17,7 +17,7 @@ use uuid::Uuid;
 
 use planner_schemas::{
     PromptEnvelope, PromptResponse as StructuredPromptResponse, SocraticCategorySnapshot,
-    UiCapabilities as ClientUiCapabilities,
+    SocraticWorkspaceSnapshot, UiCapabilities as ClientUiCapabilities,
 };
 
 use crate::AppState;
@@ -88,6 +88,10 @@ pub enum ServerMessage {
     /// Current Socratic category-navigation state.
     #[serde(rename = "category_state")]
     CategoryState { snapshot: SocraticCategorySnapshot },
+
+    /// Current live Socratic workspace state.
+    #[serde(rename = "workspace_state")]
+    WorkspaceState { workspace: SocraticWorkspaceSnapshot },
 
     /// Interview converged — ready to build.
     #[serde(rename = "converged")]

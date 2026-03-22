@@ -29,6 +29,7 @@ import type {
   PlannerEvent,
   PromptAnswer,
   SocraticCategorySnapshot,
+  SocraticWorkspaceSnapshot,
   PromptEnvelope,
   ServerWsMessage,
   Session,
@@ -307,6 +308,9 @@ export interface UseSocraticWebSocketResult {
   beliefState: BeliefState | null;
   convergencePct: number;
   currentCategorySnapshot: SocraticCategorySnapshot | null;
+  currentWorkspace: SocraticWorkspaceSnapshot | null;
+  pendingCategoryId: string | null;
+  workspaceNotice: string | null;
   currentPrompt: PromptEnvelope | null;
   speculativeDraft: SpeculativeDraft | null;
   confirmedSections: Set<string>;
@@ -362,6 +366,9 @@ export function useSocraticWebSocket({
   const [beliefState, setBeliefState] = useState<BeliefState | null>(null);
   const [convergencePct, setConvergencePct] = useState(0);
   const [currentCategorySnapshot, setCurrentCategorySnapshot] = useState<SocraticCategorySnapshot | null>(null);
+  const [currentWorkspace, setCurrentWorkspace] = useState<SocraticWorkspaceSnapshot | null>(null);
+  const [pendingCategoryId, setPendingCategoryId] = useState<string | null>(null);
+  const [workspaceNotice, setWorkspaceNotice] = useState<string | null>(null);
   const [currentPrompt, setCurrentPrompt] = useState<PromptEnvelope | null>(null);
   const [speculativeDraft, setSpeculativeDraft] = useState<SpeculativeDraft | null>(null);
   const [contradictions, setContradictions] = useState<Contradiction[]>([]);
@@ -441,12 +448,29 @@ export function useSocraticWebSocket({
       case 'prompt': {
         const prompt = msg.prompt;
         setCurrentPrompt(prompt);
+        setPendingCategoryId(null);
+        setWorkspaceNotice(null);
         if (prompt.category_path.length > 0) {
           setCurrentCategorySnapshot((previous) => (
             previous
               ? {
                 ...previous,
                 active_category_path: prompt.category_path,
+              }
+              : previous
+          ));
+          const focusedCategoryId = prompt.origin_category_id
+            ?? prompt.category_path[prompt.category_path.length - 1]?.category_id
+            ?? null;
+          setCurrentWorkspace((previous) => (
+            previous
+              ? {
+                ...previous,
+                focused_category_id: focusedCategoryId,
+                groups: previous.groups.map((group) => ({
+                  ...group,
+                  is_focused: focusedCategoryId === group.category_id,
+                })),
               }
               : previous
           ));
@@ -474,9 +498,22 @@ export function useSocraticWebSocket({
         break;
       }
 
+      case 'workspace_state': {
+        setCurrentWorkspace(msg.workspace);
+        setCurrentCategorySnapshot(msg.workspace.category_snapshot);
+        setWorkspaceNotice(msg.workspace.branch_notice ?? null);
+        setPendingCategoryId((previous) => (
+          previous && msg.workspace.focused_category_id !== previous ? previous : null
+        ));
+        break;
+      }
+
       case 'converged': {
         setConvergencePct(msg.convergence_pct);
         setCurrentCategorySnapshot(null);
+        setCurrentWorkspace(null);
+        setPendingCategoryId(null);
+        setWorkspaceNotice(null);
         setCurrentPrompt(null);
         setIntakePhase('pipeline_running');
         setMessages((prev) => [...prev, {
@@ -723,6 +760,9 @@ export function useSocraticWebSocket({
     setBeliefState(null);
     setConvergencePct(0);
     setCurrentCategorySnapshot(null);
+    setCurrentWorkspace(null);
+    setPendingCategoryId(null);
+    setWorkspaceNotice(null);
     setCurrentPrompt(null);
     setSpeculativeDraft(null);
     setConfirmedSections(new Set());
@@ -779,6 +819,9 @@ export function useSocraticWebSocket({
     setCurrentStep(initialSession.current_step ?? null);
     setConvergencePct((initialSession.belief_state ?? checkpointBeliefState)?.convergence_pct ?? 0);
     setCurrentCategorySnapshot(checkpointCategorySnapshot);
+    setCurrentWorkspace(null);
+    setPendingCategoryId(null);
+    setWorkspaceNotice(null);
     setCurrentPrompt(checkpointPrompt);
     setSpeculativeDraft(hydratedDraft);
     setConfirmedSections(new Set());
@@ -837,6 +880,8 @@ export function useSocraticWebSocket({
   }, [sendPromptResponse]);
 
   const enterCategory = useCallback((categoryId: string, revision: string): void => {
+    setPendingCategoryId(categoryId);
+    setWorkspaceNotice(null);
     sendRaw({
       type: 'enter_category',
       category_id: categoryId,
@@ -845,6 +890,7 @@ export function useSocraticWebSocket({
   }, [sendRaw]);
 
   const backToCategories = useCallback((): void => {
+    setPendingCategoryId(null);
     sendRaw({ type: 'back_to_categories' });
   }, [sendRaw]);
 
@@ -910,6 +956,9 @@ export function useSocraticWebSocket({
     beliefState,
     convergencePct,
     currentCategorySnapshot,
+    currentWorkspace,
+    pendingCategoryId,
+    workspaceNotice,
     currentPrompt,
     speculativeDraft,
     confirmedSections,

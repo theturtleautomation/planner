@@ -245,62 +245,54 @@ export default function DetailDrawer({
     return (
       <div className="drawer-section">
         <div className="drawer-section-title">Scope</div>
-        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: 'var(--space-2)' }}>
-          <span className="health-badge" style={{ color: 'var(--color-text-muted)', background: 'var(--color-surface-offset)' }}>
-            {labelScopeClass(scope.scope_class)}
-          </span>
-          <span
-            className="health-badge"
-            style={{
-              color:
-                scopeVisibility === 'shared'
-                  ? 'var(--color-blue)'
-                  : scopeVisibility === 'project_local'
-                    ? 'var(--color-success)'
-                    : 'var(--color-warning)',
-              background:
-                scopeVisibility === 'shared'
-                  ? 'rgba(59,130,246,0.14)'
-                  : scopeVisibility === 'project_local'
-                    ? 'rgba(34,197,94,0.14)'
-                    : 'rgba(234,179,8,0.14)',
-            }}
-          >
-            {labelScopeVisibility(scopeVisibility)}
-          </span>
-          <span
-            className="health-badge"
-            style={{
-              color: scope.lifecycle === 'archived' ? 'var(--color-warning)' : 'var(--color-success)',
-              background: scope.lifecycle === 'archived'
-                ? 'rgba(234,179,8,0.14)'
-                : 'rgba(34,197,94,0.14)',
-            }}
-          >
-            {scope.lifecycle === 'archived' ? 'Archived' : 'Active'}
-          </span>
+        <div className="drawer-grid">
+          <div className="drawer-kv">
+            <span className="drawer-kv-label">Class</span>
+            <span className="drawer-kv-value">{labelScopeClass(scope.scope_class)}</span>
+          </div>
+          <div className="drawer-kv">
+            <span className="drawer-kv-label">Visibility</span>
+            <span className="drawer-kv-value" style={{
+              color: scopeVisibility === 'shared' ? 'var(--color-blue)' : scopeVisibility === 'project_local' ? 'var(--color-success)' : 'var(--color-warning)'
+            }}>
+              {labelScopeVisibility(scopeVisibility)}
+            </span>
+          </div>
+          <div className="drawer-kv">
+            <span className="drawer-kv-label">Lifecycle</span>
+            <span className="drawer-kv-value" style={{
+              color: scope.lifecycle === 'archived' ? 'var(--color-warning)' : 'var(--color-success)'
+            }}>
+              {scope.lifecycle === 'archived' ? 'Archived' : 'Active'}
+            </span>
+          </div>
+          {scope.project && (
+            <div className="drawer-kv">
+              <span className="drawer-kv-label">Project</span>
+              <span className="drawer-kv-value">{scope.project.project_name ?? scope.project.project_id}</span>
+            </div>
+          )}
+          {(scope.secondary.feature || scope.secondary.widget || scope.secondary.artifact || scope.secondary.component) && (
+            <div className="drawer-kv">
+              <span className="drawer-kv-label">Context</span>
+              <span className="drawer-kv-value">
+                {[scope.secondary.feature, scope.secondary.widget, scope.secondary.artifact, scope.secondary.component]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </span>
+            </div>
+          )}
+          {scope.is_shared && (
+            <div className="drawer-kv">
+              <span className="drawer-kv-label">{labelScopeField('linked_project_ids')}</span>
+              <span className="drawer-kv-value">
+                {(scope.shared?.linked_project_ids ?? []).join(', ') || 'none'}
+              </span>
+            </div>
+          )}
         </div>
-        {scope.project && (
-          <div className="drawer-description">
-            <strong>Project:</strong> {scope.project.project_name ?? scope.project.project_id} ({scope.project.project_id})
-          </div>
-        )}
-        {(scope.secondary.feature || scope.secondary.widget || scope.secondary.artifact || scope.secondary.component) && (
-          <div className="drawer-description" style={{ marginTop: '4px' }}>
-            <strong>Context:</strong>{' '}
-            {[scope.secondary.feature, scope.secondary.widget, scope.secondary.artifact, scope.secondary.component]
-              .filter(Boolean)
-              .join(' · ')}
-          </div>
-        )}
-        {scope.is_shared && (
-          <div className="drawer-description" style={{ marginTop: '4px' }}>
-            <strong>{labelScopeField('linked_project_ids')}:</strong>{' '}
-            {(scope.shared?.linked_project_ids ?? []).join(', ') || 'none'}
-          </div>
-        )}
         {scope.override_scope && (
-          <div className="drawer-description" style={{ marginTop: '8px', display: 'grid', gap: '6px' }}>
+          <div className="drawer-description" style={{ marginTop: '16px', display: 'grid', gap: '6px', borderTop: '1px solid color-mix(in srgb, var(--color-divider) 80%, transparent)', paddingTop: '16px' }}>
             <div>
               <strong>{labelScopeField('shared_source_id')}:</strong>{' '}
               {overrideSourceEntry
@@ -334,7 +326,7 @@ export default function DetailDrawer({
           </div>
         )}
         {scope.is_shared && inboundOverrides.length > 0 && (
-          <div className="drawer-description" style={{ marginTop: '8px', display: 'grid', gap: '6px' }}>
+          <div className="drawer-description" style={{ marginTop: '16px', display: 'grid', gap: '6px', borderTop: '1px solid color-mix(in srgb, var(--color-divider) 80%, transparent)', paddingTop: '16px' }}>
             <div>
               <strong>Local overrides:</strong>
             </div>
@@ -445,70 +437,74 @@ export default function DetailDrawer({
 
   const renderTechnologyDetails = (n: TechnologyNode) => (
     <>
+      <div className="drawer-grid">
+        <div className="drawer-kv">
+          <span className="drawer-kv-label">Category</span>
+          <span className="drawer-kv-value" style={{ textTransform: 'capitalize' }}>{n.category}</span>
+        </div>
+        {n.version && (
+          <div className="drawer-kv">
+            <span className="drawer-kv-label">Version</span>
+            <span className="drawer-kv-value">{n.version}</span>
+          </div>
+        )}
+        {n.license && (
+          <div className="drawer-kv">
+            <span className="drawer-kv-label">License</span>
+            <span className="drawer-kv-value">{n.license}</span>
+          </div>
+        )}
+      </div>
       <div className="drawer-section">
         <div className="drawer-section-title">Rationale</div>
         <div className="drawer-description">{n.rationale}</div>
       </div>
-      <div className="drawer-section">
-        <div className="drawer-section-title">Category</div>
-        <div className="drawer-description" style={{ textTransform: 'capitalize' }}>{n.category}</div>
-      </div>
-      {n.version && (
-        <div className="drawer-section">
-          <div className="drawer-section-title">Version</div>
-          <div className="drawer-description" style={{ fontFamily: 'var(--font-mono)' }}>{n.version}</div>
-        </div>
-      )}
-      {n.license && (
-        <div className="drawer-section">
-          <div className="drawer-section-title">License</div>
-          <div className="drawer-description">{n.license}</div>
-        </div>
-      )}
     </>
   );
 
   const renderComponentDetails = (n: ComponentNode) => (
     <>
+      <div className="drawer-grid">
+        <div className="drawer-kv">
+          <span className="drawer-kv-label">Component Type</span>
+          <span className="drawer-kv-value">{labelComponentType(n.component_type)}</span>
+        </div>
+        <div className="drawer-kv">
+          <span className="drawer-kv-label">Name Source</span>
+          <span className="drawer-kv-value">{n.naming?.source === 'manual' ? 'Manual' : 'Generated'}</span>
+        </div>
+        {n.naming?.origin_key && (
+          <div className="drawer-kv">
+            <span className="drawer-kv-label">Origin Key</span>
+            <span className="drawer-kv-value" style={{ fontFamily: 'var(--font-mono)' }}>{n.naming.origin_key}</span>
+          </div>
+        )}
+      </div>
       <div className="drawer-section">
         <div className="drawer-section-title">Description</div>
         <div className="drawer-description">{n.description}</div>
       </div>
-      <div className="drawer-section">
-        <div className="drawer-section-title">Naming</div>
-        <div className="drawer-description">
-          <strong>Name source:</strong> {n.naming?.source === 'manual' ? 'Manual' : 'Generated'}
-        </div>
-        {n.naming?.origin_key && (
-          <div className="drawer-description" style={{ marginTop: '4px' }}>
-            <strong>Origin key:</strong> <span style={{ fontFamily: 'var(--font-mono)' }}>{n.naming.origin_key}</span>
+      {n.naming?.generated_name && n.naming.generated_name !== n.name && (
+        <div className="drawer-section">
+          <div className="drawer-section-title">Naming Suggestion</div>
+          <div className="drawer-description">
+            <strong>Latest suggestion:</strong> {n.naming.generated_name}
           </div>
-        )}
-        {n.naming?.generated_name && n.naming.generated_name !== n.name && (
-          <div style={{ marginTop: 'var(--space-2)' }}>
-            <div className="drawer-description">
-              <strong>Latest suggestion:</strong> {n.naming.generated_name}
-            </div>
-            {n.naming.source === 'manual' && (
-              <button
-                className="btn btn-outline"
-                style={{ fontSize: '0.625rem', padding: '2px 8px', marginTop: 'var(--space-2)' }}
-                onClick={() => void handleUseSuggestedName(n)}
-                disabled={applyingSuggestedName}
-              >
-                {applyingSuggestedName ? 'Applying…' : 'Use suggested name'}
-              </button>
-            )}
+          {n.naming.source === 'manual' && (
+            <button
+              className="btn btn-outline"
+              style={{ fontSize: '0.625rem', padding: '2px 8px', marginTop: 'var(--space-2)' }}
+              onClick={() => void handleUseSuggestedName(n)}
+              disabled={applyingSuggestedName}
+            >
+              {applyingSuggestedName ? 'Applying…' : 'Use suggested name'}
+            </button>
+          )}
+          <div className="drawer-description" style={{ marginTop: '8px', fontSize: '0.7rem', opacity: 0.8 }}>
+            Manual names are preserved across regeneration.
           </div>
-        )}
-        <div className="drawer-description" style={{ marginTop: '4px' }}>
-          Manual names are preserved across regeneration.
         </div>
-      </div>
-      <div className="drawer-section">
-        <div className="drawer-section-title">Component Type</div>
-        <div className="drawer-description">{labelComponentType(n.component_type)}</div>
-      </div>
+      )}
       {n.provides.length > 0 && (
         <div className="drawer-section">
           <div className="drawer-section-title">Provides</div>
@@ -534,17 +530,19 @@ export default function DetailDrawer({
 
   const renderConstraintDetails = (n: ConstraintNode) => (
     <>
+      <div className="drawer-grid">
+        <div className="drawer-kv">
+          <span className="drawer-kv-label">Constraint Type</span>
+          <span className="drawer-kv-value" style={{ textTransform: 'capitalize' }}>{n.constraint_type}</span>
+        </div>
+        <div className="drawer-kv">
+          <span className="drawer-kv-label">Source</span>
+          <span className="drawer-kv-value">{n.source}</span>
+        </div>
+      </div>
       <div className="drawer-section">
         <div className="drawer-section-title">Description</div>
         <div className="drawer-description">{n.description}</div>
-      </div>
-      <div className="drawer-section">
-        <div className="drawer-section-title">Constraint Type</div>
-        <div className="drawer-description" style={{ textTransform: 'capitalize' }}>{n.constraint_type}</div>
-      </div>
-      <div className="drawer-section">
-        <div className="drawer-section-title">Source</div>
-        <div className="drawer-description">{n.source}</div>
       </div>
     </>
   );
@@ -564,23 +562,25 @@ export default function DetailDrawer({
 
   const renderQualityDetails = (n: QualityRequirementNode) => (
     <>
-      {n.label && (
-        <div className="drawer-section">
-          <div className="drawer-section-title">Label</div>
-          <div className="drawer-description">{n.label}</div>
+      <div className="drawer-grid">
+        {n.label && (
+          <div className="drawer-kv">
+            <span className="drawer-kv-label">Label</span>
+            <span className="drawer-kv-value">{n.label}</span>
+          </div>
+        )}
+        <div className="drawer-kv">
+          <span className="drawer-kv-label">Quality Attribute</span>
+          <span className="drawer-kv-value" style={{ textTransform: 'capitalize' }}>{n.attribute}</span>
         </div>
-      )}
-      <div className="drawer-section">
-        <div className="drawer-section-title">Quality Attribute</div>
-        <div className="drawer-description" style={{ textTransform: 'capitalize' }}>{n.attribute}</div>
+        <div className="drawer-kv">
+          <span className="drawer-kv-label">Priority</span>
+          <span className="drawer-kv-value" style={{ textTransform: 'capitalize' }}>{n.priority}</span>
+        </div>
       </div>
       <div className="drawer-section">
         <div className="drawer-section-title">Scenario</div>
         <div className="drawer-description">{n.scenario}</div>
-      </div>
-      <div className="drawer-section">
-        <div className="drawer-section-title">Priority</div>
-        <div className="drawer-description" style={{ textTransform: 'capitalize' }}>{n.priority}</div>
       </div>
     </>
   );

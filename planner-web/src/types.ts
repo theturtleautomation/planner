@@ -144,6 +144,30 @@ export interface SocraticCategorySnapshot {
   build_readiness_message: string;
 }
 
+export interface SocraticWorkspaceItemPreview {
+  item_id: string;
+  kind: PromptItemKind;
+  text: string;
+}
+
+export interface SocraticWorkspaceGroup {
+  category_id: string;
+  title: string;
+  summary: string;
+  status: SocraticCategoryStatus;
+  question_count: number;
+  preview_items: SocraticWorkspaceItemPreview[];
+  is_focused: boolean;
+  is_new: boolean;
+}
+
+export interface SocraticWorkspaceSnapshot {
+  category_snapshot: SocraticCategorySnapshot;
+  groups: SocraticWorkspaceGroup[];
+  focused_category_id?: string | null;
+  branch_notice?: string | null;
+}
+
 export type PromptKind =
   | 'question_batch'
   | 'verification_batch'
@@ -609,6 +633,7 @@ export type ServerWsMessage =
   | { type: 'classified'; project_type: string; complexity: string }
   | { type: 'belief_state_update'; filled: Record<string, unknown>; uncertain: Record<string, unknown>; missing: string[]; out_of_scope: string[]; convergence_pct: number }
   | { type: 'category_state'; snapshot: SocraticCategorySnapshot }
+  | { type: 'workspace_state'; workspace: SocraticWorkspaceSnapshot }
   | { type: 'prompt'; prompt: PromptEnvelope }
   | { type: 'converged'; reason: string; convergence_pct: number }
   // Contradiction detection

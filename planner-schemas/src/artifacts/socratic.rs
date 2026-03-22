@@ -563,6 +563,40 @@ pub struct SocraticCategorySnapshot {
     pub build_readiness_message: String,
 }
 
+/// Lightweight preview item for the live Socratic workspace.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SocraticWorkspaceItemPreview {
+    pub item_id: String,
+    pub kind: PromptItemKind,
+    pub text: String,
+}
+
+/// Category-scoped question group preview in the live Socratic workspace.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SocraticWorkspaceGroup {
+    pub category_id: String,
+    pub title: String,
+    pub summary: String,
+    pub status: SocraticCategoryStatus,
+    pub question_count: u32,
+    #[serde(default)]
+    pub preview_items: Vec<SocraticWorkspaceItemPreview>,
+    pub is_focused: bool,
+    pub is_new: bool,
+}
+
+/// Server-authored workspace snapshot for live Socratic intake.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SocraticWorkspaceSnapshot {
+    pub category_snapshot: SocraticCategorySnapshot,
+    #[serde(default)]
+    pub groups: Vec<SocraticWorkspaceGroup>,
+    #[serde(default)]
+    pub focused_category_id: Option<String>,
+    #[serde(default)]
+    pub branch_notice: Option<String>,
+}
+
 /// A visible category node in the Socratic drill-down tree.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SocraticCategoryNode {

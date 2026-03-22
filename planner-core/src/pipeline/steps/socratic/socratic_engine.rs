@@ -54,6 +54,9 @@ pub trait SocraticIO: Send + Sync {
     /// Send the current category-navigation state.
     async fn send_category_state(&self, snapshot: &SocraticCategorySnapshot);
 
+    /// Send the current live question workspace state.
+    async fn send_workspace_state(&self, _workspace: &SocraticWorkspaceSnapshot) {}
+
     /// Send a belief state update (for the right-pane display).
     async fn send_belief_state(&self, state: &RequirementsBeliefState);
 
@@ -413,6 +416,7 @@ async fn run_prompt_loop<IO: SocraticIO, S: TurnStore>(
                 conv_result.is_done,
                 engine_state.last_category_snapshot.as_ref(),
             );
+            let mut branch_notice: Option<String> = None;
             engine_state.active_category_ids = category_snapshot
                 .active_category_path
                 .iter()
@@ -437,16 +441,35 @@ async fn run_prompt_loop<IO: SocraticIO, S: TurnStore>(
                     &engine_state.session.conversation,
                     scoped_candidates,
                     None,
-                    Some(category_id),
+                    Some(category_id.clone()),
                     prompt_path,
                 )
                 .await?;
 
                 if let Some(prompt) = pending_prompt.as_ref() {
+                    let workspace_snapshot = category_planner::build_workspace_snapshot(
+                        belief_state,
+                        &category_snapshot,
+                        Some(category_id.as_str()),
+                        None,
+                        ui_capabilities.max_visible_items,
+                    );
+                    io.send_category_state(&category_snapshot).await;
+                    io.send_workspace_state(&workspace_snapshot).await;
+                    io.send_event(&SocraticEvent::CategoryState {
+                        snapshot: category_snapshot.clone(),
+                    })
+                    .await;
+                    engine_state.last_category_snapshot = Some(category_snapshot.clone());
                     emit_prompt(io, engine_state, belief_state, prompt).await;
                     continue;
                 }
 
+                let collapsed_title = category_snapshot
+                    .active_category_path
+                    .last()
+                    .map(|entry| entry.title.clone())
+                    .unwrap_or_else(|| String::from("Selected category"));
                 engine_state.active_category_ids.pop();
                 category_snapshot = category_planner::build_category_snapshot(
                     belief_state,
@@ -454,9 +477,26 @@ async fn run_prompt_loop<IO: SocraticIO, S: TurnStore>(
                     conv_result.is_done,
                     engine_state.last_category_snapshot.as_ref(),
                 );
+                branch_notice = Some(format!(
+                    "\"{collapsed_title}\" no longer has active questions. Review the updated workspace for the remaining work."
+                ));
+                io.send_message(
+                    branch_notice
+                        .as_deref()
+                        .unwrap_or("The selected category changed. Review the updated workspace."),
+                )
+                .await;
             }
 
+            let workspace_snapshot = category_planner::build_workspace_snapshot(
+                belief_state,
+                &category_snapshot,
+                engine_state.active_category_ids.last().map(String::as_str),
+                branch_notice,
+                io.current_ui_capabilities().max_visible_items,
+            );
             io.send_category_state(&category_snapshot).await;
+            io.send_workspace_state(&workspace_snapshot).await;
             io.send_event(&SocraticEvent::CategoryState {
                 snapshot: category_snapshot.clone(),
             })
