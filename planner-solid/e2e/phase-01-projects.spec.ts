@@ -97,6 +97,74 @@ const promptBank = {
   build_readiness_message: null,
 };
 
+const projectBlueprint = {
+  total_nodes: 4,
+  total_edges: 3,
+  counts: {
+    project: 1,
+    decision: 1,
+    component: 1,
+    pattern: 1,
+  },
+  edges: [
+    { source: "project-1", target: "decision-1", edge_type: "contains" },
+    { source: "decision-1", target: "component-1", edge_type: "decided_by" },
+  ],
+  nodes: [
+    {
+      id: "project-1",
+      name: "Personal Calendar",
+      node_type: "project",
+      status: "active",
+      scope_class: "project",
+      scope_visibility: "project_local",
+      is_shared: false,
+      lifecycle: "active",
+      project_id: "project-1",
+      project_name: "Personal Calendar",
+      secondary_scope: {},
+      linked_project_ids: [],
+      tags: [],
+      has_documentation: true,
+      updated_at: "2026-03-24T04:00:00Z",
+    },
+    {
+      id: "decision-1",
+      name: "Web first",
+      node_type: "decision",
+      status: "accepted",
+      scope_class: "project",
+      scope_visibility: "project_local",
+      is_shared: false,
+      lifecycle: "active",
+      project_id: "project-1",
+      project_name: "Personal Calendar",
+      secondary_scope: {},
+      linked_project_ids: [],
+      tags: [],
+      has_documentation: true,
+      updated_at: "2026-03-24T05:00:00Z",
+    },
+    {
+      id: "component-1",
+      name: "Task Service",
+      node_type: "component",
+      status: "planned",
+      scope_class: "project_contextual",
+      scope_visibility: "shared",
+      is_shared: true,
+      lifecycle: "active",
+      project_id: "project-1",
+      project_name: "Personal Calendar",
+      secondary_scope: { component: "Task Service" },
+      linked_project_ids: [],
+      tags: [],
+      has_documentation: false,
+      updated_at: "2026-02-20T05:00:00Z",
+    },
+  ],
+};
+
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     class MockWebSocket {
@@ -245,6 +313,13 @@ test.beforeEach(async ({ page }) => {
       body: JSON.stringify(promptBank),
     });
   });
+
+  await page.route("**/api/blueprint?**", async route => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(projectBlueprint),
+    });
+  });
 });
 
 test("phase 01 centers guided work entry and project-first navigation", async ({ page }) => {
@@ -258,11 +333,12 @@ test("phase 01 centers guided work entry and project-first navigation", async ({
   await expect(page.getByRole("link", { name: "Continue analysis" })).toBeVisible();
 
   await page.getByRole("link", { name: "Continue analysis" }).click();
+  await expect(page).toHaveURL(/\/sessions\/session-1$/);
   await expect(page.getByRole("heading", { name: "Verify Platform" })).toBeVisible();
   await expect(page.getByText("Should this ship as a web app first?")).toBeVisible();
 });
 
-test("phase 01 keeps advanced items hidden while project creation stays lightweight", async ({ page }) => {
+test("phase 02 keeps advanced items hidden while attached knowledge and blueprint stay local", async ({ page }) => {
   await page.goto("/projects");
   await expect(page.getByRole("heading", { name: "Active work directory" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Personal Calendar" })).toBeVisible();
@@ -275,8 +351,14 @@ test("phase 01 keeps advanced items hidden while project creation stays lightwei
   await expect(page.getByRole("heading", { name: "New Idea" })).toBeVisible();
   await expect(page.getByText("No active analysis yet")).toBeVisible();
   await expect(page.getByText("Advanced project surfaces")).toBeVisible();
-  await expect(page.getByText("Project slug")).not.toBeVisible();
+  await expect(page.getByRole("tab", { name: "Knowledge" })).not.toBeVisible();
 
   await page.getByText("Advanced project surfaces").click();
-  await expect(page.getByText("Project slug")).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Knowledge" })).toBeVisible();
+  await expect(page.getByText("Knowledge records")).toBeVisible();
+  await expect(page.getByText("Task Service")).toBeVisible();
+
+  await page.getByRole("tab", { name: "Blueprint" }).click();
+  await expect(page.getByText("Edges")).toBeVisible();
+  await expect(page.getByText("Web first")).toBeVisible();
 });

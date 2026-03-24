@@ -73,6 +73,7 @@ Read these when the task touches the relevant area.
 - [planner-solidstart-phase-00-shell-sessions-and-socratic-anchor-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-00-shell-sessions-and-socratic-anchor-spec.md)
 - [planner-solidstart-phase-01-projects-and-guided-work-entry-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-01-projects-and-guided-work-entry-spec.md)
 - [planner-solidstart-phase-02-project-advanced-surfaces-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-02-project-advanced-surfaces-spec.md)
+- [planner-solidstart-phase-03-project-review-and-build-readiness-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-03-project-review-and-build-readiness-spec.md)
 - [socratic-lobby-document-chrome-and-scroll-de-escalation-spec.md](/home/thetu/planner/docs/socratic-lobby-document-chrome-and-scroll-de-escalation-spec.md)
 - [socratic-lobby-first-reveal-preload-gate-spec.md](/home/thetu/planner/docs/socratic-lobby-first-reveal-preload-gate-spec.md)
 - [planner-design-system-command-center-plan.md](/home/thetu/planner/docs/planner-design-system-command-center-plan.md)

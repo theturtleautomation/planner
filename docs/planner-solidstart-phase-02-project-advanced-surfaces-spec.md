@@ -1,6 +1,6 @@
 # Planner SolidStart Phase 02 Project Advanced Surfaces Spec
 
-**Status:** ready for implementation  
+**Status:** implemented  
 **Date:** 2026-03-24  
 **Parent:** [Planner SolidStart Platform Direction Spec](/home/thetu/planner/docs/planner-solidstart-platform-direction-spec.md)  
 **Related Planning:** [Planner SolidStart Phase 01 Projects And Guided Work Entry Spec](/home/thetu/planner/docs/planner-solidstart-phase-01-projects-and-guided-work-entry-spec.md), [Planner UI Reset Phase 06 Knowledge Workspace Spec](/home/thetu/planner/docs/planner-ui-reset-phase-06-knowledge-workspace-spec.md), [Planner UI Reset Phase 07 Blueprint Workspace Spec](/home/thetu/planner/docs/planner-ui-reset-phase-07-blueprint-workspace-spec.md), [Socratic SolidStart Greenfield Platform Spec](/home/thetu/planner/docs/socratic-solidstart-greenfield-platform-spec.md)
@@ -9,6 +9,15 @@
 > centered active Socratic analysis. The next bounded widening slice should not
 > reintroduce route sprawl. It should bring the first advanced project-local
 > tools into the project workspace as secondary, hidden-by-default surfaces.
+>
+> Implementation sync (2026-03-24): the Solid project workspace now includes a
+> closed-by-default advanced reveal with attached `Knowledge` and `Blueprint`
+> tabs powered by the existing project-scoped blueprint API filter. The
+> default project workspace remains analysis-first; advanced inspection opens
+> locally inside the same route and switches instantly once loaded. Verification
+> completed with new helper tests, Solid lint/build, and Playwright proof that
+> the attached panels stay hidden until requested and do not displace the main
+> analysis path.
 
 ## 1. Executive Judgment
 
@@ -266,11 +275,12 @@ These do not block readiness:
 
 ## 17. Readiness Judgment
 
-This spec is **ready for implementation**.
+This spec is **implemented**.
 
-The next widening direction is bounded and coherent:
+Delivered outcomes:
 
-- stay project-first
-- keep active analysis primary
-- add advanced capability without route clutter
-- land Knowledge and Blueprint as secondary project-local surfaces
+- the project workspace remains analysis-first by default
+- Knowledge is available as a hidden-by-default attached project-local surface
+- Blueprint is available as a hidden-by-default attached project-local surface
+- advanced open/close and tab switching remain local inside the project route
+- no new primary route clutter was introduced to expose the advanced tools

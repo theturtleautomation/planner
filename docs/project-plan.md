@@ -122,6 +122,10 @@ Current planning state:
   [Planner SolidStart Phase 02 Project Advanced Surfaces Spec](/home/thetu/planner/docs/planner-solidstart-phase-02-project-advanced-surfaces-spec.md),
   which keeps the project workspace primary while introducing hidden-by-default
   Knowledge and Blueprint as attached project-local tools
+- the next widening slice after that is
+  [Planner SolidStart Phase 03 Project Review And Build Readiness Spec](/home/thetu/planner/docs/planner-solidstart-phase-03-project-review-and-build-readiness-spec.md),
+  which keeps the project workspace analysis-first while adding attached review
+  and build-readiness surfaces
 - the route-level child spec for the Socratic lobby is
   [Socratic SolidStart Greenfield Platform Spec](/home/thetu/planner/docs/socratic-solidstart-greenfield-platform-spec.md)
 - the route-level Socratic spec is fed by the already-selected product
@@ -188,9 +192,9 @@ Current follow-up verification slice:
 Current next valid move:
 
 - use `delivery-cycle` on
-  [Planner SolidStart Phase 02 Project Advanced Surfaces Spec](/home/thetu/planner/docs/planner-solidstart-phase-02-project-advanced-surfaces-spec.md)
-  to widen the project workspace with attached hidden-by-default advanced
-  surfaces
+  [Planner SolidStart Phase 03 Project Review And Build Readiness Spec](/home/thetu/planner/docs/planner-solidstart-phase-03-project-review-and-build-readiness-spec.md)
+  to widen the project workspace toward review and build-readiness without
+  reintroducing route clutter
 
 ### Socratic Ethereal Cascade Redesign
 

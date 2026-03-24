@@ -1,4 +1,5 @@
 import type {
+  BlueprintResponse,
   CreateProjectRequest,
   CreateSessionResponse,
   GetSessionResponse,
@@ -93,6 +94,22 @@ export function getProject(projectRef: string): Promise<ProjectResponse> {
 
 export function listProjectSessions(projectRef: string): Promise<ListSessionsResponse> {
   return cachedGet(`/projects/${encodeURIComponent(projectRef)}/sessions`);
+}
+
+export function getProjectBlueprint(
+  projectRef: string,
+  options?: { includeShared?: boolean; includeGlobal?: boolean },
+): Promise<BlueprintResponse> {
+  const params = new URLSearchParams();
+  params.set("projectId", projectRef);
+  if (options?.includeShared !== undefined) {
+    params.set("includeShared", String(options.includeShared));
+  }
+  if (options?.includeGlobal !== undefined) {
+    params.set("includeGlobal", String(options.includeGlobal));
+  }
+  const query = params.toString();
+  return cachedGet(`/blueprint${query ? `?${query}` : ""}`);
 }
 
 export function createProjectSession(

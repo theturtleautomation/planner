@@ -61,6 +61,75 @@ export interface CreateProjectRequest {
   legacy_scope_keys?: string[];
 }
 
+export type NodeType =
+  | "project"
+  | "decision"
+  | "technology"
+  | "component"
+  | "constraint"
+  | "pattern"
+  | "quality_requirement";
+
+export type ScopeClass = "global" | "project" | "project_contextual" | "unscoped";
+export type ScopeVisibility = "shared" | "project_local" | "unscoped";
+export type NodeLifecycle = "active" | "archived";
+export type EdgeType =
+  | "contains"
+  | "decided_by"
+  | "supersedes"
+  | "depends_on"
+  | "uses"
+  | "constrains"
+  | "implements"
+  | "satisfies"
+  | "affects";
+
+export interface SecondaryScopeRefs {
+  feature?: string;
+  widget?: string;
+  artifact?: string;
+  component?: string;
+}
+
+export interface NodeSummary {
+  id: string;
+  name: string;
+  node_type: string;
+  status: string;
+  scope_class: ScopeClass;
+  scope_visibility: ScopeVisibility;
+  is_shared: boolean;
+  lifecycle: NodeLifecycle;
+  project_id?: string;
+  project_name?: string;
+  secondary_scope: SecondaryScopeRefs;
+  linked_project_ids: string[];
+  override_source_id?: string;
+  override_reason?: string;
+  override_effective_from?: string;
+  scope_review_deferred_reason?: string;
+  scope_review_owner?: string;
+  scope_review_due_at?: string;
+  tags: string[];
+  has_documentation: boolean;
+  updated_at: string;
+}
+
+export interface EdgePayload {
+  source: string;
+  target: string;
+  edge_type: EdgeType;
+  metadata?: string;
+}
+
+export interface BlueprintResponse {
+  nodes: NodeSummary[];
+  edges: EdgePayload[];
+  counts: Record<string, number>;
+  total_nodes: number;
+  total_edges: number;
+}
+
 export interface ListSessionsResponse {
   sessions: SessionSummary[];
 }

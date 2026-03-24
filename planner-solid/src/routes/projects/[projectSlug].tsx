@@ -2,7 +2,8 @@ import { Title } from "@solidjs/meta";
 import { A, useNavigate, useParams } from "@solidjs/router";
 import { For, Show, createMemo, createResource, createSignal } from "solid-js";
 
-import { createProjectSession, getProject, listSessions } from "~/lib/api";
+import { summarizeBlueprint, summarizeKnowledge, type AdvancedPanelTab } from "~/lib/advanced";
+import { createProjectSession, getProject, getProjectBlueprint, listSessions } from "~/lib/api";
 import { summarizeProjectWork } from "~/lib/projects";
 import { presentSessionTitle } from "~/lib/workspace";
 
@@ -22,8 +23,18 @@ export default function ProjectWorkspacePage() {
   const navigate = useNavigate();
   const [project] = createResource(() => params.projectSlug, getProject);
   const [sessions] = createResource(listSessions);
+  const [advancedOpen, setAdvancedOpen] = createSignal(false);
+  const [advancedTab, setAdvancedTab] = createSignal<AdvancedPanelTab>("knowledge");
   const [starting, setStarting] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
+  const [projectBlueprint] = createResource(
+    () => (advancedOpen() ? params.projectSlug : null),
+    async projectSlug =>
+      getProjectBlueprint(projectSlug, {
+        includeShared: true,
+        includeGlobal: false,
+      }),
+  );
 
   const projectSessions = createMemo(() => {
     const slug = params.projectSlug;
@@ -35,6 +46,14 @@ export default function ProjectWorkspacePage() {
     const currentProject = project()?.project;
     if (!currentProject) return null;
     return summarizeProjectWork(currentProject, projectSessions());
+  });
+  const knowledgeSummary = createMemo(() => {
+    const blueprint = projectBlueprint();
+    return blueprint ? summarizeKnowledge(blueprint) : null;
+  });
+  const blueprintSummary = createMemo(() => {
+    const blueprint = projectBlueprint();
+    return blueprint ? summarizeBlueprint(blueprint) : null;
   });
 
   const handleStartAnalysis = async () => {
@@ -153,28 +172,123 @@ export default function ProjectWorkspacePage() {
                   </Show>
                 </section>
 
-                <details class="advanced-panel">
+                <details
+                  class="advanced-panel"
+                  ref={advancedDetails}
+                  onToggle={() => setAdvancedOpen(advancedDetails?.open ?? false)}
+                >
                   <summary>Advanced project surfaces</summary>
                   <div class="advanced-panel-body">
-                    <p class="section-copy">
-                      Keep these tools available without letting them dominate the default project
-                      workspace. Blueprint, knowledge, discovery review, and deeper diagnostics can
-                      widen here in later phases.
-                    </p>
-                    <div class="advanced-grid">
-                      <div>
-                        <div class="advanced-label">Project slug</div>
-                        <div class="advanced-value">{currentProject().slug}</div>
-                      </div>
-                      <div>
-                        <div class="advanced-label">Legacy scope keys</div>
-                        <div class="advanced-value">
-                          {currentProject().legacy_scope_keys.length > 0
-                            ? currentProject().legacy_scope_keys.join(", ")
-                            : "None"}
-                        </div>
-                      </div>
+                    <div class="advanced-tab-row" role="tablist" aria-label="Project advanced surfaces">
+                      <button
+                        class={`advanced-tab${advancedTab() === "knowledge" ? " is-active" : ""}`}
+                        type="button"
+                        role="tab"
+                        aria-selected={advancedTab() === "knowledge"}
+                        onClick={() => setAdvancedTab("knowledge")}
+                      >
+                        Knowledge
+                      </button>
+                      <button
+                        class={`advanced-tab${advancedTab() === "blueprint" ? " is-active" : ""}`}
+                        type="button"
+                        role="tab"
+                        aria-selected={advancedTab() === "blueprint"}
+                        onClick={() => setAdvancedTab("blueprint")}
+                      >
+                        Blueprint
+                      </button>
                     </div>
+
+                    <Show
+                      when={projectBlueprint()}
+                      fallback={<div class="advanced-loading">Loading project knowledge and structure…</div>}
+                    >
+                      <Show
+                        when={advancedTab() === "knowledge"}
+                        fallback={
+                          <Show when={blueprintSummary()}>
+                            {summary => (
+                              <div class="advanced-surface">
+                                <div class="advanced-summary-grid">
+                                  <div class="advanced-summary-card">
+                                    <div class="advanced-label">Nodes</div>
+                                    <div class="advanced-metric">{summary().totalNodes}</div>
+                                  </div>
+                                  <div class="advanced-summary-card">
+                                    <div class="advanced-label">Edges</div>
+                                    <div class="advanced-metric">{summary().totalEdges}</div>
+                                  </div>
+                                  <div class="advanced-summary-card">
+                                    <div class="advanced-label">Decisions</div>
+                                    <div class="advanced-metric">{summary().decisionNodes}</div>
+                                  </div>
+                                  <div class="advanced-summary-card">
+                                    <div class="advanced-label">Components</div>
+                                    <div class="advanced-metric">{summary().componentNodes}</div>
+                                  </div>
+                                </div>
+                                <div class="advanced-list">
+                                  <For each={summary().structuralNodes}>
+                                    {node => (
+                                      <div class="advanced-list-row">
+                                        <div>
+                                          <div class="advanced-item-title">{node.name}</div>
+                                          <div class="advanced-item-copy">
+                                            {node.node_type} · {node.scope_visibility}
+                                          </div>
+                                        </div>
+                                        <div class="advanced-item-meta">Updated {formatTimestamp(node.updated_at)}</div>
+                                      </div>
+                                    )}
+                                  </For>
+                                </div>
+                              </div>
+                            )}
+                          </Show>
+                        }
+                      >
+                        <Show when={knowledgeSummary()}>
+                          {summary => (
+                            <div class="advanced-surface">
+                              <div class="advanced-summary-grid">
+                                <div class="advanced-summary-card">
+                                  <div class="advanced-label">Knowledge records</div>
+                                  <div class="advanced-metric">{summary().totalNodes}</div>
+                                </div>
+                                <div class="advanced-summary-card">
+                                  <div class="advanced-label">Documented</div>
+                                  <div class="advanced-metric">{summary().documentedNodes}</div>
+                                </div>
+                                <div class="advanced-summary-card">
+                                  <div class="advanced-label">Shared</div>
+                                  <div class="advanced-metric">{summary().sharedNodes}</div>
+                                </div>
+                                <div class="advanced-summary-card">
+                                  <div class="advanced-label">Stale</div>
+                                  <div class="advanced-metric">{summary().staleNodes}</div>
+                                </div>
+                              </div>
+                              <div class="advanced-list">
+                                <For each={summary().featuredNodes}>
+                                  {node => (
+                                    <div class="advanced-list-row">
+                                      <div>
+                                        <div class="advanced-item-title">{node.name}</div>
+                                        <div class="advanced-item-copy">
+                                          {node.node_type} · {node.has_documentation ? "documented" : "needs docs"}
+                                        </div>
+                                      </div>
+                                      <div class="advanced-item-meta">Updated {formatTimestamp(node.updated_at)}</div>
+                                    </div>
+                                  )}
+                                </For>
+                              </div>
+                            </div>
+                          )}
+                        </Show>
+                      </Show>
+                    </Show>
                   </div>
                 </details>
               </>
@@ -185,3 +299,4 @@ export default function ProjectWorkspacePage() {
     </section>
   );
 }
+  let advancedDetails: HTMLDetailsElement | undefined;
