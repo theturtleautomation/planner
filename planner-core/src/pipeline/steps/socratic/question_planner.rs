@@ -8,6 +8,7 @@
 //! 2. Generation: how to ask about the chosen dimension (LLM call)
 
 use planner_schemas::*;
+use std::time::Instant;
 
 use super::super::{StepError, StepResult};
 use super::belief_state::format_belief_state_for_llm;
@@ -50,6 +51,15 @@ Respond with ONLY a JSON object (no markdown fences):
 - Use Paul & Elder's taxonomy: clarifying → probing uncertainty → exploring implications.
 - Calibrate difficulty to the user's expertise level.
 - Never assume technologies the user hasn't mentioned."#;
+
+const COMPLEX_HISTORY_TURN_THRESHOLD: usize = 20;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum QuestionGenerationLane {
+    Scaffold,
+    FastModel,
+    DeepModel,
+}
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -258,44 +268,80 @@ async fn generate_question(
     constitution: &InterviewerConstitution,
     conversation_history: &[SocraticTurn],
 ) -> StepResult<QuestionOutput> {
-    let state_text = format_belief_state_for_llm(state);
-    let history_text = format_conversation_history(conversation_history);
-    let verification_context = state
-        .uncertain
-        .get(&strategy.target_dimension)
-        .map(|(slot, confidence)| {
-            format!(
-                "## Existing Uncertain Candidate For This Dimension:\nCurrent candidate: {}\nConfidence: {:.0}%\nAsk the user to confirm, correct, or refine this candidate directly.\n\n",
-                slot.value,
-                confidence * 100.0
-            )
-        })
-        .unwrap_or_default();
+    let lane = choose_generation_lane(state, strategy, conversation_history);
 
-    let user_prompt = format!(
-        "## Belief State:\n{}\n\n{}## Target Dimension: {} ({})\nRationale: {}\n\n## Constitution:\n{}\n\n## Conversation So Far:\n{}\n\nGenerate the next question.",
-        state_text,
-        verification_context,
-        strategy.target_dimension.label(),
-        serde_json::to_string(&strategy.target_dimension).unwrap_or_default(),
-        strategy.rationale,
-        constitution.as_prompt_text(),
-        history_text,
+    if lane == QuestionGenerationLane::Scaffold {
+        if let Some(scaffolded) = scaffold_question(state, strategy, conversation_history) {
+            tracing::info!(
+                target: "planner.socratic.question_planner",
+                lane = "scaffold",
+                dimension = %strategy.target_dimension.label(),
+                history_turns = conversation_history.len(),
+                "Generated deterministic Socratic question scaffold"
+            );
+            return Ok(scaffolded);
+        }
+
+        tracing::warn!(
+            target: "planner.socratic.question_planner",
+            dimension = %strategy.target_dimension.label(),
+            "Question lane chooser selected scaffold but no scaffold implementation was available; falling back to fast model lane"
+        );
+    }
+
+    let user_prompt = build_generation_prompt(
+        state,
+        strategy,
+        constitution,
+        conversation_history,
+        None,
     );
 
-    let request = CompletionRequest {
-        system: Some(QUESTION_GEN_SYSTEM_PROMPT.to_string()),
-        messages: vec![Message {
-            role: Role::User,
-            content: user_prompt,
-        }],
-        max_tokens: 1024,
-        temperature: 0.4,
-        model: DefaultModels::INTAKE_GATEWAY.to_string(),
-    };
+    match lane {
+        QuestionGenerationLane::Scaffold | QuestionGenerationLane::FastModel => {
+            let fast_attempt = generate_question_with_model(
+                router,
+                &user_prompt,
+                &strategy.target_dimension,
+                DefaultModels::INTAKE_QUESTION_FAST,
+                "fast_model",
+            )
+            .await;
 
-    let response = router.complete(request).await?;
-    parse_question_response(&response.content, &strategy.target_dimension)
+            match fast_attempt {
+                Ok(output) => Ok(output),
+                Err(error) => {
+                    tracing::warn!(
+                        target: "planner.socratic.question_planner",
+                        lane = "fast_model",
+                        fallback_lane = "deep_model",
+                        fallback_model = DefaultModels::INTAKE_QUESTION_DEEP,
+                        dimension = %strategy.target_dimension.label(),
+                        error = %error,
+                        "Fast question generation failed; retrying with deep lane"
+                    );
+                    generate_question_with_model(
+                        router,
+                        &user_prompt,
+                        &strategy.target_dimension,
+                        DefaultModels::INTAKE_QUESTION_DEEP,
+                        "deep_model_fallback",
+                    )
+                    .await
+                }
+            }
+        }
+        QuestionGenerationLane::DeepModel => {
+            generate_question_with_model(
+                router,
+                &user_prompt,
+                &strategy.target_dimension,
+                DefaultModels::INTAKE_QUESTION_DEEP,
+                "deep_model",
+            )
+            .await
+        }
+    }
 }
 
 async fn regenerate_with_critique(
@@ -306,38 +352,28 @@ async fn regenerate_with_critique(
     conversation_history: &[SocraticTurn],
     violations: &[ConstitutionViolation],
 ) -> StepResult<QuestionOutput> {
-    let state_text = format_belief_state_for_llm(state);
-    let history_text = format_conversation_history(conversation_history);
-
     let critique_text: String = violations
         .iter()
         .map(|v| format!("- Rule {}: {}", v.rule_id, v.explanation))
         .collect::<Vec<_>>()
         .join("\n");
 
-    let user_prompt = format!(
-        "## Belief State:\n{}\n\n## Target Dimension: {} ({})\n\n## Constitution:\n{}\n\n## Conversation So Far:\n{}\n\n## SELF-CRITIQUE — Previous question violated these rules:\n{}\n\nGenerate a REVISED question that does NOT violate the above rules.",
-        state_text,
-        strategy.target_dimension.label(),
-        serde_json::to_string(&strategy.target_dimension).unwrap_or_default(),
-        constitution.as_prompt_text(),
-        history_text,
-        critique_text,
+    let user_prompt = build_generation_prompt(
+        state,
+        strategy,
+        constitution,
+        conversation_history,
+        Some(&critique_text),
     );
 
-    let request = CompletionRequest {
-        system: Some(QUESTION_GEN_SYSTEM_PROMPT.to_string()),
-        messages: vec![Message {
-            role: Role::User,
-            content: user_prompt,
-        }],
-        max_tokens: 1024,
-        temperature: 0.4,
-        model: DefaultModels::INTAKE_GATEWAY.to_string(),
-    };
-
-    let response = router.complete(request).await?;
-    parse_question_response(&response.content, &strategy.target_dimension)
+    generate_question_with_model(
+        router,
+        &user_prompt,
+        &strategy.target_dimension,
+        DefaultModels::INTAKE_QUESTION_DEEP,
+        "deep_model_regeneration",
+    )
+    .await
 }
 
 fn format_conversation_history(history: &[SocraticTurn]) -> String {
@@ -356,6 +392,246 @@ fn format_conversation_history(history: &[SocraticTurn]) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+fn build_generation_prompt(
+    state: &RequirementsBeliefState,
+    strategy: &QuestionStrategy,
+    constitution: &InterviewerConstitution,
+    conversation_history: &[SocraticTurn],
+    critique_text: Option<&str>,
+) -> String {
+    let state_text = format_belief_state_for_llm(state);
+    let history_text = format_conversation_history(conversation_history);
+    let verification_context = state
+        .uncertain
+        .get(&strategy.target_dimension)
+        .map(|(slot, confidence)| {
+            format!(
+                "## Existing Uncertain Candidate For This Dimension:\nCurrent candidate: {}\nConfidence: {:.0}%\nAsk the user to confirm, correct, or refine this candidate directly.\n\n",
+                slot.value,
+                confidence * 100.0
+            )
+        })
+        .unwrap_or_default();
+
+    match critique_text {
+        Some(critique_text) => format!(
+            "## Belief State:\n{}\n\n{}## Target Dimension: {} ({})\nRationale: {}\n\n## Constitution:\n{}\n\n## Conversation So Far:\n{}\n\n## SELF-CRITIQUE — Previous question violated these rules:\n{}\n\nGenerate a REVISED question that does NOT violate the above rules.",
+            state_text,
+            verification_context,
+            strategy.target_dimension.label(),
+            serde_json::to_string(&strategy.target_dimension).unwrap_or_default(),
+            strategy.rationale,
+            constitution.as_prompt_text(),
+            history_text,
+            critique_text,
+        ),
+        None => format!(
+            "## Belief State:\n{}\n\n{}## Target Dimension: {} ({})\nRationale: {}\n\n## Constitution:\n{}\n\n## Conversation So Far:\n{}\n\nGenerate the next question.",
+            state_text,
+            verification_context,
+            strategy.target_dimension.label(),
+            serde_json::to_string(&strategy.target_dimension).unwrap_or_default(),
+            strategy.rationale,
+            constitution.as_prompt_text(),
+            history_text,
+        ),
+    }
+}
+
+async fn generate_question_with_model(
+    router: &LlmRouter,
+    user_prompt: &str,
+    target_dimension: &Dimension,
+    model: &str,
+    lane: &str,
+) -> StepResult<QuestionOutput> {
+    let request = CompletionRequest {
+        system: Some(QUESTION_GEN_SYSTEM_PROMPT.to_string()),
+        messages: vec![Message {
+            role: Role::User,
+            content: user_prompt.to_string(),
+        }],
+        max_tokens: 1024,
+        temperature: 0.4,
+        model: model.to_string(),
+    };
+
+    tracing::info!(
+        target: "planner.socratic.question_planner",
+        lane,
+        model,
+        dimension = %target_dimension.label(),
+        "Starting Socratic question generation"
+    );
+
+    let started_at = Instant::now();
+    let response = router.complete(request).await?;
+    let elapsed_ms = started_at.elapsed().as_millis();
+
+    tracing::info!(
+        target: "planner.socratic.question_planner",
+        lane,
+        model = %response.model,
+        dimension = %target_dimension.label(),
+        elapsed_ms,
+        "Completed Socratic question generation"
+    );
+
+    parse_question_response(&response.content, target_dimension)
+}
+
+fn choose_generation_lane(
+    state: &RequirementsBeliefState,
+    strategy: &QuestionStrategy,
+    conversation_history: &[SocraticTurn],
+) -> QuestionGenerationLane {
+    if scaffold_question(state, strategy, conversation_history).is_some() {
+        return QuestionGenerationLane::Scaffold;
+    }
+
+    if matches!(strategy.target_dimension, Dimension::Custom(_))
+        || has_unresolved_contradictions(state)
+        || conversation_history.len() >= COMPLEX_HISTORY_TURN_THRESHOLD
+        || unresolved_dependency_count(&strategy.target_dimension, state) > 1
+    {
+        return QuestionGenerationLane::DeepModel;
+    }
+
+    QuestionGenerationLane::FastModel
+}
+
+fn has_unresolved_contradictions(state: &RequirementsBeliefState) -> bool {
+    state.contradictions.iter().any(|contradiction| !contradiction.resolved)
+}
+
+fn unresolved_dependency_count(dimension: &Dimension, state: &RequirementsBeliefState) -> usize {
+    dependencies_for(dimension)
+        .iter()
+        .filter(|dependency| {
+            !state.filled.contains_key(*dependency) && !state.out_of_scope.contains(*dependency)
+        })
+        .count()
+}
+
+fn dependencies_for(dimension: &Dimension) -> Vec<Dimension> {
+    match dimension {
+        Dimension::Auth => vec![Dimension::Stakeholders, Dimension::CoreFeatures],
+        Dimension::Performance
+        | Dimension::Scalability
+        | Dimension::ErrorHandling
+        | Dimension::DataModel
+        | Dimension::Integrations => vec![Dimension::CoreFeatures],
+        _ => Vec::new(),
+    }
+}
+
+fn scaffold_question(
+    state: &RequirementsBeliefState,
+    strategy: &QuestionStrategy,
+    _conversation_history: &[SocraticTurn],
+) -> Option<QuestionOutput> {
+    if state.uncertain.contains_key(&strategy.target_dimension)
+        || has_unresolved_contradictions(state)
+        || matches!(strategy.target_dimension, Dimension::Custom(_))
+    {
+        return None;
+    }
+
+    let (question, quick_options, allow_skip) = match &strategy.target_dimension {
+        Dimension::Goal => (
+            "What is the main outcome this project needs to deliver first?".to_string(),
+            vec![
+                quick_option("Customer product", "A customer-facing product or feature"),
+                quick_option("Internal tool", "An internal workflow or operations tool"),
+                quick_option("Automation", "Automation for a manual process"),
+                quick_option("Reporting", "A reporting or insight workspace"),
+            ],
+            true,
+        ),
+        Dimension::Platform => (
+            "Which platform should the first version prioritize?".to_string(),
+            vec![
+                quick_option("Web app", "Web application"),
+                quick_option("Mobile app", "Mobile application"),
+                quick_option("API/service", "API or backend service"),
+                quick_option("Desktop app", "Desktop application"),
+                quick_option("CLI/tool", "CLI or developer tool"),
+            ],
+            true,
+        ),
+        Dimension::CoreFeatures => (
+            "Which capabilities must be present in the first usable version?".to_string(),
+            vec![
+                quick_option("Create and edit", "Create and edit the core records"),
+                quick_option("Browse and search", "Browse, filter, and search existing records"),
+                quick_option("Share or collaborate", "Collaboration or shared workflows"),
+                quick_option("Notifications", "Notifications, reminders, or alerts"),
+                quick_option("Reporting", "Reporting or dashboard views"),
+            ],
+            true,
+        ),
+        Dimension::SuccessCriteria => (
+            "How will you judge the first release as successful?".to_string(),
+            vec![
+                quick_option("Main flow works", "Users can complete the main workflow reliably"),
+                quick_option("Time saved", "The product saves time or reduces manual work"),
+                quick_option("Adoption target", "Success is measured by usage or adoption"),
+                quick_option("Business impact", "Success is measured by revenue or conversion impact"),
+                quick_option("Fewer errors", "Success is measured by fewer mistakes or support issues"),
+            ],
+            true,
+        ),
+        Dimension::UserFlows => (
+            "Which end-to-end user flow needs to work first?".to_string(),
+            vec![
+                quick_option("New user starts", "A new user can start and finish the primary task"),
+                quick_option("Returning user", "A returning user can review and continue work"),
+                quick_option("Admin setup", "An admin can set up people, settings, or permissions"),
+                quick_option("Edit existing work", "A user can update or correct existing data"),
+                quick_option("Repeat workflow", "A user can complete a scheduled or repeat action"),
+            ],
+            true,
+        ),
+        Dimension::OutOfScope => (
+            "What should stay out of the first version on purpose?".to_string(),
+            vec![
+                quick_option("Advanced automation", "Advanced automation can wait"),
+                quick_option("Third-party integrations", "External integrations can wait"),
+                quick_option("Complex permissions", "Advanced roles or permission systems can wait"),
+                quick_option("Analytics", "Advanced analytics or reporting can wait"),
+                quick_option("Mobile/offline", "Mobile or offline support can wait"),
+            ],
+            true,
+        ),
+        Dimension::Stakeholders => (
+            "Who needs this system most in the first release?".to_string(),
+            vec![
+                quick_option("Individual users", "Individual end users"),
+                quick_option("Internal team", "An internal operations or delivery team"),
+                quick_option("Managers/admins", "Managers, admins, or workspace owners"),
+                quick_option("Customers/clients", "Customers, clients, or external users"),
+                quick_option("Partners/vendors", "External partners or vendors"),
+            ],
+            true,
+        ),
+        _ => return None,
+    };
+
+    Some(QuestionOutput {
+        question,
+        target_dimension: strategy.target_dimension.clone(),
+        quick_options,
+        allow_skip,
+    })
+}
+
+fn quick_option(label: &str, value: &str) -> QuickOption {
+    QuickOption {
+        label: label.to_string(),
+        value: value.to_string(),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -422,6 +698,9 @@ fn parse_question_response(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::llm::{CompletionResponse, LlmClient, LlmError};
+    use async_trait::async_trait;
+    use std::sync::{Arc, Mutex};
 
     fn make_empty_state() -> RequirementsBeliefState {
         let classification = DomainClassification {
@@ -537,5 +816,290 @@ mod tests {
 
         let strategy = select_target_dimension(&state);
         assert!(strategy.is_none());
+    }
+
+    struct RecordingMockClient {
+        models: Arc<Mutex<Vec<String>>>,
+        fail_first: bool,
+    }
+
+    #[async_trait]
+    impl LlmClient for RecordingMockClient {
+        async fn complete(
+            &self,
+            request: CompletionRequest,
+        ) -> Result<CompletionResponse, LlmError> {
+            let mut models = self
+                .models
+                .lock()
+                .expect("model log mutex should not be poisoned");
+            let call_index = models.len();
+            models.push(request.model.clone());
+
+            if self.fail_first && call_index == 0 {
+                return Err(LlmError::Other("fast lane unavailable".into()));
+            }
+
+            Ok(CompletionResponse {
+                content: r#"{"question":"What should Planner ask next?","quick_options":[{"label":"Option A","value":"option_a"}],"allow_skip":true}"#.into(),
+                model: request.model,
+                input_tokens: 10,
+                output_tokens: 12,
+                estimated_cost_usd: 0.0,
+            })
+        }
+
+        fn provider_name(&self) -> &str {
+            "mock"
+        }
+    }
+
+    fn make_constitution() -> InterviewerConstitution {
+        InterviewerConstitution::default_constitution()
+    }
+
+    fn make_strategy(target_dimension: Dimension) -> QuestionStrategy {
+        QuestionStrategy {
+            target_dimension,
+            rationale: "Test rationale".into(),
+            score: 1.0,
+        }
+    }
+
+    #[tokio::test]
+    async fn standard_dimensions_use_scaffolds_without_llm_calls() {
+        let state = make_empty_state();
+        let strategy = make_strategy(Dimension::Platform);
+        let models = Arc::new(Mutex::new(Vec::new()));
+        let router = LlmRouter::with_mock(Box::new(RecordingMockClient {
+            models: models.clone(),
+            fail_first: false,
+        }));
+
+        let output = generate_question(
+            &router,
+            &state,
+            &strategy,
+            &make_constitution(),
+            &[],
+        )
+        .await
+        .expect("platform scaffold should succeed");
+
+        assert_eq!(output.target_dimension, Dimension::Platform);
+        assert_eq!(output.question, "Which platform should the first version prioritize?");
+        assert!(
+            models
+                .lock()
+                .expect("model log mutex should not be poisoned")
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn standard_dimensions_keep_scaffolds_even_after_long_history() {
+        let state = make_empty_state();
+        let strategy = make_strategy(Dimension::SuccessCriteria);
+        let models = Arc::new(Mutex::new(Vec::new()));
+        let router = LlmRouter::with_mock(Box::new(RecordingMockClient {
+            models: models.clone(),
+            fail_first: false,
+        }));
+        let long_history: Vec<SocraticTurn> = (0..12)
+            .map(|index| SocraticTurn {
+                turn_number: index as u32 + 1,
+                role: if index % 2 == 0 {
+                    SocraticRole::Interviewer
+                } else {
+                    SocraticRole::User
+                },
+                content: format!("Turn {}", index + 1),
+                target_dimension: None,
+                slots_updated: Vec::new(),
+                timestamp: "2026-03-24T00:00:00Z".into(),
+            })
+            .collect();
+
+        let output = generate_question(
+            &router,
+            &state,
+            &strategy,
+            &make_constitution(),
+            &long_history,
+        )
+        .await
+        .expect("success criteria scaffold should still succeed");
+
+        assert_eq!(output.target_dimension, Dimension::SuccessCriteria);
+        assert_eq!(output.question, "How will you judge the first release as successful?");
+        assert!(
+            models
+                .lock()
+                .expect("model log mutex should not be poisoned")
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn verification_questions_use_fast_model_lane() {
+        let mut state = make_empty_state();
+        state.mark_uncertain(
+            Dimension::Platform,
+            SlotValue {
+                value: "Web application".into(),
+                source_turn: 1,
+                source_quote: None,
+            },
+            0.5,
+        );
+
+        let models = Arc::new(Mutex::new(Vec::new()));
+        let router = LlmRouter::with_mock(Box::new(RecordingMockClient {
+            models: models.clone(),
+            fail_first: false,
+        }));
+
+        let output = generate_question(
+            &router,
+            &state,
+            &make_strategy(Dimension::Platform),
+            &make_constitution(),
+            &[],
+        )
+        .await
+        .expect("fast lane generation should succeed");
+
+        assert_eq!(output.question, "What should Planner ask next?");
+        assert_eq!(
+            models
+                .lock()
+                .expect("model log mutex should not be poisoned")
+                .as_slice(),
+            [DefaultModels::INTAKE_QUESTION_FAST]
+        );
+    }
+
+    #[tokio::test]
+    async fn verification_questions_do_not_escalate_to_deep_for_moderate_history() {
+        let mut state = make_empty_state();
+        state.mark_uncertain(
+            Dimension::Platform,
+            SlotValue {
+                value: "Web application".into(),
+                source_turn: 1,
+                source_quote: None,
+            },
+            0.5,
+        );
+
+        let models = Arc::new(Mutex::new(Vec::new()));
+        let router = LlmRouter::with_mock(Box::new(RecordingMockClient {
+            models: models.clone(),
+            fail_first: false,
+        }));
+        let moderate_history: Vec<SocraticTurn> = (0..10)
+            .map(|index| SocraticTurn {
+                turn_number: index as u32 + 1,
+                role: if index % 2 == 0 {
+                    SocraticRole::Interviewer
+                } else {
+                    SocraticRole::User
+                },
+                content: format!("Turn {}", index + 1),
+                target_dimension: None,
+                slots_updated: Vec::new(),
+                timestamp: "2026-03-24T00:00:00Z".into(),
+            })
+            .collect();
+
+        let output = generate_question(
+            &router,
+            &state,
+            &make_strategy(Dimension::Platform),
+            &make_constitution(),
+            &moderate_history,
+        )
+        .await
+        .expect("verification lane should remain fast for moderate history");
+
+        assert_eq!(output.question, "What should Planner ask next?");
+        assert_eq!(
+            models
+                .lock()
+                .expect("model log mutex should not be poisoned")
+                .as_slice(),
+            [DefaultModels::INTAKE_QUESTION_FAST]
+        );
+    }
+
+    #[tokio::test]
+    async fn custom_dimensions_escalate_to_deep_model_lane() {
+        let state = make_empty_state();
+        let models = Arc::new(Mutex::new(Vec::new()));
+        let router = LlmRouter::with_mock(Box::new(RecordingMockClient {
+            models: models.clone(),
+            fail_first: false,
+        }));
+
+        let output = generate_question(
+            &router,
+            &state,
+            &make_strategy(Dimension::Custom("Browser Support".into())),
+            &make_constitution(),
+            &[],
+        )
+        .await
+        .expect("deep lane generation should succeed");
+
+        assert_eq!(output.question, "What should Planner ask next?");
+        assert_eq!(
+            models
+                .lock()
+                .expect("model log mutex should not be poisoned")
+                .as_slice(),
+            [DefaultModels::INTAKE_QUESTION_DEEP]
+        );
+    }
+
+    #[tokio::test]
+    async fn fast_lane_failures_fallback_to_deep_model() {
+        let mut state = make_empty_state();
+        state.mark_uncertain(
+            Dimension::Platform,
+            SlotValue {
+                value: "Web application".into(),
+                source_turn: 1,
+                source_quote: None,
+            },
+            0.5,
+        );
+
+        let models = Arc::new(Mutex::new(Vec::new()));
+        let router = LlmRouter::with_mock(Box::new(RecordingMockClient {
+            models: models.clone(),
+            fail_first: true,
+        }));
+
+        let output = generate_question(
+            &router,
+            &state,
+            &make_strategy(Dimension::Platform),
+            &make_constitution(),
+            &[],
+        )
+        .await
+        .expect("deep fallback should recover from fast lane failure");
+
+        assert_eq!(output.question, "What should Planner ask next?");
+        assert_eq!(
+            models
+                .lock()
+                .expect("model log mutex should not be poisoned")
+                .as_slice(),
+            [
+                DefaultModels::INTAKE_QUESTION_FAST,
+                DefaultModels::INTAKE_QUESTION_DEEP,
+            ]
+        );
     }
 }

@@ -516,7 +516,9 @@ or generic design-system refactoring, stop and split it into a later spec.
   pass, so backend contract expansion was not required to ship the primary
   product reset.
 - Verification completed with:
-  `npm test -- src/pages/__tests__/SessionPage.test.tsx`
+  [SessionPage.test.tsx](/home/thetu/planner/planner-web/src/pages/__tests__/SessionPage.test.tsx),
+  including direct assertions for the hidden-by-default context shelf and the
+  inline focus-transition branch state,
   and `npx tsc --noEmit`.
 - if warm question reuse adds correctness risk, remove it before weakening the
   focused-lobby model

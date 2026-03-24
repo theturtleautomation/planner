@@ -24,11 +24,7 @@ export default function PromptOptionGroup({
     <div
       role="radiogroup"
       aria-label={ariaLabel}
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '6px',
-      }}
+      className="socratic-option-group"
     >
       {options.map((option) => {
         const isSelected = selectedOptionId === option.option_id;
@@ -51,42 +47,17 @@ export default function PromptOptionGroup({
             }}
             onMouseLeave={() => setHoveredOptionId(null)}
             disabled={disabled}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              width: '100%',
-              textAlign: 'left',
-              background: isSelected
-                ? 'var(--color-primary-highlight)'
-                : isHovered
-                  ? 'rgba(63, 118, 246, 0.08)'
-                  : 'var(--color-surface-2)',
-              border: 'none',
-              boxShadow: `inset 0 0 0 1px ${isSelected || isHovered ? 'var(--color-primary)' : 'var(--color-divider)'}`,
-              borderRadius: '10px',
-              padding: '8px 10px',
-              color: isSelected || isHovered ? 'var(--color-primary)' : 'var(--color-text)',
-              fontSize: '12px',
-              fontFamily: 'inherit',
-              lineHeight: 1.4,
-              cursor: disabled ? 'not-allowed' : 'pointer',
-              opacity: disabled ? 0.6 : 1,
-              transition: 'border-color 0.15s ease, background 0.15s ease, color 0.15s ease',
-            }}
+            className={[
+              'socratic-option-group__option',
+              isSelected ? 'is-selected' : '',
+              isHovered ? 'is-hovered' : '',
+            ].filter(Boolean).join(' ')}
           >
             <span
               aria-hidden="true"
-              style={{
-                width: '14px',
-                height: '14px',
-                borderRadius: '50%',
-                border: `1px solid ${isSelected ? 'var(--color-primary)' : 'var(--color-ghost-border)'}`,
-                background: isSelected ? 'var(--color-primary)' : 'transparent',
-                flexShrink: 0,
-              }}
+              className="socratic-option-group__dot"
             />
-            <span>{option.label}</span>
+            <span className="socratic-option-group__label">{option.label}</span>
           </button>
         );
       })}

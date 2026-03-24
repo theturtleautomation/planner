@@ -1,10 +1,12 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import SessionPage from '../SessionPage';
 import type { Session } from '../../types';
 import { useSocraticWebSocket } from '../../hooks/useSocraticWebSocket';
+import { resetSocraticDocumentGraph } from '../../stores/socraticDocumentStore.ts';
+import { useSocraticDraftStore } from '../../stores/useSocraticDraftStore.ts';
 
 const mockCreateSession = vi.fn();
 const mockGetSession = vi.fn();
@@ -146,6 +148,8 @@ function makeMockSocraticState(
 describe('SessionPage resume behavior', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    useSocraticDraftStore.setState((state) => ({ ...state, prompts: {} }));
+    resetSocraticDocumentGraph();
     mockGetAccessToken.mockResolvedValue('mock-token');
     vi.spyOn(window, 'prompt').mockReturnValue(null);
     vi.spyOn(window, 'confirm').mockReturnValue(true);
@@ -245,6 +249,322 @@ describe('SessionPage resume behavior', () => {
       'Imported planning brief for Task Tracker.\n\nRepository brief: Track work across teams.',
     );
   });
+
+  it('keeps existing sessions in a loading state instead of flashing the planning brief before hydration', async () => {
+    let resolveSession: ((value: { session: Session }) => void) | null = null;
+    mockGetSession.mockReturnValue(
+      new Promise<{ session: Session }>((resolve) => {
+        resolveSession = resolve;
+      }),
+    );
+
+    renderSessionPage('/session/abc');
+
+    expect(screen.getByText(/loading session/i)).toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: 'Planning brief' })).not.toBeInTheDocument();
+
+    resolveSession?.({ session: makeSession({ intake_phase: 'waiting' }) });
+
+    await waitFor(() => {
+      expect(screen.getByRole('textbox', { name: 'Planning brief' })).toBeInTheDocument();
+    });
+  });
+
+  it('uses tighter planning-brief copy on waiting sessions', async () => {
+    const session = makeSession({
+      intake_phase: 'waiting',
+      project_description: 'Build a field service scheduler.',
+    });
+    mockGetSession.mockResolvedValue({ session });
+
+    renderSessionPage('/session/abc');
+
+    await waitFor(() => {
+      expect(mockGetSession).toHaveBeenCalledWith('abc');
+    });
+
+    expect(screen.getByRole('heading', { name: /start with the planning brief/i })).toBeInTheDocument();
+    expect(screen.getByText(/planner will move straight into the next question from there/i)).toBeInTheDocument();
+    expect(screen.queryByText(/we'll ask focused questions to fill in the details/i)).not.toBeInTheDocument();
+  });
+
+  it('shows the first-reveal preload state after starting the interview', async () => {
+    const user = userEvent.setup();
+    const session = makeSession({
+      intake_phase: 'waiting',
+      project_description: 'Build a field service scheduler.',
+    });
+    mockGetSession.mockResolvedValue({ session });
+    mockStartSocratic.mockResolvedValue({
+      session_id: 'abc',
+      ws_url: '/api/sessions/abc/socratic/ws',
+    });
+
+    renderSessionPage('/session/abc');
+
+    await waitFor(() => {
+      expect(mockGetSession).toHaveBeenCalledWith('abc');
+    });
+
+    await user.click(screen.getByRole('button', { name: /start session/i }));
+
+    await waitFor(() => {
+      expect(mockStartSocratic).toHaveBeenCalledWith('abc', 'Build a field service scheduler.');
+    });
+
+    expect(mockSendDescription).toHaveBeenCalledWith('Build a field service scheduler.');
+    expect(screen.getByRole('heading', { name: /planner is preparing the first working set of questions/i })).toBeInTheDocument();
+    expect(screen.getByText(/0\/8 locally known question items ready for the first reveal/i)).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: /interview progress/i })).toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: 'Planning brief' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /belief state/i })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Thread index')).not.toBeInTheDocument();
+  });
+
+  it('reveals the lobby immediately when the first loaded batch already meets the preload target', async () => {
+    const user = userEvent.setup();
+    const session = makeSession({
+      intake_phase: 'waiting',
+      project_description: 'Build a field service scheduler.',
+    });
+    let preloadReady = false;
+    mockGetSession.mockResolvedValue({ session });
+    mockStartSocratic.mockImplementation(async () => {
+      preloadReady = true;
+      return {
+        session_id: 'abc',
+        ws_url: '/api/sessions/abc/socratic/ws',
+      };
+    });
+    vi.mocked(useSocraticWebSocket).mockImplementation(() => (
+      preloadReady
+        ? makeMockSocraticState({
+            currentCategorySnapshot: {
+        revision: 'category-preload-1',
+        root_category_ids: ['root-discovery'],
+        nodes: [
+          {
+            category_id: 'root-discovery',
+            parent_category_id: null,
+            title: 'Explore missing areas',
+            summary: 'Answer the first loaded batch.',
+            status: 'active',
+            depth: 0,
+            mapped_dimensions: [],
+            has_children: false,
+            has_prompt_ready: true,
+            item_count_hint: 8,
+          },
+        ],
+        active_category_path: [
+          { category_id: 'root-discovery', title: 'Explore missing areas' },
+        ],
+        newly_available_category_ids: [],
+        build_ready: false,
+        build_readiness_message: 'Build is blocked until the first discovery batch is answered.',
+      },
+      currentWorkspace: {
+        revision: 'workspace-preload-1',
+        focused_category_id: 'root-discovery',
+        branch_notice: null,
+        category_snapshot: {
+          revision: 'category-preload-1',
+          root_category_ids: ['root-discovery'],
+          nodes: [
+            {
+              category_id: 'root-discovery',
+              parent_category_id: null,
+              title: 'Explore missing areas',
+              summary: 'Answer the first loaded batch.',
+              status: 'active',
+              depth: 0,
+              mapped_dimensions: [],
+              has_children: false,
+              has_prompt_ready: true,
+              item_count_hint: 8,
+            },
+          ],
+          active_category_path: [
+            { category_id: 'root-discovery', title: 'Explore missing areas' },
+          ],
+          newly_available_category_ids: [],
+          build_ready: false,
+          build_readiness_message: 'Build is blocked until the first discovery batch is answered.',
+        },
+        groups: [
+          {
+            category_id: 'root-discovery',
+            title: 'Explore missing areas',
+            summary: 'Answer the first loaded batch.',
+            status: 'active',
+            question_count: 8,
+            is_focused: true,
+            is_new: false,
+            preview_items: [],
+          },
+        ],
+      },
+      currentPrompt: {
+        prompt_id: 'prompt-preload-1',
+        kind: 'question_batch',
+        title: 'Clarify the first batch',
+        instructions: 'Answer the first loaded batch.',
+        origin_category_id: 'root-discovery',
+        category_path: [
+          { category_id: 'root-discovery', title: 'Explore missing areas' },
+        ],
+        items: Array.from({ length: 8 }, (_, index) => ({
+          item_id: `item-preload-${index + 1}`,
+          kind: 'discovery' as const,
+          target_dimension: 'Scope',
+          section_ref: null,
+          text: `Question ${index + 1}?`,
+          options: [],
+          response_mode: 'single_select_with_custom_text' as const,
+          required: false,
+          priority: 100 - index,
+          dependency_item_ids: [],
+        })),
+        draft_snapshot: null,
+        required_item_ids: [],
+        allow_partial_submit: true,
+        ui_hints: {
+          preferred_layout: 'cards',
+          show_draft_sidebar: false,
+        },
+        based_on_turn: 1,
+        created_at: '2026-03-24T00:00:00Z',
+      },
+          })
+        : makeMockSocraticState()
+    ));
+
+    renderSessionPage('/session/abc');
+
+    await waitFor(() => {
+      expect(mockGetSession).toHaveBeenCalledWith('abc');
+    });
+
+    await user.click(screen.getByRole('button', { name: /start session/i }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Thread index')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByRole('heading', { name: /planner is preparing the first working set of questions/i })).not.toBeInTheDocument();
+    expect(screen.getAllByText(/question 1\?/i).length).toBeGreaterThan(0);
+  });
+
+  it('reveals the best known partial lobby after the hard preload timeout', async () => {
+    const session = makeSession({
+      intake_phase: 'waiting',
+      project_description: 'Build a field service scheduler.',
+    });
+    let partialPreloadReady = false;
+    mockGetSession.mockResolvedValue({ session });
+    mockStartSocratic.mockImplementation(async () => {
+      partialPreloadReady = true;
+      return {
+        session_id: 'abc',
+        ws_url: '/api/sessions/abc/socratic/ws',
+      };
+    });
+    vi.mocked(useSocraticWebSocket).mockImplementation(() => (
+      partialPreloadReady
+        ? makeMockSocraticState({
+            currentCategorySnapshot: {
+        revision: 'category-partial-1',
+        root_category_ids: ['root-discovery'],
+        nodes: [
+          {
+            category_id: 'root-discovery',
+            parent_category_id: null,
+            title: 'Explore missing areas',
+            summary: 'Only one preview is known so far.',
+            status: 'ready',
+            depth: 0,
+            mapped_dimensions: [],
+            has_children: true,
+            has_prompt_ready: false,
+            item_count_hint: 1,
+          },
+        ],
+        active_category_path: [],
+        newly_available_category_ids: [],
+        build_ready: false,
+        build_readiness_message: 'Build is blocked until more discovery questions arrive.',
+      },
+      currentWorkspace: {
+        revision: 'workspace-partial-1',
+        focused_category_id: null,
+        branch_notice: null,
+        category_snapshot: {
+          revision: 'category-partial-1',
+          root_category_ids: ['root-discovery'],
+          nodes: [
+            {
+              category_id: 'root-discovery',
+              parent_category_id: null,
+              title: 'Explore missing areas',
+              summary: 'Only one preview is known so far.',
+              status: 'ready',
+              depth: 0,
+              mapped_dimensions: [],
+              has_children: true,
+              has_prompt_ready: false,
+              item_count_hint: 1,
+            },
+          ],
+          active_category_path: [],
+          newly_available_category_ids: [],
+          build_ready: false,
+          build_readiness_message: 'Build is blocked until more discovery questions arrive.',
+        },
+        groups: [
+          {
+            category_id: 'root-discovery',
+            title: 'Explore missing areas',
+            summary: 'Only one preview is known so far.',
+            status: 'ready',
+            question_count: 1,
+            is_focused: false,
+            is_new: false,
+            preview_items: [
+              {
+                item_id: 'root-discovery::preview::0',
+                kind: 'discovery',
+                text: 'Clarify the remaining area.',
+              },
+            ],
+          },
+        ],
+      },
+      currentPrompt: null,
+          })
+        : makeMockSocraticState()
+    ));
+
+    renderSessionPage('/session/abc');
+
+    await waitFor(() => {
+      expect(mockGetSession).toHaveBeenCalledWith('abc');
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /start session/i }));
+    });
+
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 8_250));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Thread index')).toBeInTheDocument();
+    }, { timeout: 2_000 });
+
+    expect(screen.getByText(/opened the desk with a partial initial set/i)).toBeInTheDocument();
+    expect(screen.getByText(/clarify the remaining area/i)).toBeInTheDocument();
+  }, 12_000);
 
   it('attaches for detached interviewing sessions when a live runtime is available', async () => {
     const session = makeSession({
@@ -807,6 +1127,8 @@ describe('SessionPage resume behavior', () => {
     expect(screen.getByText(/generating your next questions/i)).toBeInTheDocument();
     expect(screen.getAllByText(/planning the next question batch/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/prompt response adjudicated at 15% convergence/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /belief state/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /show all threads/i })).not.toBeInTheDocument();
   });
 
   it('renders the category navigator during category-driven intake', async () => {
@@ -912,13 +1234,633 @@ describe('SessionPage resume behavior', () => {
       expect(mockGetSession).toHaveBeenCalledWith('abc');
     });
 
-    expect(screen.getByText(/focused question lobby/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /question map/i })).toBeInTheDocument();
+    expect(screen.getByLabelText('Thread index')).toBeInTheDocument();
+    expect(screen.getByLabelText('Consultant desk')).toBeInTheDocument();
+    expect(screen.getByText(/clarify the remaining area/i)).toBeInTheDocument();
+  });
 
-    await user.click(screen.getByRole('button', { name: /question map/i }));
+  it('routes checkpoint-backed question state straight into the active question view without the old intro form', async () => {
+    const session = makeSession({
+      intake_phase: 'waiting',
+      pipeline_running: false,
+      can_resume_checkpoint: true,
+      has_checkpoint: true,
+      resume_status: 'interview_checkpoint_resumable',
+      checkpoint: {
+        socratic_run_id: '22222222-2222-2222-2222-222222222222',
+        classification: null,
+        belief_state: null,
+        current_prompt: {
+          prompt_id: 'prompt-hydrated-1',
+          kind: 'question_batch',
+          title: 'Clarify deployment',
+          instructions: 'Answer the next deployment question.',
+          origin_category_id: 'root-deployment',
+          category_path: [
+            { category_id: 'root-deployment', title: 'Deployment model' },
+          ],
+          items: [
+            {
+              item_id: 'item-hydrated-1',
+              kind: 'discovery',
+              target_dimension: 'Deployment',
+              section_ref: null,
+              text: 'Where will the application run?',
+              options: [],
+              response_mode: 'single_select_with_custom_text',
+              required: false,
+              priority: 100,
+              dependency_item_ids: [],
+            },
+          ],
+          draft_snapshot: null,
+          required_item_ids: [],
+          allow_partial_submit: true,
+          ui_hints: {
+            preferred_layout: 'cards',
+            show_draft_sidebar: false,
+          },
+          based_on_turn: 3,
+          created_at: '2026-03-22T00:00:00Z',
+        },
+        current_category_snapshot: {
+          revision: 'category-hydrated-1',
+          root_category_ids: ['root-deployment'],
+          nodes: [
+            {
+              category_id: 'root-deployment',
+              parent_category_id: null,
+              title: 'Deployment model',
+              summary: 'Clarify the runtime environment.',
+              status: 'ready',
+              depth: 0,
+              mapped_dimensions: [],
+              has_children: false,
+              has_prompt_ready: true,
+              item_count_hint: 1,
+            },
+          ],
+          active_category_path: [
+            { category_id: 'root-deployment', title: 'Deployment model' },
+          ],
+          newly_available_category_ids: [],
+          build_ready: false,
+          build_readiness_message: 'Build is blocked until deployment is clarified.',
+        },
+        contradictions: [],
+        stale_turns: 0,
+        draft_shown_at_turn: null,
+        last_checkpoint_at: '2026-03-22T00:00:00Z',
+      },
+    });
+    mockGetSession.mockResolvedValue({ session });
+    vi.mocked(useSocraticWebSocket).mockReturnValue(makeMockSocraticState({
+      isConnected: true,
+      reconnectFailed: false,
+      intakePhase: 'waiting',
+      currentCategorySnapshot: {
+        revision: 'category-hydrated-1',
+        root_category_ids: ['root-deployment'],
+        nodes: [
+          {
+            category_id: 'root-deployment',
+            parent_category_id: null,
+            title: 'Deployment model',
+            summary: 'Clarify the runtime environment.',
+            status: 'ready',
+            depth: 0,
+            mapped_dimensions: [],
+            has_children: false,
+            has_prompt_ready: true,
+            item_count_hint: 1,
+          },
+        ],
+        active_category_path: [
+          { category_id: 'root-deployment', title: 'Deployment model' },
+        ],
+        newly_available_category_ids: [],
+        build_ready: false,
+        build_readiness_message: 'Build is blocked until deployment is clarified.',
+      },
+      currentWorkspace: null,
+      currentPrompt: {
+        prompt_id: 'prompt-hydrated-1',
+        kind: 'question_batch',
+        title: 'Clarify deployment',
+        instructions: 'Answer the next deployment question.',
+        origin_category_id: 'root-deployment',
+        category_path: [
+          { category_id: 'root-deployment', title: 'Deployment model' },
+        ],
+        items: [
+          {
+            item_id: 'item-hydrated-1',
+            kind: 'discovery',
+            target_dimension: 'Deployment',
+            section_ref: null,
+            text: 'Where will the application run?',
+            options: [],
+            response_mode: 'single_select_with_custom_text',
+            required: false,
+            priority: 100,
+            dependency_item_ids: [],
+          },
+        ],
+        draft_snapshot: null,
+        required_item_ids: [],
+        allow_partial_submit: true,
+        ui_hints: {
+          preferred_layout: 'cards',
+          show_draft_sidebar: false,
+        },
+        based_on_turn: 3,
+        created_at: '2026-03-22T00:00:00Z',
+      },
+      events: [],
+      currentStep: 'socratic.question.focused',
+    }));
 
-    expect(screen.getByLabelText('Question map')).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: /focus/i }).length).toBeGreaterThan(0);
+    renderSessionPage('/session/abc');
+
+    await waitFor(() => {
+      expect(mockGetSession).toHaveBeenCalledWith('abc');
+    });
+
+    expect(screen.queryByRole('textbox', { name: 'Planning brief' })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Thread index')).toBeInTheDocument();
+    expect(screen.getAllByText(/where will the application run/i).length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: /submit prompt answers/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /question map/i })).not.toBeInTheDocument();
+  });
+
+  it('renders the thread of thought as ancestor actions that can return to earlier categories', async () => {
+    const user = userEvent.setup();
+    const session = makeSession({
+      intake_phase: 'interviewing',
+      pipeline_running: false,
+      can_resume_live: false,
+      resume_status: 'interview_attached',
+    });
+    mockGetSession.mockResolvedValue({ session });
+    vi.mocked(useSocraticWebSocket).mockReturnValue(makeMockSocraticState({
+      isConnected: true,
+      reconnectFailed: false,
+      intakePhase: 'interviewing',
+      currentWorkspace: {
+        revision: 'workspace-thread-1',
+        focused_category_id: 'root-security-auth',
+        branch_notice: null,
+        category_snapshot: {
+          revision: 'category-thread-1',
+          root_category_ids: ['root-discovery'],
+          nodes: [
+            {
+              category_id: 'root-discovery',
+              parent_category_id: null,
+              title: 'Explore missing areas',
+              summary: 'Broaden the discovery map.',
+              status: 'ready',
+              depth: 0,
+              mapped_dimensions: [],
+              has_children: true,
+              has_prompt_ready: false,
+              item_count_hint: 1,
+            },
+            {
+              category_id: 'root-security',
+              parent_category_id: 'root-discovery',
+              title: 'Security',
+              summary: 'Clarify security requirements.',
+              status: 'ready',
+              depth: 1,
+              mapped_dimensions: [],
+              has_children: true,
+              has_prompt_ready: false,
+              item_count_hint: 1,
+            },
+            {
+              category_id: 'root-security-auth',
+              parent_category_id: 'root-security',
+              title: 'Authentication model',
+              summary: 'Clarify the authentication flow.',
+              status: 'active',
+              depth: 2,
+              mapped_dimensions: [],
+              has_children: false,
+              has_prompt_ready: true,
+              item_count_hint: 1,
+            },
+          ],
+          active_category_path: [
+            { category_id: 'root-discovery', title: 'Explore missing areas' },
+            { category_id: 'root-security', title: 'Security' },
+            { category_id: 'root-security-auth', title: 'Authentication model' },
+          ],
+          newly_available_category_ids: [],
+          build_ready: false,
+          build_readiness_message: 'Build is blocked until security is clarified.',
+        },
+        groups: [
+          {
+            category_id: 'root-security-auth',
+            title: 'Authentication model',
+            summary: 'Clarify the authentication flow.',
+            status: 'active',
+            question_count: 1,
+            is_focused: true,
+            is_new: false,
+            preview_items: [],
+          },
+        ],
+      },
+      currentPrompt: {
+        prompt_id: 'prompt-thread-1',
+        kind: 'question_batch',
+        title: 'Clarify authentication',
+        instructions: 'Answer the focused security question.',
+        origin_category_id: 'root-security-auth',
+        category_path: [
+          { category_id: 'root-discovery', title: 'Explore missing areas' },
+          { category_id: 'root-security', title: 'Security' },
+          { category_id: 'root-security-auth', title: 'Authentication model' },
+        ],
+        items: [
+          {
+            item_id: 'item-thread-1',
+            kind: 'discovery',
+            target_dimension: 'Security',
+            section_ref: null,
+            text: 'How should authentication work?',
+            options: [],
+            response_mode: 'single_select_with_custom_text',
+            required: false,
+            priority: 100,
+            dependency_item_ids: [],
+          },
+        ],
+        draft_snapshot: null,
+        required_item_ids: [],
+        allow_partial_submit: true,
+        ui_hints: {
+          preferred_layout: 'cards',
+          show_draft_sidebar: false,
+        },
+        based_on_turn: 5,
+        created_at: '2026-03-22T00:00:00Z',
+      },
+      speculativeDraft: null,
+      confirmedSections: new Set(),
+      contradictions: [],
+      stages: [],
+      pipelineComplete: false,
+      pipelineSummary: null,
+      events: [],
+      currentStep: 'socratic.question.focused',
+      attach: mockAttach,
+      sendDescription: mockSendDescription,
+    }));
+
+    renderSessionPage('/session/abc');
+
+    await waitFor(() => {
+      expect(mockGetSession).toHaveBeenCalledWith('abc');
+    });
+
+    expect(screen.getByLabelText('Thread index')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Security \[/ }));
+    expect(mockEnterCategory).toHaveBeenCalledWith('root-security', 'category-thread-1');
+  });
+
+  it('keeps category-only interview state inside the focused lobby instead of the legacy split pane', async () => {
+    const session = makeSession({
+      intake_phase: 'interviewing',
+      pipeline_running: false,
+      can_resume_live: false,
+      resume_status: 'interview_attached',
+    });
+    mockGetSession.mockResolvedValue({ session });
+    vi.mocked(useSocraticWebSocket).mockReturnValue(makeMockSocraticState({
+      isConnected: true,
+      reconnectFailed: false,
+      intakePhase: 'interviewing',
+      messages: [],
+      classification: null,
+      beliefState: null,
+      convergencePct: 0.4,
+      currentCategorySnapshot: {
+        revision: 'category-only-1',
+        root_category_ids: ['root-discovery'],
+        nodes: [
+          {
+            category_id: 'root-discovery',
+            parent_category_id: null,
+            title: 'Explore missing areas',
+            summary: '1 area still needs discovery.',
+            status: 'ready',
+            depth: 0,
+            mapped_dimensions: [],
+            has_children: true,
+            has_prompt_ready: false,
+            item_count_hint: 1,
+          },
+          {
+            category_id: 'root-discovery::security',
+            parent_category_id: 'root-discovery',
+            title: 'Security',
+            summary: 'Authentication still needs definition.',
+            status: 'ready',
+            depth: 1,
+            mapped_dimensions: [],
+            has_children: false,
+            has_prompt_ready: true,
+            item_count_hint: 1,
+          },
+        ],
+        active_category_path: [
+          { category_id: 'root-discovery', title: 'Explore missing areas' },
+        ],
+        newly_available_category_ids: [],
+        build_ready: false,
+        build_readiness_message: 'Build is blocked until 1 remaining area is explored.',
+      },
+      currentWorkspace: null,
+      currentPrompt: null,
+      speculativeDraft: null,
+      confirmedSections: new Set(),
+      contradictions: [],
+      stages: [],
+      pipelineComplete: false,
+      pipelineSummary: null,
+      events: [],
+      currentStep: 'socratic.category_state.generated',
+      attach: mockAttach,
+      sendDescription: mockSendDescription,
+    }));
+
+    renderSessionPage('/session/abc');
+
+    await waitFor(() => {
+      expect(mockGetSession).toHaveBeenCalledWith('abc');
+    });
+
+    expect(screen.getByLabelText('Thread index')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /context/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Belief State' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Explore missing areas' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Security \[ 0\/1 \]/ })).toBeInTheDocument();
+  });
+
+  it('keeps belief state, draft, transcript, and events hidden until the context shelf is opened', async () => {
+    const user = userEvent.setup();
+    const session = makeSession({
+      intake_phase: 'interviewing',
+      pipeline_running: false,
+      can_resume_live: false,
+      resume_status: 'interview_attached',
+    });
+    mockGetSession.mockResolvedValue({ session });
+    vi.mocked(useSocraticWebSocket).mockReturnValue(makeMockSocraticState({
+      isConnected: true,
+      reconnectFailed: false,
+      intakePhase: 'interviewing',
+      messages: [
+        { id: 'planner-1', role: 'planner', content: 'welcome', timestamp: new Date().toISOString() },
+      ],
+      classification: {
+        project_type: 'Web App',
+        complexity: 'medium',
+      },
+      beliefState: {
+        filled: {
+          stack: { value: 'React', confidence: 1 },
+        },
+        uncertain: {},
+        missing: [],
+        out_of_scope: [],
+        convergence_pct: 0.45,
+      },
+      convergencePct: 0.45,
+      currentCategorySnapshot: null,
+      currentWorkspace: {
+        revision: 'workspace-context-1',
+        focused_category_id: 'root-discovery',
+        branch_notice: null,
+        category_snapshot: {
+          revision: 'category-context-1',
+          root_category_ids: ['root-discovery'],
+          nodes: [
+            {
+              category_id: 'root-discovery',
+              parent_category_id: null,
+              title: 'Explore missing areas',
+              summary: '1 area still needs discovery.',
+              status: 'active',
+              depth: 0,
+              mapped_dimensions: [],
+              has_children: true,
+              has_prompt_ready: true,
+              item_count_hint: 1,
+            },
+          ],
+          active_category_path: [],
+          newly_available_category_ids: [],
+          build_ready: false,
+          build_readiness_message: 'Build is blocked until 1 remaining area is explored.',
+        },
+        groups: [
+          {
+            category_id: 'root-discovery',
+            title: 'Explore missing areas',
+            summary: 'Clarify the remaining area.',
+            status: 'active',
+            question_count: 1,
+            is_focused: true,
+            is_new: false,
+            preview_items: [
+              {
+                item_id: 'root-discovery::preview::0',
+                kind: 'discovery',
+                text: 'Clarify the remaining area.',
+              },
+            ],
+          },
+        ],
+      },
+      currentPrompt: {
+        prompt_id: 'prompt-context-1',
+        kind: 'question_batch',
+        title: 'Clarify the remaining area',
+        instructions: 'Answer the focused question.',
+        origin_category_id: 'root-discovery',
+        category_path: [
+          { category_id: 'root-discovery', title: 'Explore missing areas' },
+        ],
+        items: [
+          {
+            item_id: 'item-context-1',
+            kind: 'discovery',
+            target_dimension: 'Scope',
+            section_ref: null,
+            text: 'What is still missing?',
+            options: [],
+            response_mode: 'single_select_with_custom_text',
+            required: false,
+            priority: 100,
+            dependency_item_ids: [],
+          },
+        ],
+        draft_snapshot: null,
+        required_item_ids: [],
+        allow_partial_submit: true,
+        ui_hints: {
+          preferred_layout: 'cards',
+          show_draft_sidebar: false,
+        },
+        based_on_turn: 2,
+        created_at: '2026-03-22T00:00:00Z',
+      },
+      speculativeDraft: {
+        sections: [{ heading: 'Goal', content: 'Draft goal section' }],
+        not_discussed: [],
+      },
+      confirmedSections: new Set(),
+      contradictions: [],
+      stages: [],
+      pipelineComplete: false,
+      pipelineSummary: null,
+      events: [
+        {
+          id: 'evt-context-1',
+          timestamp: new Date().toISOString(),
+          level: 'info',
+          source: 'socratic_engine',
+          step: 'socratic.question.focused',
+          message: 'Focused branch is ready for another answer.',
+          metadata: {},
+        },
+      ],
+      currentStep: 'socratic.question.focused',
+      attach: mockAttach,
+      sendDescription: mockSendDescription,
+    }));
+
+    renderSessionPage('/session/abc');
+
+    await waitFor(() => {
+      expect(mockGetSession).toHaveBeenCalledWith('abc');
+    });
+
+    expect(screen.queryByLabelText('Context shelf')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Belief State' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /context/i })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /context/i }));
+
+    const contextShelf = screen.getByLabelText('Context shelf');
+    expect(contextShelf).toBeInTheDocument();
+    expect(screen.getByText(/open belief state, draft, transcript, or events without leaving the active question flow/i)).toBeInTheDocument();
+    expect(within(contextShelf).getByRole('button', { name: 'Belief State' })).toBeInTheDocument();
+    expect(within(contextShelf).getByRole('button', { name: 'Draft' })).toBeInTheDocument();
+    expect(within(contextShelf).getByRole('button', { name: 'Transcript' })).toBeInTheDocument();
+    expect(within(contextShelf).getByRole('button', { name: /^Events/ })).toBeInTheDocument();
+    expect(screen.getByText(/draft spec/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Belief State' }));
+    expect(screen.getByText('React')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Transcript' }));
+    expect(screen.getAllByText('welcome').length).toBeGreaterThan(0);
+
+    await user.click(within(contextShelf).getByRole('button', { name: /^Events/ }));
+    expect(screen.getAllByText(/focused branch is ready for another answer/i).length).toBeGreaterThan(0);
+  });
+
+  it('explains branch transitions inline and exposes visible controls to refocus or follow server focus', async () => {
+    const user = userEvent.setup();
+    const session = makeSession({
+      intake_phase: 'interviewing',
+      pipeline_running: false,
+      can_resume_live: false,
+      resume_status: 'interview_attached',
+    });
+    mockGetSession.mockResolvedValue({ session });
+    vi.mocked(useSocraticWebSocket).mockReturnValue(makeMockSocraticState({
+      isConnected: true,
+      reconnectFailed: false,
+      intakePhase: 'interviewing',
+      messages: [],
+      classification: null,
+      beliefState: null,
+      convergencePct: 0.5,
+      currentCategorySnapshot: null,
+      currentWorkspace: {
+        revision: 'workspace-transition-1',
+        focused_category_id: 'branch-auth',
+        branch_notice: 'Planner moved active work to Security follow-up while this branch remains reviewable.',
+        category_snapshot: {
+          revision: 'category-transition-1',
+          root_category_ids: ['branch-auth'],
+          nodes: [
+            {
+              category_id: 'branch-auth',
+              parent_category_id: null,
+              title: 'Authentication model',
+              summary: 'Follow-up work moved to another branch.',
+              status: 'ready',
+              depth: 0,
+              mapped_dimensions: [],
+              has_children: false,
+              has_prompt_ready: false,
+              item_count_hint: 1,
+            },
+          ],
+          active_category_path: [],
+          newly_available_category_ids: ['branch-security'],
+          build_ready: false,
+          build_readiness_message: 'Build is blocked until active branches are reviewed.',
+        },
+        groups: [
+          {
+            category_id: 'branch-auth',
+            title: 'Authentication model',
+            summary: 'Follow-up work moved to another branch.',
+            status: 'ready',
+            question_count: 1,
+            is_focused: true,
+            is_new: false,
+            preview_items: [
+              {
+                item_id: 'branch-auth::preview::0',
+                kind: 'discovery',
+                text: 'Review the authentication branch transition.',
+              },
+            ],
+          },
+        ],
+      },
+      currentPrompt: null,
+      speculativeDraft: null,
+      confirmedSections: new Set(),
+      contradictions: [],
+      stages: [],
+      pipelineComplete: false,
+      pipelineSummary: null,
+      events: [],
+      currentStep: 'socratic.branch.transitioned',
+      attach: mockAttach,
+      sendDescription: mockSendDescription,
+    }));
+
+    renderSessionPage('/session/abc');
+
+    await waitFor(() => {
+      expect(mockGetSession).toHaveBeenCalledWith('abc');
+    });
+
+    expect(screen.getAllByText(/planner moved active work to security follow-up while this branch remains reviewable/i).length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole('button', { name: /go to live question/i }));
+    expect(mockBackToCategories).toHaveBeenCalledTimes(1);
   });
 
   it('does not expose a build completion button while a scoped prompt is active', async () => {

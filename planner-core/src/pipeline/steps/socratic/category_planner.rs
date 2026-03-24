@@ -154,6 +154,16 @@ pub fn active_leaf_category_id(snapshot: &SocraticCategorySnapshot) -> Option<&s
         .map(|node| node.category_id.as_str())
 }
 
+pub fn first_prompt_ready_category_path(snapshot: &SocraticCategorySnapshot) -> Option<Vec<String>> {
+    let category_id = snapshot
+        .nodes
+        .iter()
+        .find(|node| node.has_prompt_ready)
+        .map(|node| node.category_id.as_str())?;
+
+    resolve_category_path(snapshot, category_id)
+}
+
 pub fn visible_category_ids(snapshot: &SocraticCategorySnapshot) -> Vec<String> {
     let Some(active_id) = snapshot
         .active_category_path
@@ -175,9 +185,15 @@ pub fn resolve_category_path(
     snapshot: &SocraticCategorySnapshot,
     category_id: &str,
 ) -> Option<Vec<String>> {
-    if !visible_category_ids(snapshot)
+    let target_node = snapshot
+        .nodes
         .iter()
-        .any(|visible_id| visible_id == category_id)
+        .find(|node| node.category_id == category_id)?;
+
+    if !target_node.has_prompt_ready
+        && !visible_category_ids(snapshot)
+            .iter()
+            .any(|visible_id| visible_id == category_id)
     {
         return None;
     }
@@ -977,6 +993,60 @@ mod tests {
             resolve_category_path(&snapshot, &visible[0]).expect("visible child should resolve");
 
         assert_eq!(path, vec![ROOT_DISCOVERY.to_string(), visible[0].clone()]);
+    }
+
+    #[test]
+    fn resolve_category_path_allows_prompt_ready_leafs_outside_visible_category_ids() {
+        let mut state = make_state();
+        state.missing = vec![Dimension::Goal];
+        state.uncertain.clear();
+
+        let snapshot = build_category_snapshot(&state, &[ROOT_DISCOVERY.into()], false, None);
+        let leaf = snapshot
+            .nodes
+            .iter()
+            .find(|node| {
+                node.has_prompt_ready
+                    && node.parent_category_id.as_deref()
+                        == Some("root-discovery::dimension::goal")
+            })
+            .expect("goal leaf should exist");
+
+        assert!(
+            !visible_category_ids(&snapshot)
+                .iter()
+                .any(|visible_id| visible_id == &leaf.category_id)
+        );
+
+        let path = resolve_category_path(&snapshot, &leaf.category_id)
+            .expect("prompt-ready workspace leaf should resolve");
+
+        assert_eq!(
+            path,
+            vec![
+                ROOT_DISCOVERY.to_string(),
+                "root-discovery::dimension::goal".to_string(),
+                leaf.category_id.clone(),
+            ]
+        );
+    }
+
+    #[test]
+    fn first_prompt_ready_category_path_returns_first_leaf_path_in_snapshot_order() {
+        let snapshot = build_category_snapshot(&make_state(), &[], false, None);
+        let first_prompt_ready = snapshot
+            .nodes
+            .iter()
+            .find(|node| node.has_prompt_ready)
+            .expect("expected prompt-ready node in snapshot");
+
+        let path = first_prompt_ready_category_path(&snapshot)
+            .expect("expected first prompt-ready category path");
+
+        assert_eq!(
+            path.last().map(String::as_str),
+            Some(first_prompt_ready.category_id.as_str())
+        );
     }
 
     #[test]

@@ -37,6 +37,16 @@ fn shorten_clause(text: &str) -> String {
         .to_string()
 }
 
+fn truncate_chars_with_ellipsis(text: &str, max_chars: usize) -> String {
+    let total_chars = text.chars().count();
+    if total_chars <= max_chars {
+        return text.to_string();
+    }
+
+    let truncated: String = text.chars().take(max_chars).collect();
+    format!("{truncated}…")
+}
+
 pub fn concise_constraint_title(text: &str) -> String {
     let normalized = normalize(text);
     let lower = normalized.to_ascii_lowercase();
@@ -64,14 +74,8 @@ pub fn concise_constraint_title(text: &str) -> String {
         "Specify inline editing contract".to_string()
     } else {
         let shortened = shorten_clause(&normalized);
-        if shortened.len() <= 72 {
-            title_case(&shortened)
-        } else {
-            format!(
-                "{}…",
-                &title_case(&shortened)[..72.min(title_case(&shortened).len())]
-            )
-        }
+        let titled = title_case(&shortened);
+        truncate_chars_with_ellipsis(&titled, 72)
     };
 
     normalize(&label)
@@ -159,6 +163,17 @@ mod tests {
             ),
             "Specify inline editing contract"
         );
+    }
+
+    #[test]
+    fn concise_constraint_title_truncates_unicode_without_panicking() {
+        let input = "[ar Finding Ar-b-4] “selecting A Date And Entering A Task Title” / “click A Date Cell To Open A Task Input” Is Ambiguous About The Interaction Pattern (inline Input Inside The Cell Vs Modal/popover) And The Confirm/cancel Behavior";
+
+        let result = concise_constraint_title(input);
+
+        assert!(result.ends_with('…'));
+        assert!(result.chars().count() <= 73);
+        assert!(result.contains('“'));
     }
 
     #[test]

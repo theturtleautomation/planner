@@ -361,7 +361,12 @@ Implemented on 2026-03-22 with these bounded outcomes:
 
 Verification executed:
 
-- `npm test -- src/components/__tests__/Layout.test.tsx src/pages/__tests__/LoginPage.test.tsx`
+- direct auth-entry coverage now exists in
+  [Auth0Pages.test.tsx](/home/thetu/planner/planner-web/src/auth/__tests__/Auth0Pages.test.tsx)
+  alongside
+  [Layout.test.tsx](/home/thetu/planner/planner-web/src/components/__tests__/Layout.test.tsx)
+  and
+  [LoginPage.test.tsx](/home/thetu/planner/planner-web/src/pages/__tests__/LoginPage.test.tsx)
 - `npx tsc --noEmit`
 
 ## Open Questions

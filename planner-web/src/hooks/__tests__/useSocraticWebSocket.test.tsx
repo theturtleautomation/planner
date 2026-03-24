@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useSocraticWebSocket } from '../useSocraticWebSocket.ts';
-import type { ServerWsMessage } from '../../types.ts';
+import type { ServerWsMessage, Session } from '../../types.ts';
 
 class MockWebSocket {
   static CONNECTING = 0;
@@ -237,6 +237,104 @@ describe('useSocraticWebSocket', () => {
     ).toBe('complete');
   });
 
+  it('hydrates checkpoint-backed prompt state as interviewing when the initial session already has resumable questions', async () => {
+    const getToken = vi.fn().mockResolvedValue('token');
+    const initialSession: Session = {
+      id: 'session-hydrated',
+      archived: false,
+      archived_at: null,
+      messages: [],
+      stages: [],
+      pipeline_running: false,
+      intake_phase: 'waiting',
+      interview_live_attached: false,
+      can_resume_live: false,
+      can_resume_checkpoint: true,
+      can_restart_from_description: false,
+      can_retry_pipeline: false,
+      has_checkpoint: true,
+      resume_status: 'interview_checkpoint_resumable',
+      checkpoint: {
+        socratic_run_id: '33333333-3333-3333-3333-333333333333',
+        classification: null,
+        belief_state: null,
+        current_prompt: {
+          prompt_id: 'prompt-hydrated-1',
+          kind: 'question_batch',
+          title: 'Clarify deployment',
+          instructions: 'Answer the next deployment question.',
+          origin_category_id: 'root-deployment',
+          category_path: [
+            { category_id: 'root-deployment', title: 'Deployment model' },
+          ],
+          items: [
+            {
+              item_id: 'item-hydrated-1',
+              kind: 'discovery',
+              target_dimension: 'Deployment',
+              text: 'Where will the application run?',
+              options: [],
+              response_mode: 'single_select_with_custom_text',
+              required: false,
+              priority: 100,
+              dependency_item_ids: [],
+            },
+          ],
+          required_item_ids: [],
+          allow_partial_submit: true,
+          ui_hints: {
+            preferred_layout: 'cards',
+            show_draft_sidebar: false,
+          },
+          based_on_turn: 3,
+          created_at: '2026-03-22T00:00:00Z',
+        },
+        current_category_snapshot: {
+          revision: 'category-hydrated-1',
+          root_category_ids: ['root-deployment'],
+          nodes: [
+            {
+              category_id: 'root-deployment',
+              parent_category_id: null,
+              title: 'Deployment model',
+              summary: 'Clarify the runtime environment.',
+              status: 'ready',
+              depth: 0,
+              mapped_dimensions: [],
+              has_children: false,
+              has_prompt_ready: true,
+              item_count_hint: 1,
+            },
+          ],
+          active_category_path: [
+            { category_id: 'root-deployment', title: 'Deployment model' },
+          ],
+          newly_available_category_ids: [],
+          build_ready: false,
+          build_readiness_message: 'Build is blocked until deployment is clarified.',
+        },
+        contradictions: [],
+        stale_turns: 0,
+        draft_shown_at_turn: null,
+        last_checkpoint_at: '2026-03-22T00:00:00Z',
+      },
+    };
+
+    const { result } = renderHook(() => useSocraticWebSocket({
+      sessionId: 'session-hydrated',
+      getToken,
+      initialSession,
+    }));
+
+    await waitFor(() => {
+      expect(result.current.currentPrompt?.prompt_id).toBe('prompt-hydrated-1');
+    });
+
+    expect(result.current.intakePhase).toBe('interviewing');
+    expect(result.current.currentCategorySnapshot?.revision).toBe('category-hydrated-1');
+    expect(result.current.currentWorkspace).toBeNull();
+  });
+
   it('hydrates category state and sends category navigation actions', async () => {
     const getToken = vi.fn().mockResolvedValue('token');
     const { result } = renderHook(() => useSocraticWebSocket({
@@ -301,7 +399,7 @@ describe('useSocraticWebSocket', () => {
     ).toBe(true);
   });
 
-  it('keeps category focus pending until workspace state or prompt resolves it', async () => {
+  it('keeps category focus pending until the server responds with workspace state or a prompt', async () => {
     const getToken = vi.fn().mockResolvedValue('token');
     const { result } = renderHook(() => useSocraticWebSocket({
       sessionId: 'session-workspace',

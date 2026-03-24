@@ -42,6 +42,23 @@ These are the main planning documents currently shaping the repo:
 - [Planner UI Reset Phase 10 Admin Operations Workspace Spec](/home/thetu/planner/docs/planner-ui-reset-phase-10-admin-operations-workspace-spec.md)
 - [Planner UI Reset Tranche Audit Remediation Spec](/home/thetu/planner/docs/planner-ui-reset-tranche-audit-remediation-spec.md)
 - [Planner UI Reset Residual Corrections Spec](/home/thetu/planner/docs/planner-ui-reset-residual-corrections-spec.md)
+- [Planner UI Reset Audit Evidence Closeout Spec](/home/thetu/planner/docs/planner-ui-reset-audit-evidence-closeout-spec.md)
+- [Socratic Session Page Redesign Spec P1 S1 Pulse Bar](/home/thetu/planner/docs/socratic-session-page-redesign-spec-p1-s1-pulse-bar.md)
+- [Socratic Session Page Redesign Spec P1 S2 Focused Canvas](/home/thetu/planner/docs/socratic-session-page-redesign-spec-p1-s2-focused-canvas.md)
+- [Socratic Session Page Redesign Spec P1 S3 Context Shelf](/home/thetu/planner/docs/socratic-session-page-redesign-spec-p1-s3-context-shelf.md)
+- [Socratic Session Page Redesign Spec P2 S1 Question Map](/home/thetu/planner/docs/socratic-session-page-redesign-spec-p2-s1-question-map.md)
+- [Socratic Session Page Redesign Spec P2 S2 Category Visuals](/home/thetu/planner/docs/socratic-session-page-redesign-spec-p2-s2-category-visuals.md)
+- [Socratic Session Page Redesign Spec P2 S3 Dynamic Feedback](/home/thetu/planner/docs/socratic-session-page-redesign-spec-p2-s3-dynamic-feedback.md)
+- [Socratic Session Page Redesign Spec P3 S1 Canvas States](/home/thetu/planner/docs/socratic-session-page-redesign-spec-p3-s1-canvas-states.md)
+- [Socratic Session Page Redesign Spec P3 S2 Cleanup](/home/thetu/planner/docs/socratic-session-page-redesign-spec-p3-s2-cleanup.md)
+- [Socratic Ethereal Cascade Redesign Spec](/home/thetu/planner/docs/socratic-ethereal-cascade-redesign-spec.md)
+- [Socratic Ethereal Cascade Remediation Spec](/home/thetu/planner/docs/socratic-ethereal-cascade-remediation-spec.md)
+- [Socratic Hybrid Question Routing And Latency Spec](/home/thetu/planner/docs/socratic-hybrid-question-routing-and-latency-spec.md)
+- [Socratic Question Canvas Alignment And Visual Refinement Spec](/home/thetu/planner/docs/socratic-question-canvas-alignment-and-visual-refinement-spec.md)
+- [Socratic Lobby Consultant Desk Spec](/home/thetu/planner/docs/socratic-lobby-consultant-desk-spec.md)
+- [Socratic Lobby Live Virtualized Document Spec](/home/thetu/planner/docs/socratic-lobby-live-virtualized-document-spec.md)
+- [Socratic Lobby Document Chrome And Scroll De-escalation Spec](/home/thetu/planner/docs/socratic-lobby-document-chrome-and-scroll-de-escalation-spec.md)
+- [Socratic Lobby First-Reveal Preload Gate Spec](/home/thetu/planner/docs/socratic-lobby-first-reveal-preload-gate-spec.md)
 - [Planner Design System Command Center Plan](/home/thetu/planner/docs/planner-design-system-command-center-plan.md)
 - [Planner Design System Phase 1 Tonal Foundation Spec](/home/thetu/planner/docs/planner-design-system-phase-1-tonal-foundation-spec.md)
 - [Planner Design System Phase 2 Editorial Typography And CTA Spec](/home/thetu/planner/docs/planner-design-system-phase-2-editorial-typography-and-cta-spec.md)
@@ -73,7 +90,104 @@ These are the main planning documents currently shaping the repo:
 
 ## Current Active Thread
 
-### Planner Route-By-Route UI Reset
+### Socratic Lobby Replacement Direction
+
+Goal:
+
+- replace the currently implemented Ethereal Cascade / focused-lobby direction
+  with a dense split-pane Socratic Lobby that keeps dynamic server-authored
+  categories and questions while presenting the workspace as one continuous
+  loaded document
+- keep all known categories visible as a permanent left index while the right
+  desk behaves like a continuously readable and editable consultant document
+- preserve the high-density, keyboard-first workflow needed for up to 120 text
+  inputs without document-level scrolling, prompt swapping, or macro-context
+  loss
+
+Current planning state:
+
+- the new authoritative planning artifact is
+  [Socratic Lobby Live Virtualized Document Spec](/home/thetu/planner/docs/socratic-lobby-live-virtualized-document-spec.md)
+- the earlier
+  [Socratic Lobby Consultant Desk Spec](/home/thetu/planner/docs/socratic-lobby-consultant-desk-spec.md)
+  now serves as an implemented precursor documenting the already delivered
+  shell and state slices
+- the first two bounded replacement slices have now landed on `planner-web`
+  with a live split-pane thread index, normalized consultant-desk draft state,
+  flat question components, and route-level scroll verification
+- the next live-document slice has also landed on `planner-web` with a
+  continuous virtualized category document, jump-to-section row behavior, and
+  consultant-desk rendering driven from the Jotai-backed normalized Socratic
+  document graph
+- the cleanup-and-proof slice has also landed with shim removal, seeded
+  consultant-desk performance proof, draft-selector isolation tests, and
+  live-insertion anchor coverage for the document graph and virtualized desk
+- the index-navigation-completion slice has also landed with arrow-preview row
+  traversal, Enter-to-focus behavior for answerable sections, and active-row
+  hold on the currently edited section
+- the manual-verification-closeout slice has now landed with desktop deep-
+  scroll/live-question validation, keyboard-only traversal into editing and
+  back, short-viewport action reachability proof, and tablet/mobile containment
+  spot-checks
+- the live virtualized Socratic lobby is now the implemented route baseline on
+  `planner-web`, and the earlier Ethereal Cascade / consultant-desk docs remain
+  as precursors only
+- a new bounded follow-on cleanup slice is now defined in
+  [Socratic Lobby Document Chrome And Scroll De-escalation Spec](/home/thetu/planner/docs/socratic-lobby-document-chrome-and-scroll-de-escalation-spec.md)
+  to remove redundant `Thread` / `Live question` chrome, reduce section-title
+  scale, stop the active live question from reading as a floating overlay, and
+  enforce local-fast category/question browsing for already-known document
+  content
+- a new first-view product-contract slice is now defined in
+  [Socratic Lobby First-Reveal Preload Gate Spec](/home/thetu/planner/docs/socratic-lobby-first-reveal-preload-gate-spec.md)
+  to hold the lobby behind a dedicated loading surface until a meaningful
+  working set is ready, with a default initial threshold of 8 locally known
+  question items and bounded timeout fallbacks
+- the first bounded preload-gate implementation is now landed on
+  `planner-web`: locally started/restarted interviews stay on a dedicated
+  first-reveal loading surface until enough known question items accumulate or
+  the hard timeout truthfully reveals the best currently known partial desk
+
+Current next bounded slice:
+
+- rerun the manual browser checks for
+  [Socratic Lobby First-Reveal Preload Gate Spec](/home/thetu/planner/docs/socratic-lobby-first-reveal-preload-gate-spec.md)
+  and verify that the first visible Socratic lobby state now feels coherent in
+  a real fresh session
+
+Current follow-up verification slice:
+
+- rerun the manual browser checks for
+  [Socratic Lobby Document Chrome And Scroll De-escalation Spec](/home/thetu/planner/docs/socratic-lobby-document-chrome-and-scroll-de-escalation-spec.md)
+  and close that visual cleanup slice if the live question no longer reads as
+  a floating overlay while preserving short-viewport action reachability
+
+### Socratic Ethereal Cascade Redesign
+
+Current repo state:
+
+- the canonical [Socratic Ethereal Cascade Redesign Spec](/home/thetu/planner/docs/socratic-ethereal-cascade-redesign-spec.md) is now implemented on `planner-web`
+- the focused lobby now keeps category-only and prompt-backed interview states inside one Ethereal Cascade path, with compressed thread history, stronger terminal-question centering, and hidden-by-default context surfaces
+- the bounded follow-on execution artifact
+  [Socratic Ethereal Cascade Remediation Spec](/home/thetu/planner/docs/socratic-ethereal-cascade-remediation-spec.md)
+  has been delivered and synced back into the canonical redesign spec
+
+Verification evidence rerun across the redesign and remediation slices:
+
+- `npm test -- src/pages/__tests__/SessionPage.test.tsx`
+- `npm test -- src/hooks/__tests__/useSocraticWebSocket.test.tsx`
+- `npm test -- src/components/__tests__/PromptBatchPanel.test.tsx`
+- `npm test -- src/pages/__tests__/SessionPage.test.tsx src/hooks/__tests__/useSocraticWebSocket.test.tsx src/components/__tests__/PromptBatchPanel.test.tsx src/components/__tests__/SocraticWorkspace.test.tsx`
+- `cd planner-web && ./node_modules/.bin/playwright test e2e/session-ethereal.spec.ts`
+- `npm run build`
+
+Status note:
+
+- automated remediation verification is complete
+- manual browser QA from the spec remains available for future spot checks, but
+  this thread no longer has an open implementation delta
+
+### Recently Closed Thread: Planner Route-By-Route UI Reset
 
 Goal:
 
@@ -130,6 +244,8 @@ Current implemented children:
   [Planner UI Reset Tranche Audit Remediation Spec](/home/thetu/planner/docs/planner-ui-reset-tranche-audit-remediation-spec.md)
 - residual correction follow-up in
   [Planner UI Reset Residual Corrections Spec](/home/thetu/planner/docs/planner-ui-reset-residual-corrections-spec.md)
+- audit evidence closeout in
+  [Planner UI Reset Audit Evidence Closeout Spec](/home/thetu/planner/docs/planner-ui-reset-audit-evidence-closeout-spec.md)
 
 Current planning state:
 
@@ -143,15 +259,19 @@ Current planning state:
   [Planner UI Reset Tranche Audit Remediation Spec](/home/thetu/planner/docs/planner-ui-reset-tranche-audit-remediation-spec.md)
 - the residual correction follow-up is implemented in
   [Planner UI Reset Residual Corrections Spec](/home/thetu/planner/docs/planner-ui-reset-residual-corrections-spec.md)
-- queue status, child-spec truthfulness, and route-specific verification have
-  been synchronized to the current `planner-web` surface
+- the audit evidence closeout is implemented in
+  [Planner UI Reset Audit Evidence Closeout Spec](/home/thetu/planner/docs/planner-ui-reset-audit-evidence-closeout-spec.md)
+- queue status, child-spec truthfulness, and route-specific verification are
+  synchronized to the current `planner-web` surface, including the `UIR-00`
+  auth-root proof and `UIR-05` focused-lobby proof hardened in the audit
+  evidence closeout slice
 
-Current next bounded slice:
+Current closure state:
 
-- the route-by-route UI reset delivery tranche and its follow-up correction
+- the route-by-route UI reset delivery tranche and its audit-closeout follow-up
   passes are complete
-- next work should return to cumulative QA and future follow-on specs opened
-  from new product gaps rather than from the original tranche audit ledger
+- next work should return to cumulative QA and new product follow-on specs
+  rather than further tranche-trust cleanup
 
 ### Socratic Focused Question Lobby
 
@@ -228,11 +348,47 @@ Current agreed product constraints:
   freeform side mode
 - replay and validation hardening remain part of the implemented workspace flow
 
-Current next bounded slice:
+Current bounded slice status:
 
-- keep the focused-question lobby aligned with upcoming `UIR-06` and `UIR-07`
-  route work so shell, project workspace, and Socratic context continue to read
-  as one product family
+- the bounded latency slice in
+  [Socratic Hybrid Question Routing And Latency Spec](/home/thetu/planner/docs/socratic-hybrid-question-routing-and-latency-spec.md)
+  is now implemented with automated verification and runtime model-resolution
+  checks for `gpt-5.4-mini` and `gpt-5.4`
+- the bounded visual slice in
+  [Socratic Question Canvas Alignment And Visual Refinement Spec](/home/thetu/planner/docs/socratic-question-canvas-alignment-and-visual-refinement-spec.md)
+  is now implemented with focused frontend test coverage and build verification
+- the new replacement-direction spec in
+  [Socratic Lobby Live Virtualized Document Spec](/home/thetu/planner/docs/socratic-lobby-live-virtualized-document-spec.md)
+  is now implemented; it supersedes the active-category detail-pane end-state
+  and selects a live-generated, fully loaded, virtualized document
+  architecture
+- the earlier
+  [Socratic Lobby Consultant Desk Spec](/home/thetu/planner/docs/socratic-lobby-consultant-desk-spec.md)
+  remains an implemented precursor describing the already landed split-pane
+  shell, normalized draft-state slice, flat question components, and scroll
+  verification
+- the first live-document migration slice has now landed with a Jotai-backed
+  entity graph and retained-draft seeding
+- the next live-document slice has now landed with a continuous virtualized
+  right-pane document and jump-to-section behavior in the consultant desk
+- the cleanup-and-proof slice has now landed with compatibility-shim removal,
+  seeded performance proof, and live-insertion/scroll-anchor verification
+- the index-navigation-completion slice has now landed with Enter-to-section
+  behavior, first-answer focus, and explicit editing-section activity hold
+- the browser verification surface now includes route-level scroll-lock proof
+  and real-browser deep-jump coverage for keyboard-driven consultant-desk
+  navigation
+- the browser verification surface now also includes real-browser live-
+  insertion anchor proof against the live Jotai document graph
+- the manual verification checklist is now complete for desktop deep scrolling,
+  keyboard-only traversal, short-viewport action reachability, and
+  mobile/tablet containment
+- the live virtualized Socratic lobby is now the route baseline on
+  `planner-web`
+- a previously drafted sidebar-heavy placeholder in
+  [Planner UI Reset Phase 14: Socratic Pro Max Redesign Spec](/home/thetu/planner/docs/planner-ui-reset-phase-14-socratic-pro-max-redesign-spec.md)
+  remains deferred as a superseded precursor now that the consultant-desk spec
+  is the authoritative split-pane artifact
 
 ### Planner Visual System Refresh
 
@@ -360,16 +516,18 @@ replace the active product thread.
 
 ## Current Manual Verification Checkpoint
 
-If manual product verification is resumed for the active Socratic thread, the
-next bounded check should be:
+If manual product verification is resumed for the implemented Socratic lobby,
+the next bounded check should be:
 
 - open the Socratic lobby workspace
 - verify the active question is the clear focal point before opening any reveal
   surface
-- open the question map and confirm all active categories and question groups
-  can be inspected without serial hunting
+- confirm category-only and prompt-backed interview states both stay inside the
+  focused cascade
 - answer at least one scoped prompt and confirm the lobby explains any new,
-  moved, or resolved work inline and in the question map
+  moved, or resolved work inline
+- open the Context Shelf and confirm belief state, draft, transcript, and
+  events remain reveal-only surfaces
 - confirm build readiness surfaces from the pulse bar and focused canvas when
   the session becomes ready
 
@@ -389,28 +547,6 @@ Keep planning and implementation aligned to artifact state:
 
 The next move is:
 
-- use
-  [Planner UI Reset Route-By-Route Spec Queue](/home/thetu/planner/docs/planner-ui-reset-route-by-route-spec-queue.md)
-  as the parent planning container for the broader UI reset
-- implement `UIR-00` shell/navigation/auth first, then continue in queue order
-  through the ready child specs
-- run the live workspace manual confidence check if we want one more direct
-  product read on the new intake model
-- implement
-  [Phase 13 Socratic Focused Question Lobby Reset Spec](/home/thetu/planner/docs/phase-13-socratic-realtime-workspace-deltas-and-warm-prompt-library-spec.md)
-  when we are ready to replace the split-pane lobby with a focused question
-  canvas and revealable map/context surfaces
-- keep further visual work behind a fresh bounded spec rather than reopening
-  the completed design-system queue
-
-If Socratic work resumes in parallel, keep using the lobby/workspace
-verification checkpoint above or add a new bounded Socratic spec rather than
-reopening the completed Phase 12 slice directly.
-
-Use
-[Phase 08 Socratic Category Drill-Down Implementation](/home/thetu/planner/docs/phase-08-socratic-category-drilldown-implementation.md)
-plus
-[Phase 07 Socratic Prompt Protocol Redesign Implementation](/home/thetu/planner/docs/phase-07-socratic-prompt-protocol-redesign-implementation.md)
-plus
-[Phase 09 Socratic Recursive Category Synthesis Spec](/home/thetu/planner/docs/phase-09-socratic-recursive-category-synthesis-spec.md)
-as the source planning spine for later Socratic follow-on work.
+- begin implementation of the Socratic Session Page Redesign Phase 1
+- execute `docs/socratic-session-page-redesign-spec-p1-s1-pulse-bar.md`
+- followed by `p1-s2-focused-canvas.md` and `p1-s3-context-shelf.md`

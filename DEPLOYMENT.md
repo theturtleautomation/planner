@@ -348,6 +348,12 @@ Requires a ChatGPT Pro subscription.
    echo "hello" | codex
    ```
 
+`deploy/install.sh` also runs a service-user headless Codex probe against the
+isolated `HOME=/opt/planner/cli-home/codex` and
+`CODEX_HOME=/opt/planner/cli-home/codex/.codex`. A stale or expired Codex
+login should therefore show up during install/update as an unhealthy provider,
+not as a silent pass on `auth.json` presence alone.
+
 ### Confirming CLI Detection
 
 After installing at least one CLI, run:

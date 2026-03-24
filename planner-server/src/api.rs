@@ -2388,7 +2388,10 @@ async fn get_project_import_review(
         .imports
         .latest_review_job_for_project(project.id)
         .ok_or_else(|| import_review_not_found_response(&project_ref))?;
-    if !matches!(import_job.status, ImportStatus::ReviewPending) {
+    if !matches!(
+        import_job.status,
+        ImportStatus::ReviewPending | ImportStatus::Applied
+    ) {
         return Err(import_review_not_found_response(&project_ref));
     }
     let source_binding = state.imports.get_binding(project.id).ok_or_else(|| {

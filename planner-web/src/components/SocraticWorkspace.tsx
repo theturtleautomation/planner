@@ -1,8 +1,19 @@
-import PromptBatchPanel from './PromptBatchPanel.tsx';
+import { useMemo, useRef, useState, useEffect, type KeyboardEvent } from 'react';
+import { useShallow } from 'zustand/react/shallow';
+import VirtualizedCategoryDocument from './VirtualizedCategoryDocument.tsx';
+import {
+  useHydrateSocraticDocumentGraph,
+  useSocraticDocumentCategoryViews,
+} from '../stores/socraticDocumentStore.ts';
+import {
+  selectPromptProgress,
+  useSocraticDraftStore,
+} from '../stores/useSocraticDraftStore.ts';
 import type {
-  PlannerEvent,
   PromptEnvelope,
   PromptAnswer,
+  SocraticCategoryNode,
+  SocraticCategoryPathEntry,
   SocraticWorkspaceSnapshot,
 } from '../types.ts';
 
@@ -11,23 +22,21 @@ interface SocraticWorkspaceProps {
   currentPrompt: PromptEnvelope | null;
   pendingCategoryId: string | null;
   workspaceNotice: string | null;
-  currentStep: string | null;
-  events: PlannerEvent[];
   disabled?: boolean;
   onFocusCategory: (categoryId: string, revision: string) => void;
   onShowAll: () => void;
   onSubmitAnswers: (answers: PromptAnswer[]) => void;
   onDone: () => void;
-  isQuestionMapOpen: boolean;
-  onToggleQuestionMap: () => void;
-  isContextOpen: boolean;
-  onToggleContext: () => void;
-  contextUnreadCount: number;
-  hasDraft: boolean;
 }
 
-function latestWorkspaceEvent(events: PlannerEvent[]): string | null {
-  return events.find((event) => event.step?.startsWith('socratic.'))?.message ?? null;
+interface SidebarRowModel {
+  categoryId: string;
+  title: string;
+  depth: number;
+  telemetry: string;
+  state: 'active' | 'partial' | 'complete' | 'ready' | 'pending' | 'blocked';
+  isActive: boolean;
+  isInteractive: boolean;
 }
 
 function activePromptCategoryId(prompt: PromptEnvelope | null): string | null {
@@ -37,20 +46,84 @@ function activePromptCategoryId(prompt: PromptEnvelope | null): string | null {
     ?? null;
 }
 
-function groupStatusLabel(status: SocraticWorkspaceSnapshot['groups'][number]['status']): string {
-  switch (status) {
+function activePathCategoryId(workspace: SocraticWorkspaceSnapshot): string | null {
+  return workspace.category_snapshot.active_category_path[
+    workspace.category_snapshot.active_category_path.length - 1
+  ]?.category_id ?? null;
+}
+
+function currentPath(
+  prompt: PromptEnvelope | null,
+  workspace: SocraticWorkspaceSnapshot,
+): SocraticCategoryPathEntry[] {
+  if (prompt?.category_path?.length) return prompt.category_path;
+  return workspace.category_snapshot.active_category_path ?? [];
+}
+
+function visibleCategoryIds(workspace: SocraticWorkspaceSnapshot): Set<string> {
+  const activeId = activePathCategoryId(workspace);
+  if (!activeId) {
+    return new Set(workspace.category_snapshot.root_category_ids);
+  }
+
+  return new Set(
+    workspace.category_snapshot.nodes
+      .filter((node) => node.parent_category_id === activeId)
+      .map((node) => node.category_id),
+  );
+}
+
+function nodeStatusState(
+  node: SocraticCategoryNode,
+  isActive: boolean,
+  answeredCount: number,
+  totalCount: number,
+): SidebarRowModel['state'] {
+  if (isActive) return 'active';
+  if (totalCount > 0 && answeredCount >= totalCount) return 'complete';
+  if (answeredCount > 0) return 'partial';
+
+  switch (node.status) {
     case 'ready':
       return 'ready';
-    case 'active':
-      return 'active';
     case 'blocked':
       return 'blocked';
     case 'complete':
-      return 'resolved';
+      return 'complete';
+    case 'active':
+      return 'active';
     case 'pending':
     default:
-      return 'preparing';
+      return 'pending';
   }
+}
+
+function rowTelemetry(
+  node: SocraticCategoryNode,
+  answeredCount: number,
+  totalCount: number,
+): string {
+  if (totalCount > 0) {
+    return `[ ${answeredCount}/${totalCount} ]`;
+  }
+  if (node.has_children) {
+    return `[ ${node.item_count_hint} ]`;
+  }
+  return '[ 0/1 ]';
+}
+
+function formatMappedDimensions(node: SocraticCategoryNode | null): string | null {
+  if (!node || node.mapped_dimensions.length === 0) return null;
+  return node.mapped_dimensions
+    .map((dimension) => {
+      if (typeof dimension === 'string') return dimension;
+      const keys = Object.keys(dimension);
+      if (keys.length === 1 && typeof dimension[keys[0]] === 'string') {
+        return String(dimension[keys[0]]);
+      }
+      return JSON.stringify(dimension);
+    })
+    .join(' | ');
 }
 
 export default function SocraticWorkspace({
@@ -58,516 +131,351 @@ export default function SocraticWorkspace({
   currentPrompt,
   pendingCategoryId,
   workspaceNotice,
-  currentStep,
-  events,
   disabled = false,
   onFocusCategory,
   onShowAll,
   onSubmitAnswers,
   onDone,
-  isQuestionMapOpen,
-  onToggleQuestionMap,
-  isContextOpen,
-  onToggleContext,
-  contextUnreadCount,
-  hasDraft,
 }: SocraticWorkspaceProps) {
+  const rowRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const deskBodyRef = useRef<HTMLDivElement | null>(null);
+  useHydrateSocraticDocumentGraph(workspace, currentPrompt);
+  const draftProgress = useSocraticDraftStore(
+    useShallow((state) => selectPromptProgress(state, currentPrompt)),
+  );
+  const documentCategories = useSocraticDocumentCategoryViews();
+  const [jumpTargetCategoryId, setJumpTargetCategoryId] = useState<string | null>(null);
+  const [visibleCategoryId, setVisibleCategoryId] = useState<string | null>(null);
+  const [previewCategoryId, setPreviewCategoryId] = useState<string | null>(null);
+  const [focusTargetCategoryId, setFocusTargetCategoryId] = useState<string | null>(null);
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
+
   const activeCategoryId = activePromptCategoryId(currentPrompt);
-  const focusedCategoryId = pendingCategoryId ?? workspace.focused_category_id ?? activeCategoryId ?? workspace.groups.find((group) => group.is_focused)?.category_id ?? workspace.groups[0]?.category_id ?? null;
-  const focusedGroup = focusedCategoryId
-    ? workspace.groups.find((group) => group.category_id === focusedCategoryId) ?? null
+  const activePathFocusId = activePathCategoryId(workspace);
+  const focusedCategoryId = pendingCategoryId
+    ?? workspace.focused_category_id
+    ?? activeCategoryId
+    ?? activePathFocusId
+    ?? workspace.groups.find((group) => group.is_focused)?.category_id
+    ?? workspace.groups[0]?.category_id
+    ?? null;
+
+  const path = currentPath(currentPrompt, workspace);
+  const visibleIds = useMemo(() => visibleCategoryIds(workspace), [workspace]);
+  const pathIds = useMemo(() => new Set(path.map((entry) => entry.category_id)), [path]);
+  const groupMap = useMemo(
+    () => new Map(workspace.groups.map((group) => [group.category_id, group])),
+    [workspace.groups],
+  );
+  const categoryViews = documentCategories.length > 0
+    ? documentCategories
+    : workspace.category_snapshot.nodes.map((node) => ({
+      categoryId: node.category_id,
+      parentCategoryId: node.parent_category_id ?? null,
+      title: node.title,
+      summary: node.summary,
+      status: node.status,
+      depth: node.depth,
+      mappedDimensions: node.mapped_dimensions,
+      hasChildren: node.has_children,
+      hasPromptReady: node.has_prompt_ready,
+      itemCountHint: node.item_count_hint,
+      isNewlyAvailable: workspace.category_snapshot.newly_available_category_ids.includes(node.category_id),
+      questionIds: [],
+      latestPromptId: null,
+      latestPromptTitle: null,
+      latestPromptInstructions: null,
+      answeredCount: 0,
+      totalCount: Math.max(node.item_count_hint, node.has_prompt_ready ? 1 : 0),
+    }));
+  const focusedCategoryView = focusedCategoryId
+    ? categoryViews.find((category) => category.categoryId === focusedCategoryId) ?? null
     : null;
-  const readyCount = workspace.groups.filter((group) => group.status === 'ready' || group.status === 'active').length;
-  const blockedCount = workspace.groups.filter((group) => group.status === 'blocked').length;
-  const resolvedCount = workspace.groups.filter((group) => group.status === 'complete').length;
-  const changedCount = workspace.groups.filter((group) => group.is_new).length;
-  const preparingCount = pendingCategoryId
-    ? 1
-    : workspace.groups.filter((group) => group.status === 'pending').length;
-  const statusCopy = workspace.branch_notice
-    ?? workspaceNotice
-    ?? latestWorkspaceEvent(events)
-    ?? currentStep
-    ?? workspace.category_snapshot.build_readiness_message;
-  const pulseLabel = workspace.category_snapshot.build_ready
-    ? 'Build ready'
-    : preparingCount > 0
-      ? 'Preparing'
-      : workspace.branch_notice || workspaceNotice
-        ? 'Changed'
-        : readyCount > 0
-          ? 'Ready now'
-          : 'Waiting';
-  const isFocusedGroupPreparing = Boolean(
-    focusedGroup && pendingCategoryId === focusedGroup.category_id && activeCategoryId !== focusedGroup.category_id,
+  const displayCategoryId = editingCategoryId
+    ?? previewCategoryId
+    ?? visibleCategoryId
+    ?? focusedCategoryId;
+  const displayCategoryView = displayCategoryId
+    ? categoryViews.find((category) => category.categoryId === displayCategoryId) ?? null
+    : null;
+  const focusedNode = focusedCategoryId
+    ? workspace.category_snapshot.nodes.find((node) => node.category_id === focusedCategoryId) ?? null
+    : null;
+  const focusedGroup = focusedCategoryId ? groupMap.get(focusedCategoryId) ?? null : null;
+  const displayNode = displayCategoryId
+    ? workspace.category_snapshot.nodes.find((node) => node.category_id === displayCategoryId) ?? null
+    : null;
+  const displayGroup = displayCategoryId ? groupMap.get(displayCategoryId) ?? null : null;
+  const deskTitle = 'Socratic workspace';
+  const deskSummary = displayCategoryView?.title
+    ?? displayNode?.title
+    ?? displayGroup?.title
+    ?? focusedNode?.title
+    ?? focusedGroup?.title
+    ?? currentPrompt?.title
+    ?? null;
+  const mappedDimensions = formatMappedDimensions(displayNode ?? focusedNode ?? null);
+  const activeQuestionCount = currentPrompt && activeCategoryId === focusedCategoryId
+    ? currentPrompt.items.length
+    : Math.max(
+      displayCategoryView?.totalCount ?? focusedCategoryView?.totalCount ?? 0,
+      focusedGroup?.question_count ?? 0,
+      focusedNode?.has_prompt_ready ? focusedNode.item_count_hint : 0,
+    );
+  const isPromptActive = Boolean(currentPrompt && activeCategoryId === displayCategoryId);
+  const displayGroupPreviewCount = displayGroup?.preview_items?.length ?? 0;
+  const displayRetainedQuestionCount = displayCategoryView?.questionIds.length ?? 0;
+  const deskHasLocalContent = Boolean(
+    isPromptActive
+    || displayRetainedQuestionCount > 0
+    || displayGroupPreviewCount > 0,
   );
-  const isFocusedGroupActive = Boolean(
-    focusedGroup && currentPrompt && activeCategoryId === focusedGroup.category_id,
+  const deskIsPreparing = Boolean(
+    displayCategoryId
+    && pendingCategoryId === displayCategoryId
+    && activeCategoryId !== displayCategoryId,
+  ) && !deskHasLocalContent;
+
+  const sidebarRows = useMemo<SidebarRowModel[]>(() => (
+    categoryViews.map((category) => {
+      const isActive = displayCategoryId === category.categoryId;
+      const isInteractive = category.hasPromptReady
+        || visibleIds.has(category.categoryId)
+        || pathIds.has(category.categoryId)
+        || isActive;
+
+      return {
+        categoryId: category.categoryId,
+        title: category.title,
+        depth: category.depth,
+        telemetry: rowTelemetry({
+          category_id: category.categoryId,
+          parent_category_id: category.parentCategoryId ?? null,
+          title: category.title,
+          summary: category.summary,
+          status: category.status,
+          depth: category.depth,
+          mapped_dimensions: category.mappedDimensions,
+          has_children: category.hasChildren,
+          has_prompt_ready: category.hasPromptReady,
+          item_count_hint: category.itemCountHint,
+        }, category.answeredCount, category.totalCount),
+        state: nodeStatusState({
+          category_id: category.categoryId,
+          parent_category_id: category.parentCategoryId ?? null,
+          title: category.title,
+          summary: category.summary,
+          status: category.status,
+          depth: category.depth,
+          mapped_dimensions: category.mappedDimensions,
+          has_children: category.hasChildren,
+          has_prompt_ready: category.hasPromptReady,
+          item_count_hint: category.itemCountHint,
+        }, isActive, category.answeredCount, category.totalCount),
+        isActive,
+        isInteractive,
+      };
+    })
+  ), [
+    categoryViews,
+    displayCategoryId,
+    focusedCategoryId,
+    pathIds,
+    visibleIds,
+  ]);
+
+  const interactiveRowIds = useMemo(
+    () => sidebarRows.filter((row) => row.isInteractive).map((row) => row.categoryId),
+    [sidebarRows],
   );
-  const canvasHeading = workspace.category_snapshot.build_ready
-    ? 'All required Socratic work is complete.'
-    : focusedGroup?.title ?? 'Preparing the next question set';
-  const canvasSummary = workspace.branch_notice
-    ?? focusedGroup?.summary
-    ?? workspace.category_snapshot.build_readiness_message;
+
+  useEffect(() => {
+    if (!jumpTargetCategoryId) return;
+    if (visibleCategoryId === jumpTargetCategoryId) {
+      setJumpTargetCategoryId(null);
+    }
+  }, [jumpTargetCategoryId, visibleCategoryId]);
+
+  useEffect(() => {
+    if (!previewCategoryId) return;
+    if (visibleCategoryId === previewCategoryId) {
+      setPreviewCategoryId(null);
+    }
+  }, [previewCategoryId, visibleCategoryId]);
+
+  const handleRowKeyDown = (categoryId: string, event: KeyboardEvent<HTMLButtonElement>): void => {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+
+      const currentIndex = interactiveRowIds.findIndex((id) => id === categoryId);
+      if (currentIndex === -1) return;
+
+      const nextIndex = event.key === 'ArrowDown'
+        ? Math.min(currentIndex + 1, interactiveRowIds.length - 1)
+        : Math.max(currentIndex - 1, 0);
+      const nextId = interactiveRowIds[nextIndex];
+      rowRefs.current[nextId]?.focus();
+      setEditingCategoryId(null);
+      setPreviewCategoryId(nextId);
+      setJumpTargetCategoryId(nextId);
+      return;
+    }
+
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      setEditingCategoryId(null);
+      setPreviewCategoryId(categoryId);
+      setJumpTargetCategoryId(categoryId);
+      setFocusTargetCategoryId(categoryId);
+      if (categoryId !== focusedCategoryId) {
+        onFocusCategory(categoryId, workspace.category_snapshot.revision);
+      }
+    }
+  };
+
+  const handleFocusCategory = (categoryId: string): void => {
+    setEditingCategoryId(null);
+    setPreviewCategoryId(categoryId);
+    setJumpTargetCategoryId(categoryId);
+    if (categoryId !== focusedCategoryId) {
+      onFocusCategory(categoryId, workspace.category_snapshot.revision);
+    }
+  };
 
   return (
-    <section
-      style={{
-        position: 'relative',
-        display: 'grid',
-        gap: '14px',
-        minHeight: 0,
-        background: 'var(--color-surface)',
-        boxShadow: 'var(--shadow-sm)',
-        padding: '18px',
-      }}
-    >
-      <header
-        style={{
-          display: 'grid',
-          gap: '12px',
-          padding: '14px 16px',
-          borderRadius: '18px',
-          background: 'var(--color-surface-2)',
-        }}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
-          <div style={{ display: 'grid', gap: '6px' }}>
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-              <span
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  padding: '5px 10px',
-                  borderRadius: '999px',
-                  background: workspace.category_snapshot.build_ready
-                    ? 'rgba(109, 170, 69, 0.14)'
-                    : pulseLabel === 'Preparing'
-                      ? 'rgba(255, 215, 0, 0.12)'
-                      : pulseLabel === 'Changed'
-                        ? 'rgba(0, 212, 255, 0.12)'
-                        : 'rgba(136, 136, 160, 0.14)',
-                  color: workspace.category_snapshot.build_ready
-                    ? 'var(--color-success)'
-                    : pulseLabel === 'Preparing'
-                      ? 'var(--color-gold)'
-                      : pulseLabel === 'Changed'
-                        ? 'var(--color-primary)'
-                        : 'var(--color-text)',
-                  fontSize: '10px',
-                  fontWeight: 700,
-                  letterSpacing: '0.08em',
-                  textTransform: 'uppercase',
-                }}
-              >
-                {pulseLabel}
-              </span>
-              <span
-                style={{
-                  fontSize: '11px',
-                  fontWeight: 700,
-                  letterSpacing: '0.08em',
-                  textTransform: 'uppercase',
-                  color: 'var(--color-primary)',
-                }}
-              >
-                Focused question lobby
-              </span>
-            </div>
-            <h3
-              style={{
-                fontFamily: 'var(--font-display)',
-                fontSize: 'var(--text-lg)',
-                lineHeight: 1.1,
-                margin: 0,
-              }}
-            >
-              {canvasHeading}
-            </h3>
-            <p style={{ margin: 0, color: 'var(--color-text-muted)', fontSize: '12px', lineHeight: 1.5 }}>
-              {statusCopy}
-            </p>
-          </div>
+    <section className="socratic-consultant-desk" aria-label="Socratic lobby consultant desk">
+      <aside className="socratic-map" aria-label="Thread index">
+        <div className="socratic-map__header">
+          <span className="socratic-map__eyebrow">Thread index</span>
+          <span className="socratic-map__summary">
+            {workspace.category_snapshot.nodes.length} active threads
+          </span>
+        </div>
 
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            <button
-              type="button"
-              onClick={onToggleQuestionMap}
-              disabled={disabled}
-              aria-expanded={isQuestionMapOpen}
-              aria-label="Toggle question map"
-              style={{
-                background: isQuestionMapOpen ? 'var(--color-primary-highlight)' : 'var(--color-surface)',
-                boxShadow: 'inset 0 0 0 1px var(--color-ghost-border)',
-                borderRadius: '999px',
-                color: isQuestionMapOpen ? 'var(--color-primary)' : 'var(--color-text)',
-                fontSize: '11px',
-                fontWeight: 700,
-                letterSpacing: '0.04em',
-                padding: '6px 12px',
-              }}
-            >
-              {isQuestionMapOpen ? 'Hide question map' : 'Question map'}
-            </button>
-            <button
-              type="button"
-              onClick={onToggleContext}
-              disabled={disabled}
-              aria-expanded={isContextOpen}
-              aria-label="Toggle context shelf"
-              style={{
-                background: isContextOpen ? 'var(--color-primary-highlight)' : 'var(--color-surface)',
-                boxShadow: 'inset 0 0 0 1px var(--color-ghost-border)',
-                borderRadius: '999px',
-                color: isContextOpen ? 'var(--color-primary)' : 'var(--color-text)',
-                fontSize: '11px',
-                fontWeight: 700,
-                letterSpacing: '0.04em',
-                padding: '6px 12px',
-              }}
-            >
-              Context
-              {(contextUnreadCount > 0 || hasDraft) && !isContextOpen && (
-                <span style={{ marginLeft: '6px', color: 'var(--color-primary)' }}>
-                  {contextUnreadCount > 0 ? `(${contextUnreadCount})` : 'new'}
-                </span>
-              )}
-            </button>
+        <div className="socratic-map__list" role="list">
+          {sidebarRows.map((row) => (
+            <div key={row.categoryId} role="listitem">
+              <button
+                ref={(element) => {
+                  rowRefs.current[row.categoryId] = element;
+                }}
+                type="button"
+                data-category-id={row.categoryId}
+                className={[
+                  'socratic-map-row',
+                  `is-${row.state}`,
+                  row.isActive ? 'is-active' : '',
+                ].filter(Boolean).join(' ')}
+                style={{ ['--socratic-row-depth' as string]: String(row.depth) }}
+                onClick={() => handleFocusCategory(row.categoryId)}
+                onKeyDown={(event) => handleRowKeyDown(row.categoryId, event)}
+                disabled={disabled || !row.isInteractive}
+                aria-current={row.isActive ? 'true' : undefined}
+                aria-label={`${row.title} ${row.telemetry}`}
+              >
+                <span className="socratic-map-row__indicator" aria-hidden="true" />
+                <span className="socratic-map-row__label">{row.title}</span>
+                <span className="socratic-map-row__telemetry">{row.telemetry}</span>
+              </button>
+            </div>
+          ))}
+        </div>
+
+        {workspace.category_snapshot.build_ready && (
+          <div className="socratic-map__footer">
             <button
               type="button"
               onClick={onDone}
-              disabled={disabled || !workspace.category_snapshot.build_ready}
-              style={{
-                background: workspace.category_snapshot.build_ready ? 'var(--color-success)' : 'transparent',
-                boxShadow: workspace.category_snapshot.build_ready
-                  ? 'var(--shadow-sm)'
-                  : 'inset 0 0 0 1px var(--color-divider)',
-                borderRadius: '999px',
-                color: workspace.category_snapshot.build_ready ? 'var(--color-bg)' : 'var(--color-text-muted)',
-                fontSize: '11px',
-                fontWeight: 700,
-                letterSpacing: '0.04em',
-                padding: '6px 12px',
-              }}
+              disabled={disabled}
+              className="socratic-action-button primary"
             >
-              Start building
+              Commit plan
             </button>
           </div>
-        </div>
-
-        <div className="directory-row-meta">
-          <span className="utility-pill">{readyCount} ready now</span>
-          {preparingCount > 0 && <span className="utility-pill">{preparingCount} preparing</span>}
-          {changedCount > 0 && <span className="utility-pill">{changedCount} changed</span>}
-          {blockedCount > 0 && <span className="utility-pill">{blockedCount} blocked</span>}
-          {resolvedCount > 0 && <span className="utility-pill">{resolvedCount} resolved</span>}
-        </div>
-      </header>
-
-      <div
-        style={{
-          display: 'grid',
-          minHeight: 0,
-        }}
-      >
-        {!focusedGroup ? (
-          <div
-            style={{
-              borderRadius: '20px',
-              background: 'var(--color-surface-2)',
-              boxShadow: 'inset 0 0 0 1px var(--color-divider)',
-              padding: '22px',
-              color: 'var(--color-text-muted)',
-              fontSize: '13px',
-              lineHeight: 1.6,
-            }}
-          >
-            {workspace.category_snapshot.build_ready
-              ? 'No active question groups remain. Build can start from this focused lobby.'
-              : 'Planner is preparing the next branch. Keep the current lobby focused here and open Question map if you want to inspect the wider category state.'}
-          </div>
-        ) : (
-          <section
-            style={{
-              display: 'grid',
-              gap: '14px',
-              padding: '18px',
-              borderRadius: '20px',
-              background: 'linear-gradient(180deg, color-mix(in srgb, var(--color-surface-2) 86%, transparent), var(--color-surface))',
-              boxShadow: 'inset 0 0 0 1px var(--color-divider)',
-            }}
-          >
-            <header style={{ display: 'grid', gap: '8px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
-                <div style={{ display: 'grid', gap: '6px' }}>
-                  <span style={{ fontSize: '11px', color: 'var(--color-primary)', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-                    {groupStatusLabel(focusedGroup.status)}
-                  </span>
-                  <h4 style={{ margin: 0, fontSize: '20px', lineHeight: 1.15 }}>{focusedGroup.title}</h4>
-                  <p style={{ margin: 0, color: 'var(--color-text-muted)', fontSize: '13px', lineHeight: 1.6 }}>
-                    {canvasSummary}
-                  </p>
-                </div>
-                <div className="directory-row-meta">
-                  {focusedGroup.is_new && <span className="utility-pill">new branch</span>}
-                  <span className="utility-pill">{focusedGroup.question_count} active question{focusedGroup.question_count === 1 ? '' : 's'}</span>
-                </div>
-              </div>
-              {workspace.branch_notice && (
-                <div
-                  style={{
-                    borderRadius: '14px',
-                    padding: '12px 14px',
-                    background: 'color-mix(in srgb, var(--color-primary-highlight) 72%, transparent)',
-                    color: 'var(--color-text)',
-                    fontSize: '12px',
-                    lineHeight: 1.55,
-                  }}
-                >
-                  {workspace.branch_notice}
-                </div>
-              )}
-            </header>
-
-            {isFocusedGroupPreparing ? (
-              <div
-                style={{
-                  display: 'grid',
-                  gap: '10px',
-                  borderRadius: '16px',
-                  background: 'var(--color-surface-offset)',
-                  padding: '18px',
-                }}
-              >
-                <span style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--color-gold)' }}>
-                  Preparing next questions
-                </span>
-                <p style={{ margin: 0, color: 'var(--color-text-muted)', fontSize: '13px', lineHeight: 1.6 }}>
-                  Planner is synthesizing the next question set for this branch. The canvas stays focused here while the question map continues to reflect wider category changes.
-                </p>
-                <div style={{ display: 'grid', gap: '8px' }}>
-                  {[0, 1, 2].map((index) => (
-                    <div
-                      key={index}
-                      style={{
-                        height: '48px',
-                        borderRadius: '12px',
-                        background: 'linear-gradient(90deg, color-mix(in srgb, var(--color-surface-dynamic) 45%, transparent), color-mix(in srgb, var(--color-surface-raised) 75%, transparent), color-mix(in srgb, var(--color-surface-dynamic) 45%, transparent))',
-                        backgroundSize: '180% 100%',
-                        animation: 'workspacePulse 1.2s ease-in-out infinite',
-                      }}
-                    />
-                  ))}
-                </div>
-              </div>
-            ) : isFocusedGroupActive && currentPrompt ? (
-              <PromptBatchPanel
-                prompt={currentPrompt}
-                onSubmit={(_promptId, answers) => onSubmitAnswers(answers)}
-                disabled={disabled}
-                onDone={onDone}
-              />
-            ) : (
-              <div style={{ display: 'grid', gap: '10px' }}>
-                <div
-                  style={{
-                    borderRadius: '16px',
-                    background: 'var(--color-surface-offset)',
-                    padding: '16px',
-                    display: 'grid',
-                    gap: '8px',
-                  }}
-                >
-                  <span style={{ fontSize: '11px', color: 'var(--color-primary)', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-                    Focus transition
-                  </span>
-                  <p style={{ margin: 0, color: 'var(--color-text)', fontSize: '13px', lineHeight: 1.6 }}>
-                    {workspace.category_snapshot.build_ready
-                      ? 'Required question work is complete. Review context if needed, then start building.'
-                      : 'This branch is in view even though the active prompt has moved. Use the question map to inspect all active groups or return the lobby to the server-selected branch.'}
-                  </p>
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                    <button
-                      type="button"
-                      onClick={() => onFocusCategory(focusedGroup.category_id, workspace.category_snapshot.revision)}
-                      disabled={disabled}
-                      style={{
-                        background: 'var(--color-primary-highlight)',
-                        boxShadow: 'inset 0 0 0 1px var(--color-ghost-border)',
-                        borderRadius: '999px',
-                        color: 'var(--color-primary)',
-                        fontSize: '11px',
-                        fontWeight: 700,
-                        padding: '6px 12px',
-                      }}
-                    >
-                      Focus this branch
-                    </button>
-                    <button
-                      type="button"
-                      onClick={onShowAll}
-                      disabled={disabled}
-                      style={{
-                        background: 'var(--color-surface)',
-                        boxShadow: 'inset 0 0 0 1px var(--color-ghost-border)',
-                        borderRadius: '999px',
-                        color: 'var(--color-text)',
-                        fontSize: '11px',
-                        fontWeight: 700,
-                        padding: '6px 12px',
-                      }}
-                    >
-                      Follow server focus
-                    </button>
-                  </div>
-                </div>
-                <div style={{ display: 'grid', gap: '8px' }}>
-                  {focusedGroup.preview_items.map((item) => (
-                    <div
-                      key={item.item_id}
-                      style={{
-                        borderRadius: '14px',
-                        background: 'var(--color-surface-offset)',
-                        padding: '14px 16px',
-                        display: 'grid',
-                        gap: '4px',
-                      }}
-                    >
-                      <span style={{ fontSize: '10px', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                        {item.kind.replace('_', ' ')}
-                      </span>
-                      <span style={{ fontSize: '13px', lineHeight: 1.55 }}>{item.text}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </section>
         )}
-      </div>
+      </aside>
 
-      {isQuestionMapOpen && (
-        <aside
-          aria-label="Question map"
-          style={{
-            position: 'absolute',
-            top: '92px',
-            right: '18px',
-            width: 'min(420px, calc(100vw - 48px))',
-            maxHeight: 'calc(100% - 110px)',
-            overflowY: 'auto',
-            display: 'grid',
-            gap: '12px',
-            padding: '16px',
-            borderRadius: '20px',
-            background: 'color-mix(in srgb, var(--color-surface) 96%, transparent)',
-            boxShadow: 'var(--shadow-lg)',
-            border: '1px solid var(--color-divider)',
-            zIndex: 20,
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'flex-start' }}>
-            <div style={{ display: 'grid', gap: '4px' }}>
-              <span style={{ fontSize: '11px', color: 'var(--color-primary)', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-                Question map
-              </span>
-              <h4 style={{ margin: 0, fontSize: '18px', lineHeight: 1.15 }}>All active question groups</h4>
-              <p style={{ margin: 0, color: 'var(--color-text-muted)', fontSize: '12px', lineHeight: 1.5 }}>
-                Inspect dynamic categories and move the focused canvas without serial branch hunting.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={onToggleQuestionMap}
-              style={{
-                background: 'var(--color-surface-2)',
-                boxShadow: 'inset 0 0 0 1px var(--color-ghost-border)',
-                borderRadius: '999px',
-                color: 'var(--color-text)',
-                fontSize: '11px',
-                fontWeight: 700,
-                padding: '6px 12px',
-              }}
-            >
-              Close
-            </button>
+      <section className="socratic-desk" aria-label="Consultant desk">
+        <header className="socratic-desk__header">
+          <div className="socratic-desk__title-block">
+            <span className="socratic-terminal-kicker">
+              {deskIsPreparing ? 'Preparing' : 'Workspace'}
+            </span>
+            <h2 className="socratic-desk__title">{deskTitle}</h2>
           </div>
 
-          {workspace.groups.map((group) => {
-            const isFocused = focusedCategoryId === group.category_id;
-            const isPreparing = pendingCategoryId === group.category_id && activeCategoryId !== group.category_id;
-            return (
-              <section
-                key={group.category_id}
-                style={{
-                  display: 'grid',
-                  gap: '8px',
-                  padding: '14px',
-                  borderRadius: '16px',
-                  background: isFocused ? 'var(--color-primary-highlight)' : 'var(--color-surface-2)',
-                  boxShadow: isFocused ? 'var(--shadow-sm)' : 'inset 0 0 0 1px var(--color-divider)',
-                }}
+          <div className="socratic-desk__meta" aria-label="Planner context">
+            {deskSummary && (
+              <span className="socratic-desk__meta-line">
+                Viewing: {deskSummary}
+              </span>
+            )}
+            {mappedDimensions && (
+              <span className="socratic-desk__meta-line">
+                Mapped dimensions: {mappedDimensions}
+              </span>
+            )}
+              <span className="socratic-desk__meta-line">
+              {isPromptActive
+                ? `Draft progress ${draftProgress.answeredCount}/${draftProgress.totalCount}`
+                : `${activeQuestionCount} question${activeQuestionCount === 1 ? '' : 's'} in play`}
+            </span>
+          </div>
+        </header>
+
+        {(workspaceNotice || workspace.branch_notice) && (
+          <div className="socratic-cascade-notice" role="status">
+            {workspace.branch_notice || workspaceNotice}
+          </div>
+        )}
+
+        <div ref={deskBodyRef} className="socratic-desk__body">
+          {workspace.groups.length === 0 && workspace.category_snapshot.build_ready ? (
+            <div className="socratic-build-hero">
+              <span className="socratic-terminal-kicker">Build ready</span>
+              <h3 className="socratic-build-title">The plan is settled. Move into delivery.</h3>
+              <p className="socratic-build-copy">
+                The interview has converged. Open the context shelf for a final check, or commit the plan now.
+              </p>
+              <button
+                type="button"
+                onClick={onDone}
+                disabled={disabled}
+                className="socratic-action-button primary large"
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'flex-start' }}>
-                  <div style={{ display: 'grid', gap: '5px' }}>
-                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: '13px', fontWeight: 700 }}>{group.title}</span>
-                      <span className="utility-pill">{groupStatusLabel(group.status)}</span>
-                      {group.is_new && <span className="utility-pill">new</span>}
-                      {isPreparing && <span className="utility-pill">preparing</span>}
-                    </div>
-                    <p style={{ margin: 0, color: 'var(--color-text-muted)', fontSize: '12px', lineHeight: 1.5 }}>
-                      {group.summary}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onFocusCategory(group.category_id, workspace.category_snapshot.revision);
-                      onToggleQuestionMap();
-                    }}
-                    disabled={disabled}
-                    style={{
-                      background: isFocused ? 'var(--color-surface)' : 'var(--color-primary-highlight)',
-                      boxShadow: 'inset 0 0 0 1px var(--color-ghost-border)',
-                      borderRadius: '999px',
-                      color: isFocused ? 'var(--color-text)' : 'var(--color-primary)',
-                      fontSize: '11px',
-                      fontWeight: 700,
-                      padding: '6px 12px',
-                    }}
-                  >
-                    {isFocused ? 'Focused' : 'Focus'}
-                  </button>
-                </div>
-                <div className="directory-row-meta">
-                  <span className="utility-pill">{group.question_count} question{group.question_count === 1 ? '' : 's'}</span>
-                </div>
-                <div style={{ display: 'grid', gap: '6px' }}>
-                  {group.preview_items.map((item) => (
-                    <div
-                      key={item.item_id}
-                      style={{
-                        borderRadius: '12px',
-                        background: 'var(--color-surface-offset)',
-                        padding: '10px 12px',
-                        display: 'grid',
-                        gap: '4px',
-                      }}
-                    >
-                      <span style={{ fontSize: '10px', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                        {item.kind.replace('_', ' ')}
-                      </span>
-                      <span style={{ fontSize: '12px', lineHeight: 1.5 }}>{item.text}</span>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            );
-          })}
-        </aside>
-      )}
+                Commit plan
+              </button>
+            </div>
+          ) : (
+            <VirtualizedCategoryDocument
+              scrollElementRef={deskBodyRef}
+              categories={categoryViews}
+              currentPrompt={currentPrompt}
+              pendingCategoryId={pendingCategoryId}
+              branchNotice={workspace.branch_notice ?? workspaceNotice}
+              focusedCategoryId={focusedCategoryId}
+              groupMap={groupMap}
+              jumpTargetCategoryId={jumpTargetCategoryId}
+              focusTargetCategoryId={focusTargetCategoryId}
+              disabled={disabled}
+              onVisibleCategoryChange={setVisibleCategoryId}
+              onFocusTargetHandled={(categoryId) => {
+                if (focusTargetCategoryId === categoryId) {
+                  setFocusTargetCategoryId(null);
+                  setEditingCategoryId(categoryId);
+                }
+              }}
+              onAnswerFocus={(categoryId) => {
+                setEditingCategoryId(categoryId);
+                setPreviewCategoryId(null);
+              }}
+              onSubmitAnswers={onSubmitAnswers}
+              onDone={workspace.category_snapshot.build_ready ? onDone : undefined}
+              onShowAll={onShowAll}
+            />
+          )}
+        </div>
+      </section>
     </section>
   );
 }

@@ -1,12 +1,3 @@
-/**
- * SessionStatusHeader — thin 28px status bar that sits above ConvergenceBar/PipelineBar.
- *
- * Shows:
- * - Left: status dot (green/yellow/red) + current step + elapsed time since step started
- * - Middle: LLM call count
- * - Error state: shows error message in red
- */
-
 import { useEffect, useRef, useState } from 'react';
 import type { PlannerEvent } from '../types.ts';
 import { formatWorkflowStep } from '../lib/workflowStatus.ts';
@@ -20,6 +11,7 @@ export interface SessionHeaderAction {
   disabled?: boolean;
   title?: string;
   tone?: SessionHeaderActionTone;
+  isPrimary?: boolean;
 }
 
 export interface SessionEventSummary {
@@ -30,6 +22,9 @@ export interface SessionEventSummary {
 }
 
 export interface SessionStatusHeaderProps {
+  sessionTitle?: string | null;
+  sessionId?: string | null;
+  isArchived?: boolean;
   currentStep: string | null;
   events: PlannerEvent[];
   isError: boolean;
@@ -39,22 +34,7 @@ export interface SessionStatusHeaderProps {
   onOpenEvents?: () => void;
 }
 
-/** Number of LLM call completions — events from llm_router with step starting with "llm.call.complete" */
-function countLlmCalls(events: PlannerEvent[]): number {
-  return events.filter(
-    (e) => e.source === 'llm_router' && (e.step?.startsWith('llm.call.complete') ?? false),
-  ).length;
-}
-
-/** Determine status dot color:
- * - red if isError or any error event
- * - yellow if any warn event
- * - green otherwise
- */
-function statusDotColor(
-  events: PlannerEvent[],
-  isError: boolean,
-): string {
+function statusDotColor(events: PlannerEvent[], isError: boolean): string {
   if (isError) return 'var(--color-error)';
   const hasError = events.some((e) => e.level === 'error');
   if (hasError) return 'var(--color-error)';
@@ -63,7 +43,6 @@ function statusDotColor(
   return 'var(--color-success)';
 }
 
-/** Format elapsed milliseconds as a short human string: "0s", "12s", "2m 5s" */
 function formatElapsed(ms: number): string {
   if (ms < 1000) return '0s';
   const s = Math.floor(ms / 1000);
@@ -74,6 +53,8 @@ function formatElapsed(ms: number): string {
 }
 
 export default function SessionStatusHeader({
+  sessionTitle,
+  isArchived,
   currentStep,
   events,
   isError,
@@ -82,12 +63,10 @@ export default function SessionStatusHeader({
   eventSummary,
   onOpenEvents,
 }: SessionStatusHeaderProps) {
-  // Track when the current step last changed so we can show elapsed time
   const stepStartRef = useRef<number>(Date.now());
   const prevStepRef = useRef<string | null>(null);
   const [elapsed, setElapsed] = useState(0);
 
-  // Reset timer when step changes
   useEffect(() => {
     if (currentStep !== prevStepRef.current) {
       prevStepRef.current = currentStep;
@@ -96,7 +75,6 @@ export default function SessionStatusHeader({
     }
   }, [currentStep]);
 
-  // Tick elapsed time every second
   useEffect(() => {
     const id = setInterval(() => {
       setElapsed(Date.now() - stepStartRef.current);
@@ -105,258 +83,135 @@ export default function SessionStatusHeader({
   }, []);
 
   const dotColor = statusDotColor(events, isError);
-  const llmCalls = countLlmCalls(events);
   const readableStep = formatWorkflowStep(currentStep);
-  const derivedSummary = eventSummary ?? {
-    total: events.length,
-    warnings: events.filter((event) => event.level === 'warn').length,
-    errors: events.filter((event) => event.level === 'error').length,
-    unread: 0,
-  };
 
   return (
     <div
       style={{
-        minHeight: '36px',
-        background: 'var(--color-surface)',
-        borderBottom: '1px solid var(--color-border)',
         display: 'flex',
         alignItems: 'center',
-        flexShrink: 0,
-        padding: '4px 12px',
-        gap: '10px',
-        overflow: 'hidden',
+        justifyContent: 'space-between',
+        padding: '12px 24px',
+        background: 'rgba(20, 20, 22, 0.65)',
+        backdropFilter: 'blur(20px)',
+        WebkitBackdropFilter: 'blur(20px)',
+        borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+        boxShadow: '0 4px 24px rgba(0,0,0,0.2)',
+        position: 'sticky',
+        top: 0,
+        zIndex: 50,
+        gap: '16px',
         flexWrap: 'wrap',
       }}
     >
-      {/* ── Left: status dot + step + elapsed ── */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '7px',
-          flex: 1,
-          minWidth: 0,
-          overflow: 'hidden',
-        }}
-      >
-        {/* Status dot */}
-        <span
-          title={isError ? 'Error' : dotColor === 'var(--color-gold)' ? 'Warning' : 'OK'}
-          style={{
-            width: '6px',
-            height: '6px',
-            borderRadius: '50%',
-            background: dotColor,
-            flexShrink: 0,
-            boxShadow: `0 0 4px ${dotColor}`,
-            transition: 'background 0.3s',
-          }}
-        />
+      {/* LEFT: Title & Status */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flex: 1, minWidth: 0 }}>
+        {sessionTitle && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ color: 'var(--color-text)', fontSize: '15px', fontWeight: 600, letterSpacing: '0.02em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '300px' }}>
+              {sessionTitle}
+            </span>
+            {isArchived && (
+              <span style={{ background: 'rgba(255,255,255,0.1)', color: 'var(--color-text-muted)', fontSize: '10px', fontWeight: 700, padding: '3px 8px', borderRadius: '999px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Archived
+              </span>
+            )}
+          </div>
+        )}
 
-        {/* Error message (if error state) */}
-        {isError && errorMessage ? (
+        <div style={{ width: '1px', height: '16px', background: 'rgba(255,255,255,0.1)' }} />
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
           <span
             style={{
-              fontSize: '11px',
-              color: 'var(--color-error)',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
+              width: '8px',
+              height: '8px',
+              borderRadius: '50%',
+              background: dotColor,
+              boxShadow: `0 0 8px ${dotColor}`,
+              flexShrink: 0,
             }}
-            title={errorMessage}
-          >
-            {errorMessage}
-          </span>
-        ) : (
-          <>
-            {/* Current step */}
-            {readableStep ? (
-              <span
-                style={{
-                  fontSize: '11px',
-                  color: 'var(--color-text-muted)',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}
-                title={currentStep ?? readableStep}
-              >
-                <span
-                  style={{
-                    fontWeight: 700,
-                    color: 'var(--color-primary)',
-                    marginRight: '3px',
-                  }}
-                >
-                  {readableStep}
-                </span>
-              </span>
-            ) : (
-              <span
-                style={{
-                  fontSize: '11px',
-                  color: 'var(--color-text-muted)',
-                  fontStyle: 'italic',
-                  opacity: 0.6,
-                }}
-              >
-                idle
-              </span>
-            )}
-
-            {/* Elapsed */}
-            {readableStep && elapsed > 0 && (
-              <span
-                style={{
-                  fontSize: '10px',
-                  color: 'var(--color-text-muted)',
-                  opacity: 0.55,
-                  flexShrink: 0,
-                }}
-              >
-                {formatElapsed(elapsed)}
-              </span>
-            )}
-          </>
-        )}
+          />
+          {isError && errorMessage ? (
+            <span style={{ fontSize: '12px', color: 'var(--color-error)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {errorMessage}
+            </span>
+          ) : (
+            <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              <span style={{ color: 'var(--color-text)' }}>{readableStep || 'Idle'}</span>
+              {readableStep && elapsed > 0 && <span style={{ opacity: 0.6, marginLeft: '6px' }}>{formatElapsed(elapsed)}</span>}
+            </span>
+          )}
+        </div>
       </div>
 
-      {(actions.length > 0 || onOpenEvents) && (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            flexWrap: 'wrap',
-            justifyContent: 'flex-end',
-          }}
-        >
-          {onOpenEvents && (
-            <button
-              type="button"
-              onClick={onOpenEvents}
-              style={{
-                background: 'transparent',
-                border: '1px solid var(--color-border)',
-                color: 'var(--color-text-muted)',
-                padding: '4px 10px',
-                borderRadius: '999px',
-                fontSize: '10px',
-                fontWeight: 700,
-                letterSpacing: '0.05em',
-                textTransform: 'uppercase',
-                fontFamily: 'inherit',
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px',
-                whiteSpace: 'nowrap',
-              }}
-              title="Open Events tab"
-            >
-              <span>
-                {`Events ${derivedSummary.total}`}
-                {derivedSummary.errors > 0 ? ` · ${derivedSummary.errors} err` : ''}
-                {derivedSummary.warnings > 0 ? ` · ${derivedSummary.warnings} warn` : ''}
-              </span>
-              {derivedSummary.unread > 0 && (
-                <span
-                  style={{
-                    display: 'inline-flex',
-                    minWidth: '16px',
-                    justifyContent: 'center',
-                    padding: '0 4px',
-                    borderRadius: '999px',
-                    background: 'var(--color-primary-highlight)',
-                    color: 'var(--color-primary)',
-                    lineHeight: 1.4,
-                  }}
-                >
-                  {derivedSummary.unread}
-                </span>
-              )}
-            </button>
-          )}
-          {actions.map((action) => {
-            const tone = action.tone ?? 'default';
-            const borderColor = tone === 'primary'
-              ? 'var(--color-primary)'
-              : tone === 'danger'
-              ? 'var(--color-error)'
-              : 'var(--color-border)';
-            const textColor = action.disabled
-              ? 'var(--color-text-muted)'
-              : tone === 'primary'
-              ? 'var(--color-primary)'
-              : tone === 'danger'
-              ? 'var(--color-error)'
-              : 'var(--color-text-muted)';
-            const background = action.disabled
-              ? 'transparent'
-              : tone === 'primary'
-              ? 'rgba(0,212,255,0.08)'
-              : tone === 'danger'
-              ? 'rgba(255,68,68,0.08)'
-              : 'transparent';
-
-            return (
-              <button
-                key={action.key}
-                type="button"
-                onClick={action.onClick}
-                disabled={action.disabled}
-                title={action.title}
-                style={{
-                  background,
-                  border: `1px solid ${borderColor}`,
-                  color: textColor,
-                  padding: '4px 10px',
-                  borderRadius: '999px',
-                  fontSize: '10px',
-                  fontWeight: 700,
-                  letterSpacing: '0.05em',
-                  textTransform: 'uppercase',
-                  fontFamily: 'inherit',
-                  cursor: action.disabled ? 'not-allowed' : 'pointer',
-                  opacity: action.disabled ? 0.55 : 1,
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {action.label}
-              </button>
-            );
-          })}
-        </div>
-      )}
-
-      {/* ── Right: LLM call counter ── */}
-      <div
-        style={{
-          flexShrink: 0,
-          display: 'flex',
-          alignItems: 'center',
-          gap: '4px',
-        }}
-      >
-        <span
-          style={{
-            fontSize: '10px',
-            color: llmCalls > 0 ? 'var(--color-text-muted)' : 'var(--color-text-muted)',
-            opacity: llmCalls > 0 ? 0.9 : 0.4,
-          }}
-        >
-          <span
+      {/* RIGHT: Actions */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        {onOpenEvents && (
+          <button
+            type="button"
+            onClick={onOpenEvents}
+            title="Open Events tab"
             style={{
-              fontWeight: 700,
-              color: llmCalls > 0 ? 'var(--color-primary)' : 'var(--color-text-muted)',
-              marginRight: '2px',
+              background: 'transparent',
+              border: '1px solid rgba(255,255,255,0.1)',
+              color: 'var(--color-text-muted)',
+              padding: '6px 14px',
+              borderRadius: '999px',
+              fontSize: '11px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
             }}
           >
-            {llmCalls}
-          </span>
-          LLM call{llmCalls !== 1 ? 's' : ''}
-        </span>
+            <span>Events {eventSummary?.total ?? events.length}</span>
+            {(eventSummary?.unread ?? 0) > 0 && (
+              <span style={{ color: 'var(--color-primary)' }}>{(eventSummary?.unread ?? 0)}</span>
+            )}
+          </button>
+        )}
+        {actions.map((action) => {
+          const isPrimary = action.isPrimary || action.tone === 'primary';
+          const isDanger = action.tone === 'danger';
+          const bg = isPrimary ? 'var(--color-primary)' : isDanger ? 'rgba(255,68,68,0.15)' : 'rgba(255,255,255,0.05)';
+          const text = isPrimary ? 'var(--color-bg)' : isDanger ? 'var(--color-error)' : 'var(--color-text)';
+          return (
+            <button
+              key={action.key}
+              onClick={action.onClick}
+              disabled={action.disabled}
+              title={action.title}
+              style={{
+                background: bg,
+                color: text,
+                border: isPrimary || isDanger ? 'none' : '1px solid rgba(255,255,255,0.1)',
+                padding: '6px 14px',
+                borderRadius: '999px',
+                fontSize: '11px',
+                fontWeight: 600,
+                cursor: action.disabled ? 'not-allowed' : 'pointer',
+                opacity: action.disabled ? 0.5 : 1,
+                transition: 'all 0.2s',
+              }}
+              onMouseOver={(e) => {
+                if (!action.disabled) {
+                  e.currentTarget.style.transform = 'translateY(-1px)';
+                  if (!isPrimary && !isDanger) e.currentTarget.style.background = 'rgba(255,255,255,0.1)';
+                }
+              }}
+              onMouseOut={(e) => {
+                if (!action.disabled) {
+                  e.currentTarget.style.transform = 'translateY(0)';
+                  if (!isPrimary && !isDanger) e.currentTarget.style.background = bg;
+                }
+              }}
+            >
+              {action.label}
+            </button>
+          );
+        })}
       </div>
     </div>
   );

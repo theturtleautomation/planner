@@ -502,9 +502,7 @@ export function useSocraticWebSocket({
         setCurrentWorkspace(msg.workspace);
         setCurrentCategorySnapshot(msg.workspace.category_snapshot);
         setWorkspaceNotice(msg.workspace.branch_notice ?? null);
-        setPendingCategoryId((previous) => (
-          previous && msg.workspace.focused_category_id !== previous ? previous : null
-        ));
+        setPendingCategoryId(null);
         break;
       }
 
@@ -797,6 +795,7 @@ export function useSocraticWebSocket({
     const checkpointBeliefState = checkpoint?.belief_state ?? null;
     const checkpointPrompt = checkpoint?.current_prompt ?? null;
     const checkpointCategorySnapshot = checkpoint?.current_category_snapshot ?? null;
+    const hasCheckpointInterviewState = Boolean(checkpointPrompt || checkpointCategorySnapshot);
 
     const hydratedDraft: SpeculativeDraft | null = hydrateDraftFromPrompt(checkpointPrompt);
 
@@ -810,7 +809,11 @@ export function useSocraticWebSocket({
       }),
     );
 
-    setIntakePhase(initialSession.intake_phase ?? 'waiting');
+    setIntakePhase(
+      initialSession.intake_phase === 'waiting' && hasCheckpointInterviewState
+        ? 'interviewing'
+        : (initialSession.intake_phase ?? 'waiting'),
+    );
     setMessages((initialSession.messages ?? []).filter((message) => message.role !== 'event'));
     setClassification(initialSession.classification ?? checkpoint?.classification ?? null);
     setBeliefState(initialSession.belief_state ?? checkpointBeliefState);

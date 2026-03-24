@@ -18,6 +18,8 @@
 //! | Component              | Default Model         | Provider   | Rationale (models.md)                    |
 //! |------------------------|-----------------------|------------|------------------------------------------|
 //! | Intake Gateway         | Claude Opus 4.6       | Anthropic  | Structured "Principal Engineer" planning |
+//! | Intake Question Fast   | GPT-5.4-mini          | OpenAI     | Low-latency user-facing intake questions |
+//! | Intake Question Deep   | GPT-5.4               | OpenAI     | Escalated intake reasoning and wording   |
 //! | Compiler (NLSpec)      | Claude Opus 4.6       | Anthropic  | Architectural reasoning, edge cases      |
 //! | Compiler (graph.dot)   | Claude Opus 4.6       | Anthropic  | Long-horizon plan mapping                |
 //! | Factory Worker (code)  | GPT-5.3-Codex         | OpenAI     | SotA agentic software engineering        |
@@ -183,6 +185,16 @@ pub const MODELS: &[ModelInfo] = &[
         cli_binary: "codex",
     },
     ModelInfo {
+        id: "gpt-5.4-mini",
+        provider: "openai",
+        cli_binary: "codex",
+    },
+    ModelInfo {
+        id: "gpt-5.4",
+        provider: "openai",
+        cli_binary: "codex",
+    },
+    ModelInfo {
         id: "gpt-5.2",
         provider: "openai",
         cli_binary: "codex",
@@ -200,6 +212,8 @@ pub struct DefaultModels;
 impl DefaultModels {
     // -- Front Office: Socratic Planning (Claude Opus — "Principal Engineer") --
     pub const INTAKE_GATEWAY: &'static str = "claude-opus-4-6";
+    pub const INTAKE_QUESTION_FAST: &'static str = "gpt-5.4-mini";
+    pub const INTAKE_QUESTION_DEEP: &'static str = "gpt-5.4";
     pub const COMPILER_SPEC: &'static str = "claude-opus-4-6";
     pub const COMPILER_GRAPH_DOT: &'static str = "claude-opus-4-6";
 

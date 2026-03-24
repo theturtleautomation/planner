@@ -2,23 +2,37 @@ import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import Layout from '../components/Layout.tsx';
 import ChatPanel from '../components/ChatPanel.tsx';
-import PipelineBar from '../components/PipelineBar.tsx';
 import MessageInput from '../components/MessageInput.tsx';
-import PromptBatchPanel from '../components/PromptBatchPanel.tsx';
+import QuestionCanvas from '../components/QuestionCanvas.tsx';
 import CategoryNavigator from '../components/CategoryNavigator.tsx';
 import SocraticWorkspace from '../components/SocraticWorkspace.tsx';
 import InterviewProgressPanel from '../components/InterviewProgressPanel.tsx';
-import ConvergenceBar from '../components/ConvergenceBar.tsx';
 import BeliefStatePanel from '../components/BeliefStatePanel.tsx';
 import SpeculativeDraftView from '../components/SpeculativeDraftView.tsx';
 import SessionEventsTable from '../components/SessionEventsTable.tsx';
 import SessionStatusHeader from '../components/SessionStatusHeader.tsx';
+import SessionPulseBar from '../components/SessionPulseBar.tsx';
 import type { SessionHeaderAction } from '../components/SessionStatusHeader.tsx';
+import {
+  getSocraticDocumentGraphState,
+  hydrateSocraticDocumentGraph,
+  resetSocraticDocumentGraph,
+  useSocraticDocumentKnownQuestionCount,
+} from '../stores/socraticDocumentStore.ts';
 import { buildKnowledgeDeepLink } from '../lib/knowledgeDeepLinks.ts';
 import { createApiClient } from '../api/client.ts';
 import { useGetAccessToken } from '../auth/useAuthenticatedFetch.ts';
 import { useSocraticWebSocket } from '../hooks/useSocraticWebSocket.ts';
-import type { InterviewCheckpoint, PlannerEvent, ResumeStatus, Session, SessionExportResponse } from '../types.ts';
+import type {
+  InterviewCheckpoint,
+  PlannerEvent,
+  PromptEnvelope,
+  ResumeStatus,
+  Session,
+  SessionExportResponse,
+  SocraticCategorySnapshot,
+  SocraticWorkspaceSnapshot,
+} from '../types.ts';
 
 function getInterviewResumeNotice(status: ResumeStatus):
   | { tone: 'warning' | 'info'; text: string }
@@ -100,6 +114,118 @@ function getCheckpointTargetDimension(checkpoint: InterviewCheckpoint): string |
   return target ? formatDimensionLabel(target) : null;
 }
 
+function getPromptFocusCategoryId(prompt: PromptEnvelope): string | null {
+  return prompt.origin_category_id
+    ?? prompt.category_path[prompt.category_path.length - 1]?.category_id
+    ?? null;
+}
+
+function buildFallbackCategorySnapshot(prompt: PromptEnvelope): SocraticCategorySnapshot {
+  const focusCategoryId = getPromptFocusCategoryId(prompt) ?? prompt.prompt_id;
+  const focusTitle = prompt.category_path[prompt.category_path.length - 1]?.title ?? prompt.title;
+  const rootCategoryId = prompt.category_path[0]?.category_id ?? focusCategoryId;
+
+  return {
+    revision: `hydrated-${prompt.prompt_id}`,
+    root_category_ids: rootCategoryId ? [rootCategoryId] : [],
+    nodes: [
+      {
+        category_id: focusCategoryId,
+        parent_category_id: null,
+        title: focusTitle,
+        summary: prompt.instructions?.trim() || 'Current questions are ready.',
+        status: 'active',
+        depth: prompt.category_path.length > 0 ? prompt.category_path.length - 1 : 0,
+        mapped_dimensions: [],
+        has_children: false,
+        has_prompt_ready: true,
+        item_count_hint: Math.max(prompt.items.length, 1),
+      },
+    ],
+    active_category_path: prompt.category_path,
+    newly_available_category_ids: [],
+    build_ready: false,
+    build_readiness_message: 'Planning questions are still in progress.',
+  };
+}
+
+function buildHydratedWorkspace(
+  workspace: SocraticWorkspaceSnapshot | null,
+  prompt: PromptEnvelope | null,
+  categorySnapshot: SocraticCategorySnapshot | null,
+): SocraticWorkspaceSnapshot | null {
+  if (workspace) return workspace;
+  if (!prompt && !categorySnapshot) return null;
+
+  const nextCategorySnapshot = categorySnapshot ?? buildFallbackCategorySnapshot(prompt!);
+  const activePathCategoryId =
+    nextCategorySnapshot.active_category_path[nextCategorySnapshot.active_category_path.length - 1]?.category_id
+    ?? null;
+  const activePathNode = activePathCategoryId
+    ? nextCategorySnapshot.nodes.find((node) => node.category_id === activePathCategoryId) ?? null
+    : null;
+  const visibleNodes = activePathCategoryId
+    ? nextCategorySnapshot.nodes.filter((node) => node.parent_category_id === activePathCategoryId)
+    : nextCategorySnapshot.root_category_ids
+      .map((categoryId) => nextCategorySnapshot.nodes.find((node) => node.category_id === categoryId) ?? null)
+      .filter((node): node is NonNullable<typeof node> => node !== null);
+
+  if (prompt) {
+    const focusCategoryId =
+      getPromptFocusCategoryId(prompt)
+      ?? nextCategorySnapshot.root_category_ids[0]
+      ?? prompt.prompt_id;
+    const focusedNode = nextCategorySnapshot.nodes.find((node) => node.category_id === focusCategoryId);
+
+    return {
+      focused_category_id: focusCategoryId,
+      branch_notice: null,
+      category_snapshot: prompt.category_path.length > 0
+        ? {
+            ...nextCategorySnapshot,
+            active_category_path: prompt.category_path,
+          }
+        : nextCategorySnapshot,
+      groups: [
+        {
+          category_id: focusCategoryId,
+          title: focusedNode?.title ?? prompt.category_path[prompt.category_path.length - 1]?.title ?? prompt.title,
+          summary: focusedNode?.summary ?? prompt.instructions?.trim() ?? 'Answer the current questions to keep planning moving.',
+          status: 'active',
+          question_count: Math.max(prompt.items.length, focusedNode?.item_count_hint ?? 0, 1),
+          is_focused: true,
+          is_new: false,
+          preview_items: prompt.items.slice(0, 3).map((item) => ({
+            item_id: item.item_id,
+            kind: item.kind,
+            text: item.text,
+          })),
+        },
+      ],
+    };
+  }
+
+  return {
+    focused_category_id: activePathCategoryId,
+    branch_notice: null,
+    category_snapshot: nextCategorySnapshot,
+    groups: (
+      activePathNode && (activePathNode.has_prompt_ready || visibleNodes.length === 0)
+        ? [activePathNode]
+        : visibleNodes
+    ).map((node) => ({
+      category_id: node.category_id,
+      title: node.title,
+      summary: node.summary,
+      status: node.status,
+      question_count: Math.max(node.item_count_hint, node.has_prompt_ready ? 1 : 0),
+      is_focused: node.category_id === activePathCategoryId,
+      is_new: nextCategorySnapshot.newly_available_category_ids.includes(node.category_id),
+      preview_items: [],
+    })),
+  };
+}
+
 function getSessionTitle(
   session: Pick<Session, 'title' | 'project_description' | 'id'>,
 ): string {
@@ -136,6 +262,10 @@ function downloadExport(payload: SessionExportResponse): void {
   link.remove();
   window.URL.revokeObjectURL(href);
 }
+
+const FIRST_REVEAL_PRELOAD_TARGET = 8;
+const FIRST_REVEAL_SOFT_TARGET_MS = 4_000;
+const FIRST_REVEAL_HARD_TIMEOUT_MS = 8_000;
 
 function dedupePlannerEvents(events: PlannerEvent[]): PlannerEvent[] {
   const seen = new Set<string>();
@@ -253,19 +383,24 @@ export default function SessionPage() {
   const [workflowAction, setWorkflowAction] = useState<
     'restart' | 'retry' | 'rename' | 'duplicate' | 'archive' | 'export' | null
   >(null);
+  const [firstRevealGateArmed, setFirstRevealGateArmed] = useState(false);
+  const [hasRevealedFirstLobby, setHasRevealedFirstLobby] = useState(false);
+  const [firstRevealUsedTimeoutFallback, setFirstRevealUsedTimeoutFallback] = useState(false);
+  const [firstRevealGateStartedAtMs, setFirstRevealGateStartedAtMs] = useState<number | null>(null);
+  const [firstRevealElapsedMs, setFirstRevealElapsedMs] = useState(0);
 
   // Context shelf tab: 'belief' | 'draft' | 'events' | 'transcript'
   type RightPanelTab = 'belief' | 'draft' | 'events' | 'transcript';
   const [rightTab, setRightTab] = useState<RightPanelTab>('belief');
   const [eventUnreadCount, setEventUnreadCount] = useState(0);
   const [contextShelfOpen, setContextShelfOpen] = useState(false);
-  const [questionMapOpen, setQuestionMapOpen] = useState(false);
 
   // Helper to switch to draft tab
   const setShowDraft = (v: boolean) => setRightTab(v ? 'draft' : 'belief');
 
   // Socratic WebSocket hook
   const socratic = useSocraticWebSocket({ sessionId, getToken, initialSession: session });
+  const knownDocumentQuestionCount = useSocraticDocumentKnownQuestionCount();
 
   // Auto-show draft when it arrives
   useEffect(() => {
@@ -314,7 +449,6 @@ export default function SessionPage() {
     setEventUnreadCount(0);
     autoForegroundEventsRef.current = null;
     setContextShelfOpen(false);
-    setQuestionMapOpen(false);
   }, [sessionId]);
 
   // Track whether we've triggered attach for an existing session
@@ -404,6 +538,22 @@ export default function SessionPage() {
     try {
       // 1. Create the server-side Socratic session
       await api.startSocratic(sessionId, description.trim());
+      setSession((previous) => (
+        previous
+          ? {
+              ...previous,
+              intake_phase: 'interviewing',
+              pipeline_running: false,
+              error_message: null,
+              project_description: description.trim(),
+            }
+          : previous
+      ));
+      setFirstRevealGateArmed(true);
+      setHasRevealedFirstLobby(false);
+      setFirstRevealUsedTimeoutFallback(false);
+      setFirstRevealGateStartedAtMs(null);
+      setFirstRevealElapsedMs(0);
       // 2. Connect WS and send initial description
       socratic.sendDescription(description.trim());
     } catch (err) {
@@ -531,6 +681,11 @@ export default function SessionPage() {
         throw new Error('Saved planning brief is unavailable for this session.');
       }
       applySessionSnapshot(nextSession);
+      setFirstRevealGateArmed(true);
+      setHasRevealedFirstLobby(false);
+      setFirstRevealUsedTimeoutFallback(false);
+      setFirstRevealGateStartedAtMs(null);
+      setFirstRevealElapsedMs(0);
       socratic.sendDescription(savedDescription);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -568,11 +723,49 @@ export default function SessionPage() {
     }
   }, [description]);
 
+  const checkpointPrompt = session?.checkpoint?.current_prompt ?? null;
+  const checkpointCategorySnapshot = session?.checkpoint?.current_category_snapshot ?? null;
+  const displayPrompt = socratic.currentPrompt ?? checkpointPrompt;
+  const displayCategorySnapshot = socratic.currentCategorySnapshot ?? checkpointCategorySnapshot;
+  const displayWorkspace = useMemo(
+    () => buildHydratedWorkspace(socratic.currentWorkspace, displayPrompt, displayCategorySnapshot),
+    [socratic.currentWorkspace, displayPrompt, displayCategorySnapshot],
+  );
+  const hasResumableInterviewState = Boolean(displayWorkspace || displayPrompt || displayCategorySnapshot);
+
+  useEffect(() => {
+    if (!displayWorkspace) return;
+    hydrateSocraticDocumentGraph({
+      workspace: displayWorkspace,
+      currentPrompt: displayPrompt,
+    });
+  }, [displayWorkspace, displayPrompt]);
+
+  useEffect(() => {
+    resetSocraticDocumentGraph();
+    setFirstRevealGateArmed(false);
+    setHasRevealedFirstLobby(false);
+    setFirstRevealUsedTimeoutFallback(false);
+    setFirstRevealGateStartedAtMs(null);
+    setFirstRevealElapsedMs(0);
+  }, [sessionId]);
+
   // ── Effective intake phase ──
   // Use the WS hook's phase once connected; fall back to the session's stored phase
+  const sessionPhase = session?.intake_phase ?? 'waiting';
   const effectivePhase = socratic.intakePhase !== 'waiting'
     ? socratic.intakePhase
-    : (session?.intake_phase ?? 'waiting');
+    : (sessionPhase === 'waiting' && hasResumableInterviewState ? 'interviewing' : sessionPhase);
+
+  useEffect(() => {
+    if (effectivePhase === 'waiting') {
+      setFirstRevealGateArmed(false);
+      setHasRevealedFirstLobby(false);
+      setFirstRevealUsedTimeoutFallback(false);
+      setFirstRevealGateStartedAtMs(null);
+      setFirstRevealElapsedMs(0);
+    }
+  }, [effectivePhase]);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -582,6 +775,85 @@ export default function SessionPage() {
     setEventUnreadCount(0);
     autoForegroundEventsRef.current = sessionId;
   }, [effectivePhase, sessionId]);
+
+  const isInterviewing = effectivePhase === 'interviewing';
+  const isPipelineRunning = effectivePhase === 'pipeline_running';
+  const isComplete = effectivePhase === 'complete';
+  const isError = effectivePhase === 'error';
+  const showFocusedLobby = isInterviewing;
+  const buildReady = Boolean(displayWorkspace?.category_snapshot.build_ready);
+  const knownQuestionIds = useMemo(
+    () => new Set(Object.keys(getSocraticDocumentGraphState().questionsById)),
+    [knownDocumentQuestionCount],
+  );
+  const currentPromptOverflowCount = useMemo(() => {
+    if (!displayPrompt) return 0;
+    let overflow = 0;
+    for (const item of displayPrompt.items) {
+      if (!knownQuestionIds.has(item.item_id)) {
+        overflow += 1;
+      }
+    }
+    return overflow;
+  }, [displayPrompt, knownQuestionIds]);
+  const previewOnlyCount = useMemo(() => {
+    if (!displayWorkspace) return 0;
+    const previewIds = new Set<string>();
+    for (const group of displayWorkspace.groups) {
+      for (const item of group.preview_items) {
+        if (!knownQuestionIds.has(item.item_id)) {
+          previewIds.add(item.item_id);
+        }
+      }
+    }
+    return previewIds.size;
+  }, [displayWorkspace, knownQuestionIds]);
+  const knownQuestionCount = knownDocumentQuestionCount + currentPromptOverflowCount + previewOnlyCount;
+  const canRevealBestKnownLobby = Boolean(displayWorkspace);
+  const showFirstRevealPreload = showFocusedLobby && firstRevealGateArmed && !hasRevealedFirstLobby;
+  const firstRevealSoftTargetReached = firstRevealElapsedMs >= FIRST_REVEAL_SOFT_TARGET_MS;
+  const firstRevealHardTimeoutReached = firstRevealElapsedMs >= FIRST_REVEAL_HARD_TIMEOUT_MS;
+
+  useEffect(() => {
+    if (!showFirstRevealPreload) {
+      setFirstRevealGateStartedAtMs(null);
+      setFirstRevealElapsedMs(0);
+      return;
+    }
+    if (firstRevealGateStartedAtMs !== null) return;
+    const now = Date.now();
+    setFirstRevealGateStartedAtMs(now);
+    setFirstRevealElapsedMs(0);
+  }, [firstRevealGateStartedAtMs, showFirstRevealPreload]);
+
+  useEffect(() => {
+    if (!showFirstRevealPreload || firstRevealGateStartedAtMs === null) return;
+    const tick = () => {
+      setFirstRevealElapsedMs(Date.now() - firstRevealGateStartedAtMs);
+    };
+    tick();
+    const intervalId = window.setInterval(tick, 250);
+    return () => window.clearInterval(intervalId);
+  }, [firstRevealGateStartedAtMs, showFirstRevealPreload]);
+
+  useEffect(() => {
+    if (!showFirstRevealPreload) return;
+    if (buildReady || knownQuestionCount >= FIRST_REVEAL_PRELOAD_TARGET) {
+      setHasRevealedFirstLobby(true);
+      setFirstRevealUsedTimeoutFallback(false);
+      return;
+    }
+    if (firstRevealHardTimeoutReached && canRevealBestKnownLobby) {
+      setHasRevealedFirstLobby(true);
+      setFirstRevealUsedTimeoutFallback(true);
+    }
+  }, [
+    buildReady,
+    canRevealBestKnownLobby,
+    firstRevealHardTimeoutReached,
+    knownQuestionCount,
+    showFirstRevealPreload,
+  ]);
 
   const sessionActions = useMemo<SessionHeaderAction[]>(() => {
     const actions: SessionHeaderAction[] = [];
@@ -858,7 +1130,7 @@ export default function SessionPage() {
   }
 
   // ── Loading state ──
-  if (!sessionId && !initError) {
+  if ((!sessionId || (isExistingSessionRoute && !session)) && !initError) {
     return (
       <Layout>
         <div style={{
@@ -869,7 +1141,7 @@ export default function SessionPage() {
           color: 'var(--color-text-muted)',
           fontSize: '13px',
         }}>
-          initializing session…
+          loading session…
         </div>
       </Layout>
     );
@@ -949,10 +1221,10 @@ export default function SessionPage() {
                   Planner v2
                 </span>
                 <h2 className="display-heading" style={{ margin: 0, fontSize: 'clamp(1.9rem, 1.55rem + 1vw, 2.5rem)' }}>
-                  Describe your planning brief
+                  Start with the planning brief
                 </h2>
                 <p className="section-copy" style={{ margin: 0 }}>
-                  Give a brief overview — what you want to build, who it's for, and any important constraints. We'll ask focused questions to fill in the details.
+                  Describe what you are building, who it serves, and the constraints that matter. Planner will move straight into the next question from there.
                 </p>
               </div>
 
@@ -1059,11 +1331,6 @@ export default function SessionPage() {
   // PHASE: interviewing, pipeline_running, complete, or error
   // All share the split-pane layout
   // ─────────────────────────────────────────────────────────────────
-  const isInterviewing = effectivePhase === 'interviewing';
-  const isPipelineRunning = effectivePhase === 'pipeline_running';
-  const isComplete = effectivePhase === 'complete';
-  const isError = effectivePhase === 'error';
-  const showFocusedLobby = isInterviewing && Boolean(socratic.currentWorkspace);
   const interviewResumeNotice =
     isExistingSessionRoute &&
     session?.intake_phase === 'interviewing' &&
@@ -1092,58 +1359,7 @@ export default function SessionPage() {
         {reconnectBanner}
         {workflowErrorBanner}
 
-        {session && sessionTitle && (
-          <div
-            style={{
-              padding: '16px 18px',
-              background: 'var(--color-surface)',
-              display: 'flex',
-              alignItems: 'flex-end',
-              justifyContent: 'space-between',
-              gap: '12px',
-              flexWrap: 'wrap',
-              boxShadow: 'var(--shadow-sm)',
-            }}
-          >
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <span
-                style={{
-                  color: 'var(--color-primary)',
-                  fontSize: '11px',
-                  fontWeight: 700,
-                  letterSpacing: '0.08em',
-                  textTransform: 'uppercase',
-                }}
-              >
-                Session
-              </span>
-              <span style={{ color: 'var(--color-text)', fontSize: '17px', fontWeight: 700 }}>
-                {sessionTitle}
-              </span>
-              <span style={{ color: 'var(--color-text-muted)', fontSize: '11px', fontFamily: 'monospace' }}>
-                {session.id}
-              </span>
-            </div>
-            {session.archived && (
-              <span
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  padding: '5px 10px',
-                  borderRadius: '999px',
-                  background: 'rgba(152, 176, 212, 0.12)',
-                  color: 'var(--color-text-muted)',
-                  fontSize: '10px',
-                  fontWeight: 700,
-                  letterSpacing: '0.05em',
-                  textTransform: 'uppercase',
-                }}
-              >
-                Archived
-              </span>
-            )}
-          </div>
-        )}
+        
 
         {/* Error banner */}
         {isError && (
@@ -1233,6 +1449,9 @@ export default function SessionPage() {
         {/* Status header + Top progress bar */}
         {(isInterviewing || isPipelineRunning || isComplete || isError || sessionActions.length > 0) && (
           <SessionStatusHeader
+            sessionTitle={sessionTitle}
+            sessionId={session?.id}
+            isArchived={session?.archived}
             currentStep={socratic.currentStep}
             events={socratic.events}
             isError={isError}
@@ -1247,62 +1466,185 @@ export default function SessionPage() {
             onOpenEvents={() => {
               setRightTab('events');
               setEventUnreadCount(0);
+              setContextShelfOpen(true);
             }}
           />
         )}
 
-        {/* Top bar: ConvergenceBar (interviewing) or PipelineBar (pipeline_running / complete) */}
-        {isInterviewing && (
-          <ConvergenceBar
-            convergencePct={socratic.convergencePct * 100}
-            classification={socratic.classification}
-          />
-        )}
-        {(isPipelineRunning || isComplete) && (
-          <PipelineBar stages={socratic.stages} />
-        )}
+
 
         {showFocusedLobby ? (
-          <div style={{ position: 'relative', display: 'grid', minHeight: 0, overflow: 'visible' }}>
-            <SocraticWorkspace
-              workspace={socratic.currentWorkspace!}
-              currentPrompt={socratic.currentPrompt}
-              pendingCategoryId={socratic.pendingCategoryId}
-              workspaceNotice={socratic.workspaceNotice}
-              currentStep={socratic.currentStep}
-              events={socratic.events}
-              disabled={!socratic.isConnected}
-              onFocusCategory={socratic.enterCategory}
-              onShowAll={socratic.backToCategories}
-              onSubmitAnswers={socratic.submitPromptAnswers}
-              onDone={socratic.sendDone}
-              isQuestionMapOpen={questionMapOpen}
-              onToggleQuestionMap={() => setQuestionMapOpen((value) => !value)}
-              isContextOpen={contextShelfOpen}
-              onToggleContext={() => setContextShelfOpen((value) => !value)}
-              contextUnreadCount={eventUnreadCount}
-              hasDraft={Boolean(socratic.speculativeDraft)}
-            />
+          <div className="socratic-focused-lobby-shell">
+            {!showFirstRevealPreload && (
+              <SessionPulseBar
+                sessionTitle={sessionTitle}
+                currentStep={socratic.currentStep}
+                events={socratic.events}
+                isError={isError}
+                errorMessage={session?.error_message}
+                workspace={displayWorkspace}
+                unreadEventCount={eventUnreadCount}
+                hasDraft={Boolean(socratic.speculativeDraft)}
+                isContextShelfOpen={contextShelfOpen}
+                onToggleContextShelf={() => setContextShelfOpen((value) => !value)}
+              />
+            )}
 
-            {contextShelfOpen && (
-              <aside
-                aria-label="Context shelf"
+            {showFirstRevealPreload ? (
+              <div
                 style={{
-                  position: 'absolute',
-                  top: '96px',
-                  right: '18px',
-                  width: 'min(420px, calc(100vw - 48px))',
-                  maxHeight: 'calc(100% - 112px)',
+                  minHeight: 0,
                   display: 'flex',
-                  flexDirection: 'column',
-                  overflow: 'hidden',
-                  borderRadius: '20px',
-                  background: 'color-mix(in srgb, var(--color-surface) 96%, transparent)',
-                  boxShadow: 'var(--shadow-lg)',
-                  border: '1px solid var(--color-divider)',
-                  zIndex: 25,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '32px 24px 40px',
                 }}
               >
+                <div
+                  style={{
+                    width: 'min(760px, 100%)',
+                    display: 'grid',
+                    gap: '16px',
+                  }}
+                >
+                  <div style={{ display: 'grid', gap: '6px' }}>
+                    <span className="page-kicker">First reveal</span>
+                    <h2 className="display-heading" style={{ margin: 0, fontSize: 'clamp(1.6rem, 1.3rem + 0.9vw, 2.2rem)' }}>
+                      Planner is preparing the first working set of questions.
+                    </h2>
+                    <p className="section-copy" style={{ margin: 0 }}>
+                      The lobby will open once the initial set feels substantially loaded, not while it is still assembling.
+                    </p>
+                  </div>
+                  <div
+                    style={{
+                      display: 'grid',
+                      gap: '10px',
+                      padding: '14px 16px',
+                      borderRadius: '16px',
+                      background: 'color-mix(in srgb, var(--color-surface) 84%, transparent)',
+                      boxShadow: 'inset 0 0 0 1px color-mix(in srgb, var(--color-divider) 70%, transparent)',
+                    }}
+                  >
+                    <span style={{ fontSize: '11px', color: 'var(--color-primary)', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                      Initial target
+                    </span>
+                    <span style={{ fontSize: '13px', color: 'var(--color-text)' }}>
+                      {knownQuestionCount}/{FIRST_REVEAL_PRELOAD_TARGET} locally known question items ready for the first reveal
+                    </span>
+                    <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                      Once the desk opens, browsing known categories and questions stays immediate on this client.
+                    </span>
+                    {firstRevealSoftTargetReached && (
+                      <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                        This first load is taking longer than usual. Planner will open the best available initial set shortly if it cannot fill the full target in time.
+                      </span>
+                    )}
+                  </div>
+                  <InterviewProgressPanel
+                    currentStep={socratic.currentStep}
+                    events={socratic.events}
+                    isConnected={socratic.isConnected}
+                  />
+                </div>
+              </div>
+            ) : (
+              <>
+                {firstRevealUsedTimeoutFallback && knownQuestionCount < FIRST_REVEAL_PRELOAD_TARGET && !buildReady && (
+                  <div
+                    style={{
+                      padding: '10px 16px',
+                      background: 'color-mix(in srgb, var(--color-primary-highlight) 68%, transparent)',
+                      color: 'var(--color-text)',
+                      fontSize: '12px',
+                      textAlign: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    Planner opened the desk with a partial initial set so you can begin while more questions continue to arrive.
+                  </div>
+                )}
+                {displayWorkspace ? (
+                  <SocraticWorkspace
+                    workspace={displayWorkspace}
+                    currentPrompt={displayPrompt}
+                    pendingCategoryId={socratic.pendingCategoryId}
+                    workspaceNotice={socratic.workspaceNotice}
+                    disabled={!socratic.isConnected}
+                    onFocusCategory={socratic.enterCategory}
+                    onShowAll={socratic.backToCategories}
+                    onSubmitAnswers={socratic.submitPromptAnswers}
+                    onDone={socratic.sendDone}
+                  />
+                ) : (
+                  <div
+                    style={{
+                      minHeight: 0,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: '32px 24px 40px',
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: 'min(760px, 100%)',
+                        display: 'grid',
+                        gap: '16px',
+                      }}
+                    >
+                      <div style={{ display: 'grid', gap: '6px' }}>
+                        <span className="page-kicker">Focused intake</span>
+                        <h2 className="display-heading" style={{ margin: 0, fontSize: 'clamp(1.6rem, 1.3rem + 0.9vw, 2.2rem)' }}>
+                          Planner is opening the first question.
+                        </h2>
+                        <p className="section-copy" style={{ margin: 0 }}>
+                          Stay on this screen. The next question will land here automatically as soon as the interview runtime responds.
+                        </p>
+                      </div>
+                      <InterviewProgressPanel
+                        currentStep={socratic.currentStep}
+                        events={socratic.events}
+                        isConnected={socratic.isConnected}
+                      />
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
+            {contextShelfOpen && (
+              <div
+                style={{
+                  position: 'fixed',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  backgroundColor: 'rgba(0,0,0,0.4)',
+                  zIndex: 40,
+                  display: 'flex',
+                  justifyContent: 'flex-end',
+                  backdropFilter: 'blur(2px)'
+                }}
+                onClick={() => setContextShelfOpen(false)}
+              >
+                <aside
+                  aria-label="Context shelf"
+                  onClick={(e) => e.stopPropagation()}
+                  style={{
+                    width: 'min(480px, 100vw)',
+                    height: '100%',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    background: 'rgba(20, 20, 22, 0.75)',
+                    backdropFilter: 'blur(24px)',
+                    WebkitBackdropFilter: 'blur(24px)',
+                    boxShadow: '-12px 0 48px rgba(0,0,0,0.3)',
+                    borderLeft: '1px solid rgba(255, 255, 255, 0.1)',
+                    animation: 'slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+                  }}
+                >
                 <div
                   style={{
                     display: 'flex',
@@ -1317,7 +1659,7 @@ export default function SessionPage() {
                       Context shelf
                     </span>
                     <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>
-                      Belief state, draft, transcript, and events stay hidden until requested.
+                      Open belief state, draft, transcript, or events without leaving the active question flow.
                     </span>
                   </div>
                   <button
@@ -1341,30 +1683,32 @@ export default function SessionPage() {
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '0',
-                    background: 'var(--color-surface-offset)',
+                    gap: '4px',
+                    background: 'rgba(255, 255, 255, 0.03)',
+                    border: '1px solid rgba(255, 255, 255, 0.05)',
                     flexShrink: 0,
                     overflowX: 'auto',
                     margin: '14px 16px 0',
-                    padding: '6px 8px',
-                    borderRadius: '999px',
+                    padding: '4px',
+                    borderRadius: '12px',
                   }}
                 >
                   <button
                     onClick={() => setRightTab('belief')}
                     style={{
-                      background: rightTab === 'belief' ? 'var(--color-surface-2)' : 'transparent',
+                      flex: 1,
+                      background: rightTab === 'belief' ? 'rgba(255, 255, 255, 0.1)' : 'transparent',
                       border: 'none',
-                      color: rightTab === 'belief' ? 'var(--color-primary)' : 'var(--color-text-muted)',
+                      color: rightTab === 'belief' ? 'var(--color-text)' : 'var(--color-text-muted)',
                       fontSize: '11px',
-                      fontWeight: rightTab === 'belief' ? 700 : 400,
+                      fontWeight: rightTab === 'belief' ? 600 : 500,
                       fontFamily: 'inherit',
-                      padding: '8px 14px',
+                      padding: '6px 12px',
                       cursor: 'pointer',
-                      letterSpacing: '0.03em',
-                      transition: 'color 0.15s, background 0.15s',
-                      borderRadius: '999px',
-                      boxShadow: rightTab === 'belief' ? 'var(--shadow-sm)' : 'none',
+                      letterSpacing: '0.02em',
+                      transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                      borderRadius: '8px',
+                      boxShadow: rightTab === 'belief' ? '0 2px 8px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.1)' : 'none',
                     }}
                   >
                     Belief State
@@ -1374,23 +1718,23 @@ export default function SessionPage() {
                     disabled={!socratic.speculativeDraft}
                     title={!socratic.speculativeDraft ? 'No draft available yet' : undefined}
                     style={{
-                      background: rightTab === 'draft' ? 'var(--color-surface-2)' : 'transparent',
+                      flex: 1,
+                      background: rightTab === 'draft' ? 'rgba(255, 255, 255, 0.1)' : 'transparent',
                       border: 'none',
                       color: !socratic.speculativeDraft
-                        ? 'var(--color-text-muted)'
+                        ? 'rgba(255,255,255,0.2)'
                         : rightTab === 'draft'
-                          ? 'var(--color-primary)'
+                          ? 'var(--color-text)'
                           : 'var(--color-text-muted)',
                       fontSize: '11px',
-                      fontWeight: rightTab === 'draft' ? 700 : 400,
+                      fontWeight: rightTab === 'draft' ? 600 : 500,
                       fontFamily: 'inherit',
-                      padding: '8px 14px',
+                      padding: '6px 12px',
                       cursor: !socratic.speculativeDraft ? 'not-allowed' : 'pointer',
-                      letterSpacing: '0.03em',
-                      opacity: !socratic.speculativeDraft ? 0.4 : 1,
-                      transition: 'color 0.15s, background 0.15s, opacity 0.15s',
-                      borderRadius: '999px',
-                      boxShadow: rightTab === 'draft' ? 'var(--shadow-sm)' : 'none',
+                      letterSpacing: '0.02em',
+                      transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                      borderRadius: '8px',
+                      boxShadow: rightTab === 'draft' ? '0 2px 8px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.1)' : 'none',
                     }}
                   >
                     Draft
@@ -1398,18 +1742,19 @@ export default function SessionPage() {
                   <button
                     onClick={() => setRightTab('transcript')}
                     style={{
-                      background: rightTab === 'transcript' ? 'var(--color-surface-2)' : 'transparent',
+                      flex: 1,
+                      background: rightTab === 'transcript' ? 'rgba(255, 255, 255, 0.1)' : 'transparent',
                       border: 'none',
-                      color: rightTab === 'transcript' ? 'var(--color-primary)' : 'var(--color-text-muted)',
+                      color: rightTab === 'transcript' ? 'var(--color-text)' : 'var(--color-text-muted)',
                       fontSize: '11px',
-                      fontWeight: rightTab === 'transcript' ? 700 : 400,
+                      fontWeight: rightTab === 'transcript' ? 600 : 500,
                       fontFamily: 'inherit',
-                      padding: '8px 14px',
+                      padding: '6px 12px',
                       cursor: 'pointer',
-                      letterSpacing: '0.03em',
-                      transition: 'color 0.15s, background 0.15s',
-                      borderRadius: '999px',
-                      boxShadow: rightTab === 'transcript' ? 'var(--shadow-sm)' : 'none',
+                      letterSpacing: '0.02em',
+                      transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                      borderRadius: '8px',
+                      boxShadow: rightTab === 'transcript' ? '0 2px 8px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.1)' : 'none',
                     }}
                   >
                     Transcript
@@ -1420,22 +1765,23 @@ export default function SessionPage() {
                       setEventUnreadCount(0);
                     }}
                     style={{
-                      background: rightTab === 'events' ? 'var(--color-surface-2)' : 'transparent',
+                      flex: 1,
+                      background: rightTab === 'events' ? 'rgba(255, 255, 255, 0.1)' : 'transparent',
                       border: 'none',
-                      color: rightTab === 'events' ? 'var(--color-primary)' : 'var(--color-text-muted)',
+                      color: rightTab === 'events' ? 'var(--color-text)' : 'var(--color-text-muted)',
                       fontSize: '11px',
-                      fontWeight: rightTab === 'events' ? 700 : 400,
+                      fontWeight: rightTab === 'events' ? 600 : 500,
                       fontFamily: 'inherit',
-                      padding: '8px 14px',
+                      padding: '6px 12px',
                       cursor: 'pointer',
-                      letterSpacing: '0.03em',
-                      transition: 'color 0.15s, background 0.15s',
+                      letterSpacing: '0.02em',
+                      transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                      borderRadius: '8px',
+                      boxShadow: rightTab === 'events' ? '0 2px 8px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.1)' : 'none',
                       display: 'inline-flex',
                       alignItems: 'center',
+                      justifyContent: 'center',
                       gap: '6px',
-                      whiteSpace: 'nowrap',
-                      borderRadius: '999px',
-                      boxShadow: rightTab === 'events' ? 'var(--shadow-sm)' : 'none',
                     }}
                   >
                     Events
@@ -1447,10 +1793,10 @@ export default function SessionPage() {
                           justifyContent: 'center',
                           padding: '0 4px',
                           borderRadius: '999px',
-                          background: 'var(--color-primary-highlight)',
-                          color: 'var(--color-primary)',
-                          fontSize: '10px',
-                          fontWeight: 700,
+                          background: 'var(--color-primary)',
+                          color: 'var(--color-bg)',
+                          fontSize: '9px',
+                          fontWeight: 800,
                           lineHeight: 1.4,
                         }}
                       >
@@ -1464,6 +1810,7 @@ export default function SessionPage() {
                   {rightPanelContent}
                 </div>
               </aside>
+              </div>
             )}
           </div>
         ) : (
@@ -1487,22 +1834,22 @@ export default function SessionPage() {
 
               {isInterviewing ? (
                 <>
-                  {socratic.currentCategorySnapshot && (
+                  {displayCategorySnapshot && (
                     <CategoryNavigator
-                      snapshot={socratic.currentCategorySnapshot}
+                      snapshot={displayCategorySnapshot}
                       onEnterCategory={socratic.enterCategory}
                       onBack={socratic.backToCategories}
                       onDone={socratic.sendDone}
                       disabled={!socratic.isConnected}
                     />
                   )}
-                  {!socratic.currentWorkspace && socratic.currentPrompt ? (
-                    <PromptBatchPanel
-                      prompt={socratic.currentPrompt}
+                  {!displayWorkspace && displayPrompt ? (
+                    <QuestionCanvas
+                      prompt={displayPrompt}
                       onSubmit={(_promptId, answers) => socratic.submitPromptAnswers(answers)}
                       disabled={!socratic.isConnected}
                     />
-                  ) : !socratic.currentWorkspace && !socratic.currentCategorySnapshot ? (
+                  ) : !displayWorkspace && !displayCategorySnapshot ? (
                     <InterviewProgressPanel
                       currentStep={socratic.currentStep}
                       events={socratic.events}

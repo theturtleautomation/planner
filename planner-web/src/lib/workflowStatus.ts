@@ -5,6 +5,8 @@ const STEP_LABELS: Record<string, string> = {
   'socratic.classify.complete': 'Classifying your project',
   'socratic.verify.complete': 'Reviewing your brief',
   'socratic.response.adjudicated': 'Planning the next question batch',
+  'socratic.category_state.generated': 'Thread index ready',
+  'socratic.workspace.generated': 'Ready to choose a thread',
   'socratic.prompt.generated': 'Question batch ready',
   'socratic.prompt.submitted': 'Applying your answers',
   'socratic.prompt.partial_submitted': 'Applying your answers',

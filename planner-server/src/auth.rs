@@ -219,6 +219,36 @@ impl<S: Send + Sync> axum::extract::FromRequestParts<S> for Claims {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, MutexGuard, OnceLock};
+
+    fn auth_env_guard() -> MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
+    }
+
+    struct EnvVarRestore {
+        key: &'static str,
+        value: Option<String>,
+    }
+
+    impl EnvVarRestore {
+        fn capture(key: &'static str) -> Self {
+            Self {
+                key,
+                value: std::env::var(key).ok(),
+            }
+        }
+    }
+
+    impl Drop for EnvVarRestore {
+        fn drop(&mut self) {
+            if let Some(value) = &self.value {
+                std::env::set_var(self.key, value);
+            } else {
+                std::env::remove_var(self.key);
+            }
+        }
+    }
 
     #[test]
     fn test_validate_token_fails_without_secret() {
@@ -245,14 +275,25 @@ mod tests {
 
     #[test]
     fn auth_config_from_env_none_when_unset() {
-        // Ensure AUTH0_DOMAIN is not set
+        let _guard = auth_env_guard();
+        let _domain = EnvVarRestore::capture("AUTH0_DOMAIN");
+        let _audience = EnvVarRestore::capture("AUTH0_AUDIENCE");
+        let _secret = EnvVarRestore::capture("AUTH0_SECRET");
+
         std::env::remove_var("AUTH0_DOMAIN");
+        std::env::remove_var("AUTH0_AUDIENCE");
+        std::env::remove_var("AUTH0_SECRET");
         let config = AuthConfig::from_env();
         assert!(config.is_none());
     }
 
     #[test]
     fn auth_config_from_env_some_when_set() {
+        let _guard = auth_env_guard();
+        let _domain = EnvVarRestore::capture("AUTH0_DOMAIN");
+        let _audience = EnvVarRestore::capture("AUTH0_AUDIENCE");
+        let _secret = EnvVarRestore::capture("AUTH0_SECRET");
+
         std::env::set_var("AUTH0_DOMAIN", "test.auth0.com");
         std::env::set_var("AUTH0_AUDIENCE", "https://api.test.com");
         let config = AuthConfig::from_env();
@@ -260,9 +301,6 @@ mod tests {
         let c = config.unwrap();
         assert_eq!(c.domain, "test.auth0.com");
         assert_eq!(c.audience, "https://api.test.com");
-        // Clean up
-        std::env::remove_var("AUTH0_DOMAIN");
-        std::env::remove_var("AUTH0_AUDIENCE");
     }
 
     #[test]

@@ -117,7 +117,7 @@ rustup update stable
 
 Planner v2 shells out to native CLI binaries — no API keys are read from environment variables. You need at least one of the following installed and authenticated:
 
-For local development, install them on your own `$PATH`. For a `systemd` deployment, `deploy/install.sh` will try to install them into `/opt/planner/bin` automatically and then check their auth state.
+For local development, install them on your own `$PATH`. For a `systemd` deployment, `deploy/install.sh` will try to install them into `/opt/planner/bin` automatically and then check their auth state. Claude, Gemini, and Codex now all get a real headless runtime probe during install/update, so a stale service-user login should be reported as unhealthy instead of silently passing on credential-file presence alone.
 
 `deploy/install.sh` also refreshes npm-based CLIs (`gemini`, `codex`) to the latest published version it can resolve at install time. For Gemini CLI, the installer applies a Planner compatibility patch so subscription auth works in non-interactive mode even when Planner disables all Gemini tools.
 

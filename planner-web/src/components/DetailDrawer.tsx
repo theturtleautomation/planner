@@ -148,7 +148,7 @@ export default function DetailDrawer({
   };
 
   const overrideSourceEntry = useMemo(() => {
-    const sourceId = node?.scope.override_scope?.shared_source_id?.trim();
+    const sourceId = node?.scope?.override_scope?.shared_source_id?.trim();
     if (!sourceId) return null;
     return nodeIndex.get(sourceId) ?? null;
   }, [node, nodeIndex]);

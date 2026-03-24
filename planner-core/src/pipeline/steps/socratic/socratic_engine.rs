@@ -423,6 +423,27 @@ async fn run_prompt_loop<IO: SocraticIO, S: TurnStore>(
                 .map(|entry| entry.category_id.clone())
                 .collect();
 
+            if engine_state.last_category_snapshot.is_none()
+                && engine_state.active_category_ids.is_empty()
+            {
+                if let Some(initial_path) =
+                    category_planner::first_prompt_ready_category_path(&category_snapshot)
+                {
+                    engine_state.active_category_ids = initial_path;
+                    category_snapshot = category_planner::build_category_snapshot(
+                        belief_state,
+                        &engine_state.active_category_ids,
+                        conv_result.is_done,
+                        engine_state.last_category_snapshot.as_ref(),
+                    );
+                    engine_state.active_category_ids = category_snapshot
+                        .active_category_path
+                        .iter()
+                        .map(|entry| entry.category_id.clone())
+                        .collect();
+                }
+            }
+
             if let Some(active_category_id) =
                 category_planner::active_leaf_category_id(&category_snapshot)
             {
@@ -1500,6 +1521,71 @@ mod tests {
                 .last()
                 .map(|entry| entry.category_id.as_str()),
             prompts[0].origin_category_id.as_deref()
+        );
+    }
+
+    #[tokio::test]
+    async fn initial_workspace_auto_enters_first_prompt_ready_thread() {
+        let router = LlmRouter::with_mock(Box::new(CountingMockClient {
+            calls: Arc::new(AtomicUsize::new(0)),
+            response_content: r#"{"question":"What platform should this start on?","quick_options":[{"label":"Web app","value":"Web application"}],"allow_skip":false}"#.into(),
+        }));
+
+        let io = SequencedIo::new(vec![SequenceStep::Disconnect]);
+
+        let resume_state = CheckpointResumeState {
+            belief_state: RequirementsBeliefState {
+                filled: HashMap::new(),
+                uncertain: HashMap::from([(
+                    Dimension::Platform,
+                    (
+                        SlotValue {
+                            value: "Web application".into(),
+                            source_turn: 1,
+                            source_quote: None,
+                        },
+                        0.5,
+                    ),
+                )]),
+                missing: vec![Dimension::SuccessCriteria],
+                out_of_scope: Vec::new(),
+                contradictions: Vec::new(),
+                required_dimensions: vec![Dimension::Platform, Dimension::SuccessCriteria],
+                turn_count: 1,
+                classification: None,
+            },
+            classification: None,
+            stale_turns: 0,
+            draft_shown_at_turn: None,
+            pending_prompt: None,
+            category_snapshot: None,
+        };
+
+        let _session = run_interview_from_checkpoint::<_, crate::cxdb::CxdbEngine>(
+            &router,
+            &io,
+            None::<&crate::cxdb::CxdbEngine>,
+            Uuid::new_v4(),
+            resume_state,
+        )
+        .await
+        .expect("initial interview should auto-enter the first prompt-ready thread");
+
+        let prompts = io.prompts();
+        assert_eq!(prompts.len(), 1);
+        assert_eq!(
+            prompts[0].origin_category_id.as_deref(),
+            Some("category-verification-platform")
+        );
+
+        let snapshots = io.snapshots();
+        assert!(!snapshots.is_empty());
+        assert_eq!(
+            snapshots
+                .last()
+                .and_then(|snapshot| snapshot.active_category_path.last())
+                .map(|entry| entry.category_id.as_str()),
+            Some("category-verification-platform")
         );
     }
 

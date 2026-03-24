@@ -733,6 +733,7 @@ GEMINI_CGC_WRAPPER
 #
 CLAUDE_PROBE_ERROR=""
 GEMINI_PROBE_ERROR=""
+CODEX_PROBE_ERROR=""
 
 probe_claude_runtime() {
     local planner_bin="${INSTALL_DIR}/bin"
@@ -800,6 +801,54 @@ probe_gemini_runtime() {
     return 1
 }
 
+probe_codex_runtime() {
+    local planner_bin="${INSTALL_DIR}/bin"
+    local cli_home="${INSTALL_DIR}/cli-home"
+    local timeout_cmd=()
+    local output=""
+    local status=0
+    local shell_cmd="
+set -e
+tmpdir=\$(mktemp -d /tmp/planner-codex-probe.XXXXXX)
+cleanup() { rm -rf \"\${tmpdir}\"; }
+trap cleanup EXIT
+cd \"\${tmpdir}\"
+git init --quiet
+printf '# planner codex probe\n' > README.md
+git add -A >/dev/null 2>&1
+git -c user.email=planner@localhost -c user.name=Planner commit --allow-empty -m 'init' --quiet >/dev/null 2>&1 || true
+HOME=${cli_home}/codex CODEX_HOME=${cli_home}/codex/.codex ${planner_bin}/codex exec --json --sandbox workspace-write -m gpt-5.4-mini --output-last-message \"\${tmpdir}/last.txt\" - <<'EOF'
+Reply with OK only.
+EOF
+if [[ -s \"\${tmpdir}/last.txt\" ]]; then
+    cat \"\${tmpdir}/last.txt\"
+fi"
+
+    CODEX_PROBE_ERROR=""
+
+    if ! [[ -x "${planner_bin}/codex" ]]; then
+        CODEX_PROBE_ERROR="codex binary not found at ${planner_bin}/codex"
+        return 1
+    fi
+
+    if command -v timeout >/dev/null 2>&1; then
+        timeout_cmd=(timeout 45s)
+    fi
+
+    output="$("${timeout_cmd[@]}" sudo -u "${SERVICE_USER}" /bin/bash --noprofile --norc -lc "${shell_cmd}" 2>&1)"
+    status=$?
+    if [[ ${status} -eq 0 ]]; then
+        if grep -q '\bOK\b' <<< "${output}"; then
+            return 0
+        fi
+        CODEX_PROBE_ERROR="runtime probe returned unexpected output: $(echo "${output}" | tr '\n' ' ' | sed 's/[[:space:]]\\+/ /g' | cut -c1-220)"
+        return 1
+    fi
+
+    CODEX_PROBE_ERROR="runtime probe failed (exit ${status}): $(echo "${output}" | tr '\n' ' ' | sed 's/[[:space:]]\\+/ /g' | cut -c1-220)"
+    return 1
+}
+
 check_llm_auth() {
     info "Verifying LLM authentication..."
     echo ""
@@ -850,9 +899,15 @@ check_llm_auth() {
     # --- Codex ---
     if [[ -x "${planner_bin}/codex" ]]; then
         installed=$((installed + 1))
-        if [[ -f "${cli_home}/codex/.codex/auth.json" ]] &&              [[ -s "${cli_home}/codex/.codex/auth.json" ]]; then
-            info "  \u2713 codex   — credentials found in ${cli_home}/codex/"
-            authed=$((authed + 1))
+        if [[ -s "${cli_home}/codex/.codex/auth.json" ]] || [[ -s "${cli_home}/codex/.codex/.credentials.json" ]]; then
+            if probe_codex_runtime; then
+                info "  \u2713 codex   — credentials found and headless prompt probe passed"
+                authed=$((authed + 1))
+            else
+                warn "  \u26a0 codex   — credentials found, but headless prompt probe failed"
+                warn "      ${CODEX_PROBE_ERROR}"
+                unhealthy+=(codex)
+            fi
         else
             warn "  \u2717 codex   — NOT AUTHENTICATED"
             unauthenticated+=(codex)

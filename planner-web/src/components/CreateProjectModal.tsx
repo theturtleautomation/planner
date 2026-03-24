@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
+import type { KeyboardEvent } from 'react';
 
 interface CreateProjectModalProps {
   isOpen: boolean;
@@ -43,6 +44,13 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate }: Create
     }
   }, [name, description, onCreate, handleClose]);
 
+  const handleDescriptionKeyDown = useCallback((event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key !== 'Enter' || event.shiftKey) return;
+    event.preventDefault();
+    if (saving) return;
+    void handleSubmit();
+  }, [handleSubmit, saving]);
+
   if (!isOpen) return null;
 
   return (
@@ -61,48 +69,57 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate }: Create
           </div>
           <button className="modal-close" onClick={handleClose}>&times;</button>
         </div>
-        <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-          <label className="field-label">
-            Project Name
-            <input
-              className="field-input"
-              value={name}
-              onChange={e => setName(e.target.value)}
-              placeholder="Enter project name..."
-              autoFocus
-            />
-          </label>
-          <label className="field-label">
-            Description (Optional)
-            <textarea
-              className="field-input"
-              value={description}
-              onChange={e => setDescription(e.target.value)}
-              placeholder="Short description of the project..."
-              rows={3}
-            />
-          </label>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (saving) return;
+            void handleSubmit();
+          }}
+        >
+          <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+            <label className="field-label">
+              Project Name
+              <input
+                className="field-input"
+                value={name}
+                onChange={e => setName(e.target.value)}
+                placeholder="Enter project name..."
+                autoFocus
+              />
+            </label>
+            <label className="field-label">
+              Description (Optional)
+              <textarea
+                className="field-input"
+                value={description}
+                onChange={e => setDescription(e.target.value)}
+                onKeyDown={handleDescriptionKeyDown}
+                placeholder="Short description of the project..."
+                rows={3}
+              />
+            </label>
 
-          {error && (
-            <div style={{
-              padding: 'var(--space-2) var(--space-3)',
-              background: 'var(--color-error-bg, rgba(255,59,48,0.1))',
-              color: 'var(--color-error)',
-              borderRadius: 'var(--radius-sm)',
-              fontSize: 'var(--text-xs)',
-            }}>
-              {error}
-            </div>
-          )}
-        </div>
-        <div className="modal-footer">
-          <button className="btn btn-ghost" onClick={handleClose} disabled={saving}>
-            Cancel
-          </button>
-          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>
-            {saving ? 'Creating…' : 'Create Project'}
-          </button>
-        </div>
+            {error && (
+              <div style={{
+                padding: 'var(--space-2) var(--space-3)',
+                background: 'var(--color-error-bg, rgba(255,59,48,0.1))',
+                color: 'var(--color-error)',
+                borderRadius: 'var(--radius-sm)',
+                fontSize: 'var(--text-xs)',
+              }}>
+                {error}
+              </div>
+            )}
+          </div>
+          <div className="modal-footer">
+            <button type="button" className="btn btn-ghost" onClick={handleClose} disabled={saving}>
+              Cancel
+            </button>
+            <button type="submit" className="btn btn-primary" disabled={saving}>
+              {saving ? 'Creating…' : 'Create Project'}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );

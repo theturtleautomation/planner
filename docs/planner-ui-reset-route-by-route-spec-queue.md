@@ -3,7 +3,7 @@
 **Status:** Implemented  
 **Date:** 2026-03-22  
 **Parent:** [Project Plan](/home/thetu/planner/docs/project-plan.md)  
-**Related Planning:** [Planner Design System Command Center Plan](/home/thetu/planner/docs/planner-design-system-command-center-plan.md), [Phase 13 Socratic Focused Question Lobby Reset Spec](/home/thetu/planner/docs/phase-13-socratic-realtime-workspace-deltas-and-warm-prompt-library-spec.md), [Project-First UI Research Sessions](/home/thetu/planner/docs/project-first-ui-research-sessions.md), [Planner UI Reset Tranche Audit Remediation Spec](/home/thetu/planner/docs/planner-ui-reset-tranche-audit-remediation-spec.md), [Planner UI Reset Residual Corrections Spec](/home/thetu/planner/docs/planner-ui-reset-residual-corrections-spec.md)  
+**Related Planning:** [Planner Design System Command Center Plan](/home/thetu/planner/docs/planner-design-system-command-center-plan.md), [Phase 13 Socratic Focused Question Lobby Reset Spec](/home/thetu/planner/docs/phase-13-socratic-realtime-workspace-deltas-and-warm-prompt-library-spec.md), [Project-First UI Research Sessions](/home/thetu/planner/docs/project-first-ui-research-sessions.md), [Planner UI Reset Tranche Audit Remediation Spec](/home/thetu/planner/docs/planner-ui-reset-tranche-audit-remediation-spec.md), [Planner UI Reset Residual Corrections Spec](/home/thetu/planner/docs/planner-ui-reset-residual-corrections-spec.md), [Planner UI Reset Audit Evidence Closeout Spec](/home/thetu/planner/docs/planner-ui-reset-audit-evidence-closeout-spec.md)  
 **Source Research:** route inventory from [App.tsx](/home/thetu/planner/planner-web/src/App.tsx), current page components under `planner-web/src/pages/`, current implemented design-system follow-on specs, and external research on visibility of system status, recognition rather than recall, discoverability, disclosure patterns, progress signaling, and layout hierarchy from Nielsen Norman Group, Apple, Fluent, Material, and Carbon
 
 ## Purpose
@@ -292,10 +292,14 @@ Completed:
 - the 2026-03-22 bounded tranche audit remediation that synchronized queue and
   tracker status, narrowed overstated child-spec language, and strengthened
   route-specific verification where the audit found thin evidence
-- remaining residual trust-hardening work is now tracked explicitly in
+- the residual correction follow-up tracked explicitly in
   [Planner UI Reset Residual Corrections Spec](/home/thetu/planner/docs/planner-ui-reset-residual-corrections-spec.md)
   instead of reopening this exhausted queue as if it were a fresh route
   delivery container
+- the audit evidence closeout in
+  [Planner UI Reset Audit Evidence Closeout Spec](/home/thetu/planner/docs/planner-ui-reset-audit-evidence-closeout-spec.md)
+  closed the last `UIR-00` auth-entry proof gap and `UIR-05` focused-lobby
+  proof gap without broadening the original route scope
 
 Verification support for tranche closure now lives in:
 
@@ -304,12 +308,15 @@ Verification support for tranche closure now lives in:
 - [Planner UI Reset Residual Corrections Spec](/home/thetu/planner/docs/planner-ui-reset-residual-corrections-spec.md)
   for the focused follow-up on parent closeout language, Home hierarchy,
   Blueprint verification, and Events failure-state verification
+- [Planner UI Reset Audit Evidence Closeout Spec](/home/thetu/planner/docs/planner-ui-reset-audit-evidence-closeout-spec.md)
+  for the final auth-root, callback, context-shelf, and branch-transition
+  verification hardening
 
 ## Open Questions
 
 None blocking this parent container.
 
-The original queue is now exhausted.
+The original queue is now exhausted and fully closed.
 
 Any remaining work should be cumulative QA or follow-on route specs opened from
 real product gaps, not additional delivery against this original queue.
