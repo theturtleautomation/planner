@@ -1,5 +1,12 @@
-import { summarizeBlueprint, summarizeKnowledge } from "./advanced";
-import type { BlueprintResponse } from "./types";
+import {
+  summarizeBlueprint,
+  summarizeBuildPath,
+  summarizeBuildReadiness,
+  summarizeKnowledge,
+  summarizeProjectActivity,
+  summarizeReview,
+} from "./advanced";
+import type { BlueprintResponse, ProjectImportResponse, PromptBankResponse, SessionSummary } from "./types";
 
 const blueprint = (overrides: Partial<BlueprintResponse> = {}): BlueprintResponse => ({
   total_nodes: 5,
@@ -87,5 +94,189 @@ describe("advanced project helpers", () => {
     expect(summary.decisionNodes).toBe(1);
     expect(summary.componentNodes).toBe(1);
     expect(summary.structuralNodes.length).toBeGreaterThan(0);
+  });
+
+  it("prioritizes import review when a project-local review queue exists", () => {
+    const importReview: ProjectImportResponse = {
+      project: {
+        id: "project-1",
+        slug: "personal-calendar",
+        name: "Personal Calendar",
+        description: "Calendar app",
+        owner_user_id: "dev|local",
+        team_label: null,
+        created_at: "2026-03-24T00:00:00Z",
+        updated_at: "2026-03-24T05:00:00Z",
+        archived_at: null,
+        legacy_scope_keys: [],
+      },
+      import_job: {
+        id: "job-1",
+        project_id: "project-1",
+        provider: "local",
+        requested_ref: "/tmp/personal-calendar",
+        status: "review_pending",
+        analysis_summary: "New import draft detected architecture changes.",
+        created_at: "2026-03-24T04:00:00Z",
+        updated_at: "2026-03-24T05:00:00Z",
+      },
+      source_binding: {
+        project_id: "project-1",
+        provider: "local",
+        canonical_ref: "/tmp/personal-calendar",
+        managed_checkout: false,
+        created_at: "2026-03-24T04:00:00Z",
+        updated_at: "2026-03-24T05:00:00Z",
+      },
+      import_draft: null,
+      import_review_selection: {
+        job_id: "job-1",
+        excluded_node_ids: [],
+        included_node_count: 2,
+        excluded_node_count: 1,
+      },
+      review_nodes: [
+        { node_id: "node-1", node_name: "Task Service", node_type: "component", included: true },
+        { node_id: "node-2", node_name: "Sync Adapter", node_type: "component", included: false },
+      ],
+    };
+
+    const review = summarizeReview({ importReview });
+    expect(review.state).toBe("pending");
+    expect(review.pendingCount).toBe(2);
+    expect(review.rows[0]?.title).toBe("Task Service");
+  });
+
+  it("marks build readiness as blocked when review and queued analysis remain", () => {
+    const primarySession: SessionSummary = {
+      id: "session-1",
+      title: "Calendar intake",
+      archived: false,
+      created_at: "2026-03-24T00:00:00Z",
+      last_activity_at: "2026-03-24T05:00:00Z",
+      pipeline_running: false,
+      intake_phase: "interviewing",
+      project_description: "Personal calendar app with task tracking",
+      project_id: "project-1",
+      project_slug: "personal-calendar",
+      project_name: "Personal Calendar",
+      current_step: "socratic.question.generated",
+      error_message: null,
+    };
+    const promptBank: PromptBankResponse = {
+      session_id: "session-1",
+      active_thread_id: "verify-platform",
+      banked_threads: [
+        {
+          category_id: "verify-platform",
+          title: "Verify Platform",
+          summary: "Confirm platform",
+          question_count: 1,
+          prompt: {
+            prompt_id: "prompt-1",
+            title: "Verify Platform",
+            kind: "verification_batch",
+            origin_category_id: "verify-platform",
+            items: [],
+            allow_partial_submit: true,
+          },
+        },
+      ],
+      queued_threads: [
+        {
+          category_id: "user-flows",
+          title: "Explore User Flows",
+          summary: "Clarify key flows",
+          question_count: 1,
+          status: "queued",
+        },
+      ],
+      build_ready: false,
+      build_readiness_message: null,
+    };
+
+    const readiness = summarizeBuildReadiness({
+      primarySession,
+      promptBank,
+      blueprintSummary: summarizeBlueprint(blueprint()),
+    });
+
+    expect(readiness.state).toBe("in-progress");
+    expect(readiness.blockers.length).toBeGreaterThan(0);
+    expect(readiness.confirmations.length).toBeGreaterThan(0);
+  });
+
+  it("turns readiness into an explicit build handoff summary", () => {
+    const readiness = summarizeBuildReadiness({
+      promptBank: {
+        session_id: "session-1",
+        active_thread_id: "verify-platform",
+        banked_threads: [],
+        queued_threads: [],
+        build_ready: true,
+        build_readiness_message: "Project analysis is ready to move into the build path.",
+      },
+      blueprintSummary: summarizeBlueprint(blueprint()),
+    });
+
+    const buildPath = summarizeBuildPath({
+      projectName: "Personal Calendar",
+      readiness,
+      blueprintSummary: summarizeBlueprint(blueprint()),
+      promptBank: {
+        session_id: "session-1",
+        active_thread_id: "verify-platform",
+        banked_threads: [],
+        queued_threads: [],
+        build_ready: true,
+        build_readiness_message: "Project analysis is ready to move into the build path.",
+      },
+    });
+
+    expect(buildPath.state).toBe("ready");
+    expect(buildPath.label).toBe("Handoff ready");
+    expect(buildPath.handoffTarget).toContain("Personal Calendar");
+  });
+
+  it("builds a concise project activity stream from project-local state", () => {
+    const buildPath = summarizeBuildPath({
+      projectName: "Personal Calendar",
+      readiness: {
+        state: "needs-review",
+        label: "Needs review",
+        headline: "A review gate is still blocking build readiness",
+        nextAction: "Resolve the review queue first.",
+        blockers: ["Import review pending"],
+        confirmations: [],
+      },
+      promptBank: null,
+      blueprintSummary: summarizeBlueprint(blueprint()),
+    });
+
+    const activity = summarizeProjectActivity({
+      sessions: [
+        {
+          id: "session-1",
+          title: "Calendar intake",
+          archived: false,
+          created_at: "2026-03-24T00:00:00Z",
+          last_activity_at: "2026-03-24T05:00:00Z",
+          pipeline_running: false,
+          intake_phase: "interviewing",
+          project_description: "Personal calendar app with task tracking",
+          project_id: "project-1",
+          project_slug: "personal-calendar",
+          project_name: "Personal Calendar",
+          current_step: "socratic.question.generated",
+          error_message: null,
+        },
+      ],
+      buildPath,
+      promptBank: null,
+      importState: null,
+    });
+
+    expect(activity.items[0]?.title).toBe("Calendar intake");
+    expect(activity.items.some(item => item.title === "Build path")).toBe(true);
   });
 });

@@ -126,6 +126,18 @@ Current planning state:
   [Planner SolidStart Phase 03 Project Review And Build Readiness Spec](/home/thetu/planner/docs/planner-solidstart-phase-03-project-review-and-build-readiness-spec.md),
   which keeps the project workspace analysis-first while adding attached review
   and build-readiness surfaces
+- the next widening slice after that is
+  [Planner SolidStart Phase 04 Project Build Path And Automation Handoff Spec](/home/thetu/planner/docs/planner-solidstart-phase-04-project-build-path-and-automation-handoff-spec.md),
+  which keeps the project workspace project-first while turning build
+  readiness into an attached, explicit automation handoff surface
+- the next widening slice after that is
+  [Planner SolidStart Phase 05 Project Runs And Activity Spec](/home/thetu/planner/docs/planner-solidstart-phase-05-project-runs-and-activity-spec.md),
+  which keeps the project workspace analysis-first while adding attached
+  project-local execution visibility
+- the next widening slice after that is
+  [Planner SolidStart Phase 06 Project Build Execution And Run Detail Spec](/home/thetu/planner/docs/planner-solidstart-phase-06-project-build-execution-and-run-detail-spec.md),
+  which keeps the project workspace analysis-first while adding attached
+  build execution detail
 - the route-level child spec for the Socratic lobby is
   [Socratic SolidStart Greenfield Platform Spec](/home/thetu/planner/docs/socratic-solidstart-greenfield-platform-spec.md)
 - the route-level Socratic spec is fed by the already-selected product

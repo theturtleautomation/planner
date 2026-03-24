@@ -165,6 +165,60 @@ const projectBlueprint = {
   ],
 };
 
+const importReview = {
+  project: projectsList.projects[0],
+  import_job: {
+    id: "import-job-1",
+    project_id: "project-1",
+    provider: "local",
+    requested_ref: "/tmp/personal-calendar",
+    status: "review_pending",
+    restored_from_job_id: null,
+    seed_session_id: "session-1",
+    analysis_summary: "Import draft captured new task and reminder entities.",
+    progress_message: null,
+    error_message: null,
+    created_at: "2026-03-24T04:00:00Z",
+    updated_at: "2026-03-24T05:30:00Z",
+  },
+  source_binding: {
+    project_id: "project-1",
+    provider: "local",
+    canonical_ref: "/tmp/personal-calendar",
+    default_branch: null,
+    head_revision: null,
+    local_root: "/tmp/personal-calendar",
+    managed_checkout: false,
+    created_at: "2026-03-24T04:00:00Z",
+    updated_at: "2026-03-24T05:30:00Z",
+  },
+  import_draft: {
+    job_id: "import-job-1",
+    project_id: "project-1",
+    analysis_summary: "Import draft captured new task and reminder entities.",
+    source_metadata: {
+      provider: "local",
+      canonical_ref: "/tmp/personal-calendar",
+      local_root: "/tmp/personal-calendar",
+      default_branch: null,
+      head_revision: null,
+    },
+    discovered_nodes: [{ id: "node-1" }, { id: "node-2" }],
+    created_at: "2026-03-24T04:00:00Z",
+    updated_at: "2026-03-24T05:30:00Z",
+  },
+  import_review_selection: {
+    job_id: "import-job-1",
+    excluded_node_ids: ["node-2"],
+    included_node_count: 1,
+    excluded_node_count: 1,
+  },
+  review_nodes: [
+    { node_id: "node-1", node_name: "Task Service", node_type: "component", included: true },
+    { node_id: "node-2", node_name: "Reminder Engine", node_type: "component", included: false },
+  ],
+};
+
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     class MockWebSocket {
@@ -320,6 +374,49 @@ test.beforeEach(async ({ page }) => {
       body: JSON.stringify(projectBlueprint),
     });
   });
+
+  await page.route("**/api/projects/personal-calendar/import-review", async route => {
+    if (route.request().method() === "POST") {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          ...importReview,
+          import_job: {
+            ...importReview.import_job,
+            status: "applied",
+          },
+        }),
+      });
+      return;
+    }
+
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(importReview),
+    });
+  });
+
+  await page.route("**/api/projects/personal-calendar/import-review-selection", async route => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(importReview),
+    });
+  });
+
+  await page.route("**/api/projects/personal-calendar/import-state", async route => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(importReview),
+    });
+  });
+
+  await page.route("**/api/projects/new-idea/import-review", async route => {
+    await route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: "not found" }) });
+  });
+
+  await page.route("**/api/projects/new-idea/import-state", async route => {
+    await route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: "not found" }) });
+  });
 });
 
 test("phase 01 centers guided work entry and project-first navigation", async ({ page }) => {
@@ -350,10 +447,15 @@ test("phase 02 keeps advanced items hidden while attached knowledge and blueprin
 
   await expect(page.getByRole("heading", { name: "New Idea" })).toBeVisible();
   await expect(page.getByText("No active analysis yet")).toBeVisible();
-  await expect(page.getByText("Advanced project surfaces")).toBeVisible();
+  await expect(page.getByText("Project review, readiness, and advanced surfaces")).toBeVisible();
   await expect(page.getByRole("tab", { name: "Knowledge" })).not.toBeVisible();
 
-  await page.getByText("Advanced project surfaces").click();
+  await page.getByText("Project review, readiness, and advanced surfaces").click();
+  await expect(page.getByRole("tab", { name: "Review" })).toBeVisible();
+  await page.getByRole("tab", { name: "Review" }).click();
+  await expect(page.getByText("No active review queue")).toBeVisible();
+
+  await page.getByRole("tab", { name: "Knowledge" }).click();
   await expect(page.getByRole("tab", { name: "Knowledge" })).toBeVisible();
   await expect(page.getByText("Knowledge records")).toBeVisible();
   await expect(page.getByText("Task Service")).toBeVisible();
@@ -361,4 +463,35 @@ test("phase 02 keeps advanced items hidden while attached knowledge and blueprin
   await page.getByRole("tab", { name: "Blueprint" }).click();
   await expect(page.getByText("Edges")).toBeVisible();
   await expect(page.getByText("Web first")).toBeVisible();
+});
+
+test("phase 03 keeps review and build readiness attached to the project workspace", async ({ page }) => {
+  await page.goto("/projects/personal-calendar");
+
+  await expect(page.getByRole("heading", { name: "Personal Calendar" })).toBeVisible();
+  await expect(page.getByText("Project review, readiness, and advanced surfaces")).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Review" })).not.toBeVisible();
+
+  await page.getByText("Project review, readiness, and advanced surfaces").click();
+  await expect(page.getByRole("tab", { name: "Review" })).toBeVisible();
+  await page.getByRole("tab", { name: "Review" }).click();
+  await expect(page.getByRole("heading", { name: "Import draft needs review" })).toBeVisible();
+  await expect(page.getByText("Pending review")).toBeVisible();
+  await expect(page.getByText("Reminder Engine")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Apply import review" })).toBeVisible();
+
+  await page.getByRole("tab", { name: "Build readiness" }).click();
+  await expect(page.getByRole("heading", { name: "A review gate is still blocking build readiness" })).toBeVisible();
+  await expect(page.getByText("Needs review").first()).toBeVisible();
+  await expect(page.getByText(/Import draft still needs merge review/i)).toBeVisible();
+
+  await page.getByRole("tab", { name: "Build path" }).click();
+  await expect(page.getByRole("heading", { name: "Build handoff is blocked by unresolved review work" })).toBeVisible();
+  await expect(
+    page.getByText(/Resolve the project review queue before handing this project to the automated build path/i).first(),
+  ).toBeVisible();
+
+  await page.getByRole("tab", { name: "Activity" }).click();
+  await expect(page.getByRole("heading", { name: "Recent project activity" })).toBeVisible();
+  await expect(page.getByText("Calendar intake").first()).toBeVisible();
 });

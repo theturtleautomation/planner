@@ -196,6 +196,76 @@ export interface PromptBankResponse {
   build_readiness_message?: string | null;
 }
 
+export type ImportStatus = "queued" | "cloning" | "analyzing" | "review_pending" | "applied" | "failed";
+
+export interface ProjectSourceBinding {
+  project_id: string;
+  provider: string;
+  canonical_ref: string;
+  default_branch?: string | null;
+  head_revision?: string | null;
+  local_root?: string | null;
+  managed_checkout: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectImportJob {
+  id: string;
+  project_id: string;
+  provider: string;
+  requested_ref: string;
+  status: ImportStatus;
+  restored_from_job_id?: string | null;
+  seed_session_id?: string | null;
+  analysis_summary?: string | null;
+  progress_message?: string | null;
+  error_message?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ImportDraftSourceMetadata {
+  provider: string;
+  canonical_ref: string;
+  local_root: string;
+  default_branch?: string | null;
+  head_revision?: string | null;
+}
+
+export interface ProjectImportDraft {
+  job_id: string;
+  project_id: string;
+  analysis_summary: string;
+  source_metadata: ImportDraftSourceMetadata;
+  discovered_nodes: unknown[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectImportReviewSelection {
+  job_id: string;
+  excluded_node_ids: string[];
+  included_node_count: number;
+  excluded_node_count: number;
+}
+
+export interface ProjectImportReviewNodeSummary {
+  node_id: string;
+  node_name: string;
+  node_type: string;
+  included: boolean;
+}
+
+export interface ProjectImportResponse {
+  project: Project;
+  import_job: ProjectImportJob;
+  source_binding: ProjectSourceBinding;
+  import_draft?: ProjectImportDraft | null;
+  import_review_selection?: ProjectImportReviewSelection | null;
+  review_nodes?: ProjectImportReviewNodeSummary[] | null;
+}
+
 export interface PromptAnswer {
   item_id: string;
   selected_option_id?: string | null;

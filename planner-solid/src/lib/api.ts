@@ -7,6 +7,7 @@ import type {
   ListSessionsResponse,
   PromptBankResponse,
   ProjectResponse,
+  ProjectImportResponse,
   StartSocraticResponse,
 } from "./types";
 
@@ -20,6 +21,27 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
       ...(init?.headers ?? {}),
     },
   });
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => response.statusText);
+    throw new Error(text || `Request failed: ${response.status}`);
+  }
+
+  return response.json() as Promise<T>;
+}
+
+async function apiFetchOptional<T>(path: string, init?: RequestInit): Promise<T | null> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...(init?.headers ?? {}),
+    },
+  });
+
+  if (response.status === 404) {
+    return null;
+  }
 
   if (!response.ok) {
     const text = await response.text().catch(() => response.statusText);
@@ -110,6 +132,34 @@ export function getProjectBlueprint(
   }
   const query = params.toString();
   return cachedGet(`/blueprint${query ? `?${query}` : ""}`);
+}
+
+export function getProjectImportState(projectRef: string): Promise<ProjectImportResponse | null> {
+  return apiFetchOptional(`/projects/${encodeURIComponent(projectRef)}/import-state`);
+}
+
+export function getProjectImportReview(projectRef: string): Promise<ProjectImportResponse | null> {
+  return apiFetchOptional(`/projects/${encodeURIComponent(projectRef)}/import-review`);
+}
+
+export function updateProjectImportReviewSelection(
+  projectRef: string,
+  payload: { nodeId: string; included: boolean },
+): Promise<ProjectImportResponse> {
+  return apiFetch(`/projects/${encodeURIComponent(projectRef)}/import-review-selection`, {
+    method: "POST",
+    body: JSON.stringify({
+      node_id: payload.nodeId,
+      included: payload.included,
+    }),
+  });
+}
+
+export function applyProjectImportReview(projectRef: string): Promise<ProjectImportResponse> {
+  return apiFetch(`/projects/${encodeURIComponent(projectRef)}/import-review`, {
+    method: "POST",
+    body: "{}",
+  });
 }
 
 export function createProjectSession(

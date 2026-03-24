@@ -475,6 +475,19 @@ summary:focus-visible {
   gap: 14px;
 }
 
+.advanced-surface-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.advanced-surface-title {
+  margin: 4px 0 0;
+  font-size: 16px;
+  line-height: 1.2;
+}
+
 .advanced-summary-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -493,6 +506,11 @@ summary:focus-visible {
   font-size: 20px;
   font-weight: 600;
   line-height: 1;
+}
+
+.advanced-metric-text {
+  font-size: 14px;
+  line-height: 1.25;
 }
 
 .advanced-list {
@@ -517,6 +535,10 @@ summary:focus-visible {
   border-bottom: 0;
 }
 
+.advanced-list-row-action {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
 .advanced-item-title {
   font-size: 13px;
   font-weight: 600;
@@ -533,6 +555,34 @@ summary:focus-visible {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
+}
+
+.advanced-column-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  padding: 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  background: var(--bg-pane);
+}
+
+.advanced-bullet-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.advanced-action-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .advanced-label {
@@ -871,6 +921,10 @@ summary:focus-visible {
 
   .advanced-grid {
     grid-template-columns: 1fr;
+  }
+
+  .advanced-surface-head {
+    flex-direction: column;
   }
 
   .advanced-summary-grid,

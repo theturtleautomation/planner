@@ -1,9 +1,27 @@
 import { Title } from "@solidjs/meta";
 import { A, useNavigate, useParams } from "@solidjs/router";
-import { For, Show, createMemo, createResource, createSignal } from "solid-js";
+import { For, Match, Show, Switch, createMemo, createResource, createSignal } from "solid-js";
 
-import { summarizeBlueprint, summarizeKnowledge, type AdvancedPanelTab } from "~/lib/advanced";
-import { createProjectSession, getProject, getProjectBlueprint, listSessions } from "~/lib/api";
+import {
+  applyProjectImportReview,
+  createProjectSession,
+  getProject,
+  getProjectBlueprint,
+  getProjectImportReview,
+  getProjectImportState,
+  getPromptBank,
+  listSessions,
+  updateProjectImportReviewSelection,
+} from "~/lib/api";
+import {
+  summarizeBlueprint,
+  summarizeBuildPath,
+  summarizeBuildReadiness,
+  summarizeKnowledge,
+  summarizeProjectActivity,
+  summarizeReview,
+  type AdvancedPanelTab,
+} from "~/lib/advanced";
 import { summarizeProjectWork } from "~/lib/projects";
 import { presentSessionTitle } from "~/lib/workspace";
 
@@ -18,23 +36,44 @@ function formatTimestamp(value: string): string {
   });
 }
 
+function readinessBadgeClass(state: "ready" | "needs-review" | "in-progress" | "not-started"): string {
+  switch (state) {
+    case "ready":
+      return "state-badge is-active";
+    case "needs-review":
+      return "state-badge is-attention";
+    case "in-progress":
+      return "state-badge is-recent";
+    default:
+      return "state-badge is-quiet";
+  }
+}
+
+function reviewBadgeClass(state: "pending" | "quiet" | "applied"): string {
+  switch (state) {
+    case "pending":
+      return "state-badge is-attention";
+    case "applied":
+      return "state-badge is-active";
+    default:
+      return "state-badge is-quiet";
+  }
+}
+
 export default function ProjectWorkspacePage() {
   const params = useParams();
   const navigate = useNavigate();
+  let advancedDetails: HTMLDetailsElement | undefined;
+
   const [project] = createResource(() => params.projectSlug, getProject);
   const [sessions] = createResource(listSessions);
   const [advancedOpen, setAdvancedOpen] = createSignal(false);
-  const [advancedTab, setAdvancedTab] = createSignal<AdvancedPanelTab>("knowledge");
+  const [advancedTab, setAdvancedTab] = createSignal<AdvancedPanelTab>("review");
   const [starting, setStarting] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
-  const [projectBlueprint] = createResource(
-    () => (advancedOpen() ? params.projectSlug : null),
-    async projectSlug =>
-      getProjectBlueprint(projectSlug, {
-        includeShared: true,
-        includeGlobal: false,
-      }),
-  );
+  const [reviewError, setReviewError] = createSignal<string | null>(null);
+  const [applyPending, setApplyPending] = createSignal(false);
+  const [selectionPendingNodeId, setSelectionPendingNodeId] = createSignal<string | null>(null);
 
   const projectSessions = createMemo(() => {
     const slug = params.projectSlug;
@@ -47,6 +86,32 @@ export default function ProjectWorkspacePage() {
     if (!currentProject) return null;
     return summarizeProjectWork(currentProject, projectSessions());
   });
+
+  const primarySession = createMemo(() => summary()?.primarySession ?? null);
+
+  const [projectBlueprint] = createResource(
+    () => (advancedOpen() ? params.projectSlug : undefined),
+    async projectSlug => {
+      if (!projectSlug) return null;
+      return getProjectBlueprint(projectSlug, {
+        includeShared: true,
+        includeGlobal: false,
+      });
+    },
+  );
+  const [projectImportState, { refetch: refetchImportState }] = createResource(
+    () => (advancedOpen() ? params.projectSlug : undefined),
+    async projectSlug => (projectSlug ? getProjectImportState(projectSlug) : null),
+  );
+  const [projectImportReview, { refetch: refetchImportReview }] = createResource(
+    () => (advancedOpen() ? params.projectSlug : undefined),
+    async projectSlug => (projectSlug ? getProjectImportReview(projectSlug) : null),
+  );
+  const [promptBank, { refetch: refetchPromptBank }] = createResource(
+    () => (advancedOpen() && primarySession()?.id ? primarySession()!.id : undefined),
+    async sessionId => (sessionId ? getPromptBank(sessionId) : null),
+  );
+
   const knowledgeSummary = createMemo(() => {
     const blueprint = projectBlueprint();
     return blueprint ? summarizeKnowledge(blueprint) : null;
@@ -55,6 +120,39 @@ export default function ProjectWorkspacePage() {
     const blueprint = projectBlueprint();
     return blueprint ? summarizeBlueprint(blueprint) : null;
   });
+  const reviewSummary = createMemo(() =>
+    summarizeReview({
+      importReview: projectImportReview(),
+      importState: projectImportState(),
+      promptBank: promptBank(),
+    }),
+  );
+  const buildReadiness = createMemo(() =>
+    summarizeBuildReadiness({
+      primarySession: primarySession(),
+      promptBank: promptBank(),
+      importState: projectImportState(),
+      importReview: projectImportReview(),
+      blueprintSummary: blueprintSummary(),
+    }),
+  );
+  const buildPath = createMemo(() =>
+    summarizeBuildPath({
+      projectName: project()?.project.name ?? "Project",
+      primarySession: primarySession(),
+      readiness: buildReadiness(),
+      promptBank: promptBank(),
+      blueprintSummary: blueprintSummary(),
+    }),
+  );
+  const activitySummary = createMemo(() =>
+    summarizeProjectActivity({
+      sessions: projectSessions(),
+      importState: projectImportState(),
+      promptBank: promptBank(),
+      buildPath: buildPath(),
+    }),
+  );
 
   const handleStartAnalysis = async () => {
     const currentProject = project()?.project;
@@ -74,18 +172,48 @@ export default function ProjectWorkspacePage() {
     }
   };
 
+  const handleSetImportNodeIncluded = async (nodeId: string, included: boolean) => {
+    if (!params.projectSlug) return;
+    setSelectionPendingNodeId(nodeId);
+    setReviewError(null);
+    try {
+      await updateProjectImportReviewSelection(params.projectSlug, { nodeId, included });
+      await Promise.all([refetchImportReview(), refetchImportState()]);
+    } catch (err) {
+      setReviewError(err instanceof Error ? err.message : "Unable to update review selection.");
+    } finally {
+      setSelectionPendingNodeId(null);
+    }
+  };
+
+  const handleApplyImportReview = async () => {
+    if (!params.projectSlug) return;
+    setApplyPending(true);
+    setReviewError(null);
+    try {
+      await applyProjectImportReview(params.projectSlug);
+      await Promise.all([refetchImportReview(), refetchImportState(), refetchPromptBank()]);
+    } catch (err) {
+      setReviewError(err instanceof Error ? err.message : "Unable to apply the import review.");
+    } finally {
+      setApplyPending(false);
+    }
+  };
+
   return (
     <section class="page page-scroll">
       <Title>{project()?.project.name ?? "Project"}</Title>
       <div class="stack page-frame">
-          <Show
-          when={project()}
-          fallback={<div class="empty-state">Loading project workspace…</div>}
-        >
+        <Show when={project()} fallback={<div class="empty-state">Loading project workspace…</div>}>
           {response => {
             const currentProject = () => response().project;
             const currentSummary = () => summary();
-            const primarySession = () => currentSummary()?.primarySession ?? null;
+            const activeSession = () => primarySession();
+            const currentPromptBank = () => promptBank();
+            const currentReview = () => projectImportReview();
+            const currentReadiness = () => buildReadiness();
+            const currentBuildPath = () => buildPath();
+            const currentActivity = () => activitySummary();
 
             return (
               <>
@@ -102,18 +230,21 @@ export default function ProjectWorkspacePage() {
                         {currentSummary()?.statusLabel ?? "Ready to start"}
                       </div>
                       <h2 class="hero-focus-title">
-                        {primarySession()
-                          ? presentSessionTitle(primarySession()!)
+                        {activeSession()
+                          ? presentSessionTitle(activeSession()!)
                           : "No active analysis yet"}
                       </h2>
                       <p class="hero-focus-copy">
-                        {primarySession()?.project_description?.trim() ||
+                        {activeSession()?.project_description?.trim() ||
                           "Start a new Socratic analysis to shape this project's working truth."}
                       </p>
                     </div>
                     <div class="hero-actions">
+                      <span class={readinessBadgeClass(currentReadiness().state)}>
+                        {currentReadiness().label}
+                      </span>
                       <Show
-                        when={primarySession()}
+                        when={activeSession()}
                         fallback={
                           <button class="btn btn-primary" type="button" disabled={starting()} onClick={handleStartAnalysis}>
                             {starting() ? "Starting…" : "Start analysis"}
@@ -174,12 +305,58 @@ export default function ProjectWorkspacePage() {
 
                 <details
                   class="advanced-panel"
-                  ref={advancedDetails}
-                  onToggle={() => setAdvancedOpen(advancedDetails?.open ?? false)}
+                  ref={element => {
+                    advancedDetails = element;
+                  }}
+                  onToggle={() => {
+                    const open = advancedDetails?.open ?? false;
+                    setAdvancedOpen(open);
+                    if (open) {
+                      setAdvancedTab(current =>
+                        current === "knowledge" || current === "blueprint" ? "review" : current,
+                      );
+                    }
+                  }}
                 >
-                  <summary>Advanced project surfaces</summary>
+                  <summary>Project review, readiness, and advanced surfaces</summary>
                   <div class="advanced-panel-body">
-                    <div class="advanced-tab-row" role="tablist" aria-label="Project advanced surfaces">
+                    <div class="advanced-tab-row" role="tablist" aria-label="Project attached surfaces">
+                      <button
+                        class={`advanced-tab${advancedTab() === "review" ? " is-active" : ""}`}
+                        type="button"
+                        role="tab"
+                        aria-selected={advancedTab() === "review"}
+                        onClick={() => setAdvancedTab("review")}
+                      >
+                        Review
+                      </button>
+                      <button
+                        class={`advanced-tab${advancedTab() === "readiness" ? " is-active" : ""}`}
+                        type="button"
+                        role="tab"
+                        aria-selected={advancedTab() === "readiness"}
+                        onClick={() => setAdvancedTab("readiness")}
+                      >
+                        Build readiness
+                      </button>
+                      <button
+                        class={`advanced-tab${advancedTab() === "build" ? " is-active" : ""}`}
+                        type="button"
+                        role="tab"
+                        aria-selected={advancedTab() === "build"}
+                        onClick={() => setAdvancedTab("build")}
+                      >
+                        Build path
+                      </button>
+                      <button
+                        class={`advanced-tab${advancedTab() === "activity" ? " is-active" : ""}`}
+                        type="button"
+                        role="tab"
+                        aria-selected={advancedTab() === "activity"}
+                        onClick={() => setAdvancedTab("activity")}
+                      >
+                        Activity
+                      </button>
                       <button
                         class={`advanced-tab${advancedTab() === "knowledge" ? " is-active" : ""}`}
                         type="button"
@@ -200,55 +377,187 @@ export default function ProjectWorkspacePage() {
                       </button>
                     </div>
 
-                    <Show
-                      when={projectBlueprint()}
-                      fallback={<div class="advanced-loading">Loading project knowledge and structure…</div>}
-                    >
-                      <Show
-                        when={advancedTab() === "knowledge"}
-                        fallback={
-                          <Show when={blueprintSummary()}>
-                            {summary => (
-                              <div class="advanced-surface">
-                                <div class="advanced-summary-grid">
-                                  <div class="advanced-summary-card">
-                                    <div class="advanced-label">Nodes</div>
-                                    <div class="advanced-metric">{summary().totalNodes}</div>
-                                  </div>
-                                  <div class="advanced-summary-card">
-                                    <div class="advanced-label">Edges</div>
-                                    <div class="advanced-metric">{summary().totalEdges}</div>
-                                  </div>
-                                  <div class="advanced-summary-card">
-                                    <div class="advanced-label">Decisions</div>
-                                    <div class="advanced-metric">{summary().decisionNodes}</div>
-                                  </div>
-                                  <div class="advanced-summary-card">
-                                    <div class="advanced-label">Components</div>
-                                    <div class="advanced-metric">{summary().componentNodes}</div>
-                                  </div>
-                                </div>
+                    <Switch>
+                      <Match when={advancedTab() === "review"}>
+                        <Show
+                          when={!projectImportReview.loading && !projectImportState.loading && !promptBank.loading}
+                          fallback={<div class="advanced-loading">Loading project review state…</div>}
+                        >
+                          <div class="advanced-surface">
+                          <div class="advanced-surface-head">
+                            <div>
+                              <div class="eyebrow">Project review</div>
+                              <h3 class="advanced-surface-title">{reviewSummary().headline}</h3>
+                              <p class="section-copy">{reviewSummary().copy}</p>
+                            </div>
+                            <span class={reviewBadgeClass(reviewSummary().state)}>
+                              {reviewSummary().state === "pending"
+                                ? "Pending review"
+                                : reviewSummary().state === "applied"
+                                  ? "Review applied"
+                                  : "Quiet"}
+                            </span>
+                          </div>
+                          <div class="advanced-summary-grid">
+                            <div class="advanced-summary-card">
+                              <div class="advanced-label">Pending</div>
+                              <div class="advanced-metric">{reviewSummary().pendingCount}</div>
+                            </div>
+                            <div class="advanced-summary-card">
+                              <div class="advanced-label">Completed</div>
+                              <div class="advanced-metric">{reviewSummary().completedCount}</div>
+                            </div>
+                            <div class="advanced-summary-card">
+                              <div class="advanced-label">Queued analysis</div>
+                              <div class="advanced-metric">{currentPromptBank()?.queued_threads.length ?? 0}</div>
+                            </div>
+                            <div class="advanced-summary-card">
+                              <div class="advanced-label">Build posture</div>
+                              <div class="advanced-metric advanced-metric-text">{currentReadiness().label}</div>
+                            </div>
+                          </div>
+
+                          {reviewError() ? <div class="error-copy">{reviewError()}</div> : null}
+
+                          <Show when={currentReview()?.import_job.status === "review_pending"}>
+                            <div class="advanced-action-row">
+                              <Show when={currentReview()?.import_job.seed_session_id}>
+                                {seedSessionId => (
+                                  <A class="btn btn-subtle" href={`/sessions/${seedSessionId()}`}>
+                                    Open seeded session
+                                  </A>
+                                )}
+                              </Show>
+                              <button class="btn btn-primary" type="button" disabled={applyPending()} onClick={handleApplyImportReview}>
+                                {applyPending() ? "Applying…" : "Apply import review"}
+                              </button>
+                            </div>
+                          </Show>
+
+                          <Show
+                            when={currentReview()?.import_job.status === "review_pending" && (currentReview()?.review_nodes?.length ?? 0) > 0}
+                            fallback={
+                              <Show
+                                when={reviewSummary().rows.length > 0}
+                                fallback={<div class="empty-state">No project-local review queue is open right now.</div>}
+                              >
                                 <div class="advanced-list">
-                                  <For each={summary().structuralNodes}>
-                                    {node => (
+                                  <For each={reviewSummary().rows}>
+                                    {row => (
                                       <div class="advanced-list-row">
                                         <div>
-                                          <div class="advanced-item-title">{node.name}</div>
-                                          <div class="advanced-item-copy">
-                                            {node.node_type} · {node.scope_visibility}
-                                          </div>
+                                          <div class="advanced-item-title">{row.title}</div>
+                                          <div class="advanced-item-copy">{row.copy}</div>
                                         </div>
-                                        <div class="advanced-item-meta">Updated {formatTimestamp(node.updated_at)}</div>
+                                        <div class="advanced-item-meta">{row.meta}</div>
                                       </div>
                                     )}
                                   </For>
                                 </div>
-                              </div>
-                            )}
+                              </Show>
+                            }
+                          >
+                            <div class="advanced-list">
+                              <For each={currentReview()?.review_nodes ?? []}>
+                                {node => (
+                                  <div class="advanced-list-row advanced-list-row-action">
+                                    <div>
+                                      <div class="advanced-item-title">{node.node_name}</div>
+                                      <div class="advanced-item-copy">
+                                        {node.node_type} · {node.included ? "included in apply" : "excluded from apply"}
+                                      </div>
+                                    </div>
+                                    <button
+                                      class="btn btn-subtle"
+                                      type="button"
+                                      disabled={selectionPendingNodeId() === node.node_id}
+                                      onClick={() => void handleSetImportNodeIncluded(node.node_id, !node.included)}
+                                    >
+                                      {selectionPendingNodeId() === node.node_id
+                                        ? node.included
+                                          ? "Excluding…"
+                                          : "Including…"
+                                        : node.included
+                                          ? "Exclude"
+                                          : "Include"}
+                                    </button>
+                                  </div>
+                                )}
+                              </For>
+                            </div>
                           </Show>
-                        }
-                      >
-                        <Show when={knowledgeSummary()}>
+                          </div>
+                        </Show>
+                      </Match>
+
+                      <Match when={advancedTab() === "readiness"}>
+                        <Show
+                          when={!projectImportReview.loading && !projectImportState.loading && !promptBank.loading}
+                          fallback={<div class="advanced-loading">Loading build-readiness state…</div>}
+                        >
+                          <div class="advanced-surface">
+                          <div class="advanced-surface-head">
+                            <div>
+                              <div class="eyebrow">Build readiness</div>
+                              <h3 class="advanced-surface-title">{currentReadiness().headline}</h3>
+                              <p class="section-copy">{currentReadiness().nextAction}</p>
+                            </div>
+                            <span class={readinessBadgeClass(currentReadiness().state)}>
+                              {currentReadiness().label}
+                            </span>
+                          </div>
+                          <div class="advanced-summary-grid">
+                            <div class="advanced-summary-card">
+                              <div class="advanced-label">Banked threads</div>
+                              <div class="advanced-metric">{currentPromptBank()?.banked_threads.length ?? 0}</div>
+                            </div>
+                            <div class="advanced-summary-card">
+                              <div class="advanced-label">Queued threads</div>
+                              <div class="advanced-metric">{currentPromptBank()?.queued_threads.length ?? 0}</div>
+                            </div>
+                            <div class="advanced-summary-card">
+                              <div class="advanced-label">Blockers</div>
+                              <div class="advanced-metric">{currentReadiness().blockers.length}</div>
+                            </div>
+                            <div class="advanced-summary-card">
+                              <div class="advanced-label">Confirmations</div>
+                              <div class="advanced-metric">{currentReadiness().confirmations.length}</div>
+                            </div>
+                          </div>
+                          <div class="advanced-grid">
+                            <div class="advanced-column-panel">
+                              <div class="advanced-label">Blockers</div>
+                              <Show
+                                when={currentReadiness().blockers.length > 0}
+                                fallback={<div class="advanced-value">No explicit blockers are currently registered.</div>}
+                              >
+                                <ul class="advanced-bullet-list">
+                                  <For each={currentReadiness().blockers}>
+                                    {blocker => <li>{blocker}</li>}
+                                  </For>
+                                </ul>
+                              </Show>
+                            </div>
+                            <div class="advanced-column-panel">
+                              <div class="advanced-label">Confirmations</div>
+                              <Show
+                                when={currentReadiness().confirmations.length > 0}
+                                fallback={<div class="advanced-value">Explicit confirmations will appear as analysis and review settle.</div>}
+                              >
+                                <ul class="advanced-bullet-list">
+                                  <For each={currentReadiness().confirmations}>
+                                    {confirmation => <li>{confirmation}</li>}
+                                  </For>
+                                </ul>
+                              </Show>
+                            </div>
+                          </div>
+                          </div>
+                        </Show>
+                      </Match>
+
+                      <Match when={advancedTab() === "knowledge"}>
+                        <Show when={knowledgeSummary()} fallback={<div class="advanced-loading">Loading project knowledge…</div>}>
                           {summary => (
                             <div class="advanced-surface">
                               <div class="advanced-summary-grid">
@@ -287,8 +596,166 @@ export default function ProjectWorkspacePage() {
                             </div>
                           )}
                         </Show>
-                      </Show>
-                    </Show>
+                      </Match>
+
+                      <Match when={advancedTab() === "build"}>
+                        <Show
+                          when={!projectImportReview.loading && !projectImportState.loading && !promptBank.loading}
+                          fallback={<div class="advanced-loading">Loading build handoff state…</div>}
+                        >
+                          <div class="advanced-surface">
+                            <div class="advanced-surface-head">
+                              <div>
+                                <div class="eyebrow">Build path</div>
+                                <h3 class="advanced-surface-title">{currentBuildPath().headline}</h3>
+                                <p class="section-copy">{currentBuildPath().nextAction}</p>
+                              </div>
+                              <span class={readinessBadgeClass(
+                                currentBuildPath().state === "ready"
+                                  ? "ready"
+                                  : currentBuildPath().state === "blocked"
+                                    ? "needs-review"
+                                    : currentBuildPath().state === "staging"
+                                      ? "in-progress"
+                                      : "not-started",
+                              )}>
+                                {currentBuildPath().label}
+                              </span>
+                            </div>
+                            <div class="advanced-grid">
+                              <div class="advanced-column-panel">
+                                <div class="advanced-label">Handoff target</div>
+                                <div class="advanced-value">
+                                  {currentBuildPath().handoffTarget || "Project handoff target is still being assembled."}
+                                </div>
+                              </div>
+                              <div class="advanced-column-panel">
+                                <div class="advanced-label">Next move</div>
+                                <div class="advanced-value">{currentBuildPath().nextAction}</div>
+                                <div class="advanced-action-row">
+                                  <Show when={activeSession()}>
+                                    {session => (
+                                      <A class="btn btn-subtle" href={`/sessions/${session().id}`}>
+                                        Continue analysis
+                                      </A>
+                                    )}
+                                  </Show>
+                                  <button class="btn btn-subtle" type="button" onClick={() => setAdvancedTab("readiness")}>
+                                    Open build readiness
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                            <div class="advanced-grid">
+                              <div class="advanced-column-panel">
+                                <div class="advanced-label">Blockers</div>
+                                <Show
+                                  when={currentBuildPath().blockers.length > 0}
+                                  fallback={<div class="advanced-value">No explicit build handoff blockers are currently registered.</div>}
+                                >
+                                  <ul class="advanced-bullet-list">
+                                    <For each={currentBuildPath().blockers}>
+                                      {blocker => <li>{blocker}</li>}
+                                    </For>
+                                  </ul>
+                                </Show>
+                              </div>
+                              <div class="advanced-column-panel">
+                                <div class="advanced-label">Confirmations</div>
+                                <Show
+                                  when={currentBuildPath().confirmations.length > 0}
+                                  fallback={<div class="advanced-value">The handoff summary will list confirmations as the project settles.</div>}
+                                >
+                                  <ul class="advanced-bullet-list">
+                                    <For each={currentBuildPath().confirmations}>
+                                      {confirmation => <li>{confirmation}</li>}
+                                    </For>
+                                  </ul>
+                                </Show>
+                              </div>
+                            </div>
+                          </div>
+                        </Show>
+                      </Match>
+
+                      <Match when={advancedTab() === "activity"}>
+                        <Show
+                          when={!projectImportReview.loading && !projectImportState.loading && !promptBank.loading}
+                          fallback={<div class="advanced-loading">Loading project activity…</div>}
+                        >
+                          <div class="advanced-surface">
+                            <div class="advanced-surface-head">
+                              <div>
+                                <div class="eyebrow">Project activity</div>
+                                <h3 class="advanced-surface-title">{currentActivity().headline}</h3>
+                                <p class="section-copy">{currentActivity().copy}</p>
+                              </div>
+                              <span class="state-badge is-recent">Attached timeline</span>
+                            </div>
+                            <Show
+                              when={currentActivity().items.length > 0}
+                              fallback={<div class="empty-state">Project-local activity will appear here once the project starts moving.</div>}
+                            >
+                              <div class="advanced-list">
+                                <For each={currentActivity().items}>
+                                  {item => (
+                                    <div class="advanced-list-row">
+                                      <div>
+                                        <div class="advanced-item-title">{item.title}</div>
+                                        <div class="advanced-item-copy">{item.copy}</div>
+                                      </div>
+                                      <div class="advanced-item-meta">{item.meta}</div>
+                                    </div>
+                                  )}
+                                </For>
+                              </div>
+                            </Show>
+                          </div>
+                        </Show>
+                      </Match>
+
+                      <Match when={advancedTab() === "blueprint"}>
+                        <Show when={blueprintSummary()} fallback={<div class="advanced-loading">Loading project structure…</div>}>
+                          {summary => (
+                            <div class="advanced-surface">
+                              <div class="advanced-summary-grid">
+                                <div class="advanced-summary-card">
+                                  <div class="advanced-label">Nodes</div>
+                                  <div class="advanced-metric">{summary().totalNodes}</div>
+                                </div>
+                                <div class="advanced-summary-card">
+                                  <div class="advanced-label">Edges</div>
+                                  <div class="advanced-metric">{summary().totalEdges}</div>
+                                </div>
+                                <div class="advanced-summary-card">
+                                  <div class="advanced-label">Decisions</div>
+                                  <div class="advanced-metric">{summary().decisionNodes}</div>
+                                </div>
+                                <div class="advanced-summary-card">
+                                  <div class="advanced-label">Components</div>
+                                  <div class="advanced-metric">{summary().componentNodes}</div>
+                                </div>
+                              </div>
+                              <div class="advanced-list">
+                                <For each={summary().structuralNodes}>
+                                  {node => (
+                                    <div class="advanced-list-row">
+                                      <div>
+                                        <div class="advanced-item-title">{node.name}</div>
+                                        <div class="advanced-item-copy">
+                                          {node.node_type} · {node.scope_visibility}
+                                        </div>
+                                      </div>
+                                      <div class="advanced-item-meta">Updated {formatTimestamp(node.updated_at)}</div>
+                                    </div>
+                                  )}
+                                </For>
+                              </div>
+                            </div>
+                          )}
+                        </Show>
+                      </Match>
+                    </Switch>
                   </div>
                 </details>
               </>
@@ -299,4 +766,3 @@ export default function ProjectWorkspacePage() {
     </section>
   );
 }
-  let advancedDetails: HTMLDetailsElement | undefined;

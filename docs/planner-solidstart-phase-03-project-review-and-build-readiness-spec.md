@@ -1,6 +1,6 @@
 # Planner SolidStart Phase 03 Project Review And Build Readiness Spec
 
-**Status:** ready for implementation  
+**Status:** implemented  
 **Date:** 2026-03-24  
 **Parent:** [Planner SolidStart Platform Direction Spec](/home/thetu/planner/docs/planner-solidstart-platform-direction-spec.md)  
 **Related Planning:** [Planner SolidStart Phase 02 Project Advanced Surfaces Spec](/home/thetu/planner/docs/planner-solidstart-phase-02-project-advanced-surfaces-spec.md), [Planner UI Reset Phase 08 Discovery Review Workspace Spec](/home/thetu/planner/docs/planner-ui-reset-phase-08-discovery-review-workspace-spec.md), [Socratic SolidStart Greenfield Platform Spec](/home/thetu/planner/docs/socratic-solidstart-greenfield-platform-spec.md), [Socratic Initial Prompt Bank And Dynamic Hydration Spec](/home/thetu/planner/docs/socratic-initial-prompt-bank-and-dynamic-hydration-spec.md)
@@ -11,6 +11,17 @@
 > project review and build readiness: turning deep Socratic analysis into
 > explicit reviewable changes and an obvious "ready to build or not" project
 > posture.
+>
+> Implementation sync (2026-03-24): the Solid project workspace now includes
+> attached `Review` and `Build readiness` surfaces inside the same
+> hidden-by-default project reveal. Review stays compact and project-local,
+> surfacing pending import merge controls first and falling back to queued
+> analysis follow-ups when no import review is open. Build readiness now reads
+> as an explicit project posture derived from active analysis, queued threads,
+> import-review state, and project blueprint context. Verification completed
+> with helper tests, Solid lint/build, and Playwright proof that review and
+> readiness remain secondary to active analysis while still being locally fast
+> once opened.
 
 ## 1. Executive Judgment
 
