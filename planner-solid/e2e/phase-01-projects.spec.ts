@@ -17,6 +17,12 @@ const sessionList = {
       project_name: "Personal Calendar",
       current_step: "socratic.question.generated",
       error_message: null,
+      can_resume_live: false,
+      can_resume_checkpoint: true,
+      can_restart_from_description: true,
+      can_retry_pipeline: false,
+      has_checkpoint: true,
+      resume_status: "interview_checkpoint_resumable",
     },
     {
       id: "session-2",
@@ -32,6 +38,12 @@ const sessionList = {
       project_name: "Household Finance",
       current_step: null,
       error_message: null,
+      can_resume_live: false,
+      can_resume_checkpoint: false,
+      can_restart_from_description: false,
+      can_retry_pipeline: false,
+      has_checkpoint: false,
+      resume_status: "ready_to_start",
     },
   ],
 };
@@ -95,6 +107,7 @@ const promptBank = {
   queued_threads: [],
   build_ready: false,
   build_readiness_message: null,
+  initial_bank_complete: true,
 };
 
 const projectBlueprint = {

@@ -17,7 +17,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use uuid::Uuid;
 
-use planner_schemas::{PromptEnvelope, SocraticCategorySnapshot};
+use planner_schemas::{PromptBankEntry, PromptEnvelope, SocraticCategorySnapshot};
 
 use crate::auth::{auth_middleware, Claims};
 use crate::import::{
@@ -105,7 +105,7 @@ pub struct GetSessionResponse {
     pub session: Session,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GetSessionPromptBankResponse {
     pub session_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -116,6 +116,8 @@ pub struct GetSessionPromptBankResponse {
     pub build_ready: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub build_readiness_message: Option<String>,
+    #[serde(default)]
+    pub initial_bank_complete: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -3421,46 +3423,91 @@ fn category_status_label(status: &planner_schemas::SocraticCategoryStatus) -> &'
     }
 }
 
-fn prompt_bank_response(session: &Session) -> GetSessionPromptBankResponse {
+fn checkpoint_active_prompt(
+    checkpoint: &crate::session::InterviewCheckpoint,
+) -> Option<PromptEnvelope> {
+    checkpoint
+        .active_thread_id
+        .as_deref()
+        .and_then(|active_thread_id| {
+            checkpoint
+                .prompt_bank
+                .iter()
+                .find(|entry| entry.category_id == active_thread_id)
+                .map(|entry| entry.prompt.clone())
+        })
+        .or_else(|| checkpoint.prompt_bank.first().map(|entry| entry.prompt.clone()))
+        .or_else(|| checkpoint.current_prompt.clone())
+}
+
+pub(crate) fn prompt_bank_response(session: &Session) -> GetSessionPromptBankResponse {
     let checkpoint = session.checkpoint.as_ref();
-    let prompt = checkpoint.and_then(|checkpoint| checkpoint.current_prompt.clone());
     let snapshot = checkpoint.and_then(|checkpoint| checkpoint.current_category_snapshot.as_ref());
-
-    let active_thread_id = prompt.as_ref().and_then(prompt_focus_category_id).map(str::to_string);
-
-    let banked_threads = prompt
-        .map(|prompt| {
-            let category_id = prompt_focus_category_id(&prompt)
+    let active_thread_id = checkpoint
+        .and_then(|checkpoint| checkpoint.active_thread_id.clone())
+        .or_else(|| {
+            checkpoint
+                .and_then(checkpoint_active_prompt)
+                .as_ref()
+                .and_then(prompt_focus_category_id)
                 .map(str::to_string)
-                .unwrap_or_else(|| prompt.prompt_id.clone());
-            let fallback_title = prompt
+        });
+
+    let checkpoint_banked_entries = checkpoint
+        .map(|checkpoint| {
+            if checkpoint.prompt_bank.is_empty() {
+                checkpoint_active_prompt(checkpoint)
+                    .map(|prompt| {
+                        let category_id = prompt_focus_category_id(&prompt)
+                            .map(str::to_string)
+                            .unwrap_or_else(|| prompt.prompt_id.clone());
+                        vec![PromptBankEntry { category_id, prompt }]
+                    })
+                    .unwrap_or_default()
+            } else {
+                checkpoint.prompt_bank.clone()
+            }
+        })
+        .unwrap_or_default();
+
+    let banked_threads = checkpoint_banked_entries
+        .iter()
+        .map(|entry| {
+            let fallback_title = entry
+                .prompt
                 .category_path
                 .last()
-                .map(|entry| entry.title.clone())
-                .unwrap_or_else(|| prompt.title.clone());
+                .map(|path_entry| path_entry.title.clone())
+                .unwrap_or_else(|| entry.prompt.title.clone());
             let title = snapshot
-                .and_then(|snapshot| category_snapshot_node(snapshot, &category_id))
+                .and_then(|snapshot| category_snapshot_node(snapshot, &entry.category_id))
                 .map(|node| node.title.clone())
                 .unwrap_or(fallback_title);
             let summary = snapshot
-                .and_then(|snapshot| category_snapshot_node(snapshot, &category_id))
+                .and_then(|snapshot| category_snapshot_node(snapshot, &entry.category_id))
                 .map(|node| node.summary.clone())
                 .unwrap_or_else(|| {
-                    prompt
+                    entry
+                        .prompt
                         .instructions
                         .clone()
                         .unwrap_or_else(|| "Questions are ready to answer.".into())
                 });
 
-            vec![PromptBankThread {
-                category_id,
+            PromptBankThread {
+                category_id: entry.category_id.clone(),
                 title,
                 summary,
-                question_count: prompt.items.len().max(1),
-                prompt,
-            }]
+                question_count: entry.prompt.items.len().max(1),
+                prompt: entry.prompt.clone(),
+            }
         })
-        .unwrap_or_default();
+        .collect::<Vec<_>>();
+
+    let banked_thread_ids = checkpoint_banked_entries
+        .iter()
+        .map(|entry| entry.category_id.as_str())
+        .collect::<std::collections::HashSet<_>>();
 
     let queued_threads = snapshot
         .map(|snapshot| {
@@ -3468,7 +3515,7 @@ fn prompt_bank_response(session: &Session) -> GetSessionPromptBankResponse {
                 .nodes
                 .iter()
                 .filter(|node| node.has_prompt_ready)
-                .filter(|node| Some(node.category_id.as_str()) != active_thread_id.as_deref())
+                .filter(|node| !banked_thread_ids.contains(node.category_id.as_str()))
                 .map(|node| QueuedPromptThread {
                     category_id: node.category_id.clone(),
                     title: node.title.clone(),
@@ -3480,13 +3527,26 @@ fn prompt_bank_response(session: &Session) -> GetSessionPromptBankResponse {
         })
         .unwrap_or_default();
 
+    let build_ready = snapshot.map(|snapshot| snapshot.build_ready).unwrap_or(false);
+    let initial_bank_complete = checkpoint
+        .map(|checkpoint| checkpoint.initial_prompt_bank_complete)
+        .unwrap_or(false)
+        || build_ready
+        || snapshot
+            .map(|snapshot| {
+                let prompt_ready_nodes = snapshot.nodes.iter().filter(|node| node.has_prompt_ready).count();
+                prompt_ready_nodes == 0 || banked_threads.len() >= prompt_ready_nodes
+            })
+            .unwrap_or(!banked_threads.is_empty());
+
     GetSessionPromptBankResponse {
         session_id: session.id.to_string(),
         active_thread_id,
         banked_threads,
         queued_threads,
-        build_ready: snapshot.map(|snapshot| snapshot.build_ready).unwrap_or(false),
+        build_ready,
         build_readiness_message: snapshot.map(|snapshot| snapshot.build_readiness_message.clone()),
+        initial_bank_complete,
     }
 }
 

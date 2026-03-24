@@ -275,12 +275,23 @@ pub async fn plan_prompt_batch_from_candidates(
         PromptKind::ContradictionBatch => "contradiction",
         PromptKind::DraftReview => "draft-review",
     };
+    let category_slug = origin_category_id
+        .as_deref()
+        .map(|value| {
+            value
+                .chars()
+                .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '-' })
+                .collect::<String>()
+        })
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| String::from("global"));
 
     Ok(Some(PromptEnvelope {
         prompt_id: format!(
-            "prompt-{}-{}-{}",
+            "prompt-{}-{}-{}-{}",
             state.turn_count.saturating_add(1),
             prompt_kind_slug,
+            category_slug,
             Utc::now().timestamp_millis()
         ),
         kind,

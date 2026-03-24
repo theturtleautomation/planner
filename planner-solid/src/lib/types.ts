@@ -1,4 +1,11 @@
 export type IntakePhase = "waiting" | "interviewing" | "pipeline_running" | "complete" | "error";
+export type ResumeStatus =
+  | "ready_to_start"
+  | "live_attach_available"
+  | "interview_attached"
+  | "interview_restart_only"
+  | "interview_resume_unknown"
+  | "interview_checkpoint_resumable";
 
 export interface SessionSummary {
   id: string;
@@ -14,6 +21,12 @@ export interface SessionSummary {
   project_name?: string | null;
   current_step?: string | null;
   error_message?: string | null;
+  can_resume_live: boolean;
+  can_resume_checkpoint: boolean;
+  can_restart_from_description: boolean;
+  can_retry_pipeline: boolean;
+  has_checkpoint: boolean;
+  resume_status: ResumeStatus;
 }
 
 export interface Session {
@@ -30,6 +43,12 @@ export interface Session {
   project_name?: string | null;
   current_step?: string | null;
   error_message?: string | null;
+  can_resume_live: boolean;
+  can_resume_checkpoint: boolean;
+  can_restart_from_description: boolean;
+  can_retry_pipeline: boolean;
+  has_checkpoint: boolean;
+  resume_status: ResumeStatus;
 }
 
 export type EventLevel = "info" | "warn" | "error";
@@ -378,6 +397,7 @@ export interface PromptBankResponse {
   queued_threads: QueuedPromptThread[];
   build_ready: boolean;
   build_readiness_message?: string | null;
+  initial_bank_complete: boolean;
 }
 
 export type ImportStatus = "queued" | "cloning" | "analyzing" | "review_pending" | "applied" | "failed";

@@ -10,6 +10,29 @@ import {
 } from "./advanced";
 import type { BlueprintResponse, ProjectImportResponse, PromptBankResponse, SessionSummary } from "./types";
 
+const sessionSummary = (overrides: Partial<SessionSummary> = {}): SessionSummary => ({
+  id: "session-1",
+  title: "Calendar intake",
+  archived: false,
+  created_at: "2026-03-24T00:00:00Z",
+  last_activity_at: "2026-03-24T05:00:00Z",
+  pipeline_running: false,
+  intake_phase: "waiting",
+  project_description: "Personal calendar app with task tracking",
+  project_id: "project-1",
+  project_slug: "personal-calendar",
+  project_name: "Personal Calendar",
+  current_step: null,
+  error_message: null,
+  can_resume_live: false,
+  can_resume_checkpoint: false,
+  can_restart_from_description: false,
+  can_retry_pipeline: false,
+  has_checkpoint: false,
+  resume_status: "ready_to_start",
+  ...overrides,
+});
+
 const blueprint = (overrides: Partial<BlueprintResponse> = {}): BlueprintResponse => ({
   total_nodes: 5,
   total_edges: 4,
@@ -150,21 +173,12 @@ describe("advanced project helpers", () => {
   });
 
   it("marks build readiness as blocked when review and queued analysis remain", () => {
-    const primarySession: SessionSummary = {
-      id: "session-1",
-      title: "Calendar intake",
-      archived: false,
-      created_at: "2026-03-24T00:00:00Z",
-      last_activity_at: "2026-03-24T05:00:00Z",
-      pipeline_running: false,
+    const primarySession: SessionSummary = sessionSummary({
       intake_phase: "interviewing",
-      project_description: "Personal calendar app with task tracking",
-      project_id: "project-1",
-      project_slug: "personal-calendar",
-      project_name: "Personal Calendar",
       current_step: "socratic.question.generated",
-      error_message: null,
-    };
+      can_restart_from_description: true,
+      resume_status: "interview_restart_only",
+    });
     const promptBank: PromptBankResponse = {
       session_id: "session-1",
       active_thread_id: "verify-platform",
@@ -195,6 +209,7 @@ describe("advanced project helpers", () => {
       ],
       build_ready: false,
       build_readiness_message: null,
+      initial_bank_complete: true,
     };
 
     const readiness = summarizeBuildReadiness({
@@ -217,6 +232,7 @@ describe("advanced project helpers", () => {
         queued_threads: [],
         build_ready: true,
         build_readiness_message: "Project analysis is ready to move into the build path.",
+        initial_bank_complete: true,
       },
       blueprintSummary: summarizeBlueprint(blueprint()),
     });
@@ -232,6 +248,7 @@ describe("advanced project helpers", () => {
         queued_threads: [],
         build_ready: true,
         build_readiness_message: "Project analysis is ready to move into the build path.",
+        initial_bank_complete: true,
       },
     });
 
@@ -257,21 +274,12 @@ describe("advanced project helpers", () => {
 
     const activity = summarizeProjectActivity({
       sessions: [
-        {
-          id: "session-1",
-          title: "Calendar intake",
-          archived: false,
-          created_at: "2026-03-24T00:00:00Z",
-          last_activity_at: "2026-03-24T05:00:00Z",
-          pipeline_running: false,
+        sessionSummary({
           intake_phase: "interviewing",
-          project_description: "Personal calendar app with task tracking",
-          project_id: "project-1",
-          project_slug: "personal-calendar",
-          project_name: "Personal Calendar",
           current_step: "socratic.question.generated",
-          error_message: null,
-        },
+          can_restart_from_description: true,
+          resume_status: "interview_restart_only",
+        }),
       ],
       buildPath,
       promptBank: null,
@@ -285,19 +293,14 @@ describe("advanced project helpers", () => {
   it("derives build execution posture from session runtime and pipeline events", () => {
     const execution = summarizeBuildExecution({
       primarySession: {
-        id: "session-1",
-        title: "Calendar intake",
-        archived: false,
-        created_at: "2026-03-24T00:00:00Z",
-        last_activity_at: "2026-03-24T05:00:00Z",
+        ...sessionSummary({
+          intake_phase: "pipeline_running",
+          pipeline_running: true,
+          current_step: "pipeline.compile",
+          can_resume_live: true,
+          resume_status: "live_attach_available",
+        }),
         pipeline_running: true,
-        intake_phase: "pipeline_running",
-        project_description: "Personal calendar app with task tracking",
-        project_id: "project-1",
-        project_slug: "personal-calendar",
-        project_name: "Personal Calendar",
-        current_step: "pipeline.compile",
-        error_message: null,
       },
       runs: {
         runs: ["run-12345678"],

@@ -9,7 +9,8 @@
    - [planner-core](#planner-core)
    - [planner-tui](#planner-tui)
    - [planner-server](#planner-server)
-   - [planner-web](#planner-web)
+   - [planner-solid](#planner-solid)
+   - [planner-web historical baseline](#planner-web-historical-baseline)
 4. [Data Flow](#data-flow)
 5. [Authentication](#authentication)
 6. [Key Design Decisions](#key-design-decisions)
@@ -20,7 +21,7 @@
 
 Planner v2 is a multi-crate Rust workspace that implements an AI-driven planning pipeline. A user description flows through a series of LLM-powered and deterministic steps — intake, compilation, adversarial review, consequence analysis, code generation, validation, and git projection — producing a fully auditable, content-addressed artifact chain.
 
-The workspace is structured around four Rust crates and one web frontend:
+The workspace is structured around four Rust crates, one active web frontend, and one retained historical baseline:
 
 | Component | Language | Role |
 |---|---|---|
@@ -28,7 +29,8 @@ The workspace is structured around four Rust crates and one web frontend:
 | `planner-core` | Rust | Pipeline engine, LLM clients, storage |
 | `planner-tui` | Rust | Ratatui terminal UI |
 | `planner-server` | Rust | Axum HTTP/WebSocket server with Auth0 JWT middleware |
-| `planner-web` | React + TypeScript | Socratic Lobby SPA with Auth0 authentication |
+| `planner-solid` | SolidStart + TypeScript | Active Socratic Lobby and project workspace frontend |
+| `planner-web` | React + TypeScript | Historical migration baseline / reference |
 
 ---
 
@@ -43,14 +45,15 @@ planner-schemas
       │           │
       ├──── planner-tui
       │
-      └──── planner-server ───── planner-web (static build)
+      └──── planner-server ───── planner-solid (static build)
 ```
 
 - **`planner-schemas`** — standalone; no dependencies on other workspace crates.
 - **`planner-core`** — depends on `planner-schemas`.
 - **`planner-tui`** — depends on `planner-core` and `planner-schemas`.
-- **`planner-server`** — depends on `planner-core` and `planner-schemas`. Serves the `planner-web` static build.
-- **`planner-web`** — Vite + React + TypeScript SPA. Builds to `dist/` and is served by `planner-server`.
+- **`planner-server`** — depends on `planner-core` and `planner-schemas`. Serves the `planner-solid` static build by default.
+- **`planner-solid`** — SolidStart + TypeScript SPA/export. Builds to `dist/static` and is served by `planner-server`.
+- **`planner-web`** — retained React baseline for historical reference during migration archaeology.
 
 ---
 
@@ -340,65 +343,51 @@ The TUI is wired to the real pipeline. On first user message, it spawns the pipe
 
 ---
 
-### planner-web
+### planner-solid
 
-> **Role:** React + TypeScript SPA serving the Socratic Lobby interface. Built with Vite, deployed as static files served by `planner-server`.
+> **Role:** SolidStart + TypeScript frontend serving the active Socratic Lobby, project workspaces, and attached operational routes. Built/exported for static serving by `planner-server`.
 
 #### Tech Stack
 
 - **Build tool:** Vite
-- **Framework:** React 19 + TypeScript
-- **Auth:** `@auth0/auth0-react` SDK
-- **Routing:** `react-router-dom`
-- **Styling:** Hand-written CSS (dark terminal theme, monospace fonts)
+- **Framework:** SolidStart + TypeScript
+- **Routing:** Solid router file-based routes
+- **Styling:** Hand-written CSS shared across route surfaces
 
 #### Project Structure
 
 ```
-planner-web/
+planner-solid/
 ├── src/
-│   ├── main.tsx                    # Entry point: ErrorBoundary + BrowserRouter + Auth0Provider
-│   ├── App.tsx                     # Route definitions
-│   ├── config.ts                   # Environment variables (Auth0, API base)
-│   ├── types.ts                    # TypeScript types for Session, Message, Stage, WS messages
-│   ├── index.css                   # Global styles (dark theme)
-│   ├── auth/
-│   │   ├── Auth0ProviderWithNavigate.tsx  # Auth0 provider with React Router integration
-│   │   ├── ProtectedRoute.tsx             # Route guard for authenticated routes
-│   │   └── useAuthenticatedFetch.ts       # Hook: attaches Bearer token to all API calls
-│   ├── api/
-│   │   └── client.ts              # Typed API client factory with token injection
-│   ├── hooks/
-│   │   └── useSessionWebSocket.ts # WebSocket hook with auto-reconnect + exponential backoff
-│   ├── components/
-│   │   ├── Layout.tsx             # Header, user info, logout, connection status
-│   │   ├── ChatPanel.tsx          # Scrollable message list with role-based styling
-│   │   ├── PipelineBar.tsx        # 12-stage pipeline visualization with status dots
-│   │   └── MessageInput.tsx       # Input box with send button
-│   └── pages/
-│       ├── LoginPage.tsx          # Landing page with Auth0 sign-in
-│       ├── Dashboard.tsx          # Session list + new session button
-│       └── SessionPage.tsx        # Main chat + pipeline view + WebSocket integration
-├── dist/                          # Build output (served by planner-server)
-├── .env.example                   # Auth0 configuration template
-├── vite.config.ts                 # Vite config: build to dist/, dev proxy to :3100
-├── package.json
-├── tsconfig.json
-└── tsconfig.app.json
+│   ├── app.tsx                    # App shell + route layout
+│   ├── app.css                    # Shared shell and route styling
+│   ├── lib/                       # Typed API client + route helpers
+│   ├── routes/                    # Projects, sessions, knowledge, blueprint, discovery, events, admin
+│   ├── entry-client.tsx           # Client entry point
+│   └── root.tsx                   # Root document shell
+├── e2e/                           # Playwright browser proof
+├── dist/                          # Exported static bundle for planner-server
+└── package.json
 ```
 
 #### Routes
 
 | Path | Component | Auth |
 |---|---|---|
-| `/` | `LoginPage` or `Dashboard` | Conditional |
-| `/callback` | Auth0 callback handler | — |
-| `/session/new` | `SessionPage` (creates new) | Protected |
-| `/session/:id` | `SessionPage` (loads existing) | Protected |
+| `/` | Project/work summary shell | Conditional |
+| `/projects/:projectSlug` | Project workspace | Protected |
+| `/sessions/:sessionId` | Socratic workspace | Protected |
+| `/projects/:projectSlug/import` | Import desk | Protected |
 
 #### Dev Mode
 
-When `VITE_AUTH0_DOMAIN` is not set, the app runs without Auth0 — login page routes directly to session creation. This enables local development without an Auth0 tenant.
+When `VITE_AUTH0_DOMAIN` is not set, the app runs without Auth0. This enables local development without an Auth0 tenant.
+
+---
+
+### planner-web historical baseline
+
+`planner-web/` remains in the repository as the retained React migration baseline. It is no longer the active frontend target, but it still documents the older React/Auth0 implementation for comparison work.
 
 ---
 
@@ -459,7 +448,7 @@ Every artifact produced at each step is wrapped in a `Turn<T>` and stored in the
 Browser → Auth0 Universal Login → JWT (access token)
   │
   ▼
-React SPA (planner-web)
+Solid frontend (planner-solid)
   │ Authorization: Bearer <jwt>
   ▼
 Axum Server (planner-server)
@@ -482,9 +471,9 @@ Claims { sub, email, ... } → user-scoped session access
 
 | Variable | Where | Description |
 |---|---|---|
-| `VITE_AUTH0_DOMAIN` | `planner-web` | Auth0 tenant domain (e.g., `your-tenant.us.auth0.com`) |
-| `VITE_AUTH0_CLIENT_ID` | `planner-web` | Auth0 application client ID |
-| `VITE_AUTH0_AUDIENCE` | `planner-web` | Auth0 API audience identifier |
+| `VITE_AUTH0_DOMAIN` | `planner-solid` | Auth0 tenant domain (e.g., `your-tenant.us.auth0.com`) |
+| `VITE_AUTH0_CLIENT_ID` | `planner-solid` | Auth0 application client ID |
+| `VITE_AUTH0_AUDIENCE` | `planner-solid` | Auth0 API audience identifier |
 | `AUTH0_DOMAIN` | `planner-server` | Same domain, for JWT issuer validation |
 | `AUTH0_AUDIENCE` | `planner-server` | Same audience, for JWT audience validation |
 | `AUTH0_SECRET` | `planner-server` | Optional: HS256 signing secret for dev/testing |

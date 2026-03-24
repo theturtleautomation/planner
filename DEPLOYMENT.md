@@ -98,19 +98,19 @@ curl http://localhost:3100/api/health
 # → {"status":"ok"}
 ```
 
-### Step 3: Start the React Dev Server (optional)
+### Step 3: Start the SolidStart Dev Server (optional)
 
 If you want to work on the frontend with hot module replacement:
 
 ```bash
-cd planner-web
+cd planner-solid
 npm install
 npm run dev
 ```
 
 The Vite dev server runs at `http://localhost:5173` and proxies API calls to `localhost:3100`.
 
-If you only need the built frontend, skip this step — `planner-server` already serves the pre-built `planner-web/dist` at `http://localhost:3100`.
+If you only need the built frontend, skip this step — `planner-server` already serves the pre-built `planner-solid/dist/static` at `http://localhost:3100`.
 
 ### Step 4: Run the Pipeline
 
@@ -129,7 +129,7 @@ If you only need the built frontend, skip this step — `planner-server` already
 cargo test --workspace
 
 # Frontend tests
-cd planner-web && npm test -- --run
+cd planner-solid && npm test -- --run
 ```
 
 ---
@@ -154,10 +154,10 @@ sudo cp target/release/planner-server /usr/local/bin/
 sudo cp target/release/planner-core /usr/local/bin/
 ```
 
-### Step 2: Build the React Frontend
+### Step 2: Build the Solid Frontend
 
 ```bash
-cd planner-web
+cd planner-solid
 
 # Create the environment file with your Auth0 credentials
 cp .env.example .env
@@ -167,7 +167,7 @@ npm install
 npm run build
 ```
 
-Output is written to `planner-web/dist/`.
+Output is written to `planner-solid/dist/`.
 
 ### Step 3: Configure Auth0
 
@@ -179,7 +179,7 @@ Follow the full instructions in [AUTH0_SETUP.md](./AUTH0_SETUP.md). The short ve
 4. Set the callback, logout, and origin URLs for your production domain
 5. Copy the Domain and Client ID values
 
-Then populate `planner-web/.env`:
+Then populate `planner-solid/.env`:
 
 ```env
 VITE_AUTH0_DOMAIN=your-tenant.us.auth0.com
@@ -190,7 +190,7 @@ VITE_AUTH0_AUDIENCE=https://planner-api
 Rebuild the frontend after editing `.env`:
 
 ```bash
-cd planner-web && npm run build
+cd planner-solid && npm run build
 ```
 
 ### Step 4: Set Backend Environment Variables
@@ -208,7 +208,7 @@ For a persistent deployment, add these to a systemd unit file or your hosting pl
 ```bash
 planner-server \
   --port 3100 \
-  --static-dir /path/to/planner-web/dist
+  --static-dir /path/to/planner-solid/dist/static
 ```
 
 For a reverse proxy setup (nginx, Caddy), proxy all requests to `localhost:3100`. WebSocket upgrade (`Upgrade: websocket`) must be forwarded — example nginx block:
@@ -244,7 +244,7 @@ location / {
 | `AUTH0_SECRET` | No | *(none)* | HS256 signing secret for dev/testing token issuance only. Not used with RS256 in production. |
 | `RUST_LOG` | No | `info` | Log filter using `tracing` env-filter syntax (e.g., `planner_server=debug`). |
 
-### Frontend (`planner-web`)
+### Frontend (`planner-solid`)
 
 All frontend variables are embedded at build time by Vite. They are not secrets.
 
@@ -368,7 +368,7 @@ The output lists which CLIs were detected on `$PATH`. If a required CLI is missi
 
 ## Docker
 
-Docker support is planned but not yet implemented. A multi-stage `Dockerfile` that builds the Rust binaries and React app in separate build stages, then packages them into a minimal runtime image, is on the roadmap.
+Docker support is planned but not yet implemented. A multi-stage `Dockerfile` that builds the Rust binaries and Solid app in separate build stages, then packages them into a minimal runtime image, is on the roadmap.
 
 To track or contribute to this work, see the [Docker issue on GitHub](https://github.com/theturtleautomation/planner/issues) and the relevant entry in [CONTRIBUTING.md](./CONTRIBUTING.md#known-limitations--areas-for-contribution).
 
@@ -434,8 +434,8 @@ The server enforces 100 requests/minute per IP. During development, automated te
 
 ### Frontend build fails — "VITE_AUTH0_DOMAIN is required"
 
-If the frontend was built with a stricter config that validates env vars at build time, create `planner-web/.env` with the required values before running `npm run build`. For dev mode builds, you can leave all `VITE_AUTH0_*` variables unset.
+If the frontend was built with a stricter config that validates env vars at build time, create `planner-solid/.env` with the required values before running `npm run build`. For dev mode builds, you can leave all `VITE_AUTH0_*` variables unset.
 
 ### `npm test` fails with "Cannot find module '@auth0/auth0-react'"
 
-Run `npm install` in the `planner-web/` directory first. The Auth0 SDK and all test dependencies must be installed before the test suite can run.
+Run `npm install` in the `planner-solid/` directory first. The frontend dependencies and test tooling must be installed before the test suite can run.

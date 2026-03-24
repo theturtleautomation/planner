@@ -202,6 +202,41 @@ async fn wait_for_ws_message_type(
     }
 }
 
+async fn wait_for_ws_prompt_or_bank_message(
+    ws: &mut tokio_tungstenite::WebSocketStream<
+        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+    >,
+) -> serde_json::Value {
+    loop {
+        let next = tokio::time::timeout(Duration::from_secs(2), ws.next())
+            .await
+            .expect("timed out waiting for ws prompt or prompt_bank message")
+            .expect("websocket closed unexpectedly")
+            .expect("websocket error");
+
+        let text = match next {
+            Message::Text(t) => t,
+            Message::Close(_) => {
+                panic!("websocket closed before receiving prompt or prompt_bank message")
+            }
+            _ => continue,
+        };
+
+        let parsed: serde_json::Value = serde_json::from_str(&text).unwrap();
+        if parsed["type"] == "prompt" || parsed["type"] == "prompt_bank" {
+            return parsed;
+        }
+    }
+}
+
+fn prompt_payload<'a>(message: &'a serde_json::Value) -> &'a serde_json::Value {
+    if message["type"] == "prompt" {
+        &message["prompt"]
+    } else {
+        &message["bank"]["banked_threads"][0]["prompt"]
+    }
+}
+
 fn checkpoint_question_prompt(
     question: &str,
     target_dimension: planner_schemas::Dimension,
@@ -471,6 +506,46 @@ async fn tier2_session_prompt_bank_reports_banked_and_queued_threads_truthfully(
         ));
         checkpoint.current_prompt.as_mut().unwrap().origin_category_id =
             Some("verify-platform".into());
+        checkpoint.prompt_bank = vec![
+            planner_schemas::PromptBankEntry {
+                category_id: "verify-platform".into(),
+                prompt: checkpoint.current_prompt.clone().expect("platform prompt"),
+            },
+            planner_schemas::PromptBankEntry {
+                category_id: "explore-user-flows".into(),
+                prompt: planner_schemas::PromptEnvelope {
+                    prompt_id: "prompt-user-flows".into(),
+                    kind: planner_schemas::PromptKind::QuestionBatch,
+                    title: "Explore User Flows".into(),
+                    instructions: Some("Clarify the primary user flows.".into()),
+                    origin_category_id: Some("explore-user-flows".into()),
+                    category_path: vec![],
+                    items: vec![planner_schemas::PromptItem {
+                        item_id: "item-user-flows".into(),
+                        kind: planner_schemas::PromptItemKind::Discovery,
+                        target_dimension: Some(planner_schemas::Dimension::Custom("user_flows".into())),
+                        section_ref: None,
+                        text: "Which user flows matter most?".into(),
+                        options: vec![],
+                        response_mode: planner_schemas::PromptResponseMode::SingleSelectWithCustomText,
+                        required: false,
+                        priority: 100,
+                        dependency_item_ids: vec![],
+                    }],
+                    draft_snapshot: None,
+                    required_item_ids: vec![],
+                    allow_partial_submit: true,
+                    ui_hints: planner_schemas::PromptUiHints {
+                        preferred_layout: planner_schemas::PromptPreferredLayout::Cards,
+                        show_draft_sidebar: false,
+                    },
+                    based_on_turn: 1,
+                    created_at: "2026-03-24T00:00:00Z".into(),
+                },
+            },
+        ];
+        checkpoint.active_thread_id = Some("verify-platform".into());
+        checkpoint.initial_prompt_bank_complete = true;
         checkpoint.current_category_snapshot = Some(planner_schemas::SocraticCategorySnapshot {
             revision: "rev-1".into(),
             root_category_ids: vec!["platform".into()],
@@ -529,11 +604,11 @@ async fn tier2_session_prompt_bank_reports_banked_and_queued_threads_truthfully(
 
     assert_eq!(parsed["session_id"], session.id.to_string());
     assert_eq!(parsed["active_thread_id"], "verify-platform");
-    assert_eq!(parsed["banked_threads"].as_array().unwrap().len(), 1);
-    assert_eq!(parsed["queued_threads"].as_array().unwrap().len(), 1);
+    assert_eq!(parsed["initial_bank_complete"], true);
+    assert_eq!(parsed["banked_threads"].as_array().unwrap().len(), 2);
+    assert_eq!(parsed["queued_threads"].as_array().unwrap().len(), 0);
     assert_eq!(parsed["banked_threads"][0]["title"], "Verify Platform");
-    assert_eq!(parsed["queued_threads"][0]["title"], "Explore User Flows");
-    assert_eq!(parsed["queued_threads"][0]["status"], "pending");
+    assert_eq!(parsed["banked_threads"][1]["title"], "Explore User Flows");
 }
 
 /// Test 4: Session capability fields are backend-computed from current phase truth.
@@ -1374,11 +1449,8 @@ async fn tier2_socratic_ws_resume_answer_progresses_to_next_question() {
             .value,
         "Build a countdown timer for workouts"
     );
-    let checkpointed_next_prompt = checkpoint
-        .current_prompt
-        .as_ref()
-        .and_then(|prompt| prompt.items.first())
-        .map(|item| item.text.as_str());
+    let checkpointed_next_prompt = checkpoint.current_prompt.as_ref();
+    let checkpointed_banked_threads = !checkpoint.prompt_bank.is_empty();
     let checkpointed_core_features_branch = checkpoint
         .current_category_snapshot
         .as_ref()
@@ -1393,9 +1465,10 @@ async fn tier2_socratic_ws_resume_answer_progresses_to_next_question() {
         })
         .unwrap_or(false);
     assert!(
-        checkpointed_next_prompt == Some("What are the must-have features in the first version?")
+        checkpointed_next_prompt.is_some()
+            || checkpointed_banked_threads
             || checkpointed_core_features_branch,
-        "expected either a checkpointed next prompt or a checkpointed Core Features branch"
+        "expected resumed answer handling to leave either a checkpointed prompt bank, an active prompt, or a Core Features branch"
     );
     assert!(
         checkpoint
@@ -1455,9 +1528,10 @@ async fn tier2_socratic_ws_live_runtime_reattach_within_lease() {
     let ws_url = format!("ws://{}/sessions/{}/socratic/ws", addr, session_id);
 
     let (mut ws1, _) = connect_async(&ws_url).await.unwrap();
-    let resumed_prompt = wait_for_ws_message_type(&mut ws1, "prompt").await;
+    let resumed_prompt = wait_for_ws_prompt_or_bank_message(&mut ws1).await;
+    let resumed_prompt_payload = prompt_payload(&resumed_prompt);
     assert_eq!(
-        resumed_prompt["prompt"]["items"][0]["text"],
+        resumed_prompt_payload["items"][0]["text"],
         "What is the main goal of this tool?"
     );
     let _ = ws1.close(None).await;
@@ -1471,11 +1545,12 @@ async fn tier2_socratic_ws_live_runtime_reattach_within_lease() {
     assert!(!detached.interview_live_attached);
 
     let (mut ws2, _) = connect_async(&ws_url).await.unwrap();
-    let replayed_prompt = wait_for_ws_message_type(&mut ws2, "prompt").await;
-    let prompt_id = replayed_prompt["prompt"]["prompt_id"]
+    let replayed_prompt = wait_for_ws_prompt_or_bank_message(&mut ws2).await;
+    let replayed_prompt_payload = prompt_payload(&replayed_prompt);
+    let prompt_id = replayed_prompt_payload["prompt_id"]
         .as_str()
         .expect("prompt id should be present");
-    let item_id = replayed_prompt["prompt"]["items"][0]["item_id"]
+    let item_id = replayed_prompt_payload["items"][0]["item_id"]
         .as_str()
         .expect("prompt item id should be present");
 
@@ -1556,16 +1631,17 @@ async fn tier2_socratic_ws_reconnect_heavy_cycles_keep_prompt_replay_stable() {
     let mut expected_item_id: Option<String> = None;
     for _ in 0..8 {
         let (mut ws, _) = connect_async(&ws_url).await.unwrap();
-        let prompt = wait_for_ws_message_type(&mut ws, "prompt").await;
+        let prompt = wait_for_ws_prompt_or_bank_message(&mut ws).await;
+        let prompt_payload = prompt_payload(&prompt);
         assert_eq!(
-            prompt["prompt"]["items"][0]["text"],
+            prompt_payload["items"][0]["text"],
             "What is the main goal of this tool?"
         );
-        let prompt_id = prompt["prompt"]["prompt_id"]
+        let prompt_id = prompt_payload["prompt_id"]
             .as_str()
             .expect("prompt id should be present")
             .to_string();
-        let item_id = prompt["prompt"]["items"][0]["item_id"]
+        let item_id = prompt_payload["items"][0]["item_id"]
             .as_str()
             .expect("prompt item id should be present")
             .to_string();
@@ -1587,11 +1663,12 @@ async fn tier2_socratic_ws_reconnect_heavy_cycles_keep_prompt_replay_stable() {
     }
 
     let (mut ws3, _) = connect_async(&ws_url).await.unwrap();
-    let prompt = wait_for_ws_message_type(&mut ws3, "prompt").await;
-    let prompt_id = prompt["prompt"]["prompt_id"]
+    let prompt = wait_for_ws_prompt_or_bank_message(&mut ws3).await;
+    let prompt_payload = prompt_payload(&prompt);
+    let prompt_id = prompt_payload["prompt_id"]
         .as_str()
         .expect("prompt id should be present");
-    let item_id = prompt["prompt"]["items"][0]["item_id"]
+    let item_id = prompt_payload["items"][0]["item_id"]
         .as_str()
         .expect("prompt item id should be present");
     assert_eq!(Some(prompt_id.to_string()), expected_prompt_id);

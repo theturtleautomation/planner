@@ -15,6 +15,12 @@ const baseSession = {
   project_name: "Personal Calendar",
   current_step: "socratic.question.generated",
   error_message: null,
+  can_resume_live: false,
+  can_resume_checkpoint: true,
+  can_restart_from_description: true,
+  can_retry_pipeline: true,
+  has_checkpoint: true,
+  resume_status: "interview_checkpoint_resumable",
 };
 
 const promptBank = {
@@ -47,6 +53,7 @@ const promptBank = {
   queued_threads: [],
   build_ready: false,
   build_readiness_message: null,
+  initial_bank_complete: true,
 };
 
 const projectPayload = {

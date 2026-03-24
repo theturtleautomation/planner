@@ -24,9 +24,10 @@ use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
 use planner_schemas::artifacts::socratic::{
-    Contradiction, DomainClassification, PromptEnvelope, PromptItem, PromptItemKind, PromptKind,
-    PromptOption, PromptPreferredLayout, PromptResponseMode, PromptUiHints, QuestionOutput,
-    RequirementsBeliefState, SocraticCategorySnapshot, SpeculativeDraft, UiCapabilities,
+    Contradiction, DomainClassification, PromptBankEntry, PromptEnvelope, PromptItem,
+    PromptItemKind, PromptKind, PromptOption, PromptPreferredLayout, PromptResponseMode,
+    PromptUiHints, QuestionOutput, RequirementsBeliefState, SocraticCategorySnapshot,
+    SpeculativeDraft, UiCapabilities,
 };
 
 fn normalize_title(value: &str) -> Option<String> {
@@ -102,8 +103,17 @@ pub struct InterviewCheckpoint {
     pub belief_state: Option<RequirementsBeliefState>,
     /// Active prompt envelope, if waiting for user input.
     pub current_prompt: Option<PromptEnvelope>,
+    /// Full prompt bank available for local-first browsing and response.
+    #[serde(default)]
+    pub prompt_bank: Vec<PromptBankEntry>,
+    /// Active prompt thread/category within the bank.
+    #[serde(default)]
+    pub active_thread_id: Option<String>,
     /// Latest category-navigation snapshot, if waiting on category selection.
     pub current_category_snapshot: Option<SocraticCategorySnapshot>,
+    /// Whether the initial prompt bank has been fully assembled for first reveal.
+    #[serde(default)]
+    pub initial_prompt_bank_complete: bool,
     /// Active contradictions captured so far.
     #[serde(default)]
     pub contradictions: Vec<Contradiction>,
@@ -127,7 +137,13 @@ struct InterviewCheckpointCurrentWire {
     #[serde(default)]
     pub current_prompt: Option<PromptEnvelope>,
     #[serde(default)]
+    pub prompt_bank: Vec<PromptBankEntry>,
+    #[serde(default)]
+    pub active_thread_id: Option<String>,
+    #[serde(default)]
     pub current_category_snapshot: Option<SocraticCategorySnapshot>,
+    #[serde(default)]
+    pub initial_prompt_bank_complete: bool,
     #[serde(default)]
     pub contradictions: Vec<Contradiction>,
     #[serde(default)]
@@ -329,7 +345,10 @@ impl<'de> Deserialize<'de> for InterviewCheckpoint {
                 classification: wire.classification,
                 belief_state: wire.belief_state,
                 current_prompt: wire.current_prompt,
+                prompt_bank: wire.prompt_bank,
+                active_thread_id: wire.active_thread_id,
                 current_category_snapshot: wire.current_category_snapshot,
+                initial_prompt_bank_complete: wire.initial_prompt_bank_complete,
                 contradictions: wire.contradictions,
                 stale_turns: wire.stale_turns,
                 draft_shown_at_turn: wire.draft_shown_at_turn,
@@ -354,7 +373,10 @@ impl<'de> Deserialize<'de> for InterviewCheckpoint {
                     classification: wire.classification,
                     belief_state: wire.belief_state,
                     current_prompt,
+                    prompt_bank: Vec::new(),
+                    active_thread_id: None,
                     current_category_snapshot: None,
+                    initial_prompt_bank_complete: false,
                     contradictions: wire.contradictions,
                     stale_turns: wire.stale_turns,
                     draft_shown_at_turn: wire.draft_shown_at_turn,
@@ -372,7 +394,10 @@ impl InterviewCheckpoint {
             classification: None,
             belief_state: None,
             current_prompt: None,
+            prompt_bank: Vec::new(),
+            active_thread_id: None,
             current_category_snapshot: None,
+            initial_prompt_bank_complete: false,
             contradictions: Vec::new(),
             stale_turns: 0,
             draft_shown_at_turn: None,

@@ -20,7 +20,7 @@ use planner_schemas::{
     SocraticWorkspaceSnapshot, UiCapabilities as ClientUiCapabilities,
 };
 
-use crate::AppState;
+use crate::{api::GetSessionPromptBankResponse, AppState};
 
 // ---------------------------------------------------------------------------
 // WebSocket Message Types
@@ -84,6 +84,10 @@ pub enum ServerMessage {
     /// Structured prompt envelope for user response.
     #[serde(rename = "prompt")]
     Prompt { prompt: PromptEnvelope },
+
+    /// Truthful prompt bank snapshot for local-first session workspaces.
+    #[serde(rename = "prompt_bank")]
+    PromptBank { bank: GetSessionPromptBankResponse },
 
     /// Current Socratic category-navigation state.
     #[serde(rename = "category_state")]

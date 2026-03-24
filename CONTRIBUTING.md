@@ -70,7 +70,7 @@ cargo test --workspace
 Run the frontend test suite:
 
 ```bash
-cd planner-web && npm test -- --run
+cd planner-solid && npm test -- --run
 ```
 
 The project currently has **474 tests** (377 Rust + 97 frontend). All tests must pass before a PR can be merged.
@@ -85,12 +85,14 @@ RUST_LOG=info cargo run -p planner-core -- "your description"
 
 ## Frontend Development
 
-The `planner-web/` directory is a full React + TypeScript + Vite single-page application. It communicates with `planner-server` via REST and WebSocket.
+The active frontend lives in `planner-solid/`. It is a SolidStart + TypeScript application that communicates with `planner-server` via REST and WebSocket.
+
+The retained `planner-web/` directory is historical migration context, not the routine development target.
 
 ### Running the Dev Server
 
 ```bash
-cd planner-web
+cd planner-solid
 npm install
 npm run dev
 ```
@@ -113,7 +115,7 @@ For testing Auth0-gated flows, see [AUTH0_SETUP.md](./AUTH0_SETUP.md).
 ### Running Frontend Tests
 
 ```bash
-cd planner-web
+cd planner-solid
 
 # Watch mode (re-runs on file changes)
 npm test
@@ -121,11 +123,14 @@ npm test
 # Single run (CI)
 npm run test -- --run
 
-# With coverage
-npm run test -- --run --coverage
+# Typecheck
+npm run lint
+
+# Browser proof
+npm run test:e2e
 ```
 
-Tests use [Vitest](https://vitest.dev/) and [React Testing Library](https://testing-library.com/docs/react-testing-library/intro/). The test runner is configured in `vite.config.ts`.
+Tests use [Vitest](https://vitest.dev/) and Playwright. The active test runner is configured in `planner-solid/package.json`.
 
 ### Mocking Conventions
 
@@ -139,18 +144,16 @@ import { mockAuth0 } from '../test/setup'
 mockAuth0({ isAuthenticated: true, user: { sub: 'user|123' } })
 ```
 
-WebSocket connections are mocked using the `vi.stubGlobal('WebSocket', ...)` pattern. See existing tests in `src/components/__tests__/ChatPanel.test.tsx` for examples.
-
-When adding a new component that uses `useAuthenticatedFetch` or any Auth0 hook, wrap your test's rendered component in the `Auth0ProviderWithNavigate` mock rather than the real provider.
+WebSocket connections are mocked in focused route tests where the real runtime is not required. Use Playwright for route-level browser proof and Vitest for helper-level coverage.
 
 ### Building for Production
 
 ```bash
-cd planner-web
+cd planner-solid
 npm run build
 ```
 
-Output is written to `planner-web/dist/`. Point `planner-server --static-dir ./planner-web/dist` at this directory to serve the built app.
+Output is written to `planner-solid/dist/`. Point `planner-server --static-dir ./planner-solid/dist/static` at this directory to serve the built app.
 
 ---
 
@@ -293,12 +296,16 @@ The workspace is divided into four Rust crates and one Node.js package, each wit
 - Security-sensitive code (auth, rate limiting, RBAC) lives here and must not leak into other crates.
 - Do not add pipeline logic here — wire it into `planner-core` and call it from here.
 
-### `planner-web`
+### `planner-solid`
 
-- **React SPA only.** No server-side logic.
-- All API calls go through `src/api/client.ts` — do not use raw `fetch` directly in components.
-- Authentication state is managed via Auth0 hooks — do not store tokens manually.
-- All new components must have corresponding tests in a sibling `__tests__/` directory.
+- **Active frontend only.** No server-side logic.
+- All API calls go through the typed helpers in `src/lib/`.
+- Web route behavior should be covered with Vitest helper tests and Playwright route/browser proof where appropriate.
+
+### `planner-web` historical baseline
+
+- Retained for migration archaeology and comparison only.
+- Do not treat it as the routine implementation target for new frontend work.
 
 ---
 
@@ -411,8 +418,8 @@ These are active gaps where contributions are especially welcome:
 | TUI pipeline wiring | Incomplete | TUI currently uses canned responses; needs to call the real `planner-core` pipeline |
 | LLM pipeline steps | Fallback mode | Steps fall back to simulation when CLI tools are not installed |
 | Lean4 verification | Stubs only | Generates "sorry" proofs — real Lean4 proofs are very welcome |
-| CI/CD | Missing | No GitHub Actions configuration yet; a working workflow for `cargo test --workspace && cd planner-web && npm test -- --run` would be a great first contribution |
-| Docker | Planned | A Dockerfile that builds the Rust binaries and React app in a multi-stage build is planned but not yet written |
+| CI/CD | Missing | No GitHub Actions configuration yet; a working workflow for `cargo test --workspace && cd planner-solid && npm test -- --run && npm run test:e2e` would be a great first contribution |
+| Docker | Planned | A Dockerfile that builds the Rust binaries and Solid app in a multi-stage build is planned but not yet written |
 | Rate limit configuration | Hardcoded | Rate limit thresholds are compile-time constants; runtime configuration via env vars is desirable |
 
 If you are picking up one of these, please open an issue first to coordinate with maintainers and avoid duplicated effort.

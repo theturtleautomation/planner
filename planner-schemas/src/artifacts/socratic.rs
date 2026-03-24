@@ -541,6 +541,13 @@ pub struct PromptEnvelope {
     pub created_at: String,
 }
 
+/// One banked prompt thread available for local-first browsing and submission.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PromptBankEntry {
+    pub category_id: String,
+    pub prompt: PromptEnvelope,
+}
+
 /// Snapshot of the current category-navigation state for Socratic intake.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SocraticCategorySnapshot {
@@ -1019,6 +1026,18 @@ pub enum SocraticEvent {
     /// Prompt envelope generated for the next user submission.
     #[serde(rename = "prompt_generated")]
     PromptGenerated { prompt: PromptEnvelope },
+
+    /// Prompt bank updated for the current snapshot.
+    #[serde(rename = "prompt_bank_updated")]
+    PromptBankUpdated {
+        snapshot: SocraticCategorySnapshot,
+        #[serde(default)]
+        prompts: Vec<PromptBankEntry>,
+        #[serde(default)]
+        active_thread_id: Option<String>,
+        #[serde(default)]
+        initial_bank_complete: bool,
+    },
 
     /// Contradiction detected.
     #[serde(rename = "contradiction")]

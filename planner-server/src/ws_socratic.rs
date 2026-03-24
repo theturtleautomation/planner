@@ -38,10 +38,11 @@ use planner_core::pipeline::steps::socratic::{
 
 use planner_schemas::{
     ConvergenceResult, DomainClassification, PromptAnswer, PromptEnvelope, PromptResponse,
-    RequirementsBeliefState, SocraticCategorySnapshot, SocraticEvent,
+    RequirementsBeliefState, SocraticCategorySnapshot, SocraticEvent, PromptBankEntry,
     SocraticWorkspaceSnapshot, UiCapabilities, ViewportClass,
 };
 
+use crate::api::prompt_bank_response;
 use crate::runtime::{AttachError, RuntimeAttachment, SessionRuntime, SocraticRuntimeInput};
 use crate::ws::{ClientMessage, ServerMessage};
 use crate::AppState;
@@ -91,6 +92,21 @@ impl WsSocraticIO {
     /// Helper: send a `ServerMessage`, logging errors silently.
     fn send(&self, msg: ServerMessage) {
         let _ = self.event_tx.send(msg);
+    }
+
+    fn checkpoint_prompt_by_id(&self, prompt_id: &str) -> Option<PromptEnvelope> {
+        self.state
+            .sessions
+            .get(self.session_id)
+            .and_then(|session| session.checkpoint)
+            .and_then(|checkpoint| {
+                checkpoint
+                    .prompt_bank
+                    .iter()
+                    .find(|entry| entry.prompt.prompt_id == prompt_id)
+                    .map(|entry| entry.prompt.clone())
+                    .or(checkpoint.current_prompt)
+            })
     }
 
     fn emit_prompt_submission_event(&self, prompt: &PromptEnvelope, response: &PromptResponse) {
@@ -157,7 +173,20 @@ impl planner_core::pipeline::steps::socratic::SocraticIO for WsSocraticIO {
                 .sessions
                 .get(self.session_id)
                 .and_then(|session| session.checkpoint)
-                .and_then(|checkpoint| checkpoint.current_prompt);
+                .and_then(|checkpoint| {
+                    checkpoint
+                        .active_thread_id
+                        .as_deref()
+                        .and_then(|active_thread_id| {
+                            checkpoint
+                                .prompt_bank
+                                .iter()
+                                .find(|entry| entry.category_id == active_thread_id)
+                                .map(|entry| entry.prompt.clone())
+                        })
+                        .or_else(|| checkpoint.prompt_bank.first().map(|entry| entry.prompt.clone()))
+                        .or(checkpoint.current_prompt)
+                });
 
             if let Some(previous_prompt) = previous_prompt {
                 let previous_item_ids: HashSet<&str> = previous_prompt
@@ -457,16 +486,20 @@ impl planner_core::pipeline::steps::socratic::SocraticIO for WsSocraticIO {
                     let Some(prompt) = prompt else {
                         continue;
                     };
-                    if response.prompt_id != prompt.prompt_id {
+                    let submission_prompt = if response.prompt_id == prompt.prompt_id {
+                        Some(prompt.clone())
+                    } else {
+                        self.checkpoint_prompt_by_id(&response.prompt_id)
+                    };
+                    if let Some(submission_prompt) = submission_prompt.as_ref() {
+                        self.emit_prompt_submission_event(submission_prompt, &response);
+                    } else {
                         tracing::warn!(
-                            "Session {}: ignoring prompt_response for stale prompt '{}' (expected '{}')",
+                            "Session {}: accepting prompt_response for unknown prompt '{}'; engine will validate freshness",
                             self.session_id,
-                            response.prompt_id,
-                            prompt.prompt_id
+                            response.prompt_id
                         );
-                        continue;
                     }
-                    self.emit_prompt_submission_event(prompt, &response);
                     return Some(SocraticInteractiveInput::PromptResponse(response));
                 }
                 SocraticRuntimeInput::EnterCategory {
@@ -515,6 +548,13 @@ impl planner_core::pipeline::steps::socratic::SocraticIO for WsSocraticIO {
                 value_b: contradiction.value_b.clone(),
                 explanation: contradiction.explanation.clone(),
             });
+        }
+        if matches!(event, SocraticEvent::PromptBankUpdated { .. }) {
+            if let Some(session) = self.state.sessions.get(self.session_id) {
+                self.send(ServerMessage::PromptBank {
+                    bank: prompt_bank_response(&session),
+                });
+            }
         }
         if let Err(e) = self.checkpoint_tx.send(event.clone()) {
             tracing::warn!(
@@ -637,14 +677,22 @@ fn current_interview_replay_message(
     state
         .sessions
         .get(session_id)
-        .and_then(|session| session.checkpoint)
-        .and_then(|checkpoint| {
+        .and_then(|session| {
+            let checkpoint = session.checkpoint.as_ref()?;
+            if !checkpoint.prompt_bank.is_empty() || checkpoint.initial_prompt_bank_complete {
+                return Some(ServerMessage::PromptBank {
+                    bank: prompt_bank_response(&session),
+                });
+            }
+
             checkpoint
                 .current_prompt
+                .clone()
                 .map(|prompt| ServerMessage::Prompt { prompt })
                 .or_else(|| {
                     checkpoint
                         .current_category_snapshot
+                        .clone()
                         .map(|snapshot| ServerMessage::CategoryState { snapshot })
                 })
         })
@@ -719,7 +767,10 @@ fn apply_checkpoint_from_event(state: &Arc<AppState>, session_id: Uuid, event: &
             checkpoint.belief_state = Some(next_state.clone());
             checkpoint.contradictions = next_state.contradictions.clone();
             checkpoint.current_prompt = None;
+            checkpoint.prompt_bank.clear();
+            checkpoint.active_thread_id = None;
             checkpoint.current_category_snapshot = None;
+            checkpoint.initial_prompt_bank_complete = false;
             checkpoint.stale_turns = if is_stale_turn {
                 previous_stale_turns.saturating_add(1)
             } else {
@@ -731,15 +782,56 @@ fn apply_checkpoint_from_event(state: &Arc<AppState>, session_id: Uuid, event: &
             let checkpoint = s.ensure_checkpoint();
             checkpoint.current_category_snapshot = Some(snapshot.clone());
             checkpoint.current_prompt = None;
+            checkpoint.prompt_bank.clear();
+            checkpoint.active_thread_id = None;
+            checkpoint.initial_prompt_bank_complete = false;
             checkpoint.touch();
         }
         SocraticEvent::PromptGenerated { prompt } => {
             let checkpoint = s.ensure_checkpoint();
             checkpoint.current_prompt = Some(prompt.clone());
+            let category_id = prompt
+                .origin_category_id
+                .clone()
+                .or_else(|| {
+                    prompt
+                        .category_path
+                        .last()
+                        .map(|entry| entry.category_id.clone())
+                })
+                .unwrap_or_else(|| prompt.prompt_id.clone());
+            checkpoint.prompt_bank = vec![PromptBankEntry {
+                category_id: category_id.clone(),
+                prompt: prompt.clone(),
+            }];
+            checkpoint.active_thread_id = Some(category_id);
             checkpoint.current_category_snapshot = None;
+            checkpoint.initial_prompt_bank_complete = true;
             if prompt.draft_snapshot.is_some() {
                 checkpoint.draft_shown_at_turn = Some(prompt.based_on_turn);
             }
+            checkpoint.touch();
+        }
+        SocraticEvent::PromptBankUpdated {
+            snapshot,
+            prompts,
+            active_thread_id,
+            initial_bank_complete,
+        } => {
+            let checkpoint = s.ensure_checkpoint();
+            checkpoint.current_category_snapshot = Some(snapshot.clone());
+            checkpoint.prompt_bank = prompts.clone();
+            checkpoint.active_thread_id = active_thread_id.clone();
+            checkpoint.current_prompt = active_thread_id
+                .as_deref()
+                .and_then(|active_thread_id| {
+                    prompts
+                        .iter()
+                        .find(|entry| entry.category_id == active_thread_id)
+                        .map(|entry| entry.prompt.clone())
+                })
+                .or_else(|| prompts.first().map(|entry| entry.prompt.clone()));
+            checkpoint.initial_prompt_bank_complete = *initial_bank_complete;
             checkpoint.touch();
         }
         SocraticEvent::ContradictionDetected { contradiction } => {
@@ -750,7 +842,10 @@ fn apply_checkpoint_from_event(state: &Arc<AppState>, session_id: Uuid, event: &
         SocraticEvent::Converged { .. } => {
             let checkpoint = s.ensure_checkpoint();
             checkpoint.current_prompt = None;
+            checkpoint.prompt_bank.clear();
+            checkpoint.active_thread_id = None;
             checkpoint.current_category_snapshot = None;
+            checkpoint.initial_prompt_bank_complete = false;
             checkpoint.touch();
         }
         SocraticEvent::SystemMessage { .. } | SocraticEvent::Error { .. } => {}
@@ -787,6 +882,9 @@ fn build_checkpoint_resume_state(
         stale_turns: checkpoint.stale_turns,
         draft_shown_at_turn: checkpoint.draft_shown_at_turn,
         pending_prompt,
+        prompt_bank: checkpoint.prompt_bank.clone(),
+        active_thread_id: checkpoint.active_thread_id.clone(),
+        initial_bank_complete: checkpoint.initial_prompt_bank_complete,
         category_snapshot: checkpoint.current_category_snapshot.clone(),
     })
 }
@@ -1232,8 +1330,18 @@ async fn handle_live_runtime_ws(
                                     .sessions
                                     .get(session_id)
                                     .and_then(|session| session.checkpoint)
-                                    .and_then(|checkpoint| checkpoint.current_prompt)
-                                    .filter(|prompt| prompt.prompt_id == response.prompt_id);
+                                    .and_then(|checkpoint| {
+                                        checkpoint
+                                            .prompt_bank
+                                            .iter()
+                                            .find(|entry| entry.prompt.prompt_id == response.prompt_id)
+                                            .map(|entry| entry.prompt.clone())
+                                            .or_else(|| {
+                                                checkpoint
+                                                    .current_prompt
+                                                    .filter(|prompt| prompt.prompt_id == response.prompt_id)
+                                            })
+                                    });
                                 if let Some(content) =
                                     prompt_response_to_input(&response, prompt_for_response.as_ref())
                                 {
@@ -1928,7 +2036,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ws_socratic_io_receive_prompt_response_ignores_stale_prompt_ids() {
+    async fn ws_socratic_io_receive_prompt_response_allows_engine_to_validate_stale_prompt_ids() {
         let state = test_state();
         let (event_tx, _event_rx) = mpsc::unbounded_channel::<ServerMessage>();
         let (checkpoint_tx, _checkpoint_rx) = mpsc::unbounded_channel::<SocraticEvent>();
@@ -1960,7 +2068,7 @@ mod tests {
         use planner_core::pipeline::steps::socratic::SocraticIO;
         let prompt = test_prompt("Test question");
         let received = io.receive_interview_input(Some(&prompt), None).await;
-        assert!(matches!(received, Some(SocraticInteractiveInput::Done)));
+        assert!(matches!(received, Some(SocraticInteractiveInput::PromptResponse(response)) if response.prompt_id == "stale-prompt"));
     }
 
     #[tokio::test]
@@ -2145,6 +2253,9 @@ mod tests {
                 .map(|item| item.text.as_str()),
             Some("Who will use this tool most often?")
         );
+        assert_eq!(checkpoint.prompt_bank.len(), 1);
+        assert_eq!(checkpoint.active_thread_id.as_deref(), Some("prompt-test"));
+        assert!(checkpoint.initial_prompt_bank_complete);
         assert!(after.has_checkpoint);
     }
 
@@ -2195,7 +2306,63 @@ mod tests {
                 .map(|section| section.heading.as_str()),
             Some("Goal")
         );
+        assert_eq!(checkpoint.prompt_bank.len(), 1);
         assert_eq!(checkpoint.draft_shown_at_turn, Some(3));
+    }
+
+    #[test]
+    fn checkpoint_updates_on_prompt_bank_event() {
+        let state = test_state();
+        let session = state.sessions.create("dev|local");
+        let session_id = session.id;
+
+        let platform_prompt = test_prompt("What should this optimize first?");
+        let flows_prompt = PromptEnvelope {
+            prompt_id: "prompt-flows".into(),
+            title: "Explore User Flows".into(),
+            kind: PromptKind::QuestionBatch,
+            instructions: Some("Clarify key flows.".into()),
+            origin_category_id: Some("user-flows".into()),
+            category_path: vec![],
+            items: vec![platform_prompt.items[0].clone()],
+            draft_snapshot: None,
+            required_item_ids: vec![],
+            allow_partial_submit: true,
+            ui_hints: platform_prompt.ui_hints.clone(),
+            based_on_turn: 1,
+            created_at: "2026-03-24T00:00:00Z".into(),
+        };
+
+        apply_checkpoint_from_event(
+            &state,
+            session_id,
+            &SocraticEvent::PromptBankUpdated {
+                snapshot: test_category_snapshot(),
+                prompts: vec![
+                    PromptBankEntry {
+                        category_id: "category-1".into(),
+                        prompt: platform_prompt.clone(),
+                    },
+                    PromptBankEntry {
+                        category_id: "user-flows".into(),
+                        prompt: flows_prompt.clone(),
+                    },
+                ],
+                active_thread_id: Some("user-flows".into()),
+                initial_bank_complete: true,
+            },
+        );
+
+        let checkpoint = state
+            .sessions
+            .get(session_id)
+            .expect("session should exist")
+            .checkpoint
+            .expect("checkpoint should be present");
+        assert_eq!(checkpoint.prompt_bank.len(), 2);
+        assert_eq!(checkpoint.active_thread_id.as_deref(), Some("user-flows"));
+        assert_eq!(checkpoint.current_prompt.as_ref().map(|prompt| prompt.prompt_id.as_str()), Some("prompt-flows"));
+        assert!(checkpoint.initial_prompt_bank_complete);
     }
 
     #[tokio::test]
@@ -2265,14 +2432,16 @@ mod tests {
         let replay = current_interview_replay_message(&state, session_id)
             .expect("checkpoint prompt should be replayable");
         match replay {
-            ServerMessage::Prompt { prompt } => {
-                assert_eq!(prompt.kind, PromptKind::QuestionBatch);
+            ServerMessage::PromptBank { bank } => {
+                assert_eq!(bank.active_thread_id.as_deref(), Some("prompt-test"));
+                assert_eq!(bank.banked_threads.len(), 1);
+                assert!(bank.initial_bank_complete);
                 assert_eq!(
-                    prompt.items.first().map(|item| item.text.as_str()),
+                    bank.banked_threads[0].prompt.items.first().map(|item| item.text.as_str()),
                     Some("What should this optimize first?")
                 );
             }
-            other => panic!("expected prompt replay message, got {:?}", other),
+            other => panic!("expected prompt bank replay message, got {:?}", other),
         }
     }
 

@@ -34,6 +34,12 @@ const session = (overrides: Partial<SessionSummary> = {}): SessionSummary => ({
   project_name: "Calendar App",
   current_step: null,
   error_message: null,
+  can_resume_live: false,
+  can_resume_checkpoint: false,
+  can_restart_from_description: false,
+  can_retry_pipeline: false,
+  has_checkpoint: false,
+  resume_status: "ready_to_start",
   ...overrides,
 });
 

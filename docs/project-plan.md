@@ -1,7 +1,7 @@
 # Project Plan
 
 **Status:** Active  
-**Date:** 2026-03-22
+**Date:** 2026-03-24
 
 ## Purpose
 
@@ -94,6 +94,7 @@ These are the main planning documents currently shaping the repo:
 - [Import Existing Project Phase 16 History Selection Summary Spec](/home/thetu/planner/docs/import-existing-project-phase-16-history-selection-summary-spec.md)
 - [Planner SolidStart Phase 16 Project Import Comparison And Selection Summary Spec](/home/thetu/planner/docs/planner-solidstart-phase-16-project-import-comparison-and-selection-summary-spec.md)
 - [Planner SolidStart Phase 17 Workflow Closeout And React Retirement Spec](/home/thetu/planner/docs/planner-solidstart-phase-17-workflow-closeout-and-react-retirement-spec.md)
+- [Planner SolidStart Phase 18 Prompt-Bank Conformance And Closeout Remediation Spec](/home/thetu/planner/docs/planner-solidstart-phase-18-prompt-bank-conformance-and-closeout-remediation-spec.md)
 - [Planning Status Audit Remediation Spec](/home/thetu/planner/docs/planning-status-audit-remediation-spec.md)
 
 ## Current Active Thread
@@ -183,15 +184,24 @@ Current planning state:
   desk
 - the next bounded slice after that is
   [Planner SolidStart Phase 17 Workflow Closeout And React Retirement Spec](/home/thetu/planner/docs/planner-solidstart-phase-17-workflow-closeout-and-react-retirement-spec.md),
-  which closes the remaining high-value session lifecycle actions, tightens the
-  full project-to-session-to-import workflow loop, and removes `planner-web`
-  from the repo's active product posture
-- that route-family/platform closeout slice is now implemented:
-  - Solid session lifecycle actions are local in the session route
-  - project-local reimport entry exists in the project workspace and import
-    desk
-  - root scripts, installer, server docs, and README now point at
-    `planner-solid` as the active frontend
+  which lands the remaining high-value session lifecycle actions and attempts to
+  close the project-to-session-to-import workflow loop plus React retirement
+- an implementation-completeness review on 2026-03-24 found the SolidStart
+  tranche broad but not actually closed:
+  - the Socratic route still uses a one-current-prompt-plus-queued-thread model
+    instead of the required full initial prompt bank
+  - the Solid session workspace still relies on a thin resource-refetch model
+    instead of the required local prompt-bank graph
+  - critical verification is still mostly mocked and does not prove the live
+    backend/frontend contract for first reveal, multi-thread switching, or
+    websocket churn stability
+  - repo docs and planning surfaces still overstate React retirement and
+    tranche completion
+- the bounded remediation slice after that was
+  [Planner SolidStart Phase 18 Prompt-Bank Conformance And Closeout Remediation Spec](/home/thetu/planner/docs/planner-solidstart-phase-18-prompt-bank-conformance-and-closeout-remediation-spec.md),
+  which is now implemented and corrects the prompt-bank contract, local graph
+  model, verification proof, lifecycle capability truth, and remaining
+  repo/doc closeout drift
 - the route-level child spec for the Socratic lobby is
   [Socratic SolidStart Greenfield Platform Spec](/home/thetu/planner/docs/socratic-solidstart-greenfield-platform-spec.md)
 - the route-level Socratic spec is fed by the already-selected product
@@ -239,29 +249,23 @@ Current planning state:
   - direct replacement deployment
   - maintenance window acceptable
 
-Current next bounded slice:
+Current remediation result:
 
-- [Planner SolidStart Phase 00 Shell, Sessions, And Socratic Anchor Spec](/home/thetu/planner/docs/planner-solidstart-phase-00-shell-sessions-and-socratic-anchor-spec.md)
+- [Planner SolidStart Phase 18 Prompt-Bank Conformance And Closeout Remediation Spec](/home/thetu/planner/docs/planner-solidstart-phase-18-prompt-bank-conformance-and-closeout-remediation-spec.md)
   is now implemented:
-  - `planner-solid/` is the active frontend target at the repo root
-  - `planner-server` serves the Solid static export by default
-  - `/`, `/sessions`, `/sessions/new`, and `/sessions/:sessionId` are live in the new shell
-  - the Socratic anchor route uses a truthful prompt-bank endpoint instead of fake preview shells
+  - the backend persists and replays a real prompt bank instead of a one-
+    current-prompt startup contract
+  - the Solid session route now uses a local normalized prompt-bank graph with
+    per-question draft isolation and capability-driven workflow controls
+  - verification now includes widened Rust package tests, Solid unit/lint/build
+    proof, and Playwright browser proof
+  - repo docs now present `planner-solid` as the active frontend posture and
+    leave `planner-web` as historical baseline context
 
-Current follow-up verification slice:
+Current SolidStart tranche status:
 
-- Phase 00 verification is complete:
-  - backend contract proof for `/sessions/{id}/prompt-bank`
-  - Solid app unit/build/lint verification
-  - Playwright browser proof against `planner-server` serving the Solid export
-
-Current next valid move:
-
-- the current bounded SolidStart route-family and workflow closeout thread is
-  complete through
-  [Planner SolidStart Phase 17 Workflow Closeout And React Retirement Spec](/home/thetu/planner/docs/planner-solidstart-phase-17-workflow-closeout-and-react-retirement-spec.md)
-- the next move returns to `spec-lifecycle` only when we choose a materially
-  different post-closeout platform or product thread
+- the SolidStart tranche is now closed on truthful prompt-bank, verification,
+  and workflow-closeout terms
 
 ### Socratic Ethereal Cascade Redesign
 
@@ -648,6 +652,8 @@ Keep planning and implementation aligned to artifact state:
 
 The next move is:
 
-- begin implementation of the Socratic Session Page Redesign Phase 1
-- execute `docs/socratic-session-page-redesign-spec-p1-s1-pulse-bar.md`
-- followed by `p1-s2-focused-canvas.md` and `p1-s3-context-shelf.md`
+- begin implementation of
+  [Planner SolidStart Phase 18 Prompt-Bank Conformance And Closeout Remediation Spec](/home/thetu/planner/docs/planner-solidstart-phase-18-prompt-bank-conformance-and-closeout-remediation-spec.md)
+- keep the existing Solid route family intact while closing the prompt-bank,
+  local-graph, verification, and documentation-truth gaps identified in the
+  2026-03-24 review
