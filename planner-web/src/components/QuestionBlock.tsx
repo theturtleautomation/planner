@@ -1,4 +1,4 @@
-import { memo, useMemo } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import PromptOptionGroup from './PromptOptionGroup.tsx';
 import SeamlessInput from './SeamlessInput.tsx';
 import { syncSocraticDocumentDraft } from '../stores/socraticDocumentStore.ts';
@@ -59,6 +59,51 @@ function QuestionBlock({
   const setSelectedOption = useSocraticDraftStore((state) => state.setSelectedOption);
   const setCustomText = useSocraticDraftStore((state) => state.setCustomText);
   const targetLabel = formatDimensionLabel(item.target_dimension);
+  const [customText, setLocalCustomText] = useState(draft.customText);
+  const customTextRef = useRef(customText);
+  const selectedOptionRef = useRef(draft.selectedOptionId);
+  const lastFlushedTextRef = useRef(draft.customText);
+  const isDirtyRef = useRef(false);
+
+  customTextRef.current = customText;
+  selectedOptionRef.current = draft.selectedOptionId;
+
+  const flushDraftText = (nextText: string): void => {
+    if (lastFlushedTextRef.current === nextText) {
+      isDirtyRef.current = false;
+      return;
+    }
+    setCustomText(promptId, item.item_id, nextText);
+    syncSocraticDocumentDraft(item.item_id, {
+      selectedOptionId: selectedOptionRef.current,
+      customText: nextText,
+    });
+    lastFlushedTextRef.current = nextText;
+    isDirtyRef.current = false;
+  };
+
+  useEffect(() => {
+    setLocalCustomText(draft.customText);
+    customTextRef.current = draft.customText;
+    selectedOptionRef.current = draft.selectedOptionId;
+    lastFlushedTextRef.current = draft.customText;
+    isDirtyRef.current = false;
+  }, [draft.customText, draft.selectedOptionId, item.item_id, promptId]);
+
+  useEffect(() => {
+    if (!isDirtyRef.current) return undefined;
+    const timeout = window.setTimeout(() => {
+      flushDraftText(customTextRef.current);
+    }, 150);
+    return () => window.clearTimeout(timeout);
+  }, [customText]);
+
+  useEffect(() => (
+    () => {
+      if (!isDirtyRef.current) return;
+      flushDraftText(customTextRef.current);
+    }
+  ), [item.item_id, promptId]);
 
   return (
     <section className="socratic-question-block" aria-label={`Question ${index + 1}`}>
@@ -90,10 +135,11 @@ function QuestionBlock({
         options={item.options}
         selectedOptionId={draft.selectedOptionId}
         onSelect={(optionId) => {
+          selectedOptionRef.current = optionId;
           setSelectedOption(promptId, item.item_id, optionId);
           syncSocraticDocumentDraft(item.item_id, {
             selectedOptionId: optionId,
-            customText: draft.customText,
+            customText: customTextRef.current,
           });
         }}
         disabled={disabled}
@@ -102,14 +148,18 @@ function QuestionBlock({
       <label className="socratic-question-block__input-group">
         <span className="socratic-question-block__input-label">Your answer</span>
         <SeamlessInput
-          value={draft.customText}
+          value={customText}
           onChange={(nextValue) => {
-            setCustomText(promptId, item.item_id, nextValue);
-            syncSocraticDocumentDraft(item.item_id, {
-              selectedOptionId: draft.selectedOptionId,
-              customText: nextValue,
-            });
+            const wasAnswered = customTextRef.current.trim().length > 0;
+            const willBeAnswered = nextValue.trim().length > 0;
+            setLocalCustomText(nextValue);
+            customTextRef.current = nextValue;
+            isDirtyRef.current = true;
+            if (wasAnswered !== willBeAnswered) {
+              flushDraftText(nextValue);
+            }
           }}
+          onBlur={() => flushDraftText(customTextRef.current)}
           disabled={disabled}
           autoFocus={autoFocusTextarea}
           ariaLabel={`Custom text for ${item.item_id}`}

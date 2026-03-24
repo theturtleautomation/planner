@@ -34,20 +34,6 @@ async function startConsultantDesk(page: Page) {
   await expect(page.locator('.socratic-desk')).toBeVisible();
 }
 
-async function sectionOffsetWithinDesk(page: Page, categoryId: string): Promise<number | null> {
-  return page.evaluate((targetCategoryId) => {
-    const deskBody = document.querySelector('.socratic-desk__body');
-    const section = document.querySelector(`[data-category-id="${targetCategoryId}"]`);
-    if (!(deskBody instanceof HTMLElement) || !(section instanceof HTMLElement)) {
-      return null;
-    }
-
-    const deskRect = deskBody.getBoundingClientRect();
-    const sectionRect = section.getBoundingClientRect();
-    return sectionRect.top - deskRect.top;
-  }, categoryId);
-}
-
 test('consultant desk owns scroll while the document root stays locked', async ({ page }) => {
   test.setTimeout(120000);
   await startConsultantDesk(page);
@@ -98,123 +84,47 @@ test('consultant desk owns scroll while the document root stays locked', async (
   expect(layout?.deskScrollTop).toBeGreaterThan(0);
 });
 
-test('keyboard preview drives deep document jumps in the consultant desk', async ({ page }) => {
+test('keyboard row traversal updates the active workspace locally', async ({ page }) => {
   test.setTimeout(120000);
   await startConsultantDesk(page);
   const interactiveRows = page.locator('.socratic-map .socratic-map-row:not(:disabled)');
   await expect(interactiveRows).toHaveCount(await interactiveRows.count());
   const rowCount = await interactiveRows.count();
-  expect(rowCount).toBeGreaterThan(6);
+  expect(rowCount).toBeGreaterThan(2);
 
   const startRow = interactiveRows.first();
-  const targetRow = interactiveRows.nth(5);
-  const targetLabel = await targetRow.getAttribute('aria-label');
+  const targetRow = interactiveRows.nth(1);
+  const targetCategoryId = await targetRow.getAttribute('data-category-id');
+  const targetLabel = ((await targetRow.locator('.socratic-map-row__label').textContent()) ?? '').trim();
   await startRow.focus();
+  await page.keyboard.press('ArrowDown');
 
-  const deskBody = page.locator('.socratic-desk__body');
-  const initialScrollTop = await deskBody.evaluate((element) => element.scrollTop);
-
-  for (let index = 0; index < 5; index += 1) {
-    await page.keyboard.press('ArrowDown');
-  }
-
-  await expect(page.locator('.socratic-map .socratic-map-row[aria-current="true"]').first()).toHaveAttribute('aria-label', targetLabel ?? '');
-  await expect.poll(async () => deskBody.evaluate((element) => element.scrollTop)).toBeGreaterThan(initialScrollTop);
+  await expect(page.locator('.socratic-map .socratic-map-row[aria-current="true"]').first()).toHaveAttribute(
+    'data-category-id',
+    targetCategoryId ?? '',
+  );
+  await expect(page.locator('.socratic-desk__title')).toHaveText(targetLabel);
+  await expect(page.locator('.socratic-desk__body [data-category-id]')).toHaveCount(1);
 });
 
-test('live category insertion preserves the current section anchor', async ({ page }) => {
+test('switching threads resets the right-desk scroll position intentionally', async ({ page }) => {
   test.setTimeout(120000);
   await startConsultantDesk(page);
 
   const interactiveRows = page.locator('.socratic-map .socratic-map-row:not(:disabled)');
   const rowCount = await interactiveRows.count();
-  expect(rowCount).toBeGreaterThan(6);
+  expect(rowCount).toBeGreaterThan(1);
 
-  const startRow = interactiveRows.first();
-  const targetRow = interactiveRows.nth(5);
-  const targetCategoryId = await targetRow.getAttribute('data-category-id');
-  expect(targetCategoryId).toBeTruthy();
+  const deskBody = page.locator('.socratic-desk__body');
+  await deskBody.evaluate((element) => {
+    const filler = document.createElement('div');
+    filler.setAttribute('data-scroll-reset-probe', 'true');
+    filler.style.height = '2400px';
+    element.appendChild(filler);
+    element.scrollTop = 420;
+  });
 
-  await startRow.focus();
-  for (let index = 0; index < 5; index += 1) {
-    await page.keyboard.press('ArrowDown');
-  }
-
-  await expect(page.locator('.socratic-map .socratic-map-row[aria-current="true"]').first()).toHaveAttribute(
-    'data-category-id',
-    targetCategoryId ?? '',
-  );
-
-  await expect
-    .poll(async () => sectionOffsetWithinDesk(page, targetCategoryId ?? ''), { timeout: 10000 })
-    .not.toBeNull();
-  const beforeOffset = await sectionOffsetWithinDesk(page, targetCategoryId ?? '');
-  expect(beforeOffset).not.toBeNull();
-
-  const insertion = await page.evaluate(async ({ categoryId }) => {
-    const hook = window.__plannerSocraticDocumentTest;
-    if (!hook) {
-      throw new Error('Missing Socratic document test hook');
-    }
-
-    const state = hook.getState();
-    const target = state.categoriesById[categoryId];
-    if (!target) {
-      throw new Error(`Target category ${categoryId} not found in document graph`);
-    }
-
-    const insertedCategoryId = `playwright-insert-${Date.now()}`;
-    hook.hydrate({
-      workspace: {
-        focused_category_id: state.focusedCategoryId,
-        branch_notice: null,
-        category_snapshot: {
-          revision: `${state.revision ?? 'playwright'}-insert-${Date.now()}`,
-          root_category_ids: [insertedCategoryId],
-          nodes: [{
-            category_id: insertedCategoryId,
-            parent_category_id: target.parentCategoryId ?? null,
-            title: 'Playwright inserted thread',
-            summary: 'Inserted during browser verification.',
-            status: 'ready',
-            depth: target.depth,
-            mapped_dimensions: ['Playwright'],
-            has_children: false,
-            has_prompt_ready: true,
-            item_count_hint: 1,
-          }],
-          active_category_path: state.activeCategoryPath,
-          newly_available_category_ids: [insertedCategoryId],
-          build_ready: state.buildReady,
-          build_readiness_message: state.buildReadinessMessage,
-        },
-        groups: [],
-      },
-      currentPrompt: null,
-    });
-
-    const nextState = hook.getState();
-    return {
-      insertedCategoryId,
-      beforeCount: state.categoryOrder.length,
-      afterCount: nextState.categoryOrder.length,
-    };
-  }, { categoryId: targetCategoryId ?? '' });
-
-  expect(insertion.afterCount).toBe(insertion.beforeCount + 1);
-  await expect(interactiveRows).toHaveCount(rowCount + 1);
-  await expect(page.locator('.socratic-map .socratic-map-row[aria-current="true"]').first()).toHaveAttribute(
-    'data-category-id',
-    targetCategoryId ?? '',
-  );
-  await expect(page.locator(`.socratic-map .socratic-map-row[data-category-id="${insertion.insertedCategoryId}"]`)).toHaveCount(1);
-
-  await expect.poll(async () => {
-    const afterOffset = await sectionOffsetWithinDesk(page, targetCategoryId ?? '');
-    return (
-      typeof afterOffset === 'number'
-      && typeof beforeOffset === 'number'
-      && Math.abs(afterOffset - beforeOffset) < 80
-    );
-  }, { timeout: 10000 }).toBe(true);
+  await expect.poll(async () => deskBody.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  await interactiveRows.nth(1).click();
+  await expect.poll(async () => deskBody.evaluate((element) => element.scrollTop)).toBe(0);
 });

@@ -1,6 +1,6 @@
 # Socratic Lobby Master-Detail Local Workspace Spec
 
-**Status:** ready for implementation  
+**Status:** implemented  
 **Date:** 2026-03-24  
 **Parent:** [Project Plan](/home/thetu/planner/docs/project-plan.md)  
 **Related Planning:** [Socratic Lobby Live Virtualized Document Spec](/home/thetu/planner/docs/socratic-lobby-live-virtualized-document-spec.md), [Socratic Lobby Consultant Desk Spec](/home/thetu/planner/docs/socratic-lobby-consultant-desk-spec.md), [Socratic Lobby First-Reveal Preload Gate Spec](/home/thetu/planner/docs/socratic-lobby-first-reveal-preload-gate-spec.md), [Socratic Lobby Document Chrome And Scroll De-escalation Spec](/home/thetu/planner/docs/socratic-lobby-document-chrome-and-scroll-de-escalation-spec.md), [Phase 12 Socratic Live Question Workspace Spec](/home/thetu/planner/docs/phase-12-socratic-live-question-workspace-spec.md)
@@ -12,6 +12,45 @@
 > target is no longer one continuously rendered document. The final target is a
 > strict master-detail workspace with instant local thread switching and a
 > dense active-thread editor.
+
+## Implementation Sync
+
+The bounded master-detail redesign landed on `planner-web` on 2026-03-24.
+
+Delivered across the completed slices:
+
+- replaced continuous right-desk document rendering with active-thread-only
+  workspace rendering in `SocraticWorkspace`
+- kept the normalized Socratic graph as the source of truth for known thread
+  state while mounting only the selected thread's workspace content
+- changed left-index interaction to local client-side thread selection instead
+  of document jump behavior
+- added intentional right-pane scroll reset on thread change
+- updated question text entry to use local component state with debounce/blur
+  synchronization and unmount flush protection
+- preserved immediate active-row telemetry updates on the empty/non-empty
+  answer threshold while keeping full text syncing buffered
+- kept manual thread selection and active editing ownership from being
+  overwritten by later server-focus changes
+- removed the generic workspace chrome and normalized the active-thread desk to
+  a compact sans-serif operational hierarchy
+- tightened spacing and question-surface treatment so the route reads like a
+  dense master-detail productivity tool instead of a continuous document
+- reduced empty-thread boilerplate to a minimal `Awaiting questions...` state
+- updated route-level Playwright coverage to prove the active-thread workspace
+  model instead of the superseded continuous-document desk
+
+Verification completed for the delivered work:
+
+- `npm --prefix planner-web test -- src/components/__tests__/SocraticWorkspace.test.tsx src/pages/__tests__/SessionPage.test.tsx src/hooks/__tests__/useSocraticWebSocket.test.tsx`
+- `npm --prefix planner-web run build`
+- `cd planner-web && ./node_modules/.bin/playwright test e2e/session-ethereal.spec.ts`
+
+Status note:
+
+- no open implementation delta remains against this spec's bounded contract
+- future work on the Socratic lobby should be treated as optional follow-on
+  refinement rather than unfinished master-detail migration work
 
 ## 1. Executive Judgment
 
@@ -133,6 +172,7 @@ The Socratic Lobby must converge to a **Master-Detail Local Workspace**:
 - server focus synchronization may continue in the background, but it must not
   block local inspection of known content
 - only truly unknown content may show a waiting state
+- local thread switching must never discard unsaved in-progress answer text
 
 ## 7. Rendering Model
 
@@ -233,6 +273,9 @@ Required contract:
   fine-grained selector boundaries
 - syncing to the shared store/backend happens on blur, submit, or debounce
 - inactive threads do not rerender during active typing
+- unmounting the active thread must synchronously flush any dirty local input
+  state to the shared draft store before the active workspace subtree is
+  removed
 
 ### Local-fast interaction
 
@@ -242,6 +285,48 @@ The route must feel immediate for already-known content:
 - no spinner is allowed when the selected thread is already locally known
 - sidebar progress may update optimistically when a local draft or answer is
   submitted
+
+### Subscription granularity
+
+The normalized state contract must not be defeated by coarse subscriptions.
+
+Required contract:
+
+- the parent workspace subscribes only to the active thread id and the ordered
+  question ids for that thread
+- the parent workspace must not subscribe to the entire
+  `draftsByQuestionId`, `questionsById`, or equivalent large dictionaries
+- each `QuestionBlock` or equivalent child component subscribes only to its own
+  question record and draft record
+- typing in one answer must not rerender sibling question blocks unless a
+  sibling's own subscribed data changed
+
+### Scroll ownership and reset behavior
+
+Changing `activeThreadId` must not bleed scroll position between threads.
+
+Required contract:
+
+- the right workspace scroll container resets to the top when the user switches
+  to a different thread unless explicit per-thread scroll restoration has been
+  implemented
+- if per-thread scroll restoration is later added, it must be keyed by thread
+  id and restored intentionally rather than through incidental DOM reuse
+
+### Server focus protection
+
+The user’s local workspace ownership takes priority over background server
+focus changes.
+
+Required contract:
+
+- incoming server-focus updates must not yank the workspace away from a thread
+  the user manually selected
+- while an input is actively focused or a thread has been manually selected,
+  competing server-focus changes must be ignored or queued until they can be
+  applied safely
+- background server focus may update non-destructive telemetry, but it must not
+  steal the active editing surface mid-keystroke
 
 ## 10. Touched Surfaces
 
@@ -281,6 +366,11 @@ truth:
    focus acknowledgment.
 9. Progress telemetry in the left index remains truthful and does not invent
    loaded content for shell-only threads.
+10. Switching threads while an answer is dirty does not lose the unsynced text.
+11. Switching from one thread to another does not inherit the prior thread's
+    scroll position accidentally.
+12. Manual thread selection is not overridden mid-edit by background
+    server-focus updates.
 
 ## 12. Verification Plan
 
@@ -294,6 +384,12 @@ truth:
   telemetry
 - add or update tests proving question input updates do not fan out through
   non-active thread rendering contracts
+- add or update tests proving dirty local input state is flushed when the user
+  switches threads before blur
+- add or update tests proving the workspace scroll container resets or restores
+  intentionally on thread change instead of bleeding prior scroll position
+- add or update tests proving manual thread selection is not overridden by a
+  competing server-focus update while the user is editing
 - rerun at minimum:
   - `npm --prefix planner-web test -- src/components/__tests__/SocraticWorkspace.test.tsx src/pages/__tests__/SessionPage.test.tsx src/hooks/__tests__/useSocraticWebSocket.test.tsx`
   - `npm --prefix planner-web run build`
@@ -308,6 +404,11 @@ truth:
   heights
 - verify the index remains readable and truthful when some threads are shells
   and one thread is currently answerable
+- verify switching threads mid-typing preserves the just-entered draft text
+- verify switching threads does not land the next thread at an inherited scroll
+  offset
+- verify background server updates do not steal the active thread while the
+  user is typing
 
 ## 13. Rollback & Migration Notes
 
@@ -324,11 +425,26 @@ truth:
 - none blocking spec readiness; the product direction is explicit enough to
   start bounded implementation
 
-## 15. Readiness Judgment
+## 15. Implementation Guardrails
+
+These constraints are mandatory during delivery and are not optional polish:
+
+- dirty local input must flush on unmount or thread switch before the active
+  workspace subtree is discarded
+- workspace scroll position must reset or restore intentionally per thread;
+  incidental DOM reuse is not acceptable
+- parent components must subscribe narrowly enough that keystrokes do not
+  rerender the full active thread tree
+- server focus must never steal the active editing surface from the user while
+  they are manually navigating or typing
+
+## 16. Readiness Judgment
 
 This spec is ready for implementation.
 
 The structural diagnosis, target interaction model, and design constraints are
 all explicit. The new direction intentionally replaces the current
 continuous-document future-state contract, and the repo already contains enough
-migration primitives to begin bounded delivery without reopening discovery.
+migration primitives to begin bounded delivery without reopening discovery. The
+implementation guardrails above close the main execution trapdoors without
+changing the bounded product contract.

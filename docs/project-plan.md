@@ -126,20 +126,28 @@ Current planning state:
 - the new redesign is driven by user review on 2026-03-24 that explicitly
   rejected the continuous monolithic document model in favor of a fast,
   desktop-style master-detail workspace
+- the first bounded master-detail migration slice is now landed on
+  `planner-web`: the right desk renders only the selected thread, local thread
+  switching is immediate, dirty input state flushes on thread switch, and the
+  right pane resets scroll intentionally on selection change
+- the visual cleanup and route-level browser proof are now also landed:
+  active-thread workspace chrome is compact and sans-serif, question blocks are
+  distinct operational surfaces, and the route-level Playwright checks now
+  prove the active-thread model instead of the superseded continuous-document
+  desk
+- the master-detail redesign is now implemented on `planner-web`; remaining
+  future work should be treated as optional refinement rather than an open core
+  migration slice
 
 Current next bounded slice:
 
-- begin `delivery-cycle` on
-  [Socratic Lobby Master-Detail Local Workspace Spec](/home/thetu/planner/docs/socratic-lobby-master-detail-local-workspace-spec.md)
-  with the first bounded migration slice: replace continuous right-desk
-  rendering with active-thread-only workspace rendering while preserving the
-  locally normalized known-question state and instant thread switching
+- no further bounded slice is currently queued for this redesign thread
 
 Current follow-up verification slice:
 
-- once the first master-detail slice lands, verify independent pane scrolling,
-  local-fast known-thread switching, and isolated typing behavior against the
-  new active-thread workspace contract
+- browser and automated verification are complete for the implemented
+  master-detail contract; future spot-checks can be run if later Socratic lobby
+  changes reopen this route
 
 ### Socratic Ethereal Cascade Redesign
 

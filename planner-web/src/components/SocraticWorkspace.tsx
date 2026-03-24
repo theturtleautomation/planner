@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState, useEffect, type KeyboardEvent } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import VirtualizedCategoryDocument from './VirtualizedCategoryDocument.tsx';
+import SocraticDocumentSection from './SocraticDocumentSection.tsx';
 import {
   useHydrateSocraticDocumentGraph,
   useSocraticDocumentCategoryViews,
@@ -106,10 +106,10 @@ function rowTelemetry(
   if (totalCount > 0) {
     return `[ ${answeredCount}/${totalCount} ]`;
   }
-  if (node.has_children) {
-    return `[ ${node.item_count_hint} ]`;
+  if (node.status === 'pending') {
+    return '[ loading ]';
   }
-  return '[ 0/1 ]';
+  return '';
 }
 
 function formatMappedDimensions(node: SocraticCategoryNode | null): string | null {
@@ -144,11 +144,10 @@ export default function SocraticWorkspace({
     useShallow((state) => selectPromptProgress(state, currentPrompt)),
   );
   const documentCategories = useSocraticDocumentCategoryViews();
-  const [jumpTargetCategoryId, setJumpTargetCategoryId] = useState<string | null>(null);
-  const [visibleCategoryId, setVisibleCategoryId] = useState<string | null>(null);
-  const [previewCategoryId, setPreviewCategoryId] = useState<string | null>(null);
   const [focusTargetCategoryId, setFocusTargetCategoryId] = useState<string | null>(null);
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
+  const [manualCategoryId, setManualCategoryId] = useState<string | null>(null);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
 
   const activeCategoryId = activePromptCategoryId(currentPrompt);
   const activePathFocusId = activePathCategoryId(workspace);
@@ -191,10 +190,8 @@ export default function SocraticWorkspace({
   const focusedCategoryView = focusedCategoryId
     ? categoryViews.find((category) => category.categoryId === focusedCategoryId) ?? null
     : null;
-  const displayCategoryId = editingCategoryId
-    ?? previewCategoryId
-    ?? visibleCategoryId
-    ?? focusedCategoryId;
+  const activeSelectionId = manualCategoryId ?? editingCategoryId ?? focusedCategoryId;
+  const displayCategoryId = selectedCategoryId ?? activeSelectionId;
   const displayCategoryView = displayCategoryId
     ? categoryViews.find((category) => category.categoryId === displayCategoryId) ?? null
     : null;
@@ -206,13 +203,18 @@ export default function SocraticWorkspace({
     ? workspace.category_snapshot.nodes.find((node) => node.category_id === displayCategoryId) ?? null
     : null;
   const displayGroup = displayCategoryId ? groupMap.get(displayCategoryId) ?? null : null;
-  const deskTitle = 'Socratic workspace';
-  const deskSummary = displayCategoryView?.title
+  const deskTitle = displayCategoryView?.title
     ?? displayNode?.title
     ?? displayGroup?.title
     ?? focusedNode?.title
     ?? focusedGroup?.title
     ?? currentPrompt?.title
+    ?? 'Socratic workspace';
+  const deskSummary = displayCategoryView?.summary
+    ?? displayNode?.summary
+    ?? displayGroup?.summary
+    ?? focusedNode?.summary
+    ?? focusedGroup?.summary
     ?? null;
   const mappedDimensions = formatMappedDimensions(displayNode ?? focusedNode ?? null);
   const activeQuestionCount = currentPrompt && activeCategoryId === focusedCategoryId
@@ -237,14 +239,25 @@ export default function SocraticWorkspace({
   ) && !deskHasLocalContent;
 
   const sidebarRows = useMemo<SidebarRowModel[]>(() => (
-    categoryViews.map((category) => {
+    categoryViews.flatMap((category) => {
       const isActive = displayCategoryId === category.categoryId;
+      const groupPreviewCount = groupMap.get(category.categoryId)?.preview_items?.length ?? 0;
+      const knownItemCount = Math.max(category.questionIds.length, groupPreviewCount);
+      const shouldShowRow = Boolean(
+        knownItemCount > 0
+        || pathIds.has(category.categoryId)
+        || pendingCategoryId === category.categoryId
+        || isActive
+      );
+      if (!shouldShowRow) {
+        return [];
+      }
       const isInteractive = category.hasPromptReady
         || visibleIds.has(category.categoryId)
         || pathIds.has(category.categoryId)
         || isActive;
 
-      return {
+      return [{
         categoryId: category.categoryId,
         title: category.title,
         depth: category.depth,
@@ -259,7 +272,7 @@ export default function SocraticWorkspace({
           has_children: category.hasChildren,
           has_prompt_ready: category.hasPromptReady,
           item_count_hint: category.itemCountHint,
-        }, category.answeredCount, category.totalCount),
+        }, category.answeredCount, knownItemCount),
         state: nodeStatusState({
           category_id: category.categoryId,
           parent_category_id: category.parentCategoryId ?? null,
@@ -271,15 +284,16 @@ export default function SocraticWorkspace({
           has_children: category.hasChildren,
           has_prompt_ready: category.hasPromptReady,
           item_count_hint: category.itemCountHint,
-        }, isActive, category.answeredCount, category.totalCount),
+        }, isActive, category.answeredCount, knownItemCount),
         isActive,
         isInteractive,
-      };
+      }];
     })
   ), [
     categoryViews,
     displayCategoryId,
-    focusedCategoryId,
+    groupMap,
+    pendingCategoryId,
     pathIds,
     visibleIds,
   ]);
@@ -290,18 +304,23 @@ export default function SocraticWorkspace({
   );
 
   useEffect(() => {
-    if (!jumpTargetCategoryId) return;
-    if (visibleCategoryId === jumpTargetCategoryId) {
-      setJumpTargetCategoryId(null);
+    const selectedExists = Boolean(
+      activeSelectionId
+      && categoryViews.some((category) => category.categoryId === activeSelectionId),
+    );
+    if (selectedExists) {
+      setSelectedCategoryId(activeSelectionId);
+      return;
     }
-  }, [jumpTargetCategoryId, visibleCategoryId]);
+    setSelectedCategoryId(categoryViews[0]?.categoryId ?? null);
+  }, [activeSelectionId, categoryViews]);
 
   useEffect(() => {
-    if (!previewCategoryId) return;
-    if (visibleCategoryId === previewCategoryId) {
-      setPreviewCategoryId(null);
+    if (!selectedCategoryId) return;
+    if (deskBodyRef.current) {
+      deskBodyRef.current.scrollTop = 0;
     }
-  }, [previewCategoryId, visibleCategoryId]);
+  }, [selectedCategoryId]);
 
   const handleRowKeyDown = (categoryId: string, event: KeyboardEvent<HTMLButtonElement>): void => {
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
@@ -316,16 +335,16 @@ export default function SocraticWorkspace({
       const nextId = interactiveRowIds[nextIndex];
       rowRefs.current[nextId]?.focus();
       setEditingCategoryId(null);
-      setPreviewCategoryId(nextId);
-      setJumpTargetCategoryId(nextId);
+      setManualCategoryId(nextId);
+      setSelectedCategoryId(nextId);
       return;
     }
 
     if (event.key === 'Enter') {
       event.preventDefault();
       setEditingCategoryId(null);
-      setPreviewCategoryId(categoryId);
-      setJumpTargetCategoryId(categoryId);
+      setManualCategoryId(categoryId);
+      setSelectedCategoryId(categoryId);
       setFocusTargetCategoryId(categoryId);
       if (categoryId !== focusedCategoryId) {
         onFocusCategory(categoryId, workspace.category_snapshot.revision);
@@ -335,8 +354,9 @@ export default function SocraticWorkspace({
 
   const handleFocusCategory = (categoryId: string): void => {
     setEditingCategoryId(null);
-    setPreviewCategoryId(categoryId);
-    setJumpTargetCategoryId(categoryId);
+    setManualCategoryId(categoryId);
+    setSelectedCategoryId(categoryId);
+    setFocusTargetCategoryId(null);
     if (categoryId !== focusedCategoryId) {
       onFocusCategory(categoryId, workspace.category_snapshot.revision);
     }
@@ -398,16 +418,16 @@ export default function SocraticWorkspace({
       <section className="socratic-desk" aria-label="Consultant desk">
         <header className="socratic-desk__header">
           <div className="socratic-desk__title-block">
-            <span className="socratic-terminal-kicker">
-              {deskIsPreparing ? 'Preparing' : 'Workspace'}
-            </span>
+            {deskIsPreparing && (
+              <span className="socratic-terminal-kicker">Preparing</span>
+            )}
             <h2 className="socratic-desk__title">{deskTitle}</h2>
           </div>
 
           <div className="socratic-desk__meta" aria-label="Planner context">
             {deskSummary && (
               <span className="socratic-desk__meta-line">
-                Viewing: {deskSummary}
+                Planner context: {deskSummary}
               </span>
             )}
             {mappedDimensions && (
@@ -446,33 +466,39 @@ export default function SocraticWorkspace({
                 Commit plan
               </button>
             </div>
-          ) : (
-            <VirtualizedCategoryDocument
-              scrollElementRef={deskBodyRef}
-              categories={categoryViews}
+          ) : displayCategoryView ? (
+            <SocraticDocumentSection
+              category={displayCategoryView}
               currentPrompt={currentPrompt}
               pendingCategoryId={pendingCategoryId}
               branchNotice={workspace.branch_notice ?? workspaceNotice}
-              focusedCategoryId={focusedCategoryId}
-              groupMap={groupMap}
-              jumpTargetCategoryId={jumpTargetCategoryId}
-              focusTargetCategoryId={focusTargetCategoryId}
+              group={displayGroup}
               disabled={disabled}
-              onVisibleCategoryChange={setVisibleCategoryId}
-              onFocusTargetHandled={(categoryId) => {
-                if (focusTargetCategoryId === categoryId) {
-                  setFocusTargetCategoryId(null);
-                  setEditingCategoryId(categoryId);
-                }
+              onSubmitAnswers={onSubmitAnswers}
+              onDone={workspace.category_snapshot.build_ready ? onDone : undefined}
+              onShowAll={() => {
+                setManualCategoryId(null);
+                setEditingCategoryId(null);
+                setSelectedCategoryId(focusedCategoryId);
+                setFocusTargetCategoryId(focusedCategoryId);
+                onShowAll();
               }}
               onAnswerFocus={(categoryId) => {
                 setEditingCategoryId(categoryId);
-                setPreviewCategoryId(null);
+                setManualCategoryId(categoryId);
+                if (focusTargetCategoryId === categoryId) {
+                  setFocusTargetCategoryId(null);
+                }
               }}
-              onSubmitAnswers={onSubmitAnswers}
-              onDone={workspace.category_snapshot.build_ready ? onDone : undefined}
-              onShowAll={onShowAll}
+              hideHeader
+              autoFocusFirstField={focusTargetCategoryId === displayCategoryId}
             />
+          ) : (
+            <div className="socratic-document-panel">
+              <p className="socratic-terminal-support" style={{ margin: 0 }}>
+                Awaiting questions...
+              </p>
+            </div>
           )}
         </div>
       </section>

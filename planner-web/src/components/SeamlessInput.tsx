@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react';
 interface SeamlessInputProps {
   value: string;
   onChange: (nextValue: string) => void;
+  onBlur?: () => void;
   placeholder?: string;
   ariaLabel: string;
   disabled?: boolean;
@@ -13,6 +14,7 @@ interface SeamlessInputProps {
 export default function SeamlessInput({
   value,
   onChange,
+  onBlur,
   placeholder = 'Type your answer',
   ariaLabel,
   disabled = false,
@@ -38,6 +40,7 @@ export default function SeamlessInput({
       ref={textareaRef}
       value={value}
       onChange={(event) => onChange(event.target.value)}
+      onBlur={onBlur}
       placeholder={placeholder}
       rows={rows}
       disabled={disabled}

@@ -140,8 +140,46 @@ describe('SocraticWorkspace', () => {
     expect(screen.getByRole('heading', { name: 'Authentication model' })).toBeInTheDocument();
     expect(screen.getAllByText('Explore missing areas').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Platform').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Workspace')).not.toBeInTheDocument();
     expect(screen.queryByText('Thread')).not.toBeInTheDocument();
     expect(screen.queryByText('Live question')).not.toBeInTheDocument();
+  });
+
+  it('hides shell-only categories that do not have local question or preview content yet', () => {
+    render(
+      <SocraticWorkspace
+        workspace={makeWorkspace({
+          category_snapshot: {
+            ...makeWorkspace().category_snapshot,
+            nodes: [
+              ...makeWorkspace().category_snapshot.nodes,
+              {
+                category_id: 'root-shell-only',
+                parent_category_id: null,
+                title: 'Explore Performance',
+                summary: 'Not loaded locally yet.',
+                status: 'ready',
+                depth: 0,
+                mapped_dimensions: ['Performance'],
+                has_children: false,
+                has_prompt_ready: true,
+                item_count_hint: 1,
+              },
+            ],
+          },
+        })}
+        currentPrompt={makePrompt()}
+        pendingCategoryId={null}
+        workspaceNotice={null}
+        onFocusCategory={vi.fn()}
+        onShowAll={vi.fn()}
+        onSubmitAnswers={vi.fn()}
+        onDone={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByRole('button', { name: /Explore Performance/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Authentication model [ 0/1 ]' })).toBeInTheDocument();
   });
 
   it('updates sidebar telemetry live while the active answer draft changes', async () => {
@@ -167,6 +205,29 @@ describe('SocraticWorkspace', () => {
     expect(screen.getByRole('button', { name: 'Authentication model [ 1/1 ]' })).toBeInTheDocument();
   });
 
+  it('flushes a dirty local answer before switching to another thread', async () => {
+    const user = userEvent.setup();
+
+    render(
+      <SocraticWorkspace
+        workspace={makeWorkspace()}
+        currentPrompt={makePrompt()}
+        pendingCategoryId={null}
+        workspaceNotice={null}
+        onFocusCategory={vi.fn()}
+        onShowAll={vi.fn()}
+        onSubmitAnswers={vi.fn()}
+        onDone={vi.fn()}
+      />,
+    );
+
+    await user.type(screen.getByLabelText('Custom text for item-1'), 'Use email magic links.');
+    await user.click(screen.getByRole('button', { name: 'Platform' }));
+    await user.click(screen.getByRole('button', { name: 'Authentication model [ 1/1 ]' }));
+
+    expect(screen.getByLabelText('Custom text for item-1')).toHaveValue('Use email magic links.');
+  });
+
   it('uses arrow traversal to preview another thread in the document without changing server focus', async () => {
     const user = userEvent.setup();
     const onFocusCategory = vi.fn();
@@ -189,7 +250,7 @@ describe('SocraticWorkspace', () => {
     await user.keyboard('{ArrowUp}');
 
     expect(onFocusCategory).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: /Platform \[/i })).toHaveAttribute('aria-current', 'true');
+    expect(screen.getByRole('button', { name: 'Platform' })).toHaveAttribute('aria-current', 'true');
   });
 
   it('pressing Enter on an index row focuses the first answerable item when it exists', async () => {
@@ -248,6 +309,31 @@ describe('SocraticWorkspace', () => {
     );
 
     expect(screen.getByRole('button', { name: 'Authentication model [ 0/1 ]' })).toHaveAttribute('aria-current', 'true');
+  });
+
+  it('resets the workspace scroll position when switching threads', async () => {
+    const user = userEvent.setup();
+    const { container } = render(
+      <SocraticWorkspace
+        workspace={makeWorkspace()}
+        currentPrompt={makePrompt()}
+        pendingCategoryId={null}
+        workspaceNotice={null}
+        onFocusCategory={vi.fn()}
+        onShowAll={vi.fn()}
+        onSubmitAnswers={vi.fn()}
+        onDone={vi.fn()}
+      />,
+    );
+
+    const deskBody = container.querySelector<HTMLDivElement>('.socratic-desk__body');
+    expect(deskBody).not.toBeNull();
+    if (!deskBody) return;
+
+    deskBody.scrollTop = 820;
+    await user.click(screen.getByRole('button', { name: 'Platform' }));
+
+    expect(deskBody.scrollTop).toBe(0);
   });
 
   it('renders localized preparing feedback for a pending focused category', () => {

@@ -21,6 +21,8 @@ interface SocraticDocumentSectionProps {
   onDone?: () => void;
   onShowAll: () => void;
   onAnswerFocus?: (categoryId: string) => void;
+  hideHeader?: boolean;
+  autoFocusFirstField?: boolean;
 }
 
 function formatMappedDimensions(
@@ -85,6 +87,8 @@ export default function SocraticDocumentSection({
   onDone,
   onShowAll,
   onAnswerFocus,
+  hideHeader = false,
+  autoFocusFirstField = false,
 }: SocraticDocumentSectionProps) {
   const questions = useSocraticDocumentQuestions(category.categoryId);
   const previewItems = group?.preview_items ?? [];
@@ -109,34 +113,36 @@ export default function SocraticDocumentSection({
       data-category-id={category.categoryId}
       aria-label={category.title}
     >
-      <header className="socratic-document-section__header">
-        <div className="socratic-document-section__title-block">
-          {sectionEyebrow && (
-            <span className="socratic-document-section__eyebrow">{sectionEyebrow}</span>
-          )}
-          <h3 className="socratic-document-section__title">{category.title}</h3>
-        </div>
-        <div className="socratic-document-section__meta">
-          {isPromptSection && (
-            <span className="socratic-document-section__meta-line is-state">
-              Current question
-            </span>
-          )}
-          {category.summary && (
+      {!hideHeader && (
+        <header className="socratic-document-section__header">
+          <div className="socratic-document-section__title-block">
+            {sectionEyebrow && (
+              <span className="socratic-document-section__eyebrow">{sectionEyebrow}</span>
+            )}
+            <h3 className="socratic-document-section__title">{category.title}</h3>
+          </div>
+          <div className="socratic-document-section__meta">
+            {isPromptSection && (
+              <span className="socratic-document-section__meta-line is-state">
+                Current question
+              </span>
+            )}
+            {category.summary && (
+              <span className="socratic-document-section__meta-line">
+                Planner context: {category.summary}
+              </span>
+            )}
+            {mappedDimensions && (
+              <span className="socratic-document-section__meta-line">
+                Mapped dimensions: {mappedDimensions}
+              </span>
+            )}
             <span className="socratic-document-section__meta-line">
-              Planner context: {category.summary}
+              {category.answeredCount}/{category.totalCount} answered
             </span>
-          )}
-          {mappedDimensions && (
-            <span className="socratic-document-section__meta-line">
-              Mapped dimensions: {mappedDimensions}
-            </span>
-          )}
-          <span className="socratic-document-section__meta-line">
-            {category.answeredCount}/{category.totalCount} answered
-          </span>
-        </div>
-      </header>
+          </div>
+        </header>
+      )}
 
       <div className="socratic-document-section__body">
         {isPromptSection && currentPrompt ? (
@@ -145,7 +151,7 @@ export default function SocraticDocumentSection({
             onSubmit={(_promptId, answers) => onSubmitAnswers(answers)}
             disabled={disabled}
             onDone={onDone}
-            autoFocusFirstField
+            autoFocusFirstField={autoFocusFirstField}
             onAnswerFocus={() => onAnswerFocus?.(category.categoryId)}
           />
         ) : isPreparing ? (
@@ -181,9 +187,8 @@ export default function SocraticDocumentSection({
           </div>
         ) : (
           <div className="socratic-document-panel">
-            <span className="socratic-terminal-kicker">Waiting</span>
             <p className="socratic-terminal-support" style={{ margin: 0 }}>
-              This thread is loaded into the desk. Planner will append the next question here when it becomes available.
+              Awaiting questions...
             </p>
           </div>
         )}

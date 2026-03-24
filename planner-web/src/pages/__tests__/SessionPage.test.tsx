@@ -1527,7 +1527,7 @@ describe('SessionPage resume behavior', () => {
     });
 
     expect(screen.getByLabelText('Thread index')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /Security \[/ }));
+    await user.click(screen.getByRole('button', { name: 'Security' }));
     expect(mockEnterCategory).toHaveBeenCalledWith('root-security', 'category-thread-1');
   });
 
@@ -1607,7 +1607,7 @@ describe('SessionPage resume behavior', () => {
     expect(screen.getByRole('button', { name: /context/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Belief State' })).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Explore missing areas' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Security \[ 0\/1 \]/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Security' })).not.toBeInTheDocument();
   });
 
   it('keeps belief state, draft, transcript, and events hidden until the context shelf is opened', async () => {
