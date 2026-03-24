@@ -1,6 +1,6 @@
 # Planner SolidStart Phase 07 Project Outputs And Artifacts Spec
 
-**Status:** ready for implementation  
+**Status:** implemented  
 **Date:** 2026-03-24  
 **Parent:** [Planner SolidStart Platform Direction Spec](/home/thetu/planner/docs/planner-solidstart-platform-direction-spec.md)  
 **Related Planning:** [Planner SolidStart Phase 06 Project Build Execution And Run Detail Spec](/home/thetu/planner/docs/planner-solidstart-phase-06-project-build-execution-and-run-detail-spec.md), [Planner SolidStart Phase 04 Project Build Path And Automation Handoff Spec](/home/thetu/planner/docs/planner-solidstart-phase-04-project-build-path-and-automation-handoff-spec.md)
@@ -10,6 +10,13 @@
 > outputs and artifacts visible in the same project workspace. The next surface
 > is not a full deployment/ops console. It is a concise project-local outputs
 > and artifacts view.
+>
+> Implementation sync (2026-03-24): the Solid project workspace now includes an
+> attached `Outputs` surface backed by blueprint export history. The route keeps
+> active analysis primary while making recorded project outputs and artifacts
+> visible without leaving `/projects/:projectSlug`. Verification completed with
+> helper tests, Solid lint/build, and Playwright proof for the attached outputs
+> surface.
 
 ## 1. Executive Judgment
 

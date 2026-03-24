@@ -167,6 +167,85 @@ export interface RunListResponse {
   runs: string[];
 }
 
+export interface BlueprintExportHistoryEntry {
+  export_id: string;
+  kind: string;
+  actor?: string | null;
+  node_id?: string | null;
+  node_count: number;
+  edge_count: number;
+  project_id?: string | null;
+  project_name?: string | null;
+  scope_snapshot?: Record<string, unknown> | null;
+  scope_snapshot_redacted: boolean;
+  scope_snapshot_redacted_fields: string[];
+  retention_expires_at?: string | null;
+  summary: string;
+  timestamp: string;
+}
+
+export interface BlueprintExportHistoryResponse {
+  entries: BlueprintExportHistoryEntry[];
+  total: number;
+}
+
+export interface SnapshotEntry {
+  timestamp: string;
+  filename: string;
+}
+
+export interface HistoryListResponse {
+  snapshots: SnapshotEntry[];
+}
+
+export interface BlueprintEventPayload {
+  event_type: string;
+  summary: string;
+  timestamp: string;
+  data: Record<string, unknown>;
+}
+
+export interface BlueprintEventsResponse {
+  events: BlueprintEventPayload[];
+  total: number;
+}
+
+export interface AdminProviderInfo {
+  name: string;
+  binary: string;
+  available: boolean;
+}
+
+export interface AdminStatusResponse {
+  status: string;
+  version: string;
+  uptime_secs: number;
+  sessions: {
+    active: number;
+    total_events: number;
+  };
+  providers: AdminProviderInfo[];
+}
+
+export interface AdminEventEntry {
+  id: string;
+  timestamp: string;
+  level: string;
+  source: string;
+  session_id?: string;
+  project_id?: string;
+  project_name?: string;
+  step?: string;
+  message: string;
+  duration_ms?: number;
+  metadata: Record<string, unknown>;
+}
+
+export interface AdminEventsResponse {
+  events: AdminEventEntry[];
+  total: number;
+}
+
 export interface StartSocraticResponse {
   session_id: string;
   ws_url: string;

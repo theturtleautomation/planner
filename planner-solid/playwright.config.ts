@@ -9,7 +9,7 @@ export default defineConfig({
   webServer: {
     command: "cargo run --manifest-path ../Cargo.toml --bin planner-server -- --port 4174 --static-dir ./dist/static",
     port: 4174,
-    reuseExistingServer: true,
+    reuseExistingServer: false,
     timeout: 120_000,
   },
 });

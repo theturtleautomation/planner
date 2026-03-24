@@ -9,6 +9,7 @@ import {
   getProjectBlueprint,
   getProjectImportReview,
   getProjectImportState,
+  listBlueprintExportHistory,
   getSessionEvents,
   getSessionRuns,
   getPromptBank,
@@ -21,6 +22,7 @@ import {
   summarizeBuildExecution,
   summarizeBuildReadiness,
   summarizeKnowledge,
+  summarizeOutputArtifacts,
   summarizeProjectActivity,
   summarizeReview,
   type AdvancedPanelTab,
@@ -91,6 +93,7 @@ export default function ProjectWorkspacePage() {
   });
 
   const primarySession = createMemo(() => summary()?.primarySession ?? null);
+  const currentProjectId = createMemo(() => project()?.project.id);
 
   const [projectBlueprint] = createResource(
     () => (advancedOpen() ? params.projectSlug : undefined),
@@ -127,6 +130,10 @@ export default function ProjectWorkspacePage() {
             limit: 5,
           })
         : null,
+  );
+  const [exportHistory] = createResource(
+    () => (advancedOpen() ? currentProjectId() : undefined),
+    async projectId => (projectId ? listBlueprintExportHistory({ projectId, limit: 6 }) : null),
   );
 
   const knowledgeSummary = createMemo(() => {
@@ -175,6 +182,12 @@ export default function ProjectWorkspacePage() {
       primarySession: primarySession(),
       runs: sessionRuns(),
       events: sessionEvents()?.events ?? [],
+    }),
+  );
+  const outputArtifacts = createMemo(() =>
+    summarizeOutputArtifacts({
+      projectName: project()?.project.name ?? "Project",
+      history: exportHistory(),
     }),
   );
 
@@ -381,6 +394,15 @@ export default function ProjectWorkspacePage() {
                         onClick={() => setAdvancedTab("execution")}
                       >
                         Build execution
+                      </button>
+                      <button
+                        class={`advanced-tab${advancedTab() === "outputs" ? " is-active" : ""}`}
+                        type="button"
+                        role="tab"
+                        aria-selected={advancedTab() === "outputs"}
+                        onClick={() => setAdvancedTab("outputs")}
+                      >
+                        Outputs
                       </button>
                       <button
                         class={`advanced-tab${advancedTab() === "activity" ? " is-active" : ""}`}
@@ -811,6 +833,65 @@ export default function ProjectWorkspacePage() {
                                         <div class="advanced-item-copy">{item.copy}</div>
                                       </div>
                                       <div class="advanced-item-meta">{item.meta}</div>
+                                    </div>
+                                  )}
+                                </For>
+                              </div>
+                            </Show>
+                          </div>
+                        </Show>
+                      </Match>
+
+                      <Match when={advancedTab() === "outputs"}>
+                        <Show when={!exportHistory.loading} fallback={<div class="advanced-loading">Loading outputs and artifacts…</div>}>
+                          <div class="advanced-surface">
+                            <div class="advanced-surface-head">
+                              <div>
+                                <div class="eyebrow">Outputs and artifacts</div>
+                                <h3 class="advanced-surface-title">{outputArtifacts().headline}</h3>
+                                <p class="section-copy">{outputArtifacts().copy}</p>
+                              </div>
+                              <span class={readinessBadgeClass(outputArtifacts().artifactCount > 0 ? "ready" : "not-started")}>
+                                {outputArtifacts().artifactCount > 0
+                                  ? `${outputArtifacts().artifactCount} artifact${
+                                      outputArtifacts().artifactCount === 1 ? "" : "s"
+                                    }`
+                                  : "No outputs yet"}
+                              </span>
+                            </div>
+                            <div class="advanced-summary-grid">
+                              <div class="advanced-summary-card">
+                                <div class="advanced-label">Recorded outputs</div>
+                                <div class="advanced-metric">{outputArtifacts().artifactCount}</div>
+                              </div>
+                              <div class="advanced-summary-card">
+                                <div class="advanced-label">Latest export</div>
+                                <div class="advanced-metric advanced-metric-text">
+                                  {outputArtifacts().items[0]?.meta ? formatTimestamp(outputArtifacts().items[0]!.meta) : "n/a"}
+                                </div>
+                              </div>
+                              <div class="advanced-summary-card">
+                                <div class="advanced-label">Build posture</div>
+                                <div class="advanced-metric advanced-metric-text">{currentBuildPath().label}</div>
+                              </div>
+                              <div class="advanced-summary-card">
+                                <div class="advanced-label">Source</div>
+                                <div class="advanced-metric advanced-metric-text">Blueprint export history</div>
+                              </div>
+                            </div>
+                            <Show
+                              when={outputArtifacts().items.length > 0}
+                              fallback={<div class="empty-state">No recorded outputs are attached to this project yet.</div>}
+                            >
+                              <div class="advanced-list">
+                                <For each={outputArtifacts().items}>
+                                  {item => (
+                                    <div class="advanced-list-row">
+                                      <div>
+                                        <div class="advanced-item-title">{item.title}</div>
+                                        <div class="advanced-item-copy">{item.copy}</div>
+                                      </div>
+                                      <div class="advanced-item-meta">{formatTimestamp(item.meta)}</div>
                                     </div>
                                   )}
                                 </For>

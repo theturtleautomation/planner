@@ -4,6 +4,9 @@ import { Suspense, lazy } from "solid-js";
 import "./app.css";
 
 const HomePage = lazy(() => import("./routes/index"));
+const AdminPage = lazy(() => import("./routes/admin/index"));
+const EventsPage = lazy(() => import("./routes/events/index"));
+const KnowledgePage = lazy(() => import("./routes/knowledge/index"));
 const ProjectsPage = lazy(() => import("./routes/projects/index"));
 const NewProjectPage = lazy(() => import("./routes/projects/new"));
 const ProjectWorkspacePage = lazy(() => import("./routes/projects/[projectSlug]"));
@@ -31,6 +34,15 @@ export default function App() {
                 <A href="/projects" activeClass="is-active">
                   Projects
                 </A>
+                <A href="/knowledge" activeClass="is-active">
+                  Knowledge
+                </A>
+                <A href="/events" activeClass="is-active">
+                  Events
+                </A>
+                <A href="/admin" activeClass="is-active">
+                  Admin
+                </A>
                 <A href="/sessions" activeClass="is-active">
                   Sessions
                 </A>
@@ -44,6 +56,9 @@ export default function App() {
       )}
     >
       <Route path="/" component={HomePage} />
+      <Route path="/admin" component={AdminPage} />
+      <Route path="/events" component={EventsPage} />
+      <Route path="/knowledge" component={KnowledgePage} />
       <Route path="/projects" component={ProjectsPage} />
       <Route path="/projects/new" component={NewProjectPage} />
       <Route path="/projects/:projectSlug" component={ProjectWorkspacePage} />

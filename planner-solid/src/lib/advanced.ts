@@ -1,4 +1,5 @@
 import type {
+  BlueprintExportHistoryResponse,
   BlueprintResponse,
   NodeSummary,
   PlannerEvent,
@@ -15,7 +16,8 @@ export type AdvancedPanelTab =
   | "readiness"
   | "build"
   | "activity"
-  | "execution";
+  | "execution"
+  | "outputs";
 
 export interface KnowledgeSummary {
   totalNodes: number;
@@ -87,6 +89,13 @@ export interface BuildExecutionSummary {
   nextAction: string;
   runCount: number;
   latestRunId?: string | null;
+  items: ProjectActivityItem[];
+}
+
+export interface OutputArtifactSummary {
+  headline: string;
+  copy: string;
+  artifactCount: number;
   items: ProjectActivityItem[];
 }
 
@@ -507,5 +516,25 @@ export function summarizeBuildExecution(params: {
     runCount: runs.length,
     latestRunId,
     items,
+  };
+}
+
+export function summarizeOutputArtifacts(params: {
+  history?: BlueprintExportHistoryResponse | null;
+  projectName: string;
+}): OutputArtifactSummary {
+  const entries = params.history?.entries ?? [];
+  return {
+    headline: "Outputs and artifacts",
+    copy:
+      entries.length > 0
+        ? `Latest recorded project outputs for ${params.projectName}.`
+        : `No recorded outputs or artifacts are attached to ${params.projectName} yet.`,
+    artifactCount: entries.length,
+    items: entries.slice(0, 6).map(entry => ({
+      title: entry.kind,
+      copy: entry.summary,
+      meta: entry.timestamp,
+    })),
   };
 }

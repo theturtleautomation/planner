@@ -1,8 +1,13 @@
 import type {
+  AdminEventsResponse,
+  AdminStatusResponse,
   BlueprintResponse,
+  BlueprintEventsResponse,
+  BlueprintExportHistoryResponse,
   CreateProjectRequest,
   CreateSessionResponse,
   GetSessionResponse,
+  HistoryListResponse,
   ListProjectsResponse,
   ListSessionsResponse,
   RunListResponse,
@@ -74,6 +79,19 @@ function invalidateCache(paths: string[]) {
 
 export function listSessions(): Promise<ListSessionsResponse> {
   return cachedGet("/sessions");
+}
+
+export function getAdminStatus(): Promise<AdminStatusResponse> {
+  return apiFetch("/admin/status");
+}
+
+export function getAdminEvents(params?: { limit?: number; level?: string; sessionId?: string }): Promise<AdminEventsResponse> {
+  const qs = new URLSearchParams();
+  if (params?.limit !== undefined) qs.set("limit", String(params.limit));
+  if (params?.level) qs.set("level", params.level);
+  if (params?.sessionId) qs.set("session_id", params.sessionId);
+  const query = qs.toString();
+  return apiFetch(`/admin/events${query ? `?${query}` : ""}`);
 }
 
 export function createSession(): Promise<CreateSessionResponse> {
@@ -156,6 +174,46 @@ export function getProjectBlueprint(
   }
   const query = params.toString();
   return cachedGet(`/blueprint${query ? `?${query}` : ""}`);
+}
+
+export function listBlueprintHistory(): Promise<HistoryListResponse> {
+  return apiFetch("/blueprint/history");
+}
+
+export function createBlueprintSnapshot(label?: string): Promise<{ timestamp: string; filename: string }> {
+  return apiFetch("/blueprint/history", {
+    method: "POST",
+    body: JSON.stringify({ label: label || undefined }),
+  });
+}
+
+export function listBlueprintEvents(params?: { nodeId?: string; limit?: number }): Promise<BlueprintEventsResponse> {
+  const qs = new URLSearchParams();
+  if (params?.nodeId) qs.set("node_id", params.nodeId);
+  if (params?.limit !== undefined) qs.set("limit", String(params.limit));
+  const query = qs.toString();
+  return apiFetch(`/blueprint/events${query ? `?${query}` : ""}`);
+}
+
+export function listBlueprintExportHistory(params?: {
+  projectId?: string;
+  scopeClass?: string;
+  feature?: string;
+  widget?: string;
+  artifact?: string;
+  component?: string;
+  limit?: number;
+}): Promise<BlueprintExportHistoryResponse> {
+  const qs = new URLSearchParams();
+  if (params?.projectId) qs.set("project_id", params.projectId);
+  if (params?.scopeClass) qs.set("scope_class", params.scopeClass);
+  if (params?.feature) qs.set("feature", params.feature);
+  if (params?.widget) qs.set("widget", params.widget);
+  if (params?.artifact) qs.set("artifact", params.artifact);
+  if (params?.component) qs.set("component", params.component);
+  if (params?.limit !== undefined) qs.set("limit", String(params.limit));
+  const query = qs.toString();
+  return apiFetch(`/blueprint/export-history${query ? `?${query}` : ""}`);
 }
 
 export function getProjectImportState(projectRef: string): Promise<ProjectImportResponse | null> {

@@ -142,6 +142,21 @@ Current planning state:
   [Planner SolidStart Phase 07 Project Outputs And Artifacts Spec](/home/thetu/planner/docs/planner-solidstart-phase-07-project-outputs-and-artifacts-spec.md),
   which keeps the project workspace analysis-first while adding attached
   project-local outputs visibility
+- the next widening slice after that is
+  [Planner SolidStart Phase 08 Events Timeline And Snapshots Spec](/home/thetu/planner/docs/planner-solidstart-phase-08-events-timeline-and-snapshots-spec.md),
+  which migrates the top-level events timeline while keeping chronology primary
+  and snapshots secondary
+- the next widening slice after that is
+  [Planner SolidStart Phase 09 Admin Operations Route Spec](/home/thetu/planner/docs/planner-solidstart-phase-09-admin-operations-route-spec.md),
+  which migrates `/admin` into the Solid shell with one dominant health desk
+  and a quieter event stream
+- the next widening slice after that is
+  [Planner SolidStart Phase 10 Knowledge Inventory Route Spec](/home/thetu/planner/docs/planner-solidstart-phase-10-knowledge-inventory-route-spec.md),
+  which adds a simplified project-scoped knowledge inventory with attached node
+  detail
+- the next bounded widening slice is now
+  [Planner SolidStart Phase 11 Blueprint Graph Route Spec](/home/thetu/planner/docs/planner-solidstart-phase-11-blueprint-graph-route-spec.md),
+  which should migrate the blueprint graph workspace into the new shell
 - the route-level child spec for the Socratic lobby is
   [Socratic SolidStart Greenfield Platform Spec](/home/thetu/planner/docs/socratic-solidstart-greenfield-platform-spec.md)
 - the route-level Socratic spec is fed by the already-selected product

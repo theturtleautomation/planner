@@ -219,6 +219,44 @@ const importReview = {
   ],
 };
 
+const exportHistory = {
+  total: 2,
+  entries: [
+    {
+      export_id: "exp-2",
+      kind: "project_snapshot",
+      actor: "dev|local",
+      node_id: null,
+      node_count: 6,
+      edge_count: 4,
+      project_id: "project-1",
+      project_name: "Personal Calendar",
+      scope_snapshot: null,
+      scope_snapshot_redacted: false,
+      scope_snapshot_redacted_fields: [],
+      retention_expires_at: null,
+      summary: "Generated build-facing project snapshot",
+      timestamp: "2026-03-24T05:24:00Z",
+    },
+    {
+      export_id: "exp-1",
+      kind: "component_export",
+      actor: "dev|local",
+      node_id: "component-1",
+      node_count: 2,
+      edge_count: 1,
+      project_id: "project-1",
+      project_name: "Personal Calendar",
+      scope_snapshot: null,
+      scope_snapshot_redacted: false,
+      scope_snapshot_redacted_fields: [],
+      retention_expires_at: null,
+      summary: "Exported Task Service artifact bundle",
+      timestamp: "2026-03-24T05:20:00Z",
+    },
+  ],
+};
+
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     class MockWebSocket {
@@ -416,6 +454,13 @@ test.beforeEach(async ({ page }) => {
     });
   });
 
+  await page.route("**/api/blueprint/export-history?**", async route => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(exportHistory),
+    });
+  });
+
   await page.route("**/api/projects/personal-calendar/import-review", async route => {
     if (route.request().method() === "POST") {
       await route.fulfill({
@@ -540,4 +585,9 @@ test("phase 03 keeps review and build readiness attached to the project workspac
   await expect(page.getByRole("heading", { name: "The latest build-facing run is no longer active" })).toBeVisible();
   await expect(page.getByText("run-1234")).toBeVisible();
   await expect(page.getByText("Compiled project blueprint")).toBeVisible();
+
+  await page.getByRole("tab", { name: "Outputs" }).click();
+  await expect(page.getByRole("heading", { name: "Outputs and artifacts" })).toBeVisible();
+  await expect(page.getByText("Generated build-facing project snapshot")).toBeVisible();
+  await expect(page.getByText("component_export")).toBeVisible();
 });

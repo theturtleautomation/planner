@@ -4,6 +4,7 @@ import {
   summarizeBuildExecution,
   summarizeBuildReadiness,
   summarizeKnowledge,
+  summarizeOutputArtifacts,
   summarizeProjectActivity,
   summarizeReview,
 } from "./advanced";
@@ -318,5 +319,35 @@ describe("advanced project helpers", () => {
     expect(execution.state).toBe("active");
     expect(execution.runCount).toBe(1);
     expect(execution.items[0]?.title).toBe("pipeline.compile");
+  });
+
+  it("builds an outputs summary from blueprint export history", () => {
+    const outputs = summarizeOutputArtifacts({
+      projectName: "Personal Calendar",
+      history: {
+        total: 1,
+        entries: [
+          {
+            export_id: "exp-1",
+            kind: "single_record",
+            actor: "dev|local",
+            node_id: "node-1",
+            node_count: 2,
+            edge_count: 1,
+            project_id: "project-1",
+            project_name: "Personal Calendar",
+            scope_snapshot: null,
+            scope_snapshot_redacted: false,
+            scope_snapshot_redacted_fields: [],
+            retention_expires_at: null,
+            summary: "Exported project snapshot",
+            timestamp: "2026-03-24T05:20:00Z",
+          },
+        ],
+      },
+    });
+
+    expect(outputs.artifactCount).toBe(1);
+    expect(outputs.items[0]?.copy).toContain("Exported project snapshot");
   });
 });
