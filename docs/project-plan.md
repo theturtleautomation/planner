@@ -154,9 +154,25 @@ Current planning state:
   [Planner SolidStart Phase 10 Knowledge Inventory Route Spec](/home/thetu/planner/docs/planner-solidstart-phase-10-knowledge-inventory-route-spec.md),
   which adds a simplified project-scoped knowledge inventory with attached node
   detail
-- the next bounded widening slice is now
+- the next widening slice after that is
   [Planner SolidStart Phase 11 Blueprint Graph Route Spec](/home/thetu/planner/docs/planner-solidstart-phase-11-blueprint-graph-route-spec.md),
-  which should migrate the blueprint graph workspace into the new shell
+  which migrates the blueprint graph workspace into the new shell
+- the next widening slice after that is
+  [Planner SolidStart Phase 12 Discovery Triage Route Spec](/home/thetu/planner/docs/planner-solidstart-phase-12-discovery-triage-route-spec.md),
+  which migrates the discovery review desk into the new shell with pending
+  work visually dominant
+- the next bounded widening slice is now
+  [Planner SolidStart Phase 13 Route Family Closeout Spec](/home/thetu/planner/docs/planner-solidstart-phase-13-route-family-closeout-spec.md),
+  which closes the Solid route-family tranche honestly by removing stale Phase
+  00 messaging and syncing verification around the now-complete route set
+- the next widening slice after that is
+  [Planner SolidStart Phase 14 Project Import Review Route Spec](/home/thetu/planner/docs/planner-solidstart-phase-14-project-import-review-route-spec.md),
+  which adds a project-local import decision desk instead of leaving import
+  review buried in attached project summaries
+- the next bounded widening slice is now
+  [Planner SolidStart Phase 15 Project Import History And Restore Route Spec](/home/thetu/planner/docs/planner-solidstart-phase-15-project-import-history-and-restore-route-spec.md),
+  which should keep historical import restore and review-recovery actions
+  project-local inside the Solid app
 - the route-level child spec for the Socratic lobby is
   [Socratic SolidStart Greenfield Platform Spec](/home/thetu/planner/docs/socratic-solidstart-greenfield-platform-spec.md)
 - the route-level Socratic spec is fed by the already-selected product
@@ -223,9 +239,9 @@ Current follow-up verification slice:
 Current next valid move:
 
 - use `delivery-cycle` on
-  [Planner SolidStart Phase 03 Project Review And Build Readiness Spec](/home/thetu/planner/docs/planner-solidstart-phase-03-project-review-and-build-readiness-spec.md)
-  to widen the project workspace toward review and build-readiness without
-  reintroducing route clutter
+  [Planner SolidStart Phase 15 Project Import History And Restore Route Spec](/home/thetu/planner/docs/planner-solidstart-phase-15-project-import-history-and-restore-route-spec.md)
+  to keep import history, restore, and review-recovery flows project-local in
+  the Solid app instead of leaving them stranded in the React-era surface
 
 ### Socratic Ethereal Cascade Redesign
 

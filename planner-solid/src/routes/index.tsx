@@ -26,10 +26,9 @@ export default function HomePage() {
       <div class="stack page-frame">
         <section class="hero-panel">
           <div class="eyebrow">Work entry</div>
-          <h1 class="hero-title">Open the project, continue the analysis, and shape the build.</h1>
+          <h1 class="hero-title">Open the project, continue the analysis, and move the build forward.</h1>
           <p class="hero-copy">
-            Planner is a project-first workspace for deep Socratic analysis. Recent work stays
-            close. Advanced tools stay out of the way until you need them.
+            Planner is the active local-first workspace for deep Socratic analysis and build shaping. Recent work stays close, and advanced tools stay available without cluttering the main path.
           </p>
           <Show
             when={featured()}

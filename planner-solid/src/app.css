@@ -948,6 +948,131 @@ summary:focus-visible {
   background: rgba(255, 255, 255, 0.06);
 }
 
+.blueprint-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.65fr);
+  gap: 16px;
+}
+
+.blueprint-canvas-panel,
+.blueprint-inspector-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.blueprint-canvas-wrap {
+  min-height: 0;
+  padding: 18px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at top left, rgba(120, 179, 255, 0.08), transparent 38%),
+    var(--bg-pane);
+  overflow: auto;
+}
+
+.blueprint-svg {
+  width: 100%;
+  min-width: 760px;
+  display: block;
+}
+
+.blueprint-row-rule {
+  stroke: rgba(255, 255, 255, 0.08);
+  stroke-width: 1;
+}
+
+.blueprint-row-label {
+  fill: var(--text-muted);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.blueprint-edge-line {
+  stroke: rgba(120, 179, 255, 0.3);
+  stroke-width: 2;
+}
+
+.blueprint-node {
+  cursor: pointer;
+}
+
+.blueprint-node circle {
+  fill: var(--bg-shell);
+  stroke: rgba(255, 255, 255, 0.18);
+  stroke-width: 2;
+  transition: fill 120ms ease, stroke 120ms ease;
+}
+
+.blueprint-node text {
+  fill: var(--text-primary);
+  font-size: 12px;
+}
+
+.blueprint-node:hover circle,
+.blueprint-node.is-active circle {
+  fill: rgba(120, 179, 255, 0.18);
+  stroke: rgba(120, 179, 255, 0.72);
+}
+
+.blueprint-inspector-grid,
+.blueprint-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.discovery-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(300px, 0.75fr);
+  gap: 16px;
+}
+
+.discovery-list-panel,
+.discovery-detail-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.proposal-card {
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-pane);
+}
+
+.proposal-card:last-child {
+  border-bottom: 0;
+}
+
+.proposal-card.is-active {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.proposal-card-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  width: 100%;
+  padding: 14px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.proposal-card-actions {
+  display: flex;
+  gap: 10px;
+  padding: 0 14px 14px;
+}
+
 .question-list {
   display: flex;
   flex-direction: column;
@@ -1113,6 +1238,10 @@ summary:focus-visible {
   }
 
   .advanced-summary-grid,
+  .blueprint-layout,
+  .blueprint-inspector-grid,
+  .blueprint-summary-grid,
+  .discovery-layout,
   .advanced-list-row {
     grid-template-columns: 1fr;
   }

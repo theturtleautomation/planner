@@ -477,6 +477,9 @@ export default function ProjectWorkspacePage() {
 
                           <Show when={currentReview()?.import_job.status === "review_pending"}>
                             <div class="advanced-action-row">
+                              <A class="btn btn-subtle" href={`/projects/${params.projectSlug}/import`}>
+                                Open import review
+                              </A>
                               <Show when={currentReview()?.import_job.seed_session_id}>
                                 {seedSessionId => (
                                   <A class="btn btn-subtle" href={`/sessions/${seedSessionId()}`}>

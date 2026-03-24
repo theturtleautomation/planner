@@ -210,6 +210,79 @@ export interface BlueprintEventsResponse {
   total: number;
 }
 
+export type DiscoverySource = "cargo_toml" | "directory_scan" | "pipeline_run" | "manual" | "code_graph_context";
+export type ProposalStatus = "pending" | "accepted" | "rejected" | "merged";
+
+export interface DiscoveryProjectScope {
+  project_id: string;
+  project_name?: string;
+}
+
+export interface DiscoveryNodeScope {
+  project?: DiscoveryProjectScope;
+  secondary: SecondaryScopeRefs;
+}
+
+export interface DiscoveryNodePayload {
+  id: string;
+  node_type: NodeType;
+  name?: string;
+  title?: string;
+  label?: string;
+  scenario?: string;
+  scope: DiscoveryNodeScope;
+}
+
+export interface ProposedNode {
+  id: string;
+  node: DiscoveryNodePayload;
+  source: DiscoverySource;
+  reason: string;
+  status: ProposalStatus;
+  proposed_at: string;
+  reviewed_at?: string;
+  confidence: number;
+  source_artifact?: string;
+}
+
+export interface ProposedEdge {
+  id: string;
+  edge: EdgePayload;
+  source: DiscoverySource;
+  reason: string;
+  status: ProposalStatus;
+  proposed_at: string;
+  reviewed_at?: string;
+  confidence: number;
+  source_artifact?: string;
+}
+
+export interface DiscoveryScanResult {
+  scanner: string;
+  proposed_count: number;
+  skipped_count: number;
+  proposed_edge_count: number;
+  skipped_edge_count: number;
+  errors: string[];
+  duration_ms: number;
+}
+
+export interface DiscoveryRunResponse {
+  results: DiscoveryScanResult[];
+  total_proposed: number;
+  total_edge_proposed: number;
+}
+
+export interface ProposedNodesResponse {
+  proposals: ProposedNode[];
+  total: number;
+}
+
+export interface ProposedEdgesResponse {
+  proposals: ProposedEdge[];
+  total: number;
+}
+
 export interface AdminProviderInfo {
   name: string;
   binary: string;

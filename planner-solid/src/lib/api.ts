@@ -5,6 +5,7 @@ import type {
   BlueprintEventsResponse,
   BlueprintExportHistoryResponse,
   CreateProjectRequest,
+  DiscoveryRunResponse,
   CreateSessionResponse,
   GetSessionResponse,
   HistoryListResponse,
@@ -12,6 +13,8 @@ import type {
   ListSessionsResponse,
   RunListResponse,
   PromptBankResponse,
+  ProposedEdgesResponse,
+  ProposedNodesResponse,
   ProjectResponse,
   ProjectImportResponse,
   SessionEventsResponse,
@@ -214,6 +217,53 @@ export function listBlueprintExportHistory(params?: {
   if (params?.limit !== undefined) qs.set("limit", String(params.limit));
   const query = qs.toString();
   return apiFetch(`/blueprint/export-history${query ? `?${query}` : ""}`);
+}
+
+export function runDiscoveryScan(): Promise<DiscoveryRunResponse> {
+  return apiFetch("/blueprint/discovery/scan", {
+    method: "POST",
+    body: JSON.stringify({ scanners: ["all"] }),
+  });
+}
+
+export function listProposedNodes(status?: string): Promise<ProposedNodesResponse> {
+  const qs = status ? `?status=${encodeURIComponent(status)}` : "";
+  return apiFetch(`/blueprint/discovery/proposals${qs}`);
+}
+
+export function listProposedEdges(status?: string): Promise<ProposedEdgesResponse> {
+  const qs = status ? `?status=${encodeURIComponent(status)}` : "";
+  return apiFetch(`/blueprint/discovery/edge-proposals${qs}`);
+}
+
+export function acceptProposal(
+  proposalId: string,
+  payload?: { node_patch?: Record<string, unknown> },
+): Promise<{ node_id: string; message: string }> {
+  return apiFetch(`/blueprint/discovery/proposals/${encodeURIComponent(proposalId)}/accept`, {
+    method: "POST",
+    body: JSON.stringify(payload ?? {}),
+  });
+}
+
+export function rejectProposal(proposalId: string, reason?: string): Promise<{ message: string }> {
+  return apiFetch(`/blueprint/discovery/proposals/${encodeURIComponent(proposalId)}/reject`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
+  });
+}
+
+export function acceptEdgeProposal(proposalId: string): Promise<{ edge: unknown; message: string }> {
+  return apiFetch(`/blueprint/discovery/edge-proposals/${encodeURIComponent(proposalId)}/accept`, {
+    method: "POST",
+  });
+}
+
+export function rejectEdgeProposal(proposalId: string, reason?: string): Promise<{ message: string }> {
+  return apiFetch(`/blueprint/discovery/edge-proposals/${encodeURIComponent(proposalId)}/reject`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
+  });
 }
 
 export function getProjectImportState(projectRef: string): Promise<ProjectImportResponse | null> {

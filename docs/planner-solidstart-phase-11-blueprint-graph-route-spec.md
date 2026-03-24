@@ -1,6 +1,6 @@
 # Planner SolidStart Phase 11 Blueprint Graph Route Spec
 
-**Status:** ready for implementation  
+**Status:** implemented  
 **Date:** 2026-03-24  
 **Parent:** [Planner SolidStart Platform Direction Spec](/home/thetu/planner/docs/planner-solidstart-platform-direction-spec.md)  
 **Related Planning:** [Planner UI Reset Phase 07 Blueprint Workspace Spec](/home/thetu/planner/docs/planner-ui-reset-phase-07-blueprint-workspace-spec.md), [Planner SolidStart Phase 10 Knowledge Inventory Route Spec](/home/thetu/planner/docs/planner-solidstart-phase-10-knowledge-inventory-route-spec.md)
@@ -9,6 +9,12 @@
 > the next bounded SolidStart widening slice should migrate the blueprint graph
 > workspace. The route should stay graph-first and inspection-oriented without
 > collapsing into a generic admin or database view.
+>
+> Implementation sync (2026-03-24): the Solid app now includes `/blueprint` as
+> a graph-first structural workspace. Project selection, graph filtering, the
+> primary SVG graph canvas, attached node inspection, and browser proof are all
+> live in the new shell. Verification completed with Solid tests, lint/build,
+> and a dedicated Playwright route proof.
 
 ## 1. Executive Judgment
 
@@ -48,4 +54,4 @@ This slice is complete only when:
 
 ## 5. Readiness Judgment
 
-This spec is **ready for implementation**.
+This spec is **implemented**.

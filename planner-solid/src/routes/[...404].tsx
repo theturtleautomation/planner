@@ -11,11 +11,14 @@ export default function NotFound() {
         <div class="eyebrow">404</div>
         <h1 class="page-title">Route not found</h1>
         <p class="page-copy">
-          This SolidStart shell only carries the bounded Phase 00 route map.
+          That route is outside the current Planner workspace. Return to the project-first surface and continue the active analysis there.
         </p>
         <div class="button-row">
-          <A class="btn btn-primary" href="/sessions">
-            Open sessions
+          <A class="btn btn-primary" href="/projects">
+            Open projects
+          </A>
+          <A class="btn btn-subtle" href="/">
+            Go home
           </A>
         </div>
       </div>
