@@ -92,6 +92,7 @@ These are the main planning documents currently shaping the repo:
 - [Import Existing Project Phase 14 Arbitrary History Comparison Spec](/home/thetu/planner/docs/import-existing-project-phase-14-arbitrary-history-comparison-spec.md)
 - [Import Existing Project Phase 15 Selection-Aware History Comparison Spec](/home/thetu/planner/docs/import-existing-project-phase-15-selection-aware-history-comparison-spec.md)
 - [Import Existing Project Phase 16 History Selection Summary Spec](/home/thetu/planner/docs/import-existing-project-phase-16-history-selection-summary-spec.md)
+- [Planner SolidStart Phase 16 Project Import Comparison And Selection Summary Spec](/home/thetu/planner/docs/planner-solidstart-phase-16-project-import-comparison-and-selection-summary-spec.md)
 - [Planning Status Audit Remediation Spec](/home/thetu/planner/docs/planning-status-audit-remediation-spec.md)
 
 ## Current Active Thread
@@ -169,10 +170,16 @@ Current planning state:
   [Planner SolidStart Phase 14 Project Import Review Route Spec](/home/thetu/planner/docs/planner-solidstart-phase-14-project-import-review-route-spec.md),
   which adds a project-local import decision desk instead of leaving import
   review buried in attached project summaries
-- the next bounded widening slice is now
+- the follow-on widening slice after that is
   [Planner SolidStart Phase 15 Project Import History And Restore Route Spec](/home/thetu/planner/docs/planner-solidstart-phase-15-project-import-history-and-restore-route-spec.md),
-  which should keep historical import restore and review-recovery actions
-  project-local inside the Solid app
+  which now keeps historical restore and review-recovery actions project-local
+  inside the Solid import desk instead of leaving them stranded on the React
+  surface
+- the final bounded import-history parity slice after that is
+  [Planner SolidStart Phase 16 Project Import Comparison And Selection Summary Spec](/home/thetu/planner/docs/planner-solidstart-phase-16-project-import-comparison-and-selection-summary-spec.md),
+  which closes current-vs-history comparison, arbitrary baseline comparison,
+  and selection-aware history summaries inside the same project-local import
+  desk
 - the route-level child spec for the Socratic lobby is
   [Socratic SolidStart Greenfield Platform Spec](/home/thetu/planner/docs/socratic-solidstart-greenfield-platform-spec.md)
 - the route-level Socratic spec is fed by the already-selected product
@@ -238,10 +245,10 @@ Current follow-up verification slice:
 
 Current next valid move:
 
-- use `delivery-cycle` on
-  [Planner SolidStart Phase 15 Project Import History And Restore Route Spec](/home/thetu/planner/docs/planner-solidstart-phase-15-project-import-history-and-restore-route-spec.md)
-  to keep import history, restore, and review-recovery flows project-local in
-  the Solid app instead of leaving them stranded in the React-era surface
+- the bounded Solid import-family tranche is now complete through
+  [Planner SolidStart Phase 16 Project Import Comparison And Selection Summary Spec](/home/thetu/planner/docs/planner-solidstart-phase-16-project-import-comparison-and-selection-summary-spec.md)
+- the next move returns to `spec-lifecycle` only when we choose the next
+  post-import SolidStart widening slice
 
 ### Socratic Ethereal Cascade Redesign
 

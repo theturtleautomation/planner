@@ -16,6 +16,9 @@ import type {
   ProposedEdgesResponse,
   ProposedNodesResponse,
   ProjectResponse,
+  ProjectImportHistoryComparisonResponse,
+  ProjectImportHistoryPairComparisonResponse,
+  ProjectImportHistoryResponse,
   ProjectImportResponse,
   SessionEventsResponse,
   StartSocraticResponse,
@@ -159,6 +162,102 @@ export function getProject(projectRef: string): Promise<ProjectResponse> {
   return cachedGet(`/projects/${encodeURIComponent(projectRef)}`);
 }
 
+export function getProjectImportReview(projectRef: string): Promise<ProjectImportResponse | null> {
+  return apiFetchOptional(`/projects/${encodeURIComponent(projectRef)}/import-review`);
+}
+
+export function updateProjectImportReviewSelection(
+  projectRef: string,
+  request: { nodeId: string; included: boolean },
+): Promise<ProjectImportResponse> {
+  return apiFetch(`/projects/${encodeURIComponent(projectRef)}/import-review-selection`, {
+    method: "POST",
+    body: JSON.stringify({
+      node_id: request.nodeId,
+      included: request.included,
+    }),
+  });
+}
+
+export function applyProjectImportReview(projectRef: string): Promise<ProjectImportResponse> {
+  return apiFetch(`/projects/${encodeURIComponent(projectRef)}/import-review`, {
+    method: "POST",
+    body: "{}",
+  });
+}
+
+export function getProjectImportState(projectRef: string): Promise<ProjectImportResponse | null> {
+  return apiFetchOptional(`/projects/${encodeURIComponent(projectRef)}/import-state`);
+}
+
+export function getProjectImportHistory(projectRef: string): Promise<ProjectImportHistoryResponse> {
+  return apiFetch(`/projects/${encodeURIComponent(projectRef)}/import-history`);
+}
+
+export function getProjectImportHistoryOptional(
+  projectRef: string,
+): Promise<ProjectImportHistoryResponse | null> {
+  return apiFetchOptional(`/projects/${encodeURIComponent(projectRef)}/import-history`);
+}
+
+export function getProjectImportHistoryComparison(
+  projectRef: string,
+  jobId: string,
+): Promise<ProjectImportHistoryComparisonResponse> {
+  return apiFetch(
+    `/projects/${encodeURIComponent(projectRef)}/import-history/${encodeURIComponent(jobId)}/compare`,
+  );
+}
+
+export function getProjectImportHistoryPairComparison(
+  projectRef: string,
+  baseJobId: string,
+  jobId: string,
+): Promise<ProjectImportHistoryPairComparisonResponse> {
+  return apiFetch(
+    `/projects/${encodeURIComponent(projectRef)}/import-history/${encodeURIComponent(baseJobId)}/compare/${encodeURIComponent(jobId)}`,
+  );
+}
+
+export function restoreProjectImportHistoryEntry(
+  projectRef: string,
+  jobId: string,
+): Promise<ProjectImportResponse> {
+  return apiFetch(
+    `/projects/${encodeURIComponent(projectRef)}/import-history/${encodeURIComponent(jobId)}/restore`,
+    {
+      method: "POST",
+      body: "{}",
+    },
+  );
+}
+
+export function restoreProjectImportHistoryEntryForReview(
+  projectRef: string,
+  jobId: string,
+): Promise<ProjectImportResponse> {
+  return apiFetch(
+    `/projects/${encodeURIComponent(projectRef)}/import-history/${encodeURIComponent(jobId)}/restore-for-review`,
+    {
+      method: "POST",
+      body: "{}",
+    },
+  );
+}
+
+export function restoreProjectImportReviewDraft(
+  projectRef: string,
+  jobId: string,
+): Promise<ProjectImportResponse> {
+  return apiFetch(
+    `/projects/${encodeURIComponent(projectRef)}/import-history/${encodeURIComponent(jobId)}/restore-review-draft`,
+    {
+      method: "POST",
+      body: "{}",
+    },
+  );
+}
+
 export function listProjectSessions(projectRef: string): Promise<ListSessionsResponse> {
   return cachedGet(`/projects/${encodeURIComponent(projectRef)}/sessions`);
 }
@@ -263,34 +362,6 @@ export function rejectEdgeProposal(proposalId: string, reason?: string): Promise
   return apiFetch(`/blueprint/discovery/edge-proposals/${encodeURIComponent(proposalId)}/reject`, {
     method: "POST",
     body: JSON.stringify({ reason }),
-  });
-}
-
-export function getProjectImportState(projectRef: string): Promise<ProjectImportResponse | null> {
-  return apiFetchOptional(`/projects/${encodeURIComponent(projectRef)}/import-state`);
-}
-
-export function getProjectImportReview(projectRef: string): Promise<ProjectImportResponse | null> {
-  return apiFetchOptional(`/projects/${encodeURIComponent(projectRef)}/import-review`);
-}
-
-export function updateProjectImportReviewSelection(
-  projectRef: string,
-  payload: { nodeId: string; included: boolean },
-): Promise<ProjectImportResponse> {
-  return apiFetch(`/projects/${encodeURIComponent(projectRef)}/import-review-selection`, {
-    method: "POST",
-    body: JSON.stringify({
-      node_id: payload.nodeId,
-      included: payload.included,
-    }),
-  });
-}
-
-export function applyProjectImportReview(projectRef: string): Promise<ProjectImportResponse> {
-  return apiFetch(`/projects/${encodeURIComponent(projectRef)}/import-review`, {
-    method: "POST",
-    body: "{}",
   });
 }
 

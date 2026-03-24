@@ -480,6 +480,9 @@ export default function ProjectWorkspacePage() {
                               <A class="btn btn-subtle" href={`/projects/${params.projectSlug}/import`}>
                                 Open import review
                               </A>
+                              <A class="btn btn-subtle" href={`/projects/${params.projectSlug}/import#import-history`}>
+                                Open import history
+                              </A>
                               <Show when={currentReview()?.import_job.seed_session_id}>
                                 {seedSessionId => (
                                   <A class="btn btn-subtle" href={`/sessions/${seedSessionId()}`}>

@@ -443,6 +443,63 @@ export interface ProjectImportResponse {
   review_nodes?: ProjectImportReviewNodeSummary[] | null;
 }
 
+export interface ProjectImportHistoryEntry {
+  import_job: ProjectImportJob;
+  source_metadata?: ImportDraftSourceMetadata | null;
+  discovered_node_count?: number | null;
+  effective_included_node_count?: number | null;
+  effective_excluded_node_count?: number | null;
+}
+
+export interface ProjectImportDiffNodeSummary {
+  node_id: string;
+  node_name: string;
+  node_type: string;
+}
+
+export interface ProjectImportNodeTypeCount {
+  node_type: string;
+  count: number;
+}
+
+export interface ProjectImportDiffSummary {
+  current_job_id: string;
+  compared_to_job_id: string;
+  added_nodes: ProjectImportDiffNodeSummary[];
+  removed_nodes: ProjectImportDiffNodeSummary[];
+  added_node_types: ProjectImportNodeTypeCount[];
+  removed_node_types: ProjectImportNodeTypeCount[];
+  current_head_revision?: string | null;
+  compared_head_revision?: string | null;
+}
+
+export interface ProjectImportHistoryResponse {
+  project: Project;
+  source_binding: ProjectSourceBinding;
+  history: ProjectImportHistoryEntry[];
+  diff_summary?: ProjectImportDiffSummary | null;
+}
+
+export interface ProjectImportHistoryComparisonResponse {
+  project: Project;
+  source_binding: ProjectSourceBinding;
+  selected_entry: ProjectImportHistoryEntry;
+  current_import_job: ProjectImportJob;
+  selected_entry_uses_selection_filter: boolean;
+  current_import_job_uses_selection_filter: boolean;
+  diff_summary: ProjectImportDiffSummary;
+}
+
+export interface ProjectImportHistoryPairComparisonResponse {
+  project: Project;
+  source_binding: ProjectSourceBinding;
+  baseline_entry: ProjectImportHistoryEntry;
+  compared_entry: ProjectImportHistoryEntry;
+  baseline_entry_uses_selection_filter: boolean;
+  compared_entry_uses_selection_filter: boolean;
+  diff_summary: ProjectImportDiffSummary;
+}
+
 export interface PromptAnswer {
   item_id: string;
   selected_option_id?: string | null;

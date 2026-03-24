@@ -585,6 +585,64 @@ summary:focus-visible {
   flex-wrap: wrap;
 }
 
+.history-entry-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.history-entry-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 18px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  background: var(--bg-pane);
+}
+
+.history-entry-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: start;
+  flex-wrap: wrap;
+}
+
+.history-entry-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.history-entry-copy,
+.history-entry-meta,
+.history-entry-facts,
+.history-entry-note {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.history-entry-copy {
+  margin-top: 4px;
+}
+
+.history-entry-facts {
+  display: flex;
+  gap: 10px 14px;
+  flex-wrap: wrap;
+}
+
+.history-entry-note {
+  color: var(--text-muted);
+}
+
+.history-entry-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .advanced-label {
   color: var(--text-muted);
   font-size: 11px;
@@ -1212,6 +1270,11 @@ summary:focus-visible {
   font-size: 14px;
 }
 
+.success-copy {
+  color: var(--success);
+  font-size: 13px;
+}
+
 .error-copy {
   color: var(--danger);
   font-size: 13px;
@@ -1244,6 +1307,10 @@ summary:focus-visible {
   .discovery-layout,
   .advanced-list-row {
     grid-template-columns: 1fr;
+  }
+
+  .history-entry-head {
+    flex-direction: column;
   }
 
   .shell-grid {
