@@ -1,8 +1,13 @@
 # Socratic Session Page Redesign Spec P1 S3: Context Shelf
 
-**Status:** Ready for implementation
+**Status:** superseded planning artifact
 **Date:** 2026-03-22
 **Parent:** [Project Plan](/home/thetu/planner/docs/project-plan.md)
+
+> Planning note (2026-03-24): this document is a historical early-slice
+> planning artifact from the pre-consultant-desk / pre-master-detail era of
+> the Socratic lobby redesign. It no longer defines an active or future-state
+> implementation target. Keep it only as historical design/planning context.
 
 ## Problem & Intent
 The Context Shelf currently lives as a simple drawer with standard grey background and a segmented control. To align with the new ultra-premium, focused UX (leveraging `ui-ux-pro-max-skill`), the Context Shelf should be refactored into a sleek, glassmorphic side sheet that clearly differentiates itself from the main workspace while maintaining read clarity. The tabs (Belief State, Draft, Transcript, Events) should be styled as high-fidelity segmented controls, and the drawer should gracefully animate in and out using CSS transitions or Framer Motion.

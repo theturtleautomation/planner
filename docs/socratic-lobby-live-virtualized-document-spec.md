@@ -9,7 +9,10 @@
 > continuous-document route, but it no longer defines the selected future
 > product target. The successor is
 > [Socratic Lobby Master-Detail Local Workspace Spec](/home/thetu/planner/docs/socratic-lobby-master-detail-local-workspace-spec.md),
-> which replaces the continuously rendered document model with an active-thread
+> which replaced the continuously rendered document model with an active-thread
+> workspace in the live React route. The broader greenfield future-state now
+> lives under
+> [Planner SolidStart Platform Direction Spec](/home/thetu/planner/docs/planner-solidstart-platform-direction-spec.md).
 > master-detail workspace while reusing the delivered split-pane shell,
 > normalized state, and local-fast browsing primitives as migration inputs.
 

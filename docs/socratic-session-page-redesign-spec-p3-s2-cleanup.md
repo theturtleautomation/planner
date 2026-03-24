@@ -1,8 +1,13 @@
 # Socratic Session Page Redesign Spec P3 S2: Cleanup
 
-**Status:** Ready for implementation
+**Status:** superseded planning artifact
 **Date:** 2026-03-22
 **Parent:** [Project Plan](/home/thetu/planner/docs/project-plan.md)
+
+> Planning note (2026-03-24): this document is a historical early-slice
+> planning artifact from the pre-consultant-desk / pre-master-detail era of
+> the Socratic lobby redesign. It no longer defines an active or future-state
+> implementation target. Keep it only as historical design/planning context.
 
 ## Problem & Intent
 Now that the Socratic lobby redesign is effectively complete (focused canvas, pulse bar, context shelf, bento cards, animations), we need to ensure the layout constraints apply cleanly across both massive 1440px desktop screens and 375px mobile viewports. Additionally, we need to delete any legacy components that are completely orphaned to reduce codebase weight.

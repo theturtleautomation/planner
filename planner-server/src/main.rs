@@ -13,7 +13,7 @@
 //! - GET  /api/sessions/:id    — Get session state (protected)
 //! - POST /api/sessions/:id/message — Send a message to the session (protected)
 //! - GET  /api/sessions/:id/ws — WebSocket for real-time updates (protected)
-//! - GET  /*                   — Static file serving (React frontend)
+//! - GET  /*                   — Static file serving (SolidStart frontend)
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -102,14 +102,14 @@ async fn main() {
         .iter()
         .position(|a| a == "--static-dir")
         .and_then(|i| args.get(i + 1).cloned())
-        .unwrap_or_else(|| "./planner-web/dist".to_string());
+        .unwrap_or_else(|| "./planner-solid/dist/static".to_string());
 
     if args.iter().any(|a| a == "--help" || a == "-h") {
         eprintln!("Usage: planner-server [--port <port>] [--static-dir <path>]");
         eprintln!();
         eprintln!("Options:");
         eprintln!("  --port <port>        HTTP port (default: 3100)");
-        eprintln!("  --static-dir <path>  Path to React build (default: ./planner-web/dist)");
+        eprintln!("  --static-dir <path>  Path to frontend build (default: ./planner-solid/dist/static)");
         std::process::exit(0);
     }
 

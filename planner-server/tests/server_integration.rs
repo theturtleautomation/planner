@@ -455,6 +455,87 @@ async fn tier2_create_session() {
     assert_eq!(listed["sessions"].as_array().unwrap().len(), 1);
 }
 
+#[tokio::test]
+async fn tier2_session_prompt_bank_reports_banked_and_queued_threads_truthfully() {
+    let state = test_state();
+    let session = state.sessions.create("dev|local");
+
+    state.sessions.update(session.id, |draft| {
+        draft.intake_phase = "interviewing".into();
+        draft.ensure_socratic_run_id();
+        let checkpoint = draft.ensure_checkpoint();
+        checkpoint.current_prompt = Some(checkpoint_question_prompt(
+            "Should this ship as a web app first?",
+            planner_schemas::Dimension::Custom("platform".into()),
+            true,
+        ));
+        checkpoint.current_prompt.as_mut().unwrap().origin_category_id =
+            Some("verify-platform".into());
+        checkpoint.current_category_snapshot = Some(planner_schemas::SocraticCategorySnapshot {
+            revision: "rev-1".into(),
+            root_category_ids: vec!["platform".into()],
+            nodes: vec![
+                planner_schemas::SocraticCategoryNode {
+                    category_id: "verify-platform".into(),
+                    parent_category_id: Some("platform".into()),
+                    title: "Verify Platform".into(),
+                    summary: "Confirm the delivery surface.".into(),
+                    status: planner_schemas::SocraticCategoryStatus::Active,
+                    depth: 1,
+                    mapped_dimensions: vec![planner_schemas::Dimension::Custom("platform".into())],
+                    has_children: false,
+                    has_prompt_ready: true,
+                    item_count_hint: 1,
+                },
+                planner_schemas::SocraticCategoryNode {
+                    category_id: "explore-user-flows".into(),
+                    parent_category_id: Some("platform".into()),
+                    title: "Explore User Flows".into(),
+                    summary: "Discover the primary flows.".into(),
+                    status: planner_schemas::SocraticCategoryStatus::Pending,
+                    depth: 1,
+                    mapped_dimensions: vec![planner_schemas::Dimension::Custom("user_flows".into())],
+                    has_children: false,
+                    has_prompt_ready: true,
+                    item_count_hint: 2,
+                },
+            ],
+            active_category_path: vec![planner_schemas::SocraticCategoryPathEntry {
+                category_id: "platform".into(),
+                title: "Platform".into(),
+            }],
+            newly_available_category_ids: vec![],
+            build_ready: false,
+            build_readiness_message: "Question bank is still loading.".into(),
+        });
+    });
+
+    let app = test_app(state);
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/sessions/{}/prompt-bank", session.id))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let parsed: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+    assert_eq!(parsed["session_id"], session.id.to_string());
+    assert_eq!(parsed["active_thread_id"], "verify-platform");
+    assert_eq!(parsed["banked_threads"].as_array().unwrap().len(), 1);
+    assert_eq!(parsed["queued_threads"].as_array().unwrap().len(), 1);
+    assert_eq!(parsed["banked_threads"][0]["title"], "Verify Platform");
+    assert_eq!(parsed["queued_threads"][0]["title"], "Explore User Flows");
+    assert_eq!(parsed["queued_threads"][0]["status"], "pending");
+}
+
 /// Test 4: Session capability fields are backend-computed from current phase truth.
 #[tokio::test]
 async fn tier2_session_capability_mapping() {

@@ -1,8 +1,13 @@
 # Socratic Session Page Redesign Spec P1 S1: Pulse Bar
 
-**Status:** Ready for implementation
+**Status:** superseded planning artifact
 **Date:** 2026-03-22
 **Parent:** [Project Plan](/home/thetu/planner/docs/project-plan.md)
+
+> Planning note (2026-03-24): this document is a historical early-slice
+> planning artifact from the pre-consultant-desk / pre-master-detail era of
+> the Socratic lobby redesign. It no longer defines an active or future-state
+> implementation target. Keep it only as historical design/planning context.
 
 ## Problem & Intent
 The current Socratic session page uses `SessionStatusHeader`, `ConvergenceBar`, and `PipelineBar` simultaneously at the top of the layout. This creates a noisy, dashboard-like "chrome" that competes with the question workspace. The intent is to condense system status into a single, minimal floating utility header (the "Pulse Bar") that communicates session readiness, elapsed time, and entry points to the Context Shelf without dominating the screen.

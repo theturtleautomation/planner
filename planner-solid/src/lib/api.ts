@@ -1,0 +1,120 @@
+import type {
+  CreateProjectRequest,
+  CreateSessionResponse,
+  GetSessionResponse,
+  ListProjectsResponse,
+  ListSessionsResponse,
+  PromptBankResponse,
+  ProjectResponse,
+  StartSocraticResponse,
+} from "./types";
+
+const API_BASE = "/api";
+
+async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...(init?.headers ?? {}),
+    },
+  });
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => response.statusText);
+    throw new Error(text || `Request failed: ${response.status}`);
+  }
+
+  return response.json() as Promise<T>;
+}
+
+const getCache = new Map<string, Promise<unknown>>();
+
+function cachedGet<T>(path: string): Promise<T> {
+  const existing = getCache.get(path);
+  if (existing) return existing as Promise<T>;
+  const request = apiFetch<T>(path).catch(error => {
+    getCache.delete(path);
+    throw error;
+  });
+  getCache.set(path, request);
+  return request;
+}
+
+function invalidateCache(paths: string[]) {
+  for (const path of paths) {
+    getCache.delete(path);
+  }
+}
+
+export function listSessions(): Promise<ListSessionsResponse> {
+  return cachedGet("/sessions");
+}
+
+export function createSession(): Promise<CreateSessionResponse> {
+  return apiFetch("/sessions", {
+    method: "POST",
+    body: "{}",
+  });
+}
+
+export function getSession(sessionId: string): Promise<GetSessionResponse> {
+  return apiFetch(`/sessions/${encodeURIComponent(sessionId)}`);
+}
+
+export function startSocratic(sessionId: string, description: string): Promise<StartSocraticResponse> {
+  return apiFetch(`/sessions/${encodeURIComponent(sessionId)}/socratic`, {
+    method: "POST",
+    body: JSON.stringify({ description }),
+  });
+}
+
+export function getPromptBank(sessionId: string): Promise<PromptBankResponse> {
+  return apiFetch(`/sessions/${encodeURIComponent(sessionId)}/prompt-bank`);
+}
+
+export function listProjects(): Promise<ListProjectsResponse> {
+  return cachedGet("/projects");
+}
+
+export function createProject(request: CreateProjectRequest): Promise<ProjectResponse> {
+  return apiFetch("/projects", {
+    method: "POST",
+    body: JSON.stringify(request),
+  }).then(response => {
+    invalidateCache(["/projects"]);
+    return response as ProjectResponse;
+  });
+}
+
+export function getProject(projectRef: string): Promise<ProjectResponse> {
+  return cachedGet(`/projects/${encodeURIComponent(projectRef)}`);
+}
+
+export function listProjectSessions(projectRef: string): Promise<ListSessionsResponse> {
+  return cachedGet(`/projects/${encodeURIComponent(projectRef)}/sessions`);
+}
+
+export function createProjectSession(
+  projectRef: string,
+  payload?: { title?: string | null; description?: string | null },
+): Promise<CreateSessionResponse> {
+  return apiFetch(`/projects/${encodeURIComponent(projectRef)}/sessions`, {
+    method: "POST",
+    body: JSON.stringify(payload ?? {}),
+  }).then(response => {
+    invalidateCache([
+      "/sessions",
+      `/projects/${encodeURIComponent(projectRef)}`,
+      `/projects/${encodeURIComponent(projectRef)}/sessions`,
+    ]);
+    return response as CreateSessionResponse;
+  });
+}
+
+export function buildSocraticWebSocketUrl(sessionId: string): string {
+  const url = new URL(window.location.origin);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  url.pathname = `/api/sessions/${encodeURIComponent(sessionId)}/socratic/ws`;
+  return url.toString();
+}

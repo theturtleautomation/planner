@@ -1,8 +1,13 @@
 # Socratic Session Page Redesign Spec P2 S2: Category Visuals
 
-**Status:** Ready for implementation
+**Status:** superseded planning artifact
 **Date:** 2026-03-22
 **Parent:** [Project Plan](/home/thetu/planner/docs/project-plan.md)
+
+> Planning note (2026-03-24): this document is a historical early-slice
+> planning artifact from the pre-consultant-desk / pre-master-detail era of
+> the Socratic lobby redesign. It no longer defines an active or future-state
+> implementation target. Keep it only as historical design/planning context.
 
 ## Problem & Intent
 The new central Question Map uses a standard React rendering cycle to snap between active and inactive states. This creates a jarring spatial change when a category expands and pushes others down. Following the `ui-ux-pro-max-skill` constraints, we must use Framer Motion layout animations to make category transitions smooth. The active category should fluidly expand its height, and sibling categories should subtly collapse or recede (opacity/scale changes) rather than just instantly disappearing or jumping.

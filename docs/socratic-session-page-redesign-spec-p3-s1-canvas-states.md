@@ -1,8 +1,13 @@
 # Socratic Session Page Redesign Spec P3 S1: Canvas States
 
-**Status:** Ready for implementation
+**Status:** superseded planning artifact
 **Date:** 2026-03-22
 **Parent:** [Project Plan](/home/thetu/planner/docs/project-plan.md)
+
+> Planning note (2026-03-24): this document is a historical early-slice
+> planning artifact from the pre-consultant-desk / pre-master-detail era of
+> the Socratic lobby redesign. It no longer defines an active or future-state
+> implementation target. Keep it only as historical design/planning context.
 
 ## Problem & Intent
 The Socratic workspace has empty states (when no snapshot or groups exist) and completion states (when `build_ready` is true). Currently, the completion state just renders a small text block: "No active question groups remain. Build can start from this focused lobby." We want to style the "Build Ready" state as a massive, unmistakable primary action (a Hero state) to give closure to the session loop.

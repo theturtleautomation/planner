@@ -9,9 +9,12 @@
 > document model as the selected future product target for the Socratic Lobby.
 > The currently implemented split-pane shell, Jotai document graph, preload
 > gate, and local-fast fixes remain useful migration primitives, but the final
-> target is no longer one continuously rendered document. The final target is a
-> strict master-detail workspace with instant local thread switching and a
-> dense active-thread editor.
+> target is no longer one continuously rendered document. This document now
+> remains primarily as the record of the implemented React baseline route. The
+> selected greenfield future-state now sits under
+> [Planner SolidStart Platform Direction Spec](/home/thetu/planner/docs/planner-solidstart-platform-direction-spec.md)
+> and
+> [Socratic SolidStart Greenfield Platform Spec](/home/thetu/planner/docs/socratic-solidstart-greenfield-platform-spec.md).
 
 ## Implementation Sync
 

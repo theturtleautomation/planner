@@ -17,6 +17,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use uuid::Uuid;
 
+use planner_schemas::{PromptEnvelope, SocraticCategorySnapshot};
+
 use crate::auth::{auth_middleware, Claims};
 use crate::import::{
     inspect_local_import_source, ImportAnalysisRequest, ImportDraftSourceMetadata, ImportProvider,
@@ -101,6 +103,37 @@ pub struct ListProjectsQuery {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GetSessionResponse {
     pub session: Session,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GetSessionPromptBankResponse {
+    pub session_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_thread_id: Option<String>,
+    pub banked_threads: Vec<PromptBankThread>,
+    pub queued_threads: Vec<QueuedPromptThread>,
+    #[serde(default)]
+    pub build_ready: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub build_readiness_message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PromptBankThread {
+    pub category_id: String,
+    pub title: String,
+    pub summary: String,
+    pub question_count: usize,
+    pub prompt: PromptEnvelope,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QueuedPromptThread {
+    pub category_id: String,
+    pub title: String,
+    pub summary: String,
+    pub question_count: usize,
+    pub status: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -783,6 +816,7 @@ pub fn routes(state: Arc<AppState>) -> Router {
         .route("/projects/{projectRef}/events", get(get_project_events))
         .route("/sessions", get(list_sessions).post(create_session))
         .route("/sessions/{id}", get(get_session).patch(update_session))
+        .route("/sessions/{id}/prompt-bank", get(get_session_prompt_bank))
         .route("/sessions/{id}/message", post(send_message))
         .route("/sessions/{id}/duplicate", post(duplicate_session))
         .route("/sessions/{id}/export", get(export_session))
@@ -3343,6 +3377,126 @@ async fn get_session(
 ) -> Result<Json<GetSessionResponse>, (StatusCode, Json<ErrorResponse>)> {
     match state.sessions.get_if_owned(id, &claims.sub) {
         Ok(session) => Ok(Json(GetSessionResponse { session })),
+        Err(Some(())) => Err((
+            StatusCode::FORBIDDEN,
+            Json(ErrorResponse {
+                error: "Access denied".into(),
+                code: None,
+            }),
+        )),
+        Err(None) => Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: format!("Session not found: {}", id),
+                code: None,
+            }),
+        )),
+    }
+}
+
+fn prompt_focus_category_id(prompt: &PromptEnvelope) -> Option<&str> {
+    prompt
+        .origin_category_id
+        .as_deref()
+        .or_else(|| prompt.category_path.last().map(|entry| entry.category_id.as_str()))
+}
+
+fn category_snapshot_node<'a>(
+    snapshot: &'a SocraticCategorySnapshot,
+    category_id: &str,
+) -> Option<&'a planner_schemas::SocraticCategoryNode> {
+    snapshot
+        .nodes
+        .iter()
+        .find(|node| node.category_id == category_id)
+}
+
+fn category_status_label(status: &planner_schemas::SocraticCategoryStatus) -> &'static str {
+    match status {
+        planner_schemas::SocraticCategoryStatus::Pending => "pending",
+        planner_schemas::SocraticCategoryStatus::Active => "active",
+        planner_schemas::SocraticCategoryStatus::Ready => "ready",
+        planner_schemas::SocraticCategoryStatus::Complete => "complete",
+        planner_schemas::SocraticCategoryStatus::Blocked => "blocked",
+    }
+}
+
+fn prompt_bank_response(session: &Session) -> GetSessionPromptBankResponse {
+    let checkpoint = session.checkpoint.as_ref();
+    let prompt = checkpoint.and_then(|checkpoint| checkpoint.current_prompt.clone());
+    let snapshot = checkpoint.and_then(|checkpoint| checkpoint.current_category_snapshot.as_ref());
+
+    let active_thread_id = prompt.as_ref().and_then(prompt_focus_category_id).map(str::to_string);
+
+    let banked_threads = prompt
+        .map(|prompt| {
+            let category_id = prompt_focus_category_id(&prompt)
+                .map(str::to_string)
+                .unwrap_or_else(|| prompt.prompt_id.clone());
+            let fallback_title = prompt
+                .category_path
+                .last()
+                .map(|entry| entry.title.clone())
+                .unwrap_or_else(|| prompt.title.clone());
+            let title = snapshot
+                .and_then(|snapshot| category_snapshot_node(snapshot, &category_id))
+                .map(|node| node.title.clone())
+                .unwrap_or(fallback_title);
+            let summary = snapshot
+                .and_then(|snapshot| category_snapshot_node(snapshot, &category_id))
+                .map(|node| node.summary.clone())
+                .unwrap_or_else(|| {
+                    prompt
+                        .instructions
+                        .clone()
+                        .unwrap_or_else(|| "Questions are ready to answer.".into())
+                });
+
+            vec![PromptBankThread {
+                category_id,
+                title,
+                summary,
+                question_count: prompt.items.len().max(1),
+                prompt,
+            }]
+        })
+        .unwrap_or_default();
+
+    let queued_threads = snapshot
+        .map(|snapshot| {
+            snapshot
+                .nodes
+                .iter()
+                .filter(|node| node.has_prompt_ready)
+                .filter(|node| Some(node.category_id.as_str()) != active_thread_id.as_deref())
+                .map(|node| QueuedPromptThread {
+                    category_id: node.category_id.clone(),
+                    title: node.title.clone(),
+                    summary: node.summary.clone(),
+                    question_count: node.item_count_hint.max(1) as usize,
+                    status: category_status_label(&node.status).to_string(),
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    GetSessionPromptBankResponse {
+        session_id: session.id.to_string(),
+        active_thread_id,
+        banked_threads,
+        queued_threads,
+        build_ready: snapshot.map(|snapshot| snapshot.build_ready).unwrap_or(false),
+        build_readiness_message: snapshot.map(|snapshot| snapshot.build_readiness_message.clone()),
+    }
+}
+
+async fn get_session_prompt_bank(
+    State(state): State<Arc<AppState>>,
+    claims: Claims,
+    Path(id): Path<Uuid>,
+) -> Result<Json<GetSessionPromptBankResponse>, (StatusCode, Json<ErrorResponse>)> {
+    match state.sessions.get_if_owned(id, &claims.sub) {
+        Ok(session) => Ok(Json(prompt_bank_response(&session))),
         Err(Some(())) => Err((
             StatusCode::FORBIDDEN,
             Json(ErrorResponse {

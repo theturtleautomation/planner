@@ -1,8 +1,13 @@
 # Socratic Session Page Redesign Spec P2 S3: Dynamic Feedback
 
-**Status:** Ready for implementation
+**Status:** superseded planning artifact
 **Date:** 2026-03-22
 **Parent:** [Project Plan](/home/thetu/planner/docs/project-plan.md)
+
+> Planning note (2026-03-24): this document is a historical early-slice
+> planning artifact from the pre-consultant-desk / pre-master-detail era of
+> the Socratic lobby redesign. It no longer defines an active or future-state
+> implementation target. Keep it only as historical design/planning context.
 
 ## Problem & Intent
 When the Socratic engine evaluates a batch of answers, it sends events over the WebSocket indicating that the next set of questions is being prepared or that the server has chosen to focus on a different branch. The old UI represented this via a `SessionStatusHeader` text update or a full page swap. The intent is to keep the user anchored in the Map and provide localized, high-visibility feedback ("preparing", "resolved", "moved") *inside* the relevant category card or Pulse Bar.

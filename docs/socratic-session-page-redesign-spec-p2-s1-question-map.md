@@ -1,8 +1,13 @@
 # Socratic Session Page Redesign Spec P2 S1: Question Map
 
-**Status:** Ready for implementation
+**Status:** superseded planning artifact
 **Date:** 2026-03-22
 **Parent:** [Project Plan](/home/thetu/planner/docs/project-plan.md)
+
+> Planning note (2026-03-24): this document is a historical early-slice
+> planning artifact from the pre-consultant-desk / pre-master-detail era of
+> the Socratic lobby redesign. It no longer defines an active or future-state
+> implementation target. Keep it only as historical design/planning context.
 
 ## Problem & Intent
 In `SocraticWorkspace.tsx`, the Question Map is still rendered as a legacy 320px left sidebar alongside a right "Focused Question" canvas. This violates the primary redesign goal: the question map *is* the workspace. The intent is to rebuild `SocraticWorkspace.tsx` so the Question Map becomes a central vertical stack of large, prominent "Bento-style" category cards. The active question prompt will live inside the active category card rather than in a separate right-hand pane.

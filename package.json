@@ -2,9 +2,9 @@
   "name": "planner",
   "private": true,
   "scripts": {
-    "build": "npm run build --prefix planner-web",
-    "dev": "npm run dev --prefix planner-web",
-    "test": "npm run test --prefix planner-web",
-    "lint": "npm run lint --prefix planner-web"
+    "build": "npm run build --prefix planner-solid",
+    "dev": "npm run dev --prefix planner-solid",
+    "test": "npm run test --prefix planner-solid",
+    "lint": "npm run lint --prefix planner-solid"
   }
 }

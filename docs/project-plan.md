@@ -58,6 +58,11 @@ These are the main planning documents currently shaping the repo:
 - [Socratic Lobby Consultant Desk Spec](/home/thetu/planner/docs/socratic-lobby-consultant-desk-spec.md)
 - [Socratic Lobby Live Virtualized Document Spec](/home/thetu/planner/docs/socratic-lobby-live-virtualized-document-spec.md)
 - [Socratic Lobby Master-Detail Local Workspace Spec](/home/thetu/planner/docs/socratic-lobby-master-detail-local-workspace-spec.md)
+- [Socratic Initial Prompt Bank And Dynamic Hydration Spec](/home/thetu/planner/docs/socratic-initial-prompt-bank-and-dynamic-hydration-spec.md)
+- [Socratic Lobby Local-First Browser Architecture Review](/home/thetu/planner/docs/socratic-lobby-local-first-browser-architecture-review.md)
+- [Socratic SolidStart Greenfield Platform Spec](/home/thetu/planner/docs/socratic-solidstart-greenfield-platform-spec.md)
+- [Planner SolidStart Platform Direction Spec](/home/thetu/planner/docs/planner-solidstart-platform-direction-spec.md)
+- [Planner SolidStart Phase 00 Shell, Sessions, And Socratic Anchor Spec](/home/thetu/planner/docs/planner-solidstart-phase-00-shell-sessions-and-socratic-anchor-spec.md)
 - [Socratic Lobby Document Chrome And Scroll De-escalation Spec](/home/thetu/planner/docs/socratic-lobby-document-chrome-and-scroll-de-escalation-spec.md)
 - [Socratic Lobby First-Reveal Preload Gate Spec](/home/thetu/planner/docs/socratic-lobby-first-reveal-preload-gate-spec.md)
 - [Planner Design System Command Center Plan](/home/thetu/planner/docs/planner-design-system-command-center-plan.md)
@@ -91,22 +96,46 @@ These are the main planning documents currently shaping the repo:
 
 ## Current Active Thread
 
-### Socratic Lobby Replacement Direction
+### Planner SolidStart Platform Direction
 
 Goal:
 
-- replace the currently implemented continuous-document Socratic lobby future
-  direction with a strict master-detail local workspace
-- keep dynamic server-authored categories and questions while rendering only
-  the currently active thread in the right workspace
-- preserve local-preloaded known data, dense thread-index telemetry, instant
-  client-side thread switching, and isolated keystroke performance without
-  document-level scrolling or continuous document rendering
+- set the greenfield future-state platform for the full Planner frontend to
+  SolidStart
+- avoid a split-framework future where Socratic becomes a special-case island
+- preserve the already-selected Socratic product contract inside that broader
+  platform direction
+- treat the current React app as the live baseline and migration source, not as
+  the best final platform choice
 
 Current planning state:
 
 - the new authoritative planning artifact is
+  [Planner SolidStart Platform Direction Spec](/home/thetu/planner/docs/planner-solidstart-platform-direction-spec.md)
+- the first bounded delivery slice under that platform direction is
+  [Planner SolidStart Phase 00 Shell, Sessions, And Socratic Anchor Spec](/home/thetu/planner/docs/planner-solidstart-phase-00-shell-sessions-and-socratic-anchor-spec.md)
+- the next bounded widening slice is
+  [Planner SolidStart Phase 01 Projects And Guided Work Entry Spec](/home/thetu/planner/docs/planner-solidstart-phase-01-projects-and-guided-work-entry-spec.md),
+  which makes the app project-first, simplifies `/`, and hides advanced
+  surfaces by default
+- the next widening slice after that is
+  [Planner SolidStart Phase 02 Project Advanced Surfaces Spec](/home/thetu/planner/docs/planner-solidstart-phase-02-project-advanced-surfaces-spec.md),
+  which keeps the project workspace primary while introducing hidden-by-default
+  Knowledge and Blueprint as attached project-local tools
+- the route-level child spec for the Socratic lobby is
+  [Socratic SolidStart Greenfield Platform Spec](/home/thetu/planner/docs/socratic-solidstart-greenfield-platform-spec.md)
+- the route-level Socratic spec is fed by the already-selected product
+  requirements in
+  [Socratic Initial Prompt Bank And Dynamic Hydration Spec](/home/thetu/planner/docs/socratic-initial-prompt-bank-and-dynamic-hydration-spec.md)
+- the complementary supporting research note remains
+  [Socratic Lobby Local-First Browser Architecture Review](/home/thetu/planner/docs/socratic-lobby-local-first-browser-architecture-review.md),
+  which records the browser/runtime rationale behind the framework choice and
+  the selected "all known data in local state, bounded DOM in the workspace"
+  model
+- the implemented
   [Socratic Lobby Master-Detail Local Workspace Spec](/home/thetu/planner/docs/socratic-lobby-master-detail-local-workspace-spec.md)
+  now serves as a live shell/interactions precursor rather than the final
+  greenfield platform
 - the previously implemented
   [Socratic Lobby Live Virtualized Document Spec](/home/thetu/planner/docs/socratic-lobby-live-virtualized-document-spec.md)
   now serves as an implemented precursor rather than the future-state target
@@ -114,40 +143,54 @@ Current planning state:
   [Socratic Lobby Consultant Desk Spec](/home/thetu/planner/docs/socratic-lobby-consultant-desk-spec.md)
   remains an implemented precursor documenting the earlier split-pane shell
   direction
-- the implemented continuous-document route, preload gate, and chrome cleanup
-  work remain useful migration primitives, but they are no longer the selected
-  future-state contract
+- the implemented master-detail shell, preload gate, routing work, and chrome
+  cleanup remain useful migration primitives, but they are not enough to satisfy
+  the now-explicit "full question bank at first reveal" product requirement
 - the follow-on
   [Socratic Lobby Document Chrome And Scroll De-escalation Spec](/home/thetu/planner/docs/socratic-lobby-document-chrome-and-scroll-de-escalation-spec.md)
   and
   [Socratic Lobby First-Reveal Preload Gate Spec](/home/thetu/planner/docs/socratic-lobby-first-reveal-preload-gate-spec.md)
-  now remain as implemented precursor/follow-on artifacts on the superseded
-  continuous-document branch of this work
-- the new redesign is driven by user review on 2026-03-24 that explicitly
-  rejected the continuous monolithic document model in favor of a fast,
-  desktop-style master-detail workspace
-- the first bounded master-detail migration slice is now landed on
-  `planner-web`: the right desk renders only the selected thread, local thread
-  switching is immediate, dirty input state flushes on thread switch, and the
-  right pane resets scroll intentionally on selection change
-- the visual cleanup and route-level browser proof are now also landed:
-  active-thread workspace chrome is compact and sans-serif, question blocks are
-  distinct operational surfaces, and the route-level Playwright checks now
-  prove the active-thread model instead of the superseded continuous-document
-  desk
-- the master-detail redesign is now implemented on `planner-web`; remaining
-  future work should be treated as optional refinement rather than an open core
-  migration slice
+  now remain as implemented precursor/follow-on artifacts on the older
+  first-reveal branch of this work
+- the older 2026-03-22 `socratic-session-page-redesign-spec-p1/p2/p3` tranche
+  docs are now explicitly superseded historical planning artifacts and should
+  not be treated as active slices
+- user review on 2026-03-24 explicitly rejected both the thin startup contract
+  and the idea that React should remain the greenfield platform by default
+- user review also explicitly rejected a future with separate frameworks across
+  Planner
+- official Solid and SolidStart research reviewed on 2026-03-24 now drives the
+  selected greenfield platform choice because fine-grained reactivity is the
+  strongest fit for this dense, native-feeling, graph-heavy workspace
+- the broader platform spec is now ready for implementation because the
+  migration shape is closed:
+  - full replacement
+  - route cleanup allowed
+  - direct replacement deployment
+  - maintenance window acceptable
 
 Current next bounded slice:
 
-- no further bounded slice is currently queued for this redesign thread
+- [Planner SolidStart Phase 00 Shell, Sessions, And Socratic Anchor Spec](/home/thetu/planner/docs/planner-solidstart-phase-00-shell-sessions-and-socratic-anchor-spec.md)
+  is now implemented:
+  - `planner-solid/` is the active frontend target at the repo root
+  - `planner-server` serves the Solid static export by default
+  - `/`, `/sessions`, `/sessions/new`, and `/sessions/:sessionId` are live in the new shell
+  - the Socratic anchor route uses a truthful prompt-bank endpoint instead of fake preview shells
 
 Current follow-up verification slice:
 
-- browser and automated verification are complete for the implemented
-  master-detail contract; future spot-checks can be run if later Socratic lobby
-  changes reopen this route
+- Phase 00 verification is complete:
+  - backend contract proof for `/sessions/{id}/prompt-bank`
+  - Solid app unit/build/lint verification
+  - Playwright browser proof against `planner-server` serving the Solid export
+
+Current next valid move:
+
+- use `delivery-cycle` on
+  [Planner SolidStart Phase 02 Project Advanced Surfaces Spec](/home/thetu/planner/docs/planner-solidstart-phase-02-project-advanced-surfaces-spec.md)
+  to widen the project workspace with attached hidden-by-default advanced
+  surfaces
 
 ### Socratic Ethereal Cascade Redesign
 

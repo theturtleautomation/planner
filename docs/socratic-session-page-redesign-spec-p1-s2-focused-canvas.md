@@ -1,8 +1,13 @@
 # Socratic Session Page Redesign Spec P1 S2: Focused Canvas
 
-**Status:** Ready for implementation
+**Status:** superseded planning artifact
 **Date:** 2026-03-22
 **Parent:** [Project Plan](/home/thetu/planner/docs/project-plan.md)
+
+> Planning note (2026-03-24): this document is a historical early-slice
+> planning artifact from the pre-consultant-desk / pre-master-detail era of
+> the Socratic lobby redesign. It no longer defines an active or future-state
+> implementation target. Keep it only as historical design/planning context.
 
 ## Problem & Intent
 The current session page forces a "split-pane" layout where the left pane holds category navigation and chat, and the right pane acts as a context/event surface. This dilutes the focus required to answer planning questions. The intent is to remove the split-pane layout completely and move to a centered, single-column constraint for the Socratic lobby, making the canvas itself the primary surface.
