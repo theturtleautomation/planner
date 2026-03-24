@@ -1,12 +1,21 @@
 import type {
   BlueprintResponse,
   NodeSummary,
+  PlannerEvent,
   ProjectImportResponse,
   PromptBankResponse,
+  RunListResponse,
   SessionSummary,
 } from "./types";
 
-export type AdvancedPanelTab = "knowledge" | "blueprint" | "review" | "readiness" | "build" | "activity";
+export type AdvancedPanelTab =
+  | "knowledge"
+  | "blueprint"
+  | "review"
+  | "readiness"
+  | "build"
+  | "activity"
+  | "execution";
 
 export interface KnowledgeSummary {
   totalNodes: number;
@@ -68,6 +77,16 @@ export interface ProjectActivityItem {
 export interface ProjectActivitySummary {
   headline: string;
   copy: string;
+  items: ProjectActivityItem[];
+}
+
+export interface BuildExecutionSummary {
+  state: "active" | "failed" | "idle" | "complete";
+  label: string;
+  headline: string;
+  nextAction: string;
+  runCount: number;
+  latestRunId?: string | null;
   items: ProjectActivityItem[];
 }
 
@@ -411,5 +430,82 @@ export function summarizeProjectActivity(params: {
     headline: "Recent project activity",
     copy: "Use this attached surface to scan what changed recently without leaving the project workspace.",
     items: items.slice(0, 6),
+  };
+}
+
+export function summarizeBuildExecution(params: {
+  primarySession?: SessionSummary | null;
+  runs?: RunListResponse | null;
+  events?: PlannerEvent[];
+}): BuildExecutionSummary {
+  const primarySession = params.primarySession ?? null;
+  const runs = params.runs?.runs ?? [];
+  const latestRunId = runs[0] ?? null;
+  const items = (params.events ?? [])
+    .filter(event => event.source === "pipeline")
+    .sort((left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp))
+    .slice(0, 5)
+    .map(event => ({
+      title: event.step ?? event.message,
+      copy: event.message,
+      meta: event.timestamp,
+    }));
+
+  if (!primarySession) {
+    return {
+      state: "idle",
+      label: "No build run",
+      headline: "No project-local build run is available yet",
+      nextAction: "Start analysis and reach a stable build handoff before expecting build execution detail.",
+      runCount: 0,
+      latestRunId,
+      items,
+    };
+  }
+
+  if (primarySession.error_message) {
+    return {
+      state: "failed",
+      label: "Run failed",
+      headline: "The latest build-facing run ended in an error state",
+      nextAction: "Inspect the latest pipeline error, then retry or return to analysis.",
+      runCount: runs.length,
+      latestRunId,
+      items,
+    };
+  }
+
+  if (primarySession.pipeline_running) {
+    return {
+      state: "active",
+      label: "Run active",
+      headline: "A build-facing pipeline run is currently active",
+      nextAction: "Watch the latest pipeline events here while the run advances.",
+      runCount: runs.length,
+      latestRunId,
+      items,
+    };
+  }
+
+  if (runs.length > 0 || primarySession.intake_phase === "complete") {
+    return {
+      state: "complete",
+      label: "Latest run complete",
+      headline: "The latest build-facing run is no longer active",
+      nextAction: "Use the latest run and event trail to decide whether to continue, retry, or return to shaping work.",
+      runCount: runs.length,
+      latestRunId,
+      items,
+    };
+  }
+
+  return {
+    state: "idle",
+    label: "No build run",
+    headline: "No build execution detail is available yet",
+    nextAction: "Move the project into build handoff before expecting project-local execution detail.",
+    runCount: runs.length,
+    latestRunId,
+    items,
   };
 }

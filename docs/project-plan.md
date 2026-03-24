@@ -138,6 +138,10 @@ Current planning state:
   [Planner SolidStart Phase 06 Project Build Execution And Run Detail Spec](/home/thetu/planner/docs/planner-solidstart-phase-06-project-build-execution-and-run-detail-spec.md),
   which keeps the project workspace analysis-first while adding attached
   build execution detail
+- the next widening slice after that is
+  [Planner SolidStart Phase 07 Project Outputs And Artifacts Spec](/home/thetu/planner/docs/planner-solidstart-phase-07-project-outputs-and-artifacts-spec.md),
+  which keeps the project workspace analysis-first while adding attached
+  project-local outputs visibility
 - the route-level child spec for the Socratic lobby is
   [Socratic SolidStart Greenfield Platform Spec](/home/thetu/planner/docs/socratic-solidstart-greenfield-platform-spec.md)
 - the route-level Socratic spec is fed by the already-selected product

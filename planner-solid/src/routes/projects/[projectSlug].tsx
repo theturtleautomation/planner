@@ -9,6 +9,8 @@ import {
   getProjectBlueprint,
   getProjectImportReview,
   getProjectImportState,
+  getSessionEvents,
+  getSessionRuns,
   getPromptBank,
   listSessions,
   updateProjectImportReviewSelection,
@@ -16,6 +18,7 @@ import {
 import {
   summarizeBlueprint,
   summarizeBuildPath,
+  summarizeBuildExecution,
   summarizeBuildReadiness,
   summarizeKnowledge,
   summarizeProjectActivity,
@@ -111,6 +114,20 @@ export default function ProjectWorkspacePage() {
     () => (advancedOpen() && primarySession()?.id ? primarySession()!.id : undefined),
     async sessionId => (sessionId ? getPromptBank(sessionId) : null),
   );
+  const [sessionRuns] = createResource(
+    () => (advancedOpen() && primarySession()?.id ? primarySession()!.id : undefined),
+    async sessionId => (sessionId ? getSessionRuns(sessionId) : null),
+  );
+  const [sessionEvents] = createResource(
+    () => (advancedOpen() && primarySession()?.id ? primarySession()!.id : undefined),
+    async sessionId =>
+      sessionId
+        ? getSessionEvents(sessionId, {
+            source: "pipeline",
+            limit: 5,
+          })
+        : null,
+  );
 
   const knowledgeSummary = createMemo(() => {
     const blueprint = projectBlueprint();
@@ -151,6 +168,13 @@ export default function ProjectWorkspacePage() {
       importState: projectImportState(),
       promptBank: promptBank(),
       buildPath: buildPath(),
+    }),
+  );
+  const buildExecution = createMemo(() =>
+    summarizeBuildExecution({
+      primarySession: primarySession(),
+      runs: sessionRuns(),
+      events: sessionEvents()?.events ?? [],
     }),
   );
 
@@ -214,6 +238,7 @@ export default function ProjectWorkspacePage() {
             const currentReadiness = () => buildReadiness();
             const currentBuildPath = () => buildPath();
             const currentActivity = () => activitySummary();
+            const currentBuildExecution = () => buildExecution();
 
             return (
               <>
@@ -347,6 +372,15 @@ export default function ProjectWorkspacePage() {
                         onClick={() => setAdvancedTab("build")}
                       >
                         Build path
+                      </button>
+                      <button
+                        class={`advanced-tab${advancedTab() === "execution" ? " is-active" : ""}`}
+                        type="button"
+                        role="tab"
+                        aria-selected={advancedTab() === "execution"}
+                        onClick={() => setAdvancedTab("execution")}
+                      >
+                        Build execution
                       </button>
                       <button
                         class={`advanced-tab${advancedTab() === "activity" ? " is-active" : ""}`}
@@ -698,6 +732,78 @@ export default function ProjectWorkspacePage() {
                             >
                               <div class="advanced-list">
                                 <For each={currentActivity().items}>
+                                  {item => (
+                                    <div class="advanced-list-row">
+                                      <div>
+                                        <div class="advanced-item-title">{item.title}</div>
+                                        <div class="advanced-item-copy">{item.copy}</div>
+                                      </div>
+                                      <div class="advanced-item-meta">{item.meta}</div>
+                                    </div>
+                                  )}
+                                </For>
+                              </div>
+                            </Show>
+                          </div>
+                        </Show>
+                      </Match>
+
+                      <Match when={advancedTab() === "execution"}>
+                        <Show
+                          when={!sessionRuns.loading && !sessionEvents.loading}
+                          fallback={<div class="advanced-loading">Loading build execution…</div>}
+                        >
+                          <div class="advanced-surface">
+                            <div class="advanced-surface-head">
+                              <div>
+                                <div class="eyebrow">Build execution</div>
+                                <h3 class="advanced-surface-title">{currentBuildExecution().headline}</h3>
+                                <p class="section-copy">{currentBuildExecution().nextAction}</p>
+                              </div>
+                              <span
+                                class={readinessBadgeClass(
+                                  currentBuildExecution().state === "active"
+                                    ? "in-progress"
+                                    : currentBuildExecution().state === "failed"
+                                      ? "needs-review"
+                                      : currentBuildExecution().state === "complete"
+                                        ? "ready"
+                                        : "not-started",
+                                )}
+                              >
+                                {currentBuildExecution().label}
+                              </span>
+                            </div>
+                            <div class="advanced-summary-grid">
+                              <div class="advanced-summary-card">
+                                <div class="advanced-label">Runs</div>
+                                <div class="advanced-metric">{currentBuildExecution().runCount}</div>
+                              </div>
+                              <div class="advanced-summary-card">
+                                <div class="advanced-label">Latest run</div>
+                                <div class="advanced-metric advanced-metric-text">
+                                  {currentBuildExecution().latestRunId
+                                    ? currentBuildExecution().latestRunId!.slice(0, 8)
+                                    : "n/a"}
+                                </div>
+                              </div>
+                              <div class="advanced-summary-card">
+                                <div class="advanced-label">Runtime state</div>
+                                <div class="advanced-metric advanced-metric-text">{currentBuildExecution().label}</div>
+                              </div>
+                              <div class="advanced-summary-card">
+                                <div class="advanced-label">Current step</div>
+                                <div class="advanced-metric advanced-metric-text">
+                                  {activeSession()?.current_step ?? "n/a"}
+                                </div>
+                              </div>
+                            </div>
+                            <Show
+                              when={currentBuildExecution().items.length > 0}
+                              fallback={<div class="empty-state">No build-facing pipeline events have been recorded for this project yet.</div>}
+                            >
+                              <div class="advanced-list">
+                                <For each={currentBuildExecution().items}>
                                   {item => (
                                     <div class="advanced-list-row">
                                       <div>

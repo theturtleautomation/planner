@@ -77,6 +77,7 @@ Read these when the task touches the relevant area.
 - [planner-solidstart-phase-04-project-build-path-and-automation-handoff-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-04-project-build-path-and-automation-handoff-spec.md)
 - [planner-solidstart-phase-05-project-runs-and-activity-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-05-project-runs-and-activity-spec.md)
 - [planner-solidstart-phase-06-project-build-execution-and-run-detail-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-06-project-build-execution-and-run-detail-spec.md)
+- [planner-solidstart-phase-07-project-outputs-and-artifacts-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-07-project-outputs-and-artifacts-spec.md)
 - [socratic-lobby-document-chrome-and-scroll-de-escalation-spec.md](/home/thetu/planner/docs/socratic-lobby-document-chrome-and-scroll-de-escalation-spec.md)
 - [socratic-lobby-first-reveal-preload-gate-spec.md](/home/thetu/planner/docs/socratic-lobby-first-reveal-preload-gate-spec.md)
 - [planner-design-system-command-center-plan.md](/home/thetu/planner/docs/planner-design-system-command-center-plan.md)

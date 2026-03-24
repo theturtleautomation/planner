@@ -5,9 +5,11 @@ import type {
   GetSessionResponse,
   ListProjectsResponse,
   ListSessionsResponse,
+  RunListResponse,
   PromptBankResponse,
   ProjectResponse,
   ProjectImportResponse,
+  SessionEventsResponse,
   StartSocraticResponse,
 } from "./types";
 
@@ -83,6 +85,28 @@ export function createSession(): Promise<CreateSessionResponse> {
 
 export function getSession(sessionId: string): Promise<GetSessionResponse> {
   return apiFetch(`/sessions/${encodeURIComponent(sessionId)}`);
+}
+
+export function getSessionRuns(sessionId: string): Promise<RunListResponse> {
+  return apiFetch(`/sessions/${encodeURIComponent(sessionId)}/runs`);
+}
+
+export function getSessionEvents(
+  sessionId: string,
+  params?: {
+    level?: "info" | "warn" | "error";
+    source?: "socratic_engine" | "llm_router" | "pipeline" | "factory" | "system";
+    limit?: number;
+    offset?: number;
+  },
+): Promise<SessionEventsResponse> {
+  const qs = new URLSearchParams();
+  if (params?.level) qs.set("level", params.level);
+  if (params?.source) qs.set("source", params.source);
+  if (params?.limit !== undefined) qs.set("limit", String(params.limit));
+  if (params?.offset !== undefined) qs.set("offset", String(params.offset));
+  const query = qs.toString() ? `?${qs.toString()}` : "";
+  return apiFetch(`/sessions/${encodeURIComponent(sessionId)}/events${query}`);
 }
 
 export function startSocratic(sessionId: string, description: string): Promise<StartSocraticResponse> {

@@ -1,6 +1,7 @@
 import {
   summarizeBlueprint,
   summarizeBuildPath,
+  summarizeBuildExecution,
   summarizeBuildReadiness,
   summarizeKnowledge,
   summarizeProjectActivity,
@@ -278,5 +279,44 @@ describe("advanced project helpers", () => {
 
     expect(activity.items[0]?.title).toBe("Calendar intake");
     expect(activity.items.some(item => item.title === "Build path")).toBe(true);
+  });
+
+  it("derives build execution posture from session runtime and pipeline events", () => {
+    const execution = summarizeBuildExecution({
+      primarySession: {
+        id: "session-1",
+        title: "Calendar intake",
+        archived: false,
+        created_at: "2026-03-24T00:00:00Z",
+        last_activity_at: "2026-03-24T05:00:00Z",
+        pipeline_running: true,
+        intake_phase: "pipeline_running",
+        project_description: "Personal calendar app with task tracking",
+        project_id: "project-1",
+        project_slug: "personal-calendar",
+        project_name: "Personal Calendar",
+        current_step: "pipeline.compile",
+        error_message: null,
+      },
+      runs: {
+        runs: ["run-12345678"],
+      },
+      events: [
+        {
+          id: "event-1",
+          timestamp: "2026-03-24T05:02:00Z",
+          level: "info",
+          source: "pipeline",
+          session_id: "session-1",
+          step: "pipeline.compile",
+          message: "Compiling project blueprint",
+          metadata: {},
+        },
+      ],
+    });
+
+    expect(execution.state).toBe("active");
+    expect(execution.runCount).toBe(1);
+    expect(execution.items[0]?.title).toBe("pipeline.compile");
   });
 });

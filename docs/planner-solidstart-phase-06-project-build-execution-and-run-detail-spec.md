@@ -1,6 +1,6 @@
 # Planner SolidStart Phase 06 Project Build Execution And Run Detail Spec
 
-**Status:** ready for implementation  
+**Status:** implemented  
 **Date:** 2026-03-24  
 **Parent:** [Planner SolidStart Platform Direction Spec](/home/thetu/planner/docs/planner-solidstart-platform-direction-spec.md)  
 **Related Planning:** [Planner SolidStart Phase 05 Project Runs And Activity Spec](/home/thetu/planner/docs/planner-solidstart-phase-05-project-runs-and-activity-spec.md), [Planner SolidStart Phase 04 Project Build Path And Automation Handoff Spec](/home/thetu/planner/docs/planner-solidstart-phase-04-project-build-path-and-automation-handoff-spec.md)
@@ -9,6 +9,14 @@
 > the next bounded move should turn build handoff into real project-local build
 > execution visibility. The next slice is not a global ops dashboard. It is a
 > compact project-local build execution surface.
+>
+> Implementation sync (2026-03-24): the Solid project workspace now includes an
+> attached `Build execution` surface that combines the active project session,
+> session run IDs, and pipeline event trail into a compact project-local run
+> view. Execution posture, latest run, current step, and recent pipeline events
+> are now visible without leaving the project workspace. Verification completed
+> with helper tests, Solid lint/build, and Playwright proof that the execution
+> surface remains secondary to active analysis.
 
 ## 1. Executive Judgment
 

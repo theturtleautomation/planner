@@ -368,6 +368,47 @@ test.beforeEach(async ({ page }) => {
     });
   });
 
+  await page.route("**/api/sessions/session-1/runs", async route => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        runs: ["run-12345678", "run-previous"],
+      }),
+    });
+  });
+
+  await page.route("**/api/sessions/session-1/events?**", async route => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        session_id: "session-1",
+        count: 2,
+        events: [
+          {
+            id: "event-2",
+            timestamp: "2026-03-24T05:10:00Z",
+            level: "info",
+            source: "pipeline",
+            session_id: "session-1",
+            step: "pipeline.compile",
+            message: "Compiled project blueprint",
+            metadata: {},
+          },
+          {
+            id: "event-1",
+            timestamp: "2026-03-24T05:06:00Z",
+            level: "warn",
+            source: "pipeline",
+            session_id: "session-1",
+            step: "pipeline.retry.started",
+            message: "Retrying validation loop",
+            metadata: {},
+          },
+        ],
+      }),
+    });
+  });
+
   await page.route("**/api/blueprint?**", async route => {
     await route.fulfill({
       contentType: "application/json",
@@ -494,4 +535,9 @@ test("phase 03 keeps review and build readiness attached to the project workspac
   await page.getByRole("tab", { name: "Activity" }).click();
   await expect(page.getByRole("heading", { name: "Recent project activity" })).toBeVisible();
   await expect(page.getByText("Calendar intake").first()).toBeVisible();
+
+  await page.getByRole("tab", { name: "Build execution" }).click();
+  await expect(page.getByRole("heading", { name: "The latest build-facing run is no longer active" })).toBeVisible();
+  await expect(page.getByText("run-1234")).toBeVisible();
+  await expect(page.getByText("Compiled project blueprint")).toBeVisible();
 });

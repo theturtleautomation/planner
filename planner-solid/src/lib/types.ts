@@ -32,6 +32,21 @@ export interface Session {
   error_message?: string | null;
 }
 
+export type EventLevel = "info" | "warn" | "error";
+export type EventSourceType = "socratic_engine" | "llm_router" | "factory" | "pipeline" | "system";
+
+export interface PlannerEvent {
+  id: string;
+  timestamp: string;
+  level: EventLevel;
+  source: EventSourceType;
+  session_id?: string;
+  step?: string;
+  message: string;
+  duration_ms?: number;
+  metadata: Record<string, unknown>;
+}
+
 export interface Project {
   id: string;
   slug: string;
@@ -140,6 +155,16 @@ export interface CreateSessionResponse {
 
 export interface GetSessionResponse {
   session: Session;
+}
+
+export interface SessionEventsResponse {
+  session_id: string;
+  events: PlannerEvent[];
+  count: number;
+}
+
+export interface RunListResponse {
+  runs: string[];
 }
 
 export interface StartSocraticResponse {
