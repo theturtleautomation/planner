@@ -38,3 +38,16 @@ export function buildPromptAnswers(
     };
   });
 }
+
+export function buildSessionExportFilename(session: {
+  id: string;
+  title?: string | null;
+  project_description?: string | null;
+}) {
+  const base = presentSessionTitle(session)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+  return `${base || `session-${session.id.slice(0, 8)}`}.json`;
+}

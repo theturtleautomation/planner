@@ -25,8 +25,8 @@ Planner v2 is a Rust workspace that takes a plain-English feature description an
 - **Factory compilation check** — post-generation `cargo check` validates produced code before acceptance
 - **JSON repair utility** — 4-strategy malformed-JSON recovery for resilient LLM output parsing
 - **Ratatui terminal UI** — full Socratic planning session in the terminal (`planner-tui`)
-- **Axum HTTP + WebSocket server** — serves the React frontend and exposes a versioned REST + WebSocket API (`planner-server`)
-- **React SPA frontend** — Auth0-integrated dashboard with WebSocket chat, pipeline visualization, and XSS prevention (`planner-web`)
+- **Axum HTTP + WebSocket server** — serves the SolidStart frontend and exposes a versioned REST + WebSocket API (`planner-server`)
+- **SolidStart frontend** — project-first workspace with Socratic analysis, project-local import review/history, knowledge, blueprint, events, discovery, and admin surfaces (`planner-solid`)
 - **Fail-closed JWT authentication** — no auth bypass; `parking_lot::RwLock` (no poisoning); session TTL cleanup (1 hr TTL, 5-min sweep)
 - **Rate limiting** — 100 requests/min per IP; returns `429 Too Many Requests`
 - **RBAC type system** — 4 roles, 9 permissions; enforced at the handler level
@@ -83,7 +83,7 @@ The pipeline will detect whichever of `claude`, `gemini`, or `codex` you have in
 
 It expects Rust, Node.js/npm, and Git to already be installed, then it will:
 
-- build the release workspace and `planner-web`
+- build the release workspace and `planner-solid`
 - create the `planner` service user
 - install `planner-server` to `/usr/local/bin/planner-server`
 - install the web bundle to `/opt/planner/web`
@@ -152,9 +152,9 @@ brew install git
 apt install git
 ```
 
-### Node.js (required for `planner-web` and `deploy/install.sh`)
+### Node.js (required for `planner-solid` and `deploy/install.sh`)
 
-Required to build the React frontend locally, and also required by `deploy/install.sh`, which runs `npm install --prefix planner-web` and `npm run build --prefix planner-web` during installation:
+Required to build the Solid frontend locally, and also required by `deploy/install.sh`, which runs `npm install --prefix planner-solid` and `npm run build --prefix planner-solid` during installation:
 
 ```bash
 # Node.js 18+ required
@@ -365,17 +365,17 @@ Key bindings: `Enter` to send, `Ctrl+C` / `q` to quit.
 
 ### `planner-server` — HTTP + WebSocket Backend
 
-Serves the React frontend and exposes a versioned REST + WebSocket API for browser-based planning sessions. Endpoints are available under both `/api` and `/api/v1`. JWT authentication is fail-closed — requests without a valid token are rejected with `401`.
+Serves the SolidStart frontend and exposes a versioned REST + WebSocket API for browser-based planning sessions. Endpoints are available under both `/api` and `/api/v1`. JWT authentication is fail-closed — requests without a valid token are rejected with `401`.
 
 ```bash
-# Default port 3100, serves ./planner-web/dist
+# Default port 3100, serves ./planner-solid/dist/static
 planner-server
 
 # Custom port
 planner-server --port 8080
 
 # Custom static directory
-planner-server --port 3100 --static-dir /path/to/planner-web/dist
+planner-server --port 3100 --static-dir /path/to/planner-solid/dist/static
 
 # Help
 planner-server --help
@@ -399,7 +399,7 @@ Then open `http://localhost:3100` in your browser.
 | `GET` | `/api/sessions/:id/belief-state` | Required | Get current belief state |
 | `GET` | `/api/sessions/:id/turns` | Required | List CXDB turns |
 | `GET` | `/api/sessions/:id/runs` | Required | List pipeline runs |
-| `GET` | `/*` | None | Static file serving (React frontend) |
+| `GET` | `/*` | None | Static file serving (SolidStart frontend) |
 
 Endpoints are available under both `/api` and `/api/v1`. Rate limiting applies to all API routes: 100 requests/minute per IP. Excess requests receive `429 Too Many Requests`.
 
@@ -407,9 +407,9 @@ If `--static-dir` does not exist, the server starts in API-only mode.
 
 ---
 
-### `planner-web` — React Frontend
+### `planner-solid` — SolidStart Frontend
 
-A full React + TypeScript + Vite single-page application. Communicates with `planner-server` via REST and WebSocket. Auth0 is optional — omitting Auth0 environment variables activates dev mode (no login required).
+A SolidStart + TypeScript frontend that keeps projects primary, treats Socratic analysis as the core workflow, and attaches advanced surfaces locally instead of scattering utility routes. Communicates with `planner-server` via REST and WebSocket. Auth0 remains optional — omitting Auth0 environment variables activates dev mode (no login required).
 
 ```bash
 # From repo root (proxied via root package.json)
@@ -417,19 +417,19 @@ npm run build
 npm run dev
 npm test
 
-# Or from planner-web/ directly
-cd planner-web
+# Or from planner-solid/ directly
+cd planner-solid
 npm install
 npm run dev
 ```
 
-See [planner-web/README.md](./planner-web/README.md) for full frontend documentation and [AUTH0_SETUP.md](./AUTH0_SETUP.md) for authentication configuration.
+See [AUTH0_SETUP.md](./AUTH0_SETUP.md) for authentication configuration. The retained `planner-web/` app is now historical baseline and migration reference, not the active frontend target.
 
 ---
 
 ## Architecture Overview
 
-Planner v2 is a four-crate Rust workspace with a React frontend, built around an event-sourced pipeline engine.
+Planner v2 is a four-crate Rust workspace with a SolidStart frontend, built around an event-sourced pipeline engine.
 
 ```
 User prompt
@@ -450,7 +450,7 @@ Pipeline (12 stages, linear DAG)
 Browser
     │
     ▼
-planner-web (React SPA, Auth0, WebSocket)
+planner-solid (SolidStart app, project-first workflow, WebSocket)
     │
     ▼
 planner-server (Axum, JWT auth, rate limiting, RBAC)
@@ -527,7 +527,7 @@ planner/
 ├── Cargo.toml                      # Workspace manifest
 ├── Cargo.lock
 ├── Makefile                        # Orchestrates Rust + web builds
-├── package.json                    # Root npm scripts (proxied to planner-web)
+├── package.json                    # Root npm scripts (proxied to planner-solid)
 ├── AUTH0_SETUP.md                  # Auth0 configuration guide
 ├── ARCHITECTURE.md                 # Full design document
 ├── CONTRIBUTING.md
@@ -631,7 +631,18 @@ planner/
 │       ├── ws.rs                   # WebSocket upgrade + message loop
 │       └── ws_socratic.rs          # Socratic interview WebSocket handler
 │
-├── planner-web/                    # React + TypeScript + Vite SPA
+├── planner-solid/                  # SolidStart + TypeScript frontend
+│   ├── src/
+│   │   ├── app.tsx                 # App shell + route layout
+│   │   ├── app.css                 # Shared shell and route styling
+│   │   ├── lib/                    # Typed API client + route helpers
+│   │   ├── routes/                 # Projects, sessions, knowledge, blueprint, discovery, events, admin
+│   │   └── entry-client.tsx        # Client entry point
+│   ├── e2e/                        # Playwright browser proof
+│   ├── dist/                       # Exported static bundle for planner-server
+│   └── package.json
+│
+├── planner-web/                    # Historical React baseline / migration reference
 │   ├── src/
 │   │   ├── main.tsx                # App entry point
 │   │   ├── App.tsx                 # Root component + routing
@@ -711,13 +722,13 @@ RUST_LOG=planner_core=debug cargo test
 ### Frontend Tests
 
 ```bash
-cd planner-web
+cd planner-solid
 
 # Run the Vitest test suite (watch mode)
 npm test
 
-# Run once (CI mode)
-npm run test -- --run
+# Run browser proof
+npm run test:e2e
 ```
 
 **Test breakdown:**
@@ -736,7 +747,7 @@ npm run test -- --run
 | Frontend — MessageInput | — | `src/components/__tests__/MessageInput.test.tsx` |
 | Frontend — PipelineBar | — | `src/components/__tests__/PipelineBar.test.tsx` |
 | Frontend — LoginPage | — | `src/pages/__tests__/LoginPage.test.tsx` |
-| **Frontend subtotal** | **97** | `planner-web/src/**/__tests__/` |
+| **Frontend subtotal** | Active Solid tests + retained React historical tests | `planner-solid/**` and `planner-web/**` |
 | **Total** | **474** | |
 
 The integration tests use `MockFactoryWorker` — they do not shell out to `claude`, `gemini`, or `codex`, so no subscriptions are needed to run the full test suite.
@@ -801,7 +812,7 @@ planner-server --port 8080
 ### Static Frontend Path
 
 ```bash
-# Default: ./planner-web/dist
+# Default: ./planner-solid/dist/static
 planner-server
 
 # Override at runtime

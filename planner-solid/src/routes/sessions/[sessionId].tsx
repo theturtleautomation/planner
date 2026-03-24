@@ -1,15 +1,26 @@
 import { Title } from "@solidjs/meta";
-import { useParams } from "@solidjs/router";
+import { A, useNavigate, useParams } from "@solidjs/router";
 import { createEffect, createMemo, createResource, createSignal, For, onCleanup, Show } from "solid-js";
 import { createStore } from "solid-js/store";
 
-import { buildSocraticWebSocketUrl, getPromptBank, getSession } from "~/lib/api";
-import { buildPromptAnswers, presentSessionTitle } from "~/lib/workspace";
+import {
+  buildSocraticWebSocketUrl,
+  duplicateSession,
+  exportSession,
+  getPromptBank,
+  getSession,
+  restartSessionFromDescription,
+  retrySessionPipeline,
+} from "~/lib/api";
+import {
+  buildPromptAnswers,
+  buildSessionExportFilename,
+  presentSessionTitle,
+} from "~/lib/workspace";
 import type {
   ClientPromptResponseMessage,
-  PromptBankThread,
-  PromptEnvelope,
   PromptItem,
+  Session,
 } from "~/lib/types";
 import type { DraftEntry } from "~/lib/workspace";
 
@@ -83,12 +94,16 @@ function QuestionBlock(props: {
 
 export default function SessionWorkspacePage() {
   const params = useParams();
+  const navigate = useNavigate();
   const [session, { refetch: refetchSession }] = createResource(() => params.sessionId, getSession);
   const [promptBank, { refetch: refetchPromptBank }] = createResource(() => params.sessionId, getPromptBank);
   const [drafts, setDrafts] = createStore<Record<string, Record<string, DraftEntry>>>({});
   const [activeThreadId, setActiveThreadId] = createSignal<string | null>(null);
   const [socketState, setSocketState] = createSignal<"connecting" | "open" | "closed" | "error">("closed");
   const [submitError, setSubmitError] = createSignal<string | null>(null);
+  const [actionNotice, setActionNotice] = createSignal<string | null>(null);
+  const [actionError, setActionError] = createSignal<string | null>(null);
+  const [actionPending, setActionPending] = createSignal<null | "duplicate" | "export" | "restart" | "retry">(null);
   const [submitting, setSubmitting] = createSignal(false);
 
   let socket: WebSocket | null = null;
@@ -197,6 +212,79 @@ export default function SessionWorkspacePage() {
     socket.send(JSON.stringify(message));
   };
 
+  const clearActionFeedback = () => {
+    setActionNotice(null);
+    setActionError(null);
+  };
+
+  const handleDuplicate = async (currentSession: Session) => {
+    setActionPending("duplicate");
+    clearActionFeedback();
+    try {
+      const response = await duplicateSession(currentSession.id, {
+        title: `${presentSessionTitle(currentSession)} copy`,
+      });
+      navigate(`/sessions/${response.session.id}`);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Unable to duplicate the session.");
+    } finally {
+      setActionPending(null);
+    }
+  };
+
+  const handleExport = async (currentSession: Session) => {
+    setActionPending("export");
+    clearActionFeedback();
+    try {
+      const response = await exportSession(currentSession.id);
+      const blob = new Blob([JSON.stringify(response, null, 2)], {
+        type: "application/json",
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = buildSessionExportFilename(currentSession);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setActionNotice(`Exported ${link.download}`);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Unable to export the session.");
+    } finally {
+      setActionPending(null);
+    }
+  };
+
+  const handleRestart = async (currentSession: Session) => {
+    setActionPending("restart");
+    clearActionFeedback();
+    try {
+      await restartSessionFromDescription(currentSession.id);
+      await Promise.all([refetchSession(), refetchPromptBank()]);
+      setDrafts({});
+      setActionNotice("Session reset to the original description.");
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Unable to restart from description.");
+    } finally {
+      setActionPending(null);
+    }
+  };
+
+  const handleRetry = async (currentSession: Session) => {
+    setActionPending("retry");
+    clearActionFeedback();
+    try {
+      await retrySessionPipeline(currentSession.id);
+      await Promise.all([refetchSession(), refetchPromptBank()]);
+      setActionNotice("Pipeline retry started.");
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Unable to retry the pipeline.");
+    } finally {
+      setActionPending(null);
+    }
+  };
+
   return (
     <section class="page">
       <Title>{session.latest ? presentSessionTitle(session.latest.session) : "Session"}</Title>
@@ -272,6 +360,64 @@ export default function SessionWorkspacePage() {
                       </div>
                       <Show when={currentSession().project_description}>
                         <p class="workspace-summary">{currentSession().project_description}</p>
+                      </Show>
+                      <div class="session-action-row">
+                        <Show when={currentSession().project_slug}>
+                          {projectSlug => (
+                            <>
+                              <A class="btn btn-subtle" href={`/projects/${projectSlug()}`}>
+                                Back to project
+                              </A>
+                              <A class="btn btn-subtle" href={`/projects/${projectSlug()}/import`}>
+                                Project import
+                              </A>
+                            </>
+                          )}
+                        </Show>
+                        <button
+                          class="btn btn-subtle"
+                          type="button"
+                          disabled={actionPending() !== null}
+                          onClick={() => void handleDuplicate(currentSession())}
+                        >
+                          {actionPending() === "duplicate" ? "Duplicating…" : "Duplicate"}
+                        </button>
+                        <button
+                          class="btn btn-subtle"
+                          type="button"
+                          disabled={actionPending() !== null}
+                          onClick={() => void handleExport(currentSession())}
+                        >
+                          {actionPending() === "export" ? "Exporting…" : "Export"}
+                        </button>
+                        <Show
+                          when={currentSession().project_description?.trim()}
+                        >
+                          <button
+                            class="btn btn-subtle"
+                            type="button"
+                            disabled={actionPending() !== null || currentSession().pipeline_running}
+                            onClick={() => void handleRestart(currentSession())}
+                          >
+                            {actionPending() === "restart" ? "Restarting…" : "Restart from description"}
+                          </button>
+                        </Show>
+                        <Show when={currentSession().intake_phase === "error" || !currentSession().pipeline_running}>
+                          <button
+                            class="btn btn-subtle"
+                            type="button"
+                            disabled={actionPending() !== null || !currentSession().project_description?.trim()}
+                            onClick={() => void handleRetry(currentSession())}
+                          >
+                            {actionPending() === "retry" ? "Retrying…" : "Retry pipeline"}
+                          </button>
+                        </Show>
+                      </div>
+                      <Show when={actionNotice()}>
+                        {notice => <div class="status-copy">{notice()}</div>}
+                      </Show>
+                      <Show when={actionError()}>
+                        {message => <div class="error-copy">{message()}</div>}
                       </Show>
                     </div>
 

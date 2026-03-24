@@ -7,6 +7,7 @@ import {
   getProject,
   getProjectImportHistoryComparison,
   getProjectImportHistoryOptional,
+  reimportProject,
   getProjectImportHistoryPairComparison,
   getProjectImportReview,
   getProjectImportState,
@@ -71,6 +72,7 @@ export default function ProjectImportReviewPage() {
   const [historyError, setHistoryError] = createSignal<string | null>(null);
   const [historyNotice, setHistoryNotice] = createSignal<string | null>(null);
   const [pendingHistoryJobId, setPendingHistoryJobId] = createSignal<string | null>(null);
+  const [reimportPending, setReimportPending] = createSignal(false);
   const [baselineJobId, setBaselineJobId] = createSignal<string | null>(null);
   const [currentComparison, setCurrentComparison] =
     createSignal<ProjectImportHistoryComparisonResponse | null>(null);
@@ -207,6 +209,27 @@ export default function ProjectImportReviewPage() {
     }
   }
 
+  async function handleReimport() {
+    setReimportPending(true);
+    setRouteError(null);
+    setHistoryError(null);
+    setHistoryNotice(null);
+    try {
+      const response = await reimportProject(projectSlug());
+      clearHistorySelections();
+      setHistoryNotice(
+        response.import_job.progress_message ??
+          response.import_job.analysis_summary ??
+          "Re-import request queued.",
+      );
+      await refreshImportRoute();
+    } catch (error) {
+      setRouteError(error instanceof Error ? error.message : "Unable to start a re-import.");
+    } finally {
+      setReimportPending(false);
+    }
+  }
+
   return (
     <section class="page page-scroll">
       <Title>Project Import Review</Title>
@@ -236,6 +259,11 @@ export default function ProjectImportReviewPage() {
               <A class="btn btn-subtle" href="#import-history">
                 Jump to import history
               </A>
+              <Show when={current()}>
+                <button class="btn btn-subtle" type="button" disabled={reimportPending()} onClick={() => void handleReimport()}>
+                  {reimportPending() ? "Re-importing…" : "Start re-import"}
+                </button>
+              </Show>
               <Show when={pendingReview() && current()?.import_job.seed_session_id}>
                 {seedSessionId => (
                   <A class="btn btn-subtle" href={`/sessions/${seedSessionId()}`}>

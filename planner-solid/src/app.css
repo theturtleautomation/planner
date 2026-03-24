@@ -814,6 +814,13 @@ summary:focus-visible {
   font-size: 12px;
 }
 
+.session-action-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
 .workspace-summary {
   margin: 0;
   color: var(--text-secondary);
@@ -1288,6 +1295,7 @@ summary:focus-visible {
   }
 
   .hero-actions,
+  .session-action-row,
   .project-row-facts {
     justify-content: flex-start;
   }

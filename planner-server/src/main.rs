@@ -3,7 +3,7 @@
 //! Serves the Socratic Lobby web frontend and provides:
 //! - REST API for pipeline operations
 //! - WebSocket endpoint for real-time session updates
-//! - Static file serving for the React frontend
+//! - Static file serving for the SolidStart frontend
 //!
 //! Endpoints:
 //! - GET  /api/health          — Health check (public)

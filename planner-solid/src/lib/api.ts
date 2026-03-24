@@ -12,6 +12,7 @@ import type {
   ListProjectsResponse,
   ListSessionsResponse,
   RunListResponse,
+  SessionExportResponse,
   PromptBankResponse,
   ProposedEdgesResponse,
   ProposedNodesResponse,
@@ -109,6 +110,37 @@ export function createSession(): Promise<CreateSessionResponse> {
 
 export function getSession(sessionId: string): Promise<GetSessionResponse> {
   return apiFetch(`/sessions/${encodeURIComponent(sessionId)}`);
+}
+
+export function duplicateSession(
+  sessionId: string,
+  payload?: { title?: string | null },
+): Promise<GetSessionResponse> {
+  return apiFetch(`/sessions/${encodeURIComponent(sessionId)}/duplicate`, {
+    method: "POST",
+    body: JSON.stringify(payload ?? {}),
+  }).then(response => {
+    invalidateCache(["/sessions"]);
+    return response as GetSessionResponse;
+  });
+}
+
+export function exportSession(sessionId: string): Promise<SessionExportResponse> {
+  return apiFetch(`/sessions/${encodeURIComponent(sessionId)}/export`);
+}
+
+export function restartSessionFromDescription(sessionId: string): Promise<GetSessionResponse> {
+  return apiFetch(`/sessions/${encodeURIComponent(sessionId)}/restart-from-description`, {
+    method: "POST",
+    body: "{}",
+  }).then(response => response as GetSessionResponse);
+}
+
+export function retrySessionPipeline(sessionId: string): Promise<GetSessionResponse> {
+  return apiFetch(`/sessions/${encodeURIComponent(sessionId)}/retry-pipeline`, {
+    method: "POST",
+    body: "{}",
+  }).then(response => response as GetSessionResponse);
 }
 
 export function getSessionRuns(sessionId: string): Promise<RunListResponse> {
@@ -256,6 +288,13 @@ export function restoreProjectImportReviewDraft(
       body: "{}",
     },
   );
+}
+
+export function reimportProject(projectRef: string): Promise<ProjectImportResponse> {
+  return apiFetch(`/projects/${encodeURIComponent(projectRef)}/reimport`, {
+    method: "POST",
+    body: "{}",
+  });
 }
 
 export function listProjectSessions(projectRef: string): Promise<ListSessionsResponse> {

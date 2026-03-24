@@ -966,9 +966,9 @@ do_build() {
 
     info "Building web frontend..."
     if [[ "$build_user" != "root" ]]; then
-        sudo -u "$build_user" bash -c "cd '${REPO_ROOT}' && npm install --prefix planner-web && npm run build --prefix planner-web"
+        sudo -u "$build_user" bash -c "cd '${REPO_ROOT}' && npm install --prefix planner-solid && npm run build --prefix planner-solid"
     else
-        cd "${REPO_ROOT}" && npm install --prefix planner-web && npm run build --prefix planner-web
+        cd "${REPO_ROOT}" && npm install --prefix planner-solid && npm run build --prefix planner-solid
     fi
 
     info "Build complete."
@@ -1013,7 +1013,7 @@ do_install() {
     chmod 755 "${BIN_DIR}/planner-server"
 
     # Copy web assets
-    local dist="${REPO_ROOT}/planner-web/dist"
+    local dist="${REPO_ROOT}/planner-solid/dist/static"
     [[ -d "$dist" ]] || die "Web dist not found at ${dist} — run build first"
     info "Installing web assets → ${WEB_DIR}"
     rsync -a --delete "${dist}/" "${WEB_DIR}/"

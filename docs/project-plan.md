@@ -93,6 +93,7 @@ These are the main planning documents currently shaping the repo:
 - [Import Existing Project Phase 15 Selection-Aware History Comparison Spec](/home/thetu/planner/docs/import-existing-project-phase-15-selection-aware-history-comparison-spec.md)
 - [Import Existing Project Phase 16 History Selection Summary Spec](/home/thetu/planner/docs/import-existing-project-phase-16-history-selection-summary-spec.md)
 - [Planner SolidStart Phase 16 Project Import Comparison And Selection Summary Spec](/home/thetu/planner/docs/planner-solidstart-phase-16-project-import-comparison-and-selection-summary-spec.md)
+- [Planner SolidStart Phase 17 Workflow Closeout And React Retirement Spec](/home/thetu/planner/docs/planner-solidstart-phase-17-workflow-closeout-and-react-retirement-spec.md)
 - [Planning Status Audit Remediation Spec](/home/thetu/planner/docs/planning-status-audit-remediation-spec.md)
 
 ## Current Active Thread
@@ -180,6 +181,17 @@ Current planning state:
   which closes current-vs-history comparison, arbitrary baseline comparison,
   and selection-aware history summaries inside the same project-local import
   desk
+- the next bounded slice after that is
+  [Planner SolidStart Phase 17 Workflow Closeout And React Retirement Spec](/home/thetu/planner/docs/planner-solidstart-phase-17-workflow-closeout-and-react-retirement-spec.md),
+  which closes the remaining high-value session lifecycle actions, tightens the
+  full project-to-session-to-import workflow loop, and removes `planner-web`
+  from the repo's active product posture
+- that route-family/platform closeout slice is now implemented:
+  - Solid session lifecycle actions are local in the session route
+  - project-local reimport entry exists in the project workspace and import
+    desk
+  - root scripts, installer, server docs, and README now point at
+    `planner-solid` as the active frontend
 - the route-level child spec for the Socratic lobby is
   [Socratic SolidStart Greenfield Platform Spec](/home/thetu/planner/docs/socratic-solidstart-greenfield-platform-spec.md)
 - the route-level Socratic spec is fed by the already-selected product
@@ -245,10 +257,11 @@ Current follow-up verification slice:
 
 Current next valid move:
 
-- the bounded Solid import-family tranche is now complete through
-  [Planner SolidStart Phase 16 Project Import Comparison And Selection Summary Spec](/home/thetu/planner/docs/planner-solidstart-phase-16-project-import-comparison-and-selection-summary-spec.md)
-- the next move returns to `spec-lifecycle` only when we choose the next
-  post-import SolidStart widening slice
+- the current bounded SolidStart route-family and workflow closeout thread is
+  complete through
+  [Planner SolidStart Phase 17 Workflow Closeout And React Retirement Spec](/home/thetu/planner/docs/planner-solidstart-phase-17-workflow-closeout-and-react-retirement-spec.md)
+- the next move returns to `spec-lifecycle` only when we choose a materially
+  different post-closeout platform or product thread
 
 ### Socratic Ethereal Cascade Redesign
 

@@ -87,6 +87,7 @@ Read these when the task touches the relevant area.
 - [planner-solidstart-phase-14-project-import-review-route-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-14-project-import-review-route-spec.md)
 - [planner-solidstart-phase-15-project-import-history-and-restore-route-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-15-project-import-history-and-restore-route-spec.md)
 - [planner-solidstart-phase-16-project-import-comparison-and-selection-summary-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-16-project-import-comparison-and-selection-summary-spec.md)
+- [planner-solidstart-phase-17-workflow-closeout-and-react-retirement-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-17-workflow-closeout-and-react-retirement-spec.md)
 - [socratic-lobby-document-chrome-and-scroll-de-escalation-spec.md](/home/thetu/planner/docs/socratic-lobby-document-chrome-and-scroll-de-escalation-spec.md)
 - [socratic-lobby-first-reveal-preload-gate-spec.md](/home/thetu/planner/docs/socratic-lobby-first-reveal-preload-gate-spec.md)
 - [planner-design-system-command-center-plan.md](/home/thetu/planner/docs/planner-design-system-command-center-plan.md)

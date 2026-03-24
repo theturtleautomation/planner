@@ -14,6 +14,7 @@ import {
   getSessionRuns,
   getPromptBank,
   listSessions,
+  reimportProject,
   updateProjectImportReviewSelection,
 } from "~/lib/api";
 import {
@@ -78,6 +79,7 @@ export default function ProjectWorkspacePage() {
   const [error, setError] = createSignal<string | null>(null);
   const [reviewError, setReviewError] = createSignal<string | null>(null);
   const [applyPending, setApplyPending] = createSignal(false);
+  const [reimportPending, setReimportPending] = createSignal(false);
   const [selectionPendingNodeId, setSelectionPendingNodeId] = createSignal<string | null>(null);
 
   const projectSessions = createMemo(() => {
@@ -234,6 +236,23 @@ export default function ProjectWorkspacePage() {
       setReviewError(err instanceof Error ? err.message : "Unable to apply the import review.");
     } finally {
       setApplyPending(false);
+    }
+  };
+
+  const handleReimport = async () => {
+    if (!params.projectSlug) return;
+    setReimportPending(true);
+    setReviewError(null);
+    try {
+      await reimportProject(params.projectSlug);
+      await Promise.all([refetchImportReview(), refetchImportState(), refetchPromptBank()]);
+      setAdvancedOpen(true);
+      if (advancedDetails) advancedDetails.open = true;
+      setAdvancedTab("review");
+    } catch (err) {
+      setReviewError(err instanceof Error ? err.message : "Unable to start a re-import.");
+    } finally {
+      setReimportPending(false);
     }
   };
 
@@ -483,6 +502,11 @@ export default function ProjectWorkspacePage() {
                               <A class="btn btn-subtle" href={`/projects/${params.projectSlug}/import#import-history`}>
                                 Open import history
                               </A>
+                              <Show when={currentReview() || projectImportState()}>
+                                <button class="btn btn-subtle" type="button" disabled={reimportPending()} onClick={() => void handleReimport()}>
+                                  {reimportPending() ? "Re-importing…" : "Start re-import"}
+                                </button>
+                              </Show>
                               <Show when={currentReview()?.import_job.seed_session_id}>
                                 {seedSessionId => (
                                   <A class="btn btn-subtle" href={`/sessions/${seedSessionId()}`}>
@@ -504,6 +528,16 @@ export default function ProjectWorkspacePage() {
                                 fallback={<div class="empty-state">No project-local review queue is open right now.</div>}
                               >
                                 <div class="advanced-list">
+                                  <Show when={projectImportState() || currentReview()}>
+                                    <div class="advanced-action-row">
+                                      <A class="btn btn-subtle" href={`/projects/${params.projectSlug}/import`}>
+                                        Open import desk
+                                      </A>
+                                      <button class="btn btn-subtle" type="button" disabled={reimportPending()} onClick={() => void handleReimport()}>
+                                        {reimportPending() ? "Re-importing…" : "Start re-import"}
+                                      </button>
+                                    </div>
+                                  </Show>
                                   <For each={reviewSummary().rows}>
                                     {row => (
                                       <div class="advanced-list-row">

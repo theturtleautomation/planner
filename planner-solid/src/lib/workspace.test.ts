@@ -1,4 +1,4 @@
-import { buildPromptAnswers, presentSessionTitle } from "./workspace";
+import { buildPromptAnswers, buildSessionExportFilename, presentSessionTitle } from "./workspace";
 
 describe("workspace helpers", () => {
   it("prefers explicit titles and falls back to the description", () => {
@@ -60,5 +60,23 @@ describe("workspace helpers", () => {
       item_id: "item-2",
       skipped: true,
     });
+  });
+
+  it("builds a stable session export filename from the visible title", () => {
+    expect(
+      buildSessionExportFilename({
+        id: "12345678-aaaa-bbbb-cccc-123456789012",
+        title: "Calendar intake",
+        project_description: "Personal calendar app with task tracking",
+      }),
+    ).toBe("calendar-intake.json");
+
+    expect(
+      buildSessionExportFilename({
+        id: "12345678-aaaa-bbbb-cccc-123456789012",
+        title: null,
+        project_description: "Personal calendar app with task tracking",
+      }),
+    ).toContain("personal-calendar-app");
   });
 });

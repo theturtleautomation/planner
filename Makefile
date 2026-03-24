@@ -17,7 +17,7 @@ test: rust-test web-test ## Run all tests
 
 clean: ## Remove build artifacts
 	cargo clean
-	rm -rf planner-web/dist planner-web/node_modules/.tmp
+	rm -rf planner-solid/dist planner-solid/node_modules/.tmp
 
 # ---------------------------------------------------------------------------
 # Rust
@@ -44,29 +44,29 @@ clippy: ## cargo clippy
 	cargo clippy --workspace -- -D warnings
 
 # ---------------------------------------------------------------------------
-# Web (planner-web)
+# Web (planner-solid)
 # ---------------------------------------------------------------------------
 
 web: web-build ## Alias for web-build
 
-web-install: ## npm install (planner-web)
-	npm install --prefix planner-web
+web-install: ## npm install (planner-solid)
+	npm install --prefix planner-solid
 
 web-build: node_modules ## tsc + vite build
-	npm run build --prefix planner-web
+	npm run build --prefix planner-solid
 
 web-test: node_modules ## vitest run
-	npm run test --prefix planner-web
+	npm run test --prefix planner-solid
 
 web-lint: node_modules ## eslint
-	npm run lint --prefix planner-web
+	npm run lint --prefix planner-solid
 
 web-dev: node_modules ## vite dev server
-	npm run dev --prefix planner-web
+	npm run dev --prefix planner-solid
 
 # Auto-install if node_modules missing
-node_modules: planner-web/package.json
-	npm install --prefix planner-web
+node_modules: planner-solid/package.json
+	npm install --prefix planner-solid
 	@touch $@
 
 # ---------------------------------------------------------------------------

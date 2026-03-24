@@ -157,6 +157,13 @@ export interface GetSessionResponse {
   session: Session;
 }
 
+export interface SessionExportResponse {
+  exported_at: string;
+  session: Session & {
+    messages?: Array<Record<string, unknown>>;
+  };
+}
+
 export interface SessionEventsResponse {
   session_id: string;
   events: PlannerEvent[];
