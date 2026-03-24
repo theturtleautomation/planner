@@ -1,11 +1,16 @@
 # Socratic Lobby Document Chrome And Scroll De-escalation Spec
 
-**Status:** in progress  
+**Status:** implemented precursor  
 **Date:** 2026-03-24  
 **Parent:** [Project Plan](/home/thetu/planner/docs/project-plan.md)  
 **Related Planning:** [Socratic Lobby Live Virtualized Document Spec](/home/thetu/planner/docs/socratic-lobby-live-virtualized-document-spec.md), [Socratic Question Canvas Alignment And Visual Refinement Spec](/home/thetu/planner/docs/socratic-question-canvas-alignment-and-visual-refinement-spec.md), [Planner Design System Phase 2 Editorial Typography And CTA Spec](/home/thetu/planner/docs/planner-design-system-phase-2-editorial-typography-and-cta-spec.md)
 
 ## Problem & Intent
+
+> Planning note (2026-03-24): this slice remains the record of bounded cleanup
+> work that landed on the continuous-document route. It no longer defines an
+> active future-state slice after the pivot to
+> [Socratic Lobby Master-Detail Local Workspace Spec](/home/thetu/planner/docs/socratic-lobby-master-detail-local-workspace-spec.md).
 
 The live virtualized Socratic lobby is structurally correct, but the current
 document chrome is still over-signaling the active question surface in ways

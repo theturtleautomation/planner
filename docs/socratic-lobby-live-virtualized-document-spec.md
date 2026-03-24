@@ -1,16 +1,17 @@
 # Socratic Lobby Live Virtualized Document Spec
 
-**Status:** implemented  
+**Status:** implemented precursor  
 **Date:** 2026-03-23  
 **Parent:** [Project Plan](/home/thetu/planner/docs/project-plan.md)  
 **Related Planning:** [Socratic Lobby Consultant Desk Spec](/home/thetu/planner/docs/socratic-lobby-consultant-desk-spec.md), [Phase 12 Socratic Live Question Workspace Spec](/home/thetu/planner/docs/phase-12-socratic-live-question-workspace-spec.md), [Phase 13 Socratic Focused Question Lobby Reset Spec](/home/thetu/planner/docs/phase-13-socratic-realtime-workspace-deltas-and-warm-prompt-library-spec.md), [Socratic Hybrid Question Routing And Latency Spec](/home/thetu/planner/docs/socratic-hybrid-question-routing-and-latency-spec.md), [Socratic Question Canvas Alignment And Visual Refinement Spec](/home/thetu/planner/docs/socratic-question-canvas-alignment-and-visual-refinement-spec.md)
 
-> Planning note (2026-03-23): this spec supersedes the earlier consultant-desk
-> end-state as the selected future product target for the Socratic Lobby. The
-> delivered split-pane consultant shell, flattened question blocks, and current
-> store work remain useful migration primitives, but the final target is no
-> longer an active-category detail pane. The final target is a live-generated,
-> fully loaded, continuously readable consultant document with virtualization.
+> Planning note (2026-03-24): this spec remains the record of the delivered
+> continuous-document route, but it no longer defines the selected future
+> product target. The successor is
+> [Socratic Lobby Master-Detail Local Workspace Spec](/home/thetu/planner/docs/socratic-lobby-master-detail-local-workspace-spec.md),
+> which replaces the continuously rendered document model with an active-thread
+> master-detail workspace while reusing the delivered split-pane shell,
+> normalized state, and local-fast browsing primitives as migration inputs.
 
 ## Implementation Sync
 

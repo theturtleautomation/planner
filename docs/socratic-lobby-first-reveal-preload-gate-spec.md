@@ -1,11 +1,16 @@
 # Socratic Lobby First-Reveal Preload Gate Spec
 
-**Status:** in progress  
+**Status:** implemented precursor  
 **Date:** 2026-03-24  
 **Parent:** [Project Plan](/home/thetu/planner/docs/project-plan.md)  
 **Related Planning:** [Socratic Lobby Live Virtualized Document Spec](/home/thetu/planner/docs/socratic-lobby-live-virtualized-document-spec.md), [Socratic Hybrid Question Routing And Latency Spec](/home/thetu/planner/docs/socratic-hybrid-question-routing-and-latency-spec.md), [Socratic Lobby Document Chrome And Scroll De-escalation Spec](/home/thetu/planner/docs/socratic-lobby-document-chrome-and-scroll-de-escalation-spec.md)
 
 ## Problem & Intent
+
+> Planning note (2026-03-24): this slice remains the record of the first-view
+> preload gate work that landed on the continuous-document route. It no longer
+> defines the active future-state architecture after the pivot to
+> [Socratic Lobby Master-Detail Local Workspace Spec](/home/thetu/planner/docs/socratic-lobby-master-detail-local-workspace-spec.md).
 
 The current lobby starts rendering too early.
 

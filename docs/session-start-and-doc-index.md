@@ -65,6 +65,7 @@ Read these when the task touches the relevant area.
 - [socratic-question-canvas-alignment-and-visual-refinement-spec.md](/home/thetu/planner/docs/socratic-question-canvas-alignment-and-visual-refinement-spec.md)
 - [socratic-lobby-consultant-desk-spec.md](/home/thetu/planner/docs/socratic-lobby-consultant-desk-spec.md)
 - [socratic-lobby-live-virtualized-document-spec.md](/home/thetu/planner/docs/socratic-lobby-live-virtualized-document-spec.md)
+- [socratic-lobby-master-detail-local-workspace-spec.md](/home/thetu/planner/docs/socratic-lobby-master-detail-local-workspace-spec.md)
 - [socratic-lobby-document-chrome-and-scroll-de-escalation-spec.md](/home/thetu/planner/docs/socratic-lobby-document-chrome-and-scroll-de-escalation-spec.md)
 - [socratic-lobby-first-reveal-preload-gate-spec.md](/home/thetu/planner/docs/socratic-lobby-first-reveal-preload-gate-spec.md)
 - [planner-design-system-command-center-plan.md](/home/thetu/planner/docs/planner-design-system-command-center-plan.md)

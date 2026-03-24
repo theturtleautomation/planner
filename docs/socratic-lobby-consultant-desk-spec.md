@@ -5,12 +5,13 @@
 **Parent:** [Project Plan](/home/thetu/planner/docs/project-plan.md)  
 **Related Planning:** [Phase 12 Socratic Live Question Workspace Spec](/home/thetu/planner/docs/phase-12-socratic-live-question-workspace-spec.md), [Phase 13 Socratic Focused Question Lobby Reset Spec](/home/thetu/planner/docs/phase-13-socratic-realtime-workspace-deltas-and-warm-prompt-library-spec.md), [Socratic Ethereal Cascade Redesign Spec](/home/thetu/planner/docs/socratic-ethereal-cascade-redesign-spec.md), [Socratic Question Canvas Alignment And Visual Refinement Spec](/home/thetu/planner/docs/socratic-question-canvas-alignment-and-visual-refinement-spec.md), [Planner UI Reset Phase 14: Socratic Pro Max Redesign Spec](/home/thetu/planner/docs/planner-ui-reset-phase-14-socratic-pro-max-redesign-spec.md)
 
-> Planning note (2026-03-23): this document remains the record of the first
+> Planning note (2026-03-24): this document remains the record of the first
 > delivered replacement slices: permanent split-pane shell, flattened prompt
 > rendering, and initial normalized desk state. It is no longer the final
 > future-state contract. The selected successor is
-> [Socratic Lobby Live Virtualized Document Spec](/home/thetu/planner/docs/socratic-lobby-live-virtualized-document-spec.md),
-> which supersedes the active-category detail-pane end-state described here.
+> [Socratic Lobby Master-Detail Local Workspace Spec](/home/thetu/planner/docs/socratic-lobby-master-detail-local-workspace-spec.md),
+> which supersedes both the active-category detail-pane end-state described
+> here and the later continuous-document future-state contract.
 
 ## Implementation Sync
 

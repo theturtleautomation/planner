@@ -57,6 +57,7 @@ These are the main planning documents currently shaping the repo:
 - [Socratic Question Canvas Alignment And Visual Refinement Spec](/home/thetu/planner/docs/socratic-question-canvas-alignment-and-visual-refinement-spec.md)
 - [Socratic Lobby Consultant Desk Spec](/home/thetu/planner/docs/socratic-lobby-consultant-desk-spec.md)
 - [Socratic Lobby Live Virtualized Document Spec](/home/thetu/planner/docs/socratic-lobby-live-virtualized-document-spec.md)
+- [Socratic Lobby Master-Detail Local Workspace Spec](/home/thetu/planner/docs/socratic-lobby-master-detail-local-workspace-spec.md)
 - [Socratic Lobby Document Chrome And Scroll De-escalation Spec](/home/thetu/planner/docs/socratic-lobby-document-chrome-and-scroll-de-escalation-spec.md)
 - [Socratic Lobby First-Reveal Preload Gate Spec](/home/thetu/planner/docs/socratic-lobby-first-reveal-preload-gate-spec.md)
 - [Planner Design System Command Center Plan](/home/thetu/planner/docs/planner-design-system-command-center-plan.md)
@@ -94,73 +95,51 @@ These are the main planning documents currently shaping the repo:
 
 Goal:
 
-- replace the currently implemented Ethereal Cascade / focused-lobby direction
-  with a dense split-pane Socratic Lobby that keeps dynamic server-authored
-  categories and questions while presenting the workspace as one continuous
-  loaded document
-- keep all known categories visible as a permanent left index while the right
-  desk behaves like a continuously readable and editable consultant document
-- preserve the high-density, keyboard-first workflow needed for up to 120 text
-  inputs without document-level scrolling, prompt swapping, or macro-context
-  loss
+- replace the currently implemented continuous-document Socratic lobby future
+  direction with a strict master-detail local workspace
+- keep dynamic server-authored categories and questions while rendering only
+  the currently active thread in the right workspace
+- preserve local-preloaded known data, dense thread-index telemetry, instant
+  client-side thread switching, and isolated keystroke performance without
+  document-level scrolling or continuous document rendering
 
 Current planning state:
 
 - the new authoritative planning artifact is
+  [Socratic Lobby Master-Detail Local Workspace Spec](/home/thetu/planner/docs/socratic-lobby-master-detail-local-workspace-spec.md)
+- the previously implemented
   [Socratic Lobby Live Virtualized Document Spec](/home/thetu/planner/docs/socratic-lobby-live-virtualized-document-spec.md)
+  now serves as an implemented precursor rather than the future-state target
 - the earlier
   [Socratic Lobby Consultant Desk Spec](/home/thetu/planner/docs/socratic-lobby-consultant-desk-spec.md)
-  now serves as an implemented precursor documenting the already delivered
-  shell and state slices
-- the first two bounded replacement slices have now landed on `planner-web`
-  with a live split-pane thread index, normalized consultant-desk draft state,
-  flat question components, and route-level scroll verification
-- the next live-document slice has also landed on `planner-web` with a
-  continuous virtualized category document, jump-to-section row behavior, and
-  consultant-desk rendering driven from the Jotai-backed normalized Socratic
-  document graph
-- the cleanup-and-proof slice has also landed with shim removal, seeded
-  consultant-desk performance proof, draft-selector isolation tests, and
-  live-insertion anchor coverage for the document graph and virtualized desk
-- the index-navigation-completion slice has also landed with arrow-preview row
-  traversal, Enter-to-focus behavior for answerable sections, and active-row
-  hold on the currently edited section
-- the manual-verification-closeout slice has now landed with desktop deep-
-  scroll/live-question validation, keyboard-only traversal into editing and
-  back, short-viewport action reachability proof, and tablet/mobile containment
-  spot-checks
-- the live virtualized Socratic lobby is now the implemented route baseline on
-  `planner-web`, and the earlier Ethereal Cascade / consultant-desk docs remain
-  as precursors only
-- a new bounded follow-on cleanup slice is now defined in
+  remains an implemented precursor documenting the earlier split-pane shell
+  direction
+- the implemented continuous-document route, preload gate, and chrome cleanup
+  work remain useful migration primitives, but they are no longer the selected
+  future-state contract
+- the follow-on
   [Socratic Lobby Document Chrome And Scroll De-escalation Spec](/home/thetu/planner/docs/socratic-lobby-document-chrome-and-scroll-de-escalation-spec.md)
-  to remove redundant `Thread` / `Live question` chrome, reduce section-title
-  scale, stop the active live question from reading as a floating overlay, and
-  enforce local-fast category/question browsing for already-known document
-  content
-- a new first-view product-contract slice is now defined in
+  and
   [Socratic Lobby First-Reveal Preload Gate Spec](/home/thetu/planner/docs/socratic-lobby-first-reveal-preload-gate-spec.md)
-  to hold the lobby behind a dedicated loading surface until a meaningful
-  working set is ready, with a default initial threshold of 8 locally known
-  question items and bounded timeout fallbacks
-- the first bounded preload-gate implementation is now landed on
-  `planner-web`: locally started/restarted interviews stay on a dedicated
-  first-reveal loading surface until enough known question items accumulate or
-  the hard timeout truthfully reveals the best currently known partial desk
+  now remain as implemented precursor/follow-on artifacts on the superseded
+  continuous-document branch of this work
+- the new redesign is driven by user review on 2026-03-24 that explicitly
+  rejected the continuous monolithic document model in favor of a fast,
+  desktop-style master-detail workspace
 
 Current next bounded slice:
 
-- rerun the manual browser checks for
-  [Socratic Lobby First-Reveal Preload Gate Spec](/home/thetu/planner/docs/socratic-lobby-first-reveal-preload-gate-spec.md)
-  and verify that the first visible Socratic lobby state now feels coherent in
-  a real fresh session
+- begin `delivery-cycle` on
+  [Socratic Lobby Master-Detail Local Workspace Spec](/home/thetu/planner/docs/socratic-lobby-master-detail-local-workspace-spec.md)
+  with the first bounded migration slice: replace continuous right-desk
+  rendering with active-thread-only workspace rendering while preserving the
+  locally normalized known-question state and instant thread switching
 
 Current follow-up verification slice:
 
-- rerun the manual browser checks for
-  [Socratic Lobby Document Chrome And Scroll De-escalation Spec](/home/thetu/planner/docs/socratic-lobby-document-chrome-and-scroll-de-escalation-spec.md)
-  and close that visual cleanup slice if the live question no longer reads as
-  a floating overlay while preserving short-viewport action reachability
+- once the first master-detail slice lands, verify independent pane scrolling,
+  local-fast known-thread switching, and isolated typing behavior against the
+  new active-thread workspace contract
 
 ### Socratic Ethereal Cascade Redesign
 
