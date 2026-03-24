@@ -1173,6 +1173,20 @@ impl App {
                 self.apply_category_state(&snapshot);
             }
 
+            SocraticEvent::PromptBankUpdated {
+                snapshot,
+                prompts: _,
+                active_thread_id: _,
+                initial_bank_complete: _,
+            } => {
+                // The TUI still renders a single active prompt, but it needs
+                // the latest category snapshot to stay aligned with the shared
+                // Socratic event contract used by the web client.
+                if self.current_question.is_none() {
+                    self.current_category_snapshot = Some(snapshot);
+                }
+            }
+
             SocraticEvent::ContradictionDetected { contradiction } => {
                 self.add_planner_message(&format!(
                     "Contradiction detected: {} vs {}\n{}",
@@ -1885,6 +1899,79 @@ mod tests {
                 .as_ref()
                 .map(|snapshot| snapshot.active_category_path.len()),
             Some(0)
+        );
+    }
+
+    #[tokio::test]
+    async fn tick_socratic_prompt_bank_updated_keeps_snapshot_when_no_question_is_active() {
+        use planner_schemas::{
+            PromptBankEntry, PromptEnvelope, PromptKind, PromptPreferredLayout, PromptUiHints,
+            SocraticCategoryNode, SocraticCategorySnapshot, SocraticCategoryStatus,
+        };
+
+        let mut app = App::new();
+        app.intake_phase = IntakePhase::Interviewing;
+
+        let (tx, rx) = mpsc::unbounded_channel::<SocraticEvent>();
+        app.socratic_events_rx = Some(rx);
+
+        let snapshot = SocraticCategorySnapshot {
+            revision: "category-bank-1".into(),
+            root_category_ids: vec!["root-discovery".into()],
+            nodes: vec![SocraticCategoryNode {
+                category_id: "root-discovery".into(),
+                parent_category_id: None,
+                title: "Explore missing areas".into(),
+                summary: "1 area still needs discovery.".into(),
+                status: SocraticCategoryStatus::Ready,
+                depth: 0,
+                mapped_dimensions: Vec::new(),
+                has_children: true,
+                has_prompt_ready: true,
+                item_count_hint: 1,
+            }],
+            active_category_path: Vec::new(),
+            newly_available_category_ids: Vec::new(),
+            build_ready: false,
+            build_readiness_message: "Build is blocked until the remaining category is explored."
+                .into(),
+        };
+
+        tx.send(SocraticEvent::PromptBankUpdated {
+            snapshot: snapshot.clone(),
+            prompts: vec![PromptBankEntry {
+                category_id: "root-discovery".into(),
+                prompt: PromptEnvelope {
+                    prompt_id: "prompt-1".into(),
+                    kind: PromptKind::QuestionBatch,
+                    title: "Continue".into(),
+                    instructions: None,
+                    origin_category_id: Some("root-discovery".into()),
+                    category_path: Vec::new(),
+                    items: Vec::new(),
+                    draft_snapshot: None,
+                    required_item_ids: Vec::new(),
+                    allow_partial_submit: true,
+                    ui_hints: PromptUiHints {
+                        preferred_layout: PromptPreferredLayout::Cards,
+                        show_draft_sidebar: false,
+                    },
+                    based_on_turn: 0,
+                    created_at: "2026-03-08T00:00:00Z".into(),
+                },
+            }],
+            active_thread_id: Some("root-discovery".into()),
+            initial_bank_complete: true,
+        })
+        .unwrap();
+
+        app.tick_socratic();
+
+        assert_eq!(
+            app.current_category_snapshot
+                .as_ref()
+                .map(|snapshot| snapshot.revision.as_str()),
+            Some("category-bank-1")
         );
     }
 

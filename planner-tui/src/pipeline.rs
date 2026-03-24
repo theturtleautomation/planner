@@ -287,9 +287,10 @@ impl planner_core::pipeline::steps::socratic::SocraticIO for TuiSocraticIO {
         // `send_event` is the structured catch-all. Most events arrive through
         // the typed methods above AND this method. To avoid double-publishing,
         // we only forward events that have no dedicated typed method in the
-        // trait: specifically ContradictionDetected.
+        // trait: specifically ContradictionDetected and PromptBankUpdated.
         match event {
-            SocraticEvent::ContradictionDetected { .. } => {
+            SocraticEvent::ContradictionDetected { .. }
+            | SocraticEvent::PromptBankUpdated { .. } => {
                 let _ = self.event_tx.send(event.clone());
             }
             // All other variants are already forwarded by typed methods
