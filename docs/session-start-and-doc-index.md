@@ -89,6 +89,7 @@ Read these when the task touches the relevant area.
 - [planner-solidstart-phase-16-project-import-comparison-and-selection-summary-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-16-project-import-comparison-and-selection-summary-spec.md)
 - [planner-solidstart-phase-17-workflow-closeout-and-react-retirement-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-17-workflow-closeout-and-react-retirement-spec.md)
 - [planner-solidstart-phase-18-prompt-bank-conformance-and-closeout-remediation-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-18-prompt-bank-conformance-and-closeout-remediation-spec.md)
+- [planner-solidstart-phase-19-typography-alignment-and-visual-consistency-remediation-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-19-typography-alignment-and-visual-consistency-remediation-spec.md)
 - [socratic-lobby-document-chrome-and-scroll-de-escalation-spec.md](/home/thetu/planner/docs/socratic-lobby-document-chrome-and-scroll-de-escalation-spec.md)
 - [socratic-lobby-first-reveal-preload-gate-spec.md](/home/thetu/planner/docs/socratic-lobby-first-reveal-preload-gate-spec.md)
 - [planner-design-system-command-center-plan.md](/home/thetu/planner/docs/planner-design-system-command-center-plan.md)

@@ -22,23 +22,32 @@ export default function SessionsPage() {
   return (
     <section class="page page-scroll">
       <Title>Sessions</Title>
-      <div class="stack">
-        <div class="eyebrow">Sessions</div>
-        <h1 class="page-title">Current work queue</h1>
-        <p class="page-copy">
-          The first SolidStart validation route keeps the queue dense, calm, and
-          immediately scannable.
-        </p>
-
-        <section class="panel">
-          <div class="panel-head">
+      <div class="stack page-frame">
+        <section class="section-panel page-intro-panel">
+          <div class="section-head">
             <div>
-              <h2 class="panel-title">All sessions</h2>
-              <p class="panel-copy">Open active work directly or start a new Socratic intake.</p>
+              <div class="eyebrow">Sessions</div>
+              <h1 class="page-title">Current work queue</h1>
+              <p class="page-copy">
+                The queue stays dense, calm, and immediately scannable so active work can open
+                without detouring through the rest of the route family.
+              </p>
             </div>
-            <A class="btn btn-primary" href="/sessions/new">
-              New session
-            </A>
+            <div class="page-actions">
+              <A class="btn btn-primary" href="/sessions/new">
+                New session
+              </A>
+            </div>
+          </div>
+        </section>
+
+        <section class="section-panel">
+          <div class="section-head">
+            <div>
+              <div class="eyebrow">Queue</div>
+              <h2 class="section-title">All sessions</h2>
+              <p class="section-copy">Open active work directly or start a new Socratic intake.</p>
+            </div>
           </div>
 
           <Show when={data.latest} fallback={<div class="stack"><div class="empty-state">Loading sessions…</div></div>}>

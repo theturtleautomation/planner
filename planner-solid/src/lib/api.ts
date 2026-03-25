@@ -7,6 +7,7 @@ import type {
   CreateProjectRequest,
   DiscoveryRunResponse,
   CreateSessionResponse,
+  DeleteProjectResponse,
   GetSessionResponse,
   HistoryListResponse,
   ListProjectsResponse,
@@ -187,6 +188,21 @@ export function createProject(request: CreateProjectRequest): Promise<ProjectRes
   }).then(response => {
     invalidateCache(["/projects"]);
     return response as ProjectResponse;
+  });
+}
+
+export function deleteProject(projectRef: string): Promise<DeleteProjectResponse> {
+  const encodedRef = encodeURIComponent(projectRef);
+  return apiFetch(`/projects/${encodedRef}`, {
+    method: "DELETE",
+  }).then(response => {
+    invalidateCache([
+      "/projects",
+      "/sessions",
+      `/projects/${encodedRef}`,
+      `/projects/${encodedRef}/sessions`,
+    ]);
+    return response as DeleteProjectResponse;
   });
 }
 

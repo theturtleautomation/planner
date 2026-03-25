@@ -31,19 +31,26 @@ export default function NewSessionPage() {
   return (
     <section class="page page-scroll">
       <Title>New Session</Title>
-      <div class="stack">
-        <div class="eyebrow">New session</div>
-        <h1 class="page-title">Start a Socratic planning session</h1>
-        <p class="page-copy">
-          This first cut keeps the flow local and direct: write the brief, start the session,
-          and land in the new workspace immediately.
-        </p>
-
-        <section class="panel">
-          <div class="panel-head">
+      <div class="stack page-frame">
+        <section class="section-panel page-intro-panel">
+          <div class="section-head">
             <div>
-              <h2 class="panel-title">Project brief</h2>
-              <p class="panel-copy">Use a concise description of what you want Planner to shape.</p>
+              <div class="eyebrow">New session</div>
+              <h1 class="page-title">Start a Socratic planning session</h1>
+              <p class="page-copy">
+                Write the brief, start the session, and land in the workspace immediately without
+                extra setup surface competing for attention.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section-panel">
+          <div class="section-head">
+            <div>
+              <div class="eyebrow">Session brief</div>
+              <h2 class="section-title">Project brief</h2>
+              <p class="section-copy">Use a concise description of what you want Planner to shape.</p>
             </div>
           </div>
 

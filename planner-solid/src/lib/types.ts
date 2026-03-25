@@ -95,6 +95,24 @@ export interface CreateProjectRequest {
   legacy_scope_keys?: string[];
 }
 
+export interface DeleteProjectResponse {
+  project_id: string;
+  project_name: string;
+  stopped_live_sessions: number;
+  stopped_pipeline_sessions: number;
+  deleted_sessions: number;
+  deleted_session_event_files: number;
+  deleted_cxdb_runs: number;
+  deleted_blueprint_nodes: number;
+  unlinked_shared_blueprint_nodes: number;
+  deleted_project_record: boolean;
+  blueprint_events_pruned?: number;
+  blueprint_history_snapshots_pruned?: number;
+  deleted_import_jobs?: number;
+  deleted_import_drafts?: number;
+  deleted_import_managed_roots?: number;
+}
+
 export type NodeType =
   | "project"
   | "decision"

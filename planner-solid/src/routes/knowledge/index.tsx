@@ -62,22 +62,25 @@ export default function KnowledgePage() {
     <section class="page page-scroll">
       <Title>Knowledge</Title>
       <div class="stack page-frame">
-        <section class="hero-panel workspace-hero">
-          <div class="eyebrow">Knowledge inventory</div>
-          <h1 class="hero-title">Knowledge</h1>
-          <p class="hero-copy">
-            Browse the captured project truth as an inventory first. Filters stay visible, and selected-node detail remains attached instead of competing with the list.
-          </p>
-          <div class="hero-focus project-focus">
+        <section class="section-panel page-intro-panel">
+          <div class="section-head">
             <div>
-              <div class="hero-focus-label">Active project scope</div>
-              <h2 class="hero-focus-title">
-                {projects()?.projects.find(project => project.slug === selectedProject())?.name ?? "Loading project…"}
-              </h2>
-              <p class="hero-focus-copy">
-                {filteredNodes().length} visible node{filteredNodes().length === 1 ? "" : "s"} in the current inventory slice.
+              <div class="eyebrow">Knowledge inventory</div>
+              <h1 class="page-title">Knowledge</h1>
+              <p class="page-copy">
+                Browse captured project truth as an inventory first. Filters stay visible, and
+                selected-node detail remains attached instead of competing with the list.
               </p>
             </div>
+          </div>
+          <div class="page-summary-row">
+            <span class="pill">
+              {projects()?.projects.find(project => project.slug === selectedProject())?.name ?? "Loading project…"}
+            </span>
+            <span class="page-summary-note">
+              {filteredNodes().length} visible node{filteredNodes().length === 1 ? "" : "s"} in
+              the current inventory slice.
+            </span>
           </div>
         </section>
 

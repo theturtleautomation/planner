@@ -77,23 +77,25 @@ export default function AdminPage() {
     <section class="page page-scroll">
       <Title>Admin</Title>
       <div class="stack page-frame">
-        <section class="hero-panel workspace-hero">
-          <div class="eyebrow">Operations</div>
-          <h1 class="hero-title">Admin</h1>
-          <p class="hero-copy">
-            One dominant health desk first, then recent operational events below it. This route stays dense without turning into dashboard theater.
-          </p>
-          <div class="hero-focus project-focus">
+        <section class="section-panel page-intro-panel">
+          <div class="section-head">
             <div>
-              <div class="hero-focus-label">{posture().label}</div>
-              <h2 class="hero-focus-title">{posture().headline}</h2>
-              <p class="hero-focus-copy">{posture().copy}</p>
+              <div class="eyebrow">Operations</div>
+              <h1 class="page-title">Admin</h1>
+              <p class="page-copy">
+                One dominant health desk first, then recent operational events below it. This route
+                stays dense without turning into dashboard theater.
+              </p>
             </div>
-            <div class="hero-actions">
+            <div class="page-actions">
               <button class="btn btn-subtle" type="button" onClick={() => void refetch()}>
                 Refresh
               </button>
             </div>
+          </div>
+          <div class="page-summary-row">
+            <span class="pill">{posture().label}</span>
+            <span class="page-summary-note">{posture().copy}</span>
           </div>
         </section>
 

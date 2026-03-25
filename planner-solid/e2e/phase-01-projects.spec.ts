@@ -271,6 +271,12 @@ const exportHistory = {
 };
 
 test.beforeEach(async ({ page }) => {
+  const projectsState = projectsList.projects.map(project => ({
+    ...project,
+    legacy_scope_keys: [...project.legacy_scope_keys],
+  }));
+  let sessionsState = sessionList.sessions.map(session => ({ ...session }));
+
   await page.addInitScript(() => {
     class MockWebSocket {
       static OPEN = 1;
@@ -319,14 +325,39 @@ test.beforeEach(async ({ page }) => {
 
     await route.fulfill({
       contentType: "application/json",
-      body: JSON.stringify(projectsList),
+      body: JSON.stringify({ projects: projectsState }),
     });
   });
 
   await page.route("**/api/projects/personal-calendar", async route => {
+    if (route.request().method() === "DELETE") {
+      const index = projectsState.findIndex(project => project.slug === "personal-calendar");
+      if (index >= 0) {
+        projectsState.splice(index, 1);
+      }
+      sessionsState = sessionsState.filter(session => session.project_slug !== "personal-calendar");
+
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          project_id: "project-1",
+          project_name: "Personal Calendar",
+          stopped_live_sessions: 0,
+          stopped_pipeline_sessions: 0,
+          deleted_sessions: 1,
+          deleted_session_event_files: 0,
+          deleted_cxdb_runs: 0,
+          deleted_blueprint_nodes: 0,
+          unlinked_shared_blueprint_nodes: 0,
+          deleted_project_record: true,
+        }),
+      });
+      return;
+    }
+
     await route.fulfill({
       contentType: "application/json",
-      body: JSON.stringify({ project: projectsList.projects[0] }),
+      body: JSON.stringify({ project: projectsState[0] }),
     });
   });
 
@@ -401,7 +432,7 @@ test.beforeEach(async ({ page }) => {
   await page.route("**/api/sessions", async route => {
     await route.fulfill({
       contentType: "application/json",
-      body: JSON.stringify(sessionList),
+      body: JSON.stringify({ sessions: sessionsState }),
     });
   });
 
@@ -562,6 +593,122 @@ test("phase 02 keeps advanced items hidden while attached knowledge and blueprin
   await page.getByRole("tab", { name: "Blueprint" }).click();
   await expect(page.getByText("Edges")).toBeVisible();
   await expect(page.getByText("Web first")).toBeVisible();
+});
+
+test("phase 02 allows deleting an open project from the directory", async ({ page }) => {
+  page.on("dialog", dialog => dialog.accept());
+
+  await page.goto("/projects");
+  const projectRow = page.locator(".project-row", {
+    has: page.getByRole("link", { name: "Personal Calendar" }),
+  });
+  const deleteButton = projectRow.getByRole("button", { name: "Delete" });
+
+  await expect(page.getByRole("link", { name: "Personal Calendar" })).toBeVisible();
+  await expect(deleteButton).toBeVisible();
+
+  await deleteButton.click();
+
+  await expect(page.getByRole("link", { name: "Personal Calendar" })).not.toBeVisible();
+  await expect(page.getByRole("link", { name: "Household Finance" })).toBeVisible();
+});
+
+test("phase 02 keeps the project visible when delete is cancelled", async ({ page }) => {
+  await page.goto("/projects");
+  const projectRow = page.locator(".project-row", {
+    has: page.getByRole("link", { name: "Personal Calendar" }),
+  });
+  const deleteButton = projectRow.getByRole("button", { name: "Delete" });
+  let dialogMessage = "";
+
+  page.once("dialog", async dialog => {
+    dialogMessage = dialog.message();
+    await dialog.dismiss();
+  });
+  await deleteButton.click();
+
+  expect(dialogMessage).toContain('Delete "Personal Calendar" permanently?');
+  expect(dialogMessage).toContain("This action cannot be undone.");
+
+  await expect(page.getByRole("link", { name: "Personal Calendar" })).toBeVisible();
+  await expect(deleteButton).toBeEnabled();
+});
+
+test("phase 02 keeps the directory stable and shows an inline error when delete fails", async ({ page }) => {
+  await page.route("**/api/projects/personal-calendar", async route => {
+    if (route.request().method() === "DELETE") {
+      await route.fulfill({
+        status: 500,
+        contentType: "text/plain",
+        body: "Delete failed",
+      });
+      return;
+    }
+
+    await route.fallback();
+  });
+
+  page.on("dialog", dialog => dialog.accept());
+
+  await page.goto("/projects");
+  const projectRow = page.locator(".project-row", {
+    has: page.getByRole("link", { name: "Personal Calendar" }),
+  });
+  const deleteButton = projectRow.getByRole("button", { name: "Delete" });
+  await deleteButton.click();
+
+  await expect(page.getByText("Delete failed")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Personal Calendar" })).toBeVisible();
+  await expect(deleteButton).toBeEnabled();
+});
+
+test("phase 02 disables delete while the request is in flight", async ({ page }) => {
+  let releaseDelete: (() => void) | null = null;
+  let deleteCompleted = false;
+
+  await page.route("**/api/projects/personal-calendar", async route => {
+    if (route.request().method() === "DELETE") {
+      await new Promise<void>(resolve => {
+        releaseDelete = resolve;
+      });
+
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          project_id: "project-1",
+          project_name: "Personal Calendar",
+          stopped_live_sessions: 0,
+          stopped_pipeline_sessions: 0,
+          deleted_sessions: 1,
+          deleted_session_event_files: 0,
+          deleted_cxdb_runs: 0,
+          deleted_blueprint_nodes: 0,
+          unlinked_shared_blueprint_nodes: 0,
+          deleted_project_record: true,
+        }),
+      });
+      deleteCompleted = true;
+      return;
+    }
+
+    await route.fallback();
+  });
+
+  page.on("dialog", dialog => dialog.accept());
+
+  await page.goto("/projects");
+  const projectRow = page.locator(".project-row", {
+    has: page.getByRole("link", { name: "Personal Calendar" }),
+  });
+  const deleteButton = projectRow.getByRole("button", { name: "Delete" });
+  await deleteButton.click();
+
+  await expect(deleteButton).toBeDisabled();
+  await expect(deleteButton).toHaveText("Deleting…");
+
+  releaseDelete?.();
+
+  await expect.poll(() => deleteCompleted).toBe(true);
 });
 
 test("phase 03 keeps review and build readiness attached to the project workspace", async ({ page }) => {

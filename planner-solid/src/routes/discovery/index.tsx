@@ -163,27 +163,27 @@ export default function DiscoveryPage() {
     <section class="page page-scroll">
       <Title>Discovery</Title>
       <div class="stack page-frame">
-        <section class="hero-panel workspace-hero">
-          <div class="eyebrow">Discovery triage</div>
-          <h1 class="hero-title">Discovery</h1>
-          <p class="hero-copy">
-            Review inferred structure as a triage desk. Pending proposals stay visually dominant while scan controls and supporting context remain attached and secondary.
-          </p>
-          <div class="hero-focus project-focus">
+        <section class="section-panel page-intro-panel">
+          <div class="section-head">
             <div>
-              <div class="hero-focus-label">Current review queue</div>
-              <h2 class="hero-focus-title">
-                {pendingCount()} pending · {reviewedCount()} reviewed
-              </h2>
-              <p class="hero-focus-copy">
-                {proposalView() === "nodes" ? "Node proposals are active." : "Edge proposals are active."}
+              <div class="eyebrow">Discovery triage</div>
+              <h1 class="page-title">Discovery</h1>
+              <p class="page-copy">
+                Review inferred structure as a triage desk. Pending proposals stay visually
+                dominant while scan controls and supporting context remain attached and secondary.
               </p>
             </div>
-            <div class="hero-actions">
+            <div class="page-actions">
               <button class="btn btn-subtle" type="button" onClick={() => void handleScan()} disabled={isScanning()}>
                 {isScanning() ? "Scanning…" : "Run scan"}
               </button>
             </div>
+          </div>
+          <div class="page-summary-row">
+            <span class="pill">{pendingCount()} pending</span>
+            <span class="page-summary-note">
+              {reviewedCount()} reviewed. {proposalView() === "nodes" ? "Node proposals are active." : "Edge proposals are active."}
+            </span>
           </div>
           <Show when={scanMessage()}>{message => <div class="status-copy">{message()}</div>}</Show>
           <Show when={scanError()}>{message => <div class="error-copy">{message()}</div>}</Show>
@@ -255,7 +255,7 @@ export default function DiscoveryPage() {
                     {group => (
                       <section class="timeline-group" data-group-key={group.key}>
                         <div class="timeline-group-head">
-                          <h3 class="section-title timeline-group-title">{group.title}</h3>
+                          <h3 class="group-title timeline-group-title">{group.title}</h3>
                           <span class="pill">
                             {group.proposals.length} item{group.proposals.length === 1 ? "" : "s"}
                           </span>

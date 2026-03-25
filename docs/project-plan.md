@@ -1,7 +1,7 @@
 # Project Plan
 
 **Status:** Active  
-**Date:** 2026-03-24
+**Date:** 2026-03-25
 
 ## Purpose
 
@@ -95,6 +95,7 @@ These are the main planning documents currently shaping the repo:
 - [Planner SolidStart Phase 16 Project Import Comparison And Selection Summary Spec](/home/thetu/planner/docs/planner-solidstart-phase-16-project-import-comparison-and-selection-summary-spec.md)
 - [Planner SolidStart Phase 17 Workflow Closeout And React Retirement Spec](/home/thetu/planner/docs/planner-solidstart-phase-17-workflow-closeout-and-react-retirement-spec.md)
 - [Planner SolidStart Phase 18 Prompt-Bank Conformance And Closeout Remediation Spec](/home/thetu/planner/docs/planner-solidstart-phase-18-prompt-bank-conformance-and-closeout-remediation-spec.md)
+- [Planner SolidStart Phase 19 Typography, Alignment, And Visual Consistency Remediation Spec](/home/thetu/planner/docs/planner-solidstart-phase-19-typography-alignment-and-visual-consistency-remediation-spec.md)
 - [Planning Status Audit Remediation Spec](/home/thetu/planner/docs/planning-status-audit-remediation-spec.md)
 
 ## Current Active Thread
@@ -202,6 +203,16 @@ Current planning state:
   which is now implemented and corrects the prompt-bank contract, local graph
   model, verification proof, lifecycle capability truth, and remaining
   repo/doc closeout drift
+- a cross-page typography and alignment audit on 2026-03-25 then found that the
+  active Solid UI still lacks a strong shared type ladder, consistent container
+  rhythm, route-family-specific composition discipline, and truthful responsive
+  behavior across several main pages
+- the bounded remediation slice after that was
+  [Planner SolidStart Phase 19 Typography, Alignment, And Visual Consistency Remediation Spec](/home/thetu/planner/docs/planner-solidstart-phase-19-typography-alignment-and-visual-consistency-remediation-spec.md),
+  which is now implemented and repairs the shared visual hierarchy contract,
+  restores route-family composition discipline, fixes the `/projects`
+  directory surface, and adds live browser proof for representative desktop and
+  mobile layouts
 - the route-level child spec for the Socratic lobby is
   [Socratic SolidStart Greenfield Platform Spec](/home/thetu/planner/docs/socratic-solidstart-greenfield-platform-spec.md)
 - the route-level Socratic spec is fed by the already-selected product
@@ -261,11 +272,24 @@ Current remediation result:
     proof, and Playwright browser proof
   - repo docs now present `planner-solid` as the active frontend posture and
     leave `planner-web` as historical baseline context
+- [Planner SolidStart Phase 19 Typography, Alignment, And Visual Consistency Remediation Spec](/home/thetu/planner/docs/planner-solidstart-phase-19-typography-alignment-and-visual-consistency-remediation-spec.md)
+  is now implemented:
+  - shared typography hierarchy and standard-page framing are now stronger
+    across the active Solid route family
+  - `/projects`, `/sessions`, `/sessions/new`, `/knowledge`, `/discovery`,
+    `/events`, and `/admin` now align to the tightened route-family
+    composition contract
+  - narrow-width shell, knowledge, and blueprint behavior is now covered by
+    live browser verification in addition to the existing route checks
 
 Current SolidStart tranche status:
 
 - the SolidStart tranche is now closed on truthful prompt-bank, verification,
   and workflow-closeout terms
+- the cross-page visual consistency and responsive hierarchy remediation thread
+  is now also implemented for the active Solid app
+- no additional SolidStart remediation slice is currently committed from this
+  review thread
 
 ### Socratic Ethereal Cascade Redesign
 
@@ -652,8 +676,7 @@ Keep planning and implementation aligned to artifact state:
 
 The next move is:
 
-- begin implementation of
-  [Planner SolidStart Phase 18 Prompt-Bank Conformance And Closeout Remediation Spec](/home/thetu/planner/docs/planner-solidstart-phase-18-prompt-bank-conformance-and-closeout-remediation-spec.md)
-- keep the existing Solid route family intact while closing the prompt-bank,
-  local-graph, verification, and documentation-truth gaps identified in the
-  2026-03-24 review
+- review the implemented
+  [Planner SolidStart Phase 19 Typography, Alignment, And Visual Consistency Remediation Spec](/home/thetu/planner/docs/planner-solidstart-phase-19-typography-alignment-and-visual-consistency-remediation-spec.md)
+  as the current visual-quality baseline
+- choose the next bounded spec before starting another implementation slice

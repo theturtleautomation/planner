@@ -116,31 +116,17 @@ export default function EventsPage() {
     <section class="page page-scroll">
       <Title>Events</Title>
       <div class="stack page-frame">
-        <section class="hero-panel workspace-hero">
-          <div class="eyebrow">Operational timeline</div>
-          <h1 class="hero-title">Events</h1>
-          <p class="hero-copy">
-            Chronological blueprint activity stays primary. Snapshots remain close as a quieter recovery and audit surface.
-          </p>
-          <div class="hero-focus project-focus">
+        <section class="section-panel page-intro-panel">
+          <div class="section-head">
             <div>
-              <div class="hero-focus-label">
-                {activeSection() === "events" ? "Timeline view" : "Snapshot history"}
-              </div>
-              <h2 class="hero-focus-title">
-                {activeSection() === "events"
-                  ? `${filteredEvents().length} visible event${filteredEvents().length === 1 ? "" : "s"}`
-                  : `${snapshots()?.snapshots.length ?? 0} saved snapshot${
-                      (snapshots()?.snapshots.length ?? 0) === 1 ? "" : "s"
-                    }`}
-              </h2>
-              <p class="hero-focus-copy">
-                {activeSection() === "events"
-                  ? "Use compact filters to narrow the main stream without displacing chronology."
-                  : "Create or inspect snapshots without turning the route into a second primary surface."}
+              <div class="eyebrow">Operational timeline</div>
+              <h1 class="page-title">Events</h1>
+              <p class="page-copy">
+                Chronological blueprint activity stays primary. Snapshots remain close as a quieter
+                recovery and audit surface.
               </p>
             </div>
-            <div class="hero-actions">
+            <div class="page-actions">
               <button class="btn btn-subtle" type="button" onClick={() => void handleRefresh()}>
                 Refresh
               </button>
@@ -150,6 +136,16 @@ export default function EventsPage() {
                 </button>
               </Show>
             </div>
+          </div>
+          <div class="page-summary-row">
+            <span class="pill">{activeSection() === "events" ? "Timeline view" : "Snapshot history"}</span>
+            <span class="page-summary-note">
+              {activeSection() === "events"
+                ? `${filteredEvents().length} visible event${filteredEvents().length === 1 ? "" : "s"}. Use compact filters to narrow the main stream without displacing chronology.`
+                : `${snapshots()?.snapshots.length ?? 0} saved snapshot${
+                    (snapshots()?.snapshots.length ?? 0) === 1 ? "" : "s"
+                  }. Create or inspect snapshots without turning the route into a second primary surface.`}
+            </span>
           </div>
           {error() ? <div class="error-copy">{error()}</div> : null}
         </section>
@@ -219,7 +215,7 @@ export default function EventsPage() {
                       {group => (
                         <section class="timeline-group">
                           <div class="timeline-group-head">
-                            <h3 class="section-title timeline-group-title">{group.label}</h3>
+                            <h3 class="group-title timeline-group-title">{group.label}</h3>
                             <span class="pill">
                               {group.events.length} event{group.events.length === 1 ? "" : "s"}
                             </span>
