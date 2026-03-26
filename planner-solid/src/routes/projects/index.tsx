@@ -1,10 +1,16 @@
 import { Title } from "@solidjs/meta";
-import { A } from "@solidjs/router";
+import { A, action, useAction } from "@solidjs/router";
 import { For, Show, createMemo, createResource, createSignal } from "solid-js";
 
+import { ConfirmDialog } from "~/components/ui/ConfirmDialog";
+import { StatusBadge } from "~/components/ui/StatusBadge";
 import { deleteProject, listProjects, listSessions } from "~/lib/api";
 import { buildProjectWorkSummaries } from "~/lib/projects";
 import type { Project } from "~/lib/types";
+
+const deleteProjectAction = action(async (projectSlug: string) => deleteProject(projectSlug), {
+  name: "project-delete",
+});
 
 function loadProjectsDirectory() {
   return Promise.all([listProjects(), listSessions()]).then(([projects, sessions]) => ({
@@ -15,28 +21,39 @@ function loadProjectsDirectory() {
 
 export default function ProjectsPage() {
   const [data, { refetch }] = createResource(loadProjectsDirectory);
-  const [deletingProjectId, setDeletingProjectId] = createSignal<string | null>(null);
+  const [projectPendingDelete, setProjectPendingDelete] = createSignal<Project | null>(null);
+  const [deletePendingSlug, setDeletePendingSlug] = createSignal<string | null>(null);
   const [deleteError, setDeleteError] = createSignal<string | null>(null);
+  const runDeleteProject = useAction(deleteProjectAction);
   const summaries = createMemo(() => {
     const current = data();
     return current ? buildProjectWorkSummaries(current.projects, current.sessions) : [];
   });
 
-  const handleDeleteProject = async (project: Project) => {
-    const confirmed = window.confirm(
-      `Delete "${project.name}" permanently?\n\nThis will stop any active sessions, remove this project's sessions and owned knowledge, and preserve shared knowledge by unlinking it from this project. This action cannot be undone.`,
-    );
-    if (!confirmed) return;
-
-    setDeletingProjectId(project.id);
+  const openDeleteDialog = (project: Project) => {
     setDeleteError(null);
+    setProjectPendingDelete(project);
+  };
+
+  const handleDeleteDialogOpenChange = (open: boolean) => {
+    if (open || !!deletePendingSlug()) return;
+    setProjectPendingDelete(null);
+  };
+
+  const handleDeleteProject = async () => {
+    const project = projectPendingDelete();
+    if (!project) return;
+
+    setDeleteError(null);
+    setDeletePendingSlug(project.slug);
     try {
-      await deleteProject(project.slug);
+      await runDeleteProject(project.slug);
       await refetch();
+      setProjectPendingDelete(null);
     } catch (error) {
       setDeleteError(error instanceof Error ? error.message : "Failed to delete project.");
     } finally {
-      setDeletingProjectId(null);
+      setDeletePendingSlug(null);
     }
   };
 
@@ -90,7 +107,7 @@ export default function ProjectsPage() {
                           </div>
                         </div>
                         <div class="project-row-facts">
-                          <span class={`state-badge is-${summary.status}`}>{summary.statusLabel}</span>
+                          <StatusBadge tone={summary.status}>{summary.statusLabel}</StatusBadge>
                           <span>{summary.sessionCount} sessions</span>
                           <span>{summary.nextActionLabel}</span>
                         </div>
@@ -99,11 +116,13 @@ export default function ProjectsPage() {
                         <button
                           aria-label={`Delete ${summary.project.name}`}
                           class="btn btn-subtle btn-danger"
-                          disabled={deletingProjectId() === summary.project.id}
+                          disabled={deletePendingSlug() === summary.project.slug}
                           type="button"
-                          onClick={() => void handleDeleteProject(summary.project)}
+                          onClick={() => openDeleteDialog(summary.project)}
                         >
-                          {deletingProjectId() === summary.project.id ? "Deleting…" : "Delete"}
+                          {deletePendingSlug() === summary.project.slug
+                            ? "Deleting…"
+                            : "Delete"}
                         </button>
                       </div>
                     </div>
@@ -114,6 +133,20 @@ export default function ProjectsPage() {
           </Show>
         </section>
       </div>
+      <ConfirmDialog
+        confirmLabel="Delete project"
+        description={
+          projectPendingDelete()
+            ? `Delete "${projectPendingDelete()!.name}" permanently? This will stop any active sessions, remove this project's sessions and owned knowledge, and preserve shared knowledge by unlinking it from this project. This action cannot be undone.`
+            : ""
+        }
+        error={deleteError()}
+        open={!!projectPendingDelete()}
+        pending={deletePendingSlug() === projectPendingDelete()?.slug}
+        title="Delete project permanently"
+        onConfirm={handleDeleteProject}
+        onOpenChange={handleDeleteDialogOpenChange}
+      />
     </section>
   );
 }

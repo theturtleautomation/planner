@@ -364,13 +364,59 @@ async fn run_prompt_loop<IO: SocraticIO, S: TurnStore>(
             let category_id = prompt_focus_category_id(&prompt)
                 .map(ToOwned::to_owned)
                 .unwrap_or_else(|| prompt.prompt_id.clone());
+            if !prompt.category_path.is_empty() {
+                engine_state.active_category_ids = prompt
+                    .category_path
+                    .iter()
+                    .map(|entry| entry.category_id.clone())
+                    .collect();
+            }
             active_thread_id.get_or_insert_with(|| category_id.clone());
             prompt_bank.push(PromptBankEntry {
                 category_id,
                 prompt: prompt.clone(),
             });
-            emit_prompt(io, engine_state, belief_state, &prompt).await;
+            let category_snapshot = category_planner::build_category_snapshot(
+                belief_state,
+                &engine_state.active_category_ids,
+                false,
+                engine_state.last_category_snapshot.as_ref(),
+            );
+            publish_prompt_bank(
+                io,
+                engine_state,
+                belief_state,
+                category_snapshot,
+                prompt_bank.clone(),
+                active_thread_id.clone(),
+                true,
+                None,
+            )
+            .await;
         }
+    } else {
+        let category_snapshot = engine_state
+            .last_category_snapshot
+            .clone()
+            .unwrap_or_else(|| {
+                category_planner::build_category_snapshot(
+                    belief_state,
+                    &engine_state.active_category_ids,
+                    false,
+                    None,
+                )
+            });
+        publish_prompt_bank(
+            io,
+            engine_state,
+            belief_state,
+            category_snapshot,
+            prompt_bank.clone(),
+            active_thread_id.clone(),
+            initial_bank_complete,
+            None,
+        )
+        .await;
     }
 
     loop {
@@ -433,13 +479,36 @@ async fn run_prompt_loop<IO: SocraticIO, S: TurnStore>(
                     let category_id = prompt_focus_category_id(&prompt)
                         .map(ToOwned::to_owned)
                         .unwrap_or_else(|| prompt.prompt_id.clone());
+                    if !prompt.category_path.is_empty() {
+                        engine_state.active_category_ids = prompt
+                            .category_path
+                            .iter()
+                            .map(|entry| entry.category_id.clone())
+                            .collect();
+                    }
                     active_thread_id = Some(category_id.clone());
                     initial_bank_complete = true;
                     prompt_bank = vec![PromptBankEntry {
                         category_id,
                         prompt: prompt.clone(),
                     }];
-                    emit_prompt(io, engine_state, belief_state, &prompt).await;
+                    let category_snapshot = category_planner::build_category_snapshot(
+                        belief_state,
+                        &engine_state.active_category_ids,
+                        false,
+                        engine_state.last_category_snapshot.as_ref(),
+                    );
+                    publish_prompt_bank(
+                        io,
+                        engine_state,
+                        belief_state,
+                        category_snapshot,
+                        prompt_bank.clone(),
+                        active_thread_id.clone(),
+                        initial_bank_complete,
+                        None,
+                    )
+                    .await;
                     continue;
                 }
             }
@@ -457,9 +526,7 @@ async fn run_prompt_loop<IO: SocraticIO, S: TurnStore>(
                 .map(|entry| entry.category_id.clone())
                 .collect();
 
-            if engine_state.last_category_snapshot.is_none()
-                && engine_state.active_category_ids.is_empty()
-            {
+            if engine_state.active_category_ids.is_empty() {
                 if let Some(initial_path) =
                     category_planner::first_prompt_ready_category_path(&category_snapshot)
                 {
@@ -481,7 +548,7 @@ async fn run_prompt_loop<IO: SocraticIO, S: TurnStore>(
             let suppress_auto_prompt_bank = engine_state.force_category_screen_once;
             if !suppress_auto_prompt_bank {
                 if let Some(active_category_id) =
-                category_planner::active_leaf_category_id(&category_snapshot)
+                    category_planner::active_leaf_category_id(&category_snapshot)
                 {
                     let ui_capabilities = io.current_ui_capabilities();
                     let category_id = active_category_id.to_string();
@@ -502,29 +569,18 @@ async fn run_prompt_loop<IO: SocraticIO, S: TurnStore>(
                         .or_else(|| prompt_bank.first())
                         .map(|entry| entry.prompt.clone());
 
-                    if let Some(prompt) = active_prompt.as_ref() {
-                        let workspace_snapshot = category_planner::build_workspace_snapshot(
+                    if active_prompt.is_some() {
+                        publish_prompt_bank(
+                            io,
+                            engine_state,
                             belief_state,
-                            &category_snapshot,
-                            Some(category_id.as_str()),
-                            None,
-                            ui_capabilities.max_visible_items,
-                        );
-                        io.send_category_state(&category_snapshot).await;
-                        io.send_workspace_state(&workspace_snapshot).await;
-                        io.send_event(&SocraticEvent::CategoryState {
-                            snapshot: category_snapshot.clone(),
-                        })
-                        .await;
-                        io.send_event(&SocraticEvent::PromptBankUpdated {
-                            snapshot: category_snapshot.clone(),
-                            prompts: prompt_bank.clone(),
-                            active_thread_id: active_thread_id.clone(),
+                            category_snapshot.clone(),
+                            prompt_bank.clone(),
+                            active_thread_id.clone(),
                             initial_bank_complete,
-                        })
+                            None,
+                        )
                         .await;
-                        engine_state.last_category_snapshot = Some(category_snapshot.clone());
-                        emit_prompt(io, engine_state, belief_state, prompt).await;
                         continue;
                     }
                 }
@@ -541,12 +597,6 @@ async fn run_prompt_loop<IO: SocraticIO, S: TurnStore>(
                     .map(|entry| entry.title.clone())
                     .unwrap_or_else(|| String::from("Selected category"));
                 engine_state.active_category_ids.pop();
-                category_snapshot = category_planner::build_category_snapshot(
-                    belief_state,
-                    &engine_state.active_category_ids,
-                    conv_result.is_done,
-                    engine_state.last_category_snapshot.as_ref(),
-                );
                 branch_notice = Some(format!(
                     "\"{collapsed_title}\" no longer has active questions. Review the updated workspace for the remaining work."
                 ));
@@ -556,81 +606,52 @@ async fn run_prompt_loop<IO: SocraticIO, S: TurnStore>(
                         .unwrap_or("The selected category changed. Review the updated workspace."),
                 )
                 .await;
+                continue;
             }
 
-            let workspace_snapshot = category_planner::build_workspace_snapshot(
-                belief_state,
-                &category_snapshot,
-                engine_state.active_category_ids.last().map(String::as_str),
-                branch_notice,
-                io.current_ui_capabilities().max_visible_items,
-            );
-            active_thread_id = None;
-            io.send_category_state(&category_snapshot).await;
-            io.send_workspace_state(&workspace_snapshot).await;
-            io.send_event(&SocraticEvent::CategoryState {
-                snapshot: category_snapshot.clone(),
-            })
-            .await;
-            io.send_event(&SocraticEvent::PromptBankUpdated {
-                snapshot: category_snapshot.clone(),
-                prompts: Vec::new(),
-                active_thread_id: None,
-                initial_bank_complete,
-            })
-            .await;
-            engine_state.last_category_snapshot = Some(category_snapshot.clone());
+            if engine_state.active_category_ids.is_empty() {
+                if let Some(initial_path) =
+                    category_planner::first_prompt_ready_category_path(&category_snapshot)
+                {
+                    engine_state.active_category_ids = initial_path;
+                    continue;
+                }
+            }
 
-            let Some(input) = io
-                .receive_interview_input(None, Some(&category_snapshot))
-                .await
-            else {
-                return finalize_convergence(
+            if category_snapshot.build_ready && engine_state.active_category_ids.is_empty() {
+                active_thread_id = None;
+                publish_prompt_bank(
                     io,
-                    belief_state,
                     engine_state,
-                    convergence::check_convergence(
-                        belief_state,
-                        constitution,
-                        true,
-                        engine_state.stale_turns,
-                    ),
+                    belief_state,
+                    category_snapshot.clone(),
+                    Vec::new(),
+                    None,
+                    initial_bank_complete,
+                    branch_notice,
                 )
                 .await;
-            };
 
-            match input {
-                SocraticInteractiveInput::EnterCategory {
-                    category_id,
-                    revision,
-                } => {
-                    if revision == category_snapshot.revision {
-                        if let Some(path) = category_planner::resolve_category_path(
-                            &category_snapshot,
-                            &category_id,
-                        ) {
-                            engine_state.active_category_ids = path;
-                        } else {
-                            io.send_message(
-                                "That category is no longer visible. Showing the latest category list.",
-                            )
-                            .await;
-                        }
-                    } else {
-                        io.send_message(
-                            "That category view is stale. Showing the latest category list.",
-                        )
-                        .await;
-                    }
-                }
-                SocraticInteractiveInput::BackToCategories => {
-                    prompt_bank.clear();
-                    engine_state.force_category_screen_once = true;
-                    engine_state.active_category_ids.clear();
-                }
-                SocraticInteractiveInput::Done => {
-                    if category_snapshot.build_ready && engine_state.active_category_ids.is_empty()
-                    {
+                let Some(input) = io
+                    .receive_interview_input(None, Some(&category_snapshot))
+                    .await
+                else {
+                    return finalize_convergence(
+                        io,
+                        belief_state,
+                        engine_state,
+                        convergence::check_convergence(
+                            belief_state,
+                            constitution,
+                            true,
+                            engine_state.stale_turns,
+                        ),
+                    )
+                    .await;
+                };
+
+                match input {
+                    SocraticInteractiveInput::Done => {
                         return finalize_convergence(
                             io,
                             belief_state,
@@ -643,17 +664,76 @@ async fn run_prompt_loop<IO: SocraticIO, S: TurnStore>(
                         )
                         .await;
                     }
-                    io.send_message(
-                        "Return to the main category screen and resolve the remaining work before starting the build.",
-                    )
-                    .await;
+                    SocraticInteractiveInput::PromptResponse(_) => {
+                        io.send_message("No prompt work remains. Review the build-ready handoff.")
+                            .await;
+                    }
+                    SocraticInteractiveInput::BackToCategories
+                    | SocraticInteractiveInput::EnterCategory { .. } => {
+                        io.send_message("No additional category navigation is required.")
+                            .await;
+                    }
                 }
-                SocraticInteractiveInput::PromptResponse(_) => {
-                    io.send_message("Select a category before submitting answers.")
-                        .await;
-                }
+                continue;
             }
-            continue;
+
+            // Preserve a route-compatible workspace even if category-derived threading
+            // cannot expose the next question after a response.
+            if let Some(prompt) = prompt_batch_planner::plan_prompt_batch(
+                router,
+                belief_state,
+                constitution,
+                &engine_state.session.conversation,
+                io.current_ui_capabilities().max_visible_items,
+                None,
+            )
+            .await?
+            {
+                let category_id = prompt_focus_category_id(&prompt)
+                    .map(ToOwned::to_owned)
+                    .unwrap_or_else(|| prompt.prompt_id.clone());
+                if !prompt.category_path.is_empty() {
+                    engine_state.active_category_ids = prompt
+                        .category_path
+                        .iter()
+                        .map(|entry| entry.category_id.clone())
+                        .collect();
+                } else {
+                    engine_state.active_category_ids.clear();
+                }
+                active_thread_id = Some(category_id.clone());
+                initial_bank_complete = true;
+                prompt_bank = vec![PromptBankEntry {
+                    category_id,
+                    prompt: prompt.clone(),
+                }];
+                let fallback_snapshot = category_planner::build_category_snapshot(
+                    belief_state,
+                    &engine_state.active_category_ids,
+                    conv_result.is_done,
+                    engine_state.last_category_snapshot.as_ref(),
+                );
+                publish_prompt_bank(
+                    io,
+                    engine_state,
+                    belief_state,
+                    fallback_snapshot,
+                    prompt_bank.clone(),
+                    active_thread_id.clone(),
+                    initial_bank_complete,
+                    None,
+                )
+                .await;
+                continue;
+            }
+
+            io.send_event(&SocraticEvent::Error {
+                message: "Socratic runtime could not derive a route-compatible prompt bank after the latest answer.".into(),
+            })
+            .await;
+            return Err(super::super::StepError::Other(
+                "Socratic runtime could not derive a prompt bank or a build-ready handoff".into(),
+            ));
         }
 
         let active_prompt = prompt_bank
@@ -793,15 +873,12 @@ async fn run_prompt_loop<IO: SocraticIO, S: TurnStore>(
             .await;
         }
 
-        active_thread_id = response_prompt
-            .origin_category_id
-            .clone()
-            .or_else(|| {
-                response_prompt
-                    .category_path
-                    .last()
-                    .map(|entry| entry.category_id.clone())
-            });
+        active_thread_id = response_prompt.origin_category_id.clone().or_else(|| {
+            response_prompt
+                .category_path
+                .last()
+                .map(|entry| entry.category_id.clone())
+        });
         if !response_prompt.category_path.is_empty() {
             engine_state.active_category_ids = response_prompt
                 .category_path
@@ -814,10 +891,12 @@ async fn run_prompt_loop<IO: SocraticIO, S: TurnStore>(
 }
 
 fn prompt_focus_category_id(prompt: &PromptEnvelope) -> Option<&str> {
-    prompt
-        .origin_category_id
-        .as_deref()
-        .or_else(|| prompt.category_path.last().map(|entry| entry.category_id.as_str()))
+    prompt.origin_category_id.as_deref().or_else(|| {
+        prompt
+            .category_path
+            .last()
+            .map(|entry| entry.category_id.as_str())
+    })
 }
 
 fn prompt_category_path(
@@ -848,35 +927,165 @@ async fn plan_prompt_bank_for_snapshot(
     snapshot: &SocraticCategorySnapshot,
     max_visible_items: u32,
 ) -> StepResult<Vec<PromptBankEntry>> {
+    const MAX_PROMPT_BANK_CONCURRENCY: usize = 4;
+
+    let prompt_ready_nodes = snapshot
+        .nodes
+        .iter()
+        .filter(|node| node.has_prompt_ready)
+        .collect::<Vec<_>>();
     let mut bank = Vec::new();
+    for batch in prompt_ready_nodes.chunks(MAX_PROMPT_BANK_CONCURRENCY) {
+        let batch_results = match batch {
+            [a] => vec![
+                plan_prompt_bank_entry(
+                    router,
+                    belief_state,
+                    constitution,
+                    conversation_history,
+                    snapshot,
+                    a,
+                    max_visible_items,
+                )
+                .await?,
+            ],
+            [a, b] => {
+                let (ra, rb) = tokio::join!(
+                    plan_prompt_bank_entry(
+                        router,
+                        belief_state,
+                        constitution,
+                        conversation_history,
+                        snapshot,
+                        a,
+                        max_visible_items,
+                    ),
+                    plan_prompt_bank_entry(
+                        router,
+                        belief_state,
+                        constitution,
+                        conversation_history,
+                        snapshot,
+                        b,
+                        max_visible_items,
+                    ),
+                );
+                vec![ra?, rb?]
+            }
+            [a, b, c] => {
+                let (ra, rb, rc) = tokio::join!(
+                    plan_prompt_bank_entry(
+                        router,
+                        belief_state,
+                        constitution,
+                        conversation_history,
+                        snapshot,
+                        a,
+                        max_visible_items,
+                    ),
+                    plan_prompt_bank_entry(
+                        router,
+                        belief_state,
+                        constitution,
+                        conversation_history,
+                        snapshot,
+                        b,
+                        max_visible_items,
+                    ),
+                    plan_prompt_bank_entry(
+                        router,
+                        belief_state,
+                        constitution,
+                        conversation_history,
+                        snapshot,
+                        c,
+                        max_visible_items,
+                    ),
+                );
+                vec![ra?, rb?, rc?]
+            }
+            [a, b, c, d] => {
+                let (ra, rb, rc, rd) = tokio::join!(
+                    plan_prompt_bank_entry(
+                        router,
+                        belief_state,
+                        constitution,
+                        conversation_history,
+                        snapshot,
+                        a,
+                        max_visible_items,
+                    ),
+                    plan_prompt_bank_entry(
+                        router,
+                        belief_state,
+                        constitution,
+                        conversation_history,
+                        snapshot,
+                        b,
+                        max_visible_items,
+                    ),
+                    plan_prompt_bank_entry(
+                        router,
+                        belief_state,
+                        constitution,
+                        conversation_history,
+                        snapshot,
+                        c,
+                        max_visible_items,
+                    ),
+                    plan_prompt_bank_entry(
+                        router,
+                        belief_state,
+                        constitution,
+                        conversation_history,
+                        snapshot,
+                        d,
+                        max_visible_items,
+                    ),
+                );
+                vec![ra?, rb?, rc?, rd?]
+            }
+            _ => Vec::new(),
+        };
 
-    for node in snapshot.nodes.iter().filter(|node| node.has_prompt_ready) {
-        let scoped_candidates = category_planner::filter_candidates_for_active_category(
-            belief_state,
-            node.category_id.as_str(),
-            max_visible_items,
-        );
-        let prompt = prompt_batch_planner::plan_prompt_batch_from_candidates(
-            router,
-            belief_state,
-            constitution,
-            conversation_history,
-            scoped_candidates,
-            None,
-            Some(node.category_id.clone()),
-            prompt_category_path(snapshot, node.category_id.as_str()),
-        )
-        .await?;
-
-        if let Some(prompt) = prompt {
-            bank.push(PromptBankEntry {
-                category_id: node.category_id.clone(),
-                prompt,
-            });
+        for entry in batch_results.into_iter().flatten() {
+            bank.push(entry);
         }
     }
 
     Ok(bank)
+}
+
+async fn plan_prompt_bank_entry(
+    router: &LlmRouter,
+    belief_state: &RequirementsBeliefState,
+    constitution: &InterviewerConstitution,
+    conversation_history: &[SocraticTurn],
+    snapshot: &SocraticCategorySnapshot,
+    node: &SocraticCategoryNode,
+    max_visible_items: u32,
+) -> StepResult<Option<PromptBankEntry>> {
+    let scoped_candidates = category_planner::filter_candidates_for_active_category(
+        belief_state,
+        node.category_id.as_str(),
+        max_visible_items,
+    );
+    let prompt = prompt_batch_planner::plan_prompt_batch_from_candidates(
+        router,
+        belief_state,
+        constitution,
+        conversation_history,
+        scoped_candidates,
+        None,
+        Some(node.category_id.clone()),
+        prompt_category_path(snapshot, node.category_id.as_str()),
+    )
+    .await?;
+
+    Ok(prompt.map(|prompt| PromptBankEntry {
+        category_id: node.category_id.clone(),
+        prompt,
+    }))
 }
 
 async fn finalize_convergence<IO: SocraticIO>(
@@ -917,6 +1126,55 @@ async fn emit_prompt<IO: SocraticIO>(
             slots_updated: Vec::new(),
             timestamp: Utc::now().to_rfc3339(),
         });
+    }
+}
+
+async fn publish_prompt_bank<IO: SocraticIO>(
+    io: &IO,
+    engine_state: &mut SocraticEngineState,
+    belief_state: &RequirementsBeliefState,
+    category_snapshot: SocraticCategorySnapshot,
+    prompt_bank: Vec<PromptBankEntry>,
+    active_thread_id: Option<String>,
+    initial_bank_complete: bool,
+    branch_notice: Option<String>,
+) {
+    let focused_category_id = active_thread_id
+        .as_deref()
+        .or_else(|| prompt_bank.first().map(|entry| entry.category_id.as_str()));
+    let workspace_snapshot = category_planner::build_workspace_snapshot(
+        belief_state,
+        &category_snapshot,
+        focused_category_id,
+        branch_notice,
+        io.current_ui_capabilities().max_visible_items,
+    );
+    io.send_category_state(&category_snapshot).await;
+    io.send_workspace_state(&workspace_snapshot).await;
+    io.send_event(&SocraticEvent::CategoryState {
+        snapshot: category_snapshot.clone(),
+    })
+    .await;
+    io.send_event(&SocraticEvent::PromptBankUpdated {
+        snapshot: category_snapshot.clone(),
+        prompts: prompt_bank.clone(),
+        active_thread_id: active_thread_id.clone(),
+        initial_bank_complete,
+    })
+    .await;
+    engine_state.last_category_snapshot = Some(category_snapshot);
+
+    if let Some(prompt) = active_thread_id
+        .as_deref()
+        .and_then(|active_thread_id| {
+            prompt_bank
+                .iter()
+                .find(|entry| entry.category_id == active_thread_id)
+                .map(|entry| entry.prompt.clone())
+        })
+        .or_else(|| prompt_bank.first().map(|entry| entry.prompt.clone()))
+    {
+        emit_prompt(io, engine_state, belief_state, &prompt).await;
     }
 }
 
@@ -1866,5 +2124,100 @@ mod tests {
 
         let prompts = io.prompts();
         assert_eq!(prompts.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn parallel_prompt_bank_generation_preserves_stable_thread_identity() {
+        let router = LlmRouter::with_mock(Box::new(CountingMockClient {
+            calls: Arc::new(AtomicUsize::new(0)),
+            response_content:
+                r#"{"question":"What matters most here?","quick_options":[],"allow_skip":true}"#
+                    .into(),
+        }));
+
+        let mut belief_state = RequirementsBeliefState {
+            filled: HashMap::from([
+                (
+                    Dimension::Goal,
+                    SlotValue {
+                        value: "Workout timer".into(),
+                        source_turn: 1,
+                        source_quote: None,
+                    },
+                ),
+                (
+                    Dimension::Security,
+                    SlotValue {
+                        value: "Passwordless sign-in".into(),
+                        source_turn: 1,
+                        source_quote: None,
+                    },
+                ),
+                (
+                    Dimension::ErrorHandling,
+                    SlotValue {
+                        value: "Show a retry state when sync fails.".into(),
+                        source_turn: 1,
+                        source_quote: None,
+                    },
+                ),
+                (
+                    Dimension::SuccessCriteria,
+                    SlotValue {
+                        value: "One workout timer completes cleanly.".into(),
+                        source_turn: 1,
+                        source_quote: None,
+                    },
+                ),
+                (
+                    Dimension::OutOfScope,
+                    SlotValue {
+                        value: "Team collaboration stays out of scope.".into(),
+                        source_turn: 1,
+                        source_quote: None,
+                    },
+                ),
+            ]),
+            uncertain: HashMap::new(),
+            missing: vec![
+                Dimension::CoreFeatures,
+                Dimension::UserFlows,
+                Dimension::Platform,
+                Dimension::Integrations,
+                Dimension::Timeline,
+            ],
+            out_of_scope: Vec::new(),
+            contradictions: Vec::new(),
+            required_dimensions: vec![Dimension::Goal, Dimension::CoreFeatures],
+            turn_count: 2,
+            classification: None,
+        };
+        belief_state
+            .missing
+            .retain(|dimension| !belief_state.filled.contains_key(dimension));
+
+        let snapshot = category_planner::build_category_snapshot(&belief_state, &[], false, None);
+        let constitution = InterviewerConstitution::default_constitution();
+
+        let first_bank =
+            plan_prompt_bank_for_snapshot(&router, &belief_state, &constitution, &[], &snapshot, 4)
+                .await
+                .expect("first parallel prompt bank build should succeed");
+        let second_bank =
+            plan_prompt_bank_for_snapshot(&router, &belief_state, &constitution, &[], &snapshot, 4)
+                .await
+                .expect("second parallel prompt bank build should succeed");
+
+        let first_ids = first_bank
+            .iter()
+            .map(|entry| entry.category_id.clone())
+            .collect::<Vec<_>>();
+        let second_ids = second_bank
+            .iter()
+            .map(|entry| entry.category_id.clone())
+            .collect::<Vec<_>>();
+
+        assert!(first_ids.len() >= 2);
+        assert_eq!(first_ids, second_ids);
     }
 }

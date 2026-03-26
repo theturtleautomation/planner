@@ -46,6 +46,29 @@ describe("prompt bank graph helpers", () => {
     expect(graph.questionsById["platform-choice"]?.threadId).toBe("verify-platform");
   });
 
+  it("keeps saved drafts keyed by prompt item id", () => {
+    const graph = mergePromptBankGraph(
+      baseResponse({
+        saved_drafts: {
+          "platform-choice": {
+            prompt_id: "prompt-verify-platform",
+            item_id: "platform-choice",
+            selected_option_id: "web",
+            custom_text: "Start on the web first.",
+            skipped: false,
+            updated_at: "2026-03-25T00:00:00Z",
+          },
+        },
+      }),
+    );
+
+    expect(graph.savedDraftsByItemId["platform-choice"]).toMatchObject({
+      prompt_id: "prompt-verify-platform",
+      selected_option_id: "web",
+      custom_text: "Start on the web first.",
+    });
+  });
+
   it("preserves a locally selected active thread when the server omits it", () => {
     const previous = mergePromptBankGraph(
       baseResponse({
@@ -104,5 +127,18 @@ describe("prompt bank graph helpers", () => {
         "interviewing",
       ),
     ).toBe(true);
+  });
+
+  it("does not reveal from a complete flag unless a real banked thread exists", () => {
+    const legacyOnly = mergePromptBankGraph(
+      baseResponse({
+        active_thread_id: null,
+        banked_threads: [],
+        initial_bank_complete: true,
+      }),
+      emptyPromptBankGraph(),
+    );
+
+    expect(revealPromptBankWorkspace(legacyOnly, "interviewing")).toBe(false);
   });
 });

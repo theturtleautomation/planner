@@ -154,7 +154,9 @@ pub fn active_leaf_category_id(snapshot: &SocraticCategorySnapshot) -> Option<&s
         .map(|node| node.category_id.as_str())
 }
 
-pub fn first_prompt_ready_category_path(snapshot: &SocraticCategorySnapshot) -> Option<Vec<String>> {
+pub fn first_prompt_ready_category_path(
+    snapshot: &SocraticCategorySnapshot,
+) -> Option<Vec<String>> {
     let category_id = snapshot
         .nodes
         .iter()
@@ -1007,16 +1009,13 @@ mod tests {
             .iter()
             .find(|node| {
                 node.has_prompt_ready
-                    && node.parent_category_id.as_deref()
-                        == Some("root-discovery::dimension::goal")
+                    && node.parent_category_id.as_deref() == Some("root-discovery::dimension::goal")
             })
             .expect("goal leaf should exist");
 
-        assert!(
-            !visible_category_ids(&snapshot)
-                .iter()
-                .any(|visible_id| visible_id == &leaf.category_id)
-        );
+        assert!(!visible_category_ids(&snapshot)
+            .iter()
+            .any(|visible_id| visible_id == &leaf.category_id));
 
         let path = resolve_category_path(&snapshot, &leaf.category_id)
             .expect("prompt-ready workspace leaf should resolve");

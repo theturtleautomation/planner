@@ -24,11 +24,11 @@ export default function HomePage() {
     <section class="page page-scroll">
       <Title>Planner Work Entry</Title>
       <div class="stack page-frame">
-        <section class="hero-panel">
+        <section class="hero-panel home-hero-panel">
           <div class="eyebrow">Work entry</div>
           <h1 class="hero-title">Open the project, continue the analysis, and move the build forward.</h1>
           <p class="hero-copy">
-            Planner is the active local-first workspace for deep Socratic analysis and build shaping. Recent work stays close, and advanced tools stay available without cluttering the main path.
+            Planner keeps projects as the main container for ongoing work. Recent analysis stays close, and direct sessions remain available as a focused detour when you need a one-off start without creating a new project first.
           </p>
           <Show
             when={featured()}
@@ -37,8 +37,8 @@ export default function HomePage() {
                 <A class="btn btn-primary" href="/projects/new">
                   Start the first project
                 </A>
-                <A class="btn btn-subtle" href="/sessions">
-                  Open sessions
+                <A class="btn btn-subtle" href="/sessions/new">
+                  Direct session
                 </A>
               </div>
             }
@@ -59,8 +59,8 @@ export default function HomePage() {
                     <A class="btn btn-primary" href={`/projects/${summary().project.slug}`}>
                       {summary().nextActionLabel}
                     </A>
-                    <A class="btn btn-subtle" href="/projects/new">
-                      New project
+                    <A class="btn btn-subtle" href="/sessions/new">
+                      Direct session
                     </A>
                   </div>
                 </div>

@@ -1,8 +1,8 @@
 import { Title } from "@solidjs/meta";
-import { useNavigate } from "@solidjs/router";
+import { A, useNavigate } from "@solidjs/router";
 import { createSignal } from "solid-js";
 
-import { createSession, startSocratic } from "~/lib/api";
+import { createSession } from "~/lib/api";
 
 export default function NewSessionPage() {
   const navigate = useNavigate();
@@ -19,8 +19,7 @@ export default function NewSessionPage() {
     setError(null);
 
     try {
-      const created = await createSession();
-      await startSocratic(created.session.id, trimmed);
+      const created = await createSession({ description: trimmed });
       navigate(`/sessions/${created.session.id}`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
@@ -30,16 +29,16 @@ export default function NewSessionPage() {
 
   return (
     <section class="page page-scroll">
-      <Title>New Session</Title>
+      <Title>Direct Session</Title>
       <div class="stack page-frame">
         <section class="section-panel page-intro-panel">
           <div class="section-head">
             <div>
-              <div class="eyebrow">New session</div>
-              <h1 class="page-title">Start a Socratic planning session</h1>
+              <div class="eyebrow">Direct session</div>
+              <h1 class="page-title">Start a focused direct session</h1>
               <p class="page-copy">
-                Write the brief, start the session, and land in the workspace immediately without
-                extra setup surface competing for attention.
+                Projects remain the primary home for ongoing work. Use a direct session when you
+                need a focused one-off detour and do not want to create a new project first.
               </p>
             </div>
           </div>
@@ -48,9 +47,11 @@ export default function NewSessionPage() {
         <section class="section-panel">
           <div class="section-head">
             <div>
-              <div class="eyebrow">Session brief</div>
-              <h2 class="section-title">Project brief</h2>
-              <p class="section-copy">Use a concise description of what you want Planner to shape.</p>
+              <div class="eyebrow">Direct brief</div>
+              <h2 class="section-title">One-off session brief</h2>
+              <p class="section-copy">
+                Use a concise description when the work does not need a project container.
+              </p>
             </div>
           </div>
 
@@ -70,8 +71,11 @@ export default function NewSessionPage() {
 
               <div class="button-row">
                 <button class="btn btn-primary" type="submit" disabled={submitting()}>
-                  {submitting() ? "Starting…" : "Start session"}
+                  {submitting() ? "Starting…" : "Start direct session"}
                 </button>
+                <A class="btn btn-subtle" href="/projects/new">
+                  Start with a project instead
+                </A>
               </div>
             </form>
           </div>

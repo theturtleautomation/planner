@@ -1,0 +1,33 @@
+.root {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--surface-elevated-border);
+  border-radius: 999px;
+  background: var(--surface-elevated-bg);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+.active {
+  border-color: rgba(142, 208, 139, 0.34);
+  color: var(--success);
+}
+
+.attention {
+  border-color: rgba(255, 143, 143, 0.34);
+  color: var(--danger);
+}
+
+.recent {
+  border-color: rgba(120, 179, 255, 0.34);
+  color: var(--accent);
+}
+
+.quiet {
+  color: var(--text-secondary);
+}

@@ -8,6 +8,11 @@ export default defineConfig({
   },
   webServer: {
     command: "cargo run --manifest-path ../Cargo.toml --bin planner-server -- --port 4174 --static-dir ./dist/static",
+    env: {
+      PLANNER_E2E_LLM_MOCK: "phase26_live",
+      PLANNER_DATA_DIR: "../target/playwright-data",
+      PLANNER_RATE_LIMIT_MAX_REQUESTS: "1000",
+    },
     port: 4174,
     reuseExistingServer: false,
     timeout: 120_000,

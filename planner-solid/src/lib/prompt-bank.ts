@@ -4,6 +4,7 @@ import type {
   PromptEnvelope,
   PromptItem,
   QueuedPromptThread,
+  SavedPromptAnswerDraft,
 } from "./types";
 
 export interface PromptBankQuestionNode {
@@ -22,6 +23,7 @@ export interface PromptBankGraph {
   queuedById: Record<string, QueuedPromptThread>;
   questionIdsByThreadId: Record<string, string[]>;
   questionsById: Record<string, PromptBankQuestionNode>;
+  savedDraftsByItemId: Record<string, SavedPromptAnswerDraft>;
   buildReady: boolean;
   buildReadinessMessage?: string | null;
   initialBankComplete: boolean;
@@ -37,6 +39,7 @@ export function emptyPromptBankGraph(): PromptBankGraph {
     queuedById: {},
     questionIdsByThreadId: {},
     questionsById: {},
+    savedDraftsByItemId: {},
     buildReady: false,
     buildReadinessMessage: null,
     initialBankComplete: false,
@@ -85,6 +88,7 @@ export function mergePromptBankGraph(
     queuedById,
     questionIdsByThreadId,
     questionsById,
+    savedDraftsByItemId: response.saved_drafts ?? {},
     buildReady: response.build_ready,
     buildReadinessMessage: response.build_readiness_message ?? null,
     initialBankComplete: response.initial_bank_complete,
@@ -93,7 +97,8 @@ export function mergePromptBankGraph(
 
 export function revealPromptBankWorkspace(
   bank: PromptBankGraph,
-  intakePhase: string,
+  _intakePhase: string,
 ): boolean {
-  return bank.initialBankComplete || bank.buildReady || intakePhase === "error";
+  return (bank.initialBankComplete && bank.threadOrder.length > 0)
+    || bank.buildReady;
 }

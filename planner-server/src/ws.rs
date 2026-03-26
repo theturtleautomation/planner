@@ -95,7 +95,9 @@ pub enum ServerMessage {
 
     /// Current live Socratic workspace state.
     #[serde(rename = "workspace_state")]
-    WorkspaceState { workspace: SocraticWorkspaceSnapshot },
+    WorkspaceState {
+        workspace: SocraticWorkspaceSnapshot,
+    },
 
     /// Interview converged — ready to build.
     #[serde(rename = "converged")]
@@ -122,6 +124,9 @@ pub enum ClientMessage {
     /// User sends a chat message.
     #[serde(rename = "user_message")]
     UserMessage { content: String },
+    /// User requests Socratic analysis startup.
+    #[serde(rename = "start_socratic")]
+    StartSocratic { description: String },
     /// User requests pipeline start.
     #[serde(rename = "start_pipeline")]
     StartPipeline { description: String },
@@ -278,7 +283,8 @@ pub async fn handle_ws(mut socket: WebSocket, state: Arc<AppState>, session_id: 
                                         s.add_message("user", &content);
                                     });
                                 }
-                                ClientMessage::StartPipeline { description } => {
+                                ClientMessage::StartSocratic { description }
+                                | ClientMessage::StartPipeline { description } => {
                                     // Set pipeline state and spawn the pipeline task
                                     let was_running = state.sessions.get(session_id)
                                         .map(|s| s.pipeline_running)
@@ -449,6 +455,18 @@ mod tests {
         let msg: ClientMessage = serde_json::from_str(json).unwrap();
         match msg {
             ClientMessage::StartPipeline { description } => {
+                assert_eq!(description, "Task tracker");
+            }
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
+    fn client_message_start_socratic_serde() {
+        let json = r#"{"type":"start_socratic","description":"Task tracker"}"#;
+        let msg: ClientMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ClientMessage::StartSocratic { description } => {
                 assert_eq!(description, "Task tracker");
             }
             _ => panic!("wrong variant"),

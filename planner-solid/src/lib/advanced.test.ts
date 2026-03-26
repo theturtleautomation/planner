@@ -287,6 +287,7 @@ describe("advanced project helpers", () => {
     });
 
     expect(activity.items[0]?.title).toBe("Calendar intake");
+    expect(activity.items[0]?.copy).toContain("Starting analysis");
     expect(activity.items.some(item => item.title === "Build path")).toBe(true);
   });
 

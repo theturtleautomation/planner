@@ -1,4 +1,5 @@
 import type { Project, SessionSummary } from "./types";
+import { getSessionSummaryStatus, getWorkspaceStatus } from "./session-status";
 
 export type ProjectWorkStatus =
   | "active"
@@ -41,14 +42,37 @@ export function groupSessionsByProject(
 }
 
 export function selectPrimarySession(sessions: SessionSummary[]): SessionSummary | null {
-  if (sessions.length === 0) return null;
-  const ordered = sortSessionsByRecent(sessions);
-  return (
-    ordered.find(session => session.intake_phase === "interviewing" && !session.archived) ??
-    ordered.find(session => session.pipeline_running && !session.archived) ??
-    ordered.find(session => !session.archived) ??
-    ordered[0]
-  );
+  const activeSessions = sessions.filter(session => !session.archived);
+  if (activeSessions.length === 0) return sessions[0] ?? null;
+
+  const rankSession = (session: SessionSummary): number => {
+    switch (getWorkspaceStatus(session).state) {
+      case "attention_required":
+        return 80;
+      case "awaiting_response":
+        return 70;
+      case "starting_analysis":
+      case "classifying":
+      case "assembling_prompt_bank":
+        return 60;
+      case "pipeline_running":
+        return 50;
+      case "build_ready":
+        return 40;
+      case "ready_to_start":
+        return session.project_description?.trim() ? 30 : 10;
+      case "complete":
+        return 20;
+      default:
+        return 0;
+    }
+  };
+
+  return [...activeSessions].sort((left, right) => {
+    const priorityDelta = rankSession(right) - rankSession(left);
+    if (priorityDelta !== 0) return priorityDelta;
+    return timestampValue(right.last_activity_at) - timestampValue(left.last_activity_at);
+  })[0] ?? null;
 }
 
 export function summarizeProjectWork(
@@ -63,18 +87,27 @@ export function summarizeProjectWork(
   let nextActionLabel = "Start analysis";
 
   if (primarySession) {
-    if (primarySession.intake_phase === "interviewing") {
-      status = "active";
-      statusLabel = "Active Socratic analysis";
-      nextActionLabel = "Continue analysis";
-    } else if (primarySession.pipeline_running) {
-      status = "attention";
-      statusLabel = "Build or pipeline running";
-      nextActionLabel = "Open project";
-    } else {
-      status = "recent";
-      statusLabel = "Recent project work";
-      nextActionLabel = "Open project";
+    const summaryStatus = getSessionSummaryStatus(primarySession);
+    statusLabel = summaryStatus.label;
+    nextActionLabel = summaryStatus.nextActionLabel;
+
+    switch (summaryStatus.state) {
+      case "attention_required":
+      case "pipeline_running":
+      case "build_ready":
+        status = "attention";
+        break;
+      case "awaiting_response":
+      case "starting_analysis":
+      case "classifying":
+      case "assembling_prompt_bank":
+        status = "active";
+        break;
+      case "ready_to_start":
+      case "complete":
+      default:
+        status = "recent";
+        break;
     }
   }
 

@@ -1,4 +1,14 @@
-import { buildPromptAnswers, buildSessionExportFilename, presentSessionTitle } from "./workspace";
+import {
+  buildPromptAnswers,
+  buildSessionExportFilename,
+  countAnsweredPromptItems,
+  countProcessedPromptItems,
+  describePromptItemProjection,
+  draftEntryFromSavedDraft,
+  draftHasContent,
+  firstUnprocessedPromptItemId,
+  presentSessionTitle,
+} from "./workspace";
 
 describe("workspace helpers", () => {
   it("prefers explicit titles and falls back to the description", () => {
@@ -78,5 +88,113 @@ describe("workspace helpers", () => {
         project_description: "Personal calendar app with task tracking",
       }),
     ).toContain("personal-calendar-app");
+  });
+
+  it("maps saved drafts into local draft entries and counts answered prompt items", () => {
+    const restored = draftEntryFromSavedDraft({
+      prompt_id: "prompt-1",
+      item_id: "item-1",
+      selected_option_id: "web",
+      custom_text: "Ship as a desktop web app first.",
+      skipped: false,
+      updated_at: "2026-03-25T00:00:00Z",
+    });
+
+    expect(restored).toEqual({
+      selectedOptionId: "web",
+      customText: "Ship as a desktop web app first.",
+    });
+    expect(draftHasContent(restored)).toBe(true);
+    expect(draftHasContent({ customText: "   " })).toBe(false);
+
+    expect(
+      countAnsweredPromptItems(
+        {
+          prompt_id: "prompt-1",
+          title: "Verify Platform",
+          kind: "verification_batch",
+          items: [
+            {
+              item_id: "item-1",
+              kind: "verification",
+              text: "Should this ship as a web app first?",
+              options: [],
+              required: true,
+            },
+            {
+              item_id: "item-2",
+              kind: "verification",
+              text: "Anything else?",
+              options: [],
+              required: false,
+            },
+          ],
+          allow_partial_submit: true,
+        },
+        {
+          "item-1": restored,
+          "item-2": { customText: "Support keyboard-first scheduling." },
+        },
+      ),
+    ).toBe(2);
+  });
+
+  it("builds truthful artifact projection text and tracks processed prompt items", () => {
+    const prompt = {
+      prompt_id: "prompt-1",
+      title: "Success criteria",
+      kind: "question_batch" as const,
+      items: [
+        {
+          item_id: "item-1",
+          kind: "discovery" as const,
+          text: "How will you judge the first release as successful?",
+          options: [
+            { option_id: "main-flow", label: "Main flow works", semantic_value: "Main flow works" },
+            { option_id: "time-saved", label: "Time saved", semantic_value: "Time saved" },
+          ],
+          required: true,
+        },
+        {
+          item_id: "item-2",
+          kind: "discovery" as const,
+          text: "What failure would make this release a miss?",
+          options: [],
+          required: false,
+        },
+      ],
+      allow_partial_submit: true,
+    };
+
+    expect(
+      describePromptItemProjection(prompt.items[0], {
+        selectedOptionId: "main-flow",
+        customText: "Reliable scheduling and task completion.",
+      }),
+    ).toEqual([
+      "Main flow works",
+      "Reliable scheduling and task completion.",
+    ]);
+
+    expect(describePromptItemProjection(prompt.items[1], undefined)).toEqual([]);
+
+    expect(
+      countProcessedPromptItems(prompt, {
+        "item-1": true,
+      }),
+    ).toBe(1);
+
+    expect(
+      firstUnprocessedPromptItemId(prompt, {
+        "item-1": true,
+      }),
+    ).toBe("item-2");
+
+    expect(
+      firstUnprocessedPromptItemId(prompt, {
+        "item-1": true,
+        "item-2": true,
+      }),
+    ).toBeNull();
   });
 });

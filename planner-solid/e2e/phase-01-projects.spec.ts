@@ -553,7 +553,7 @@ test("phase 01 centers guided work entry and project-first navigation", async ({
   await page.goto("/");
 
   await expect(page.getByRole("heading", { name: /Open the project, continue the analysis/i })).toBeVisible();
-  await expect(page.locator(".hero-focus-label")).toHaveText("Active Socratic analysis");
+  await expect(page.locator(".hero-focus-label")).toHaveText("Waiting for response");
 
   await page.getByRole("link", { name: "Continue analysis" }).first().click();
   await expect(page.getByRole("heading", { name: "Personal Calendar" })).toBeVisible();
@@ -561,8 +561,8 @@ test("phase 01 centers guided work entry and project-first navigation", async ({
 
   await page.getByRole("link", { name: "Continue analysis" }).click();
   await expect(page).toHaveURL(/\/sessions\/session-1$/);
-  await expect(page.getByRole("heading", { name: "Verify Platform" })).toBeVisible();
-  await expect(page.getByText("Should this ship as a web app first?")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Verify Platform" }).first()).toBeVisible();
+  await expect(page.getByText("Should this ship as a web app first?").first()).toBeVisible();
 });
 
 test("phase 02 keeps advanced items hidden while attached knowledge and blueprint stay local", async ({ page }) => {
@@ -577,27 +577,43 @@ test("phase 02 keeps advanced items hidden while attached knowledge and blueprin
 
   await expect(page.getByRole("heading", { name: "New Idea" })).toBeVisible();
   await expect(page.getByText("No active analysis yet")).toBeVisible();
-  await expect(page.getByText("Project review, readiness, and advanced surfaces")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Project review, readiness, and advanced surfaces" }),
+  ).toBeVisible();
   await expect(page.getByRole("tab", { name: "Knowledge" })).not.toBeVisible();
 
-  await page.getByText("Project review, readiness, and advanced surfaces").click();
+  await page.getByRole("button", { name: "Project review, readiness, and advanced surfaces" }).click();
+  await expect(page).toHaveURL(/\/projects\/new-idea\?tab=review$/);
   await expect(page.getByRole("tab", { name: "Review" })).toBeVisible();
   await page.getByRole("tab", { name: "Review" }).click();
   await expect(page.getByText("No active review queue")).toBeVisible();
 
   await page.getByRole("tab", { name: "Knowledge" }).click();
+  await expect(page).toHaveURL(/\/projects\/new-idea\?tab=knowledge$/);
   await expect(page.getByRole("tab", { name: "Knowledge" })).toBeVisible();
   await expect(page.getByText("Knowledge records")).toBeVisible();
   await expect(page.getByText("Task Service")).toBeVisible();
 
+  await page.reload();
+  await expect(page).toHaveURL(/\/projects\/new-idea\?tab=knowledge$/);
+  await expect(page.getByRole("tab", { name: "Knowledge" })).toBeVisible();
+  await expect(page.getByText("Knowledge records")).toBeVisible();
+
   await page.getByRole("tab", { name: "Blueprint" }).click();
+  await expect(page).toHaveURL(/\/projects\/new-idea\?tab=blueprint$/);
   await expect(page.getByText("Edges")).toBeVisible();
   await expect(page.getByText("Web first")).toBeVisible();
+
+  await page.goBack();
+  await expect(page).toHaveURL(/\/projects\/new-idea\?tab=knowledge$/);
+  await expect(page.getByRole("tab", { name: "Knowledge" })).toBeVisible();
+
+  await page.goForward();
+  await expect(page).toHaveURL(/\/projects\/new-idea\?tab=blueprint$/);
+  await expect(page.getByRole("tab", { name: "Blueprint" })).toBeVisible();
 });
 
 test("phase 02 allows deleting an open project from the directory", async ({ page }) => {
-  page.on("dialog", dialog => dialog.accept());
-
   await page.goto("/projects");
   const projectRow = page.locator(".project-row", {
     has: page.getByRole("link", { name: "Personal Calendar" }),
@@ -608,6 +624,9 @@ test("phase 02 allows deleting an open project from the directory", async ({ pag
   await expect(deleteButton).toBeVisible();
 
   await deleteButton.click();
+  await expect(page.getByRole("heading", { name: "Delete project permanently" })).toBeVisible();
+  await expect(page.getByText('Delete "Personal Calendar" permanently?')).toBeVisible();
+  await page.getByRole("button", { name: "Delete project" }).click();
 
   await expect(page.getByRole("link", { name: "Personal Calendar" })).not.toBeVisible();
   await expect(page.getByRole("link", { name: "Household Finance" })).toBeVisible();
@@ -619,16 +638,14 @@ test("phase 02 keeps the project visible when delete is cancelled", async ({ pag
     has: page.getByRole("link", { name: "Personal Calendar" }),
   });
   const deleteButton = projectRow.getByRole("button", { name: "Delete" });
-  let dialogMessage = "";
-
-  page.once("dialog", async dialog => {
-    dialogMessage = dialog.message();
-    await dialog.dismiss();
-  });
   await deleteButton.click();
 
-  expect(dialogMessage).toContain('Delete "Personal Calendar" permanently?');
-  expect(dialogMessage).toContain("This action cannot be undone.");
+  const deleteDialog = page.getByRole("alertdialog", { name: "Delete project permanently" });
+
+  await expect(deleteDialog).toBeVisible();
+  await expect(deleteDialog.getByText('Delete "Personal Calendar" permanently?')).toBeVisible();
+  await expect(deleteDialog.getByText("This action cannot be undone.")).toBeVisible();
+  await deleteDialog.locator("button:has-text('Cancel')").click();
 
   await expect(page.getByRole("link", { name: "Personal Calendar" })).toBeVisible();
   await expect(deleteButton).toBeEnabled();
@@ -648,18 +665,19 @@ test("phase 02 keeps the directory stable and shows an inline error when delete 
     await route.fallback();
   });
 
-  page.on("dialog", dialog => dialog.accept());
-
   await page.goto("/projects");
   const projectRow = page.locator(".project-row", {
     has: page.getByRole("link", { name: "Personal Calendar" }),
   });
   const deleteButton = projectRow.getByRole("button", { name: "Delete" });
   await deleteButton.click();
+  const deleteDialog = page.getByRole("alertdialog", { name: "Delete project permanently" });
+  await deleteDialog.getByRole("button", { name: "Delete project" }).click();
 
-  await expect(page.getByText("Delete failed")).toBeVisible();
-  await expect(page.getByRole("link", { name: "Personal Calendar" })).toBeVisible();
-  await expect(deleteButton).toBeEnabled();
+  await expect(deleteDialog.getByText("Delete failed")).toBeVisible();
+  await expect(page.getByText("Delete failed").first()).toBeVisible();
+  await expect(page.locator(".project-row").filter({ hasText: "Personal Calendar" })).toBeVisible();
+  await expect(deleteDialog.getByRole("button", { name: "Delete project" })).toBeEnabled();
 });
 
 test("phase 02 disables delete while the request is in flight", async ({ page }) => {
@@ -694,17 +712,18 @@ test("phase 02 disables delete while the request is in flight", async ({ page })
     await route.fallback();
   });
 
-  page.on("dialog", dialog => dialog.accept());
-
   await page.goto("/projects");
   const projectRow = page.locator(".project-row", {
     has: page.getByRole("link", { name: "Personal Calendar" }),
   });
   const deleteButton = projectRow.getByRole("button", { name: "Delete" });
   await deleteButton.click();
+  const deleteDialog = page.getByRole("alertdialog", { name: "Delete project permanently" });
+  await deleteDialog.getByRole("button", { name: "Delete project" }).click();
 
-  await expect(deleteButton).toBeDisabled();
-  await expect(deleteButton).toHaveText("Deleting…");
+  const deletingButton = deleteDialog.getByRole("button", { name: "Deleting…" });
+  await expect(deletingButton).toBeDisabled();
+  await expect(deletingButton).toHaveText("Deleting…");
 
   releaseDelete?.();
 
@@ -715,10 +734,13 @@ test("phase 03 keeps review and build readiness attached to the project workspac
   await page.goto("/projects/personal-calendar");
 
   await expect(page.getByRole("heading", { name: "Personal Calendar" })).toBeVisible();
-  await expect(page.getByText("Project review, readiness, and advanced surfaces")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Project review, readiness, and advanced surfaces" }),
+  ).toBeVisible();
   await expect(page.getByRole("tab", { name: "Review" })).not.toBeVisible();
 
-  await page.getByText("Project review, readiness, and advanced surfaces").click();
+  await page.getByRole("button", { name: "Project review, readiness, and advanced surfaces" }).click();
+  await expect(page).toHaveURL(/\/projects\/personal-calendar\?tab=review$/);
   await expect(page.getByRole("tab", { name: "Review" })).toBeVisible();
   await page.getByRole("tab", { name: "Review" }).click();
   await expect(page.getByRole("heading", { name: "Import draft needs review" })).toBeVisible();
@@ -727,26 +749,31 @@ test("phase 03 keeps review and build readiness attached to the project workspac
   await expect(page.getByRole("button", { name: "Apply import review" })).toBeVisible();
 
   await page.getByRole("tab", { name: "Build readiness" }).click();
+  await expect(page).toHaveURL(/\/projects\/personal-calendar\?tab=readiness$/);
   await expect(page.getByRole("heading", { name: "A review gate is still blocking build readiness" })).toBeVisible();
   await expect(page.getByText("Needs review").first()).toBeVisible();
   await expect(page.getByText(/Import draft still needs merge review/i)).toBeVisible();
 
   await page.getByRole("tab", { name: "Build path" }).click();
+  await expect(page).toHaveURL(/\/projects\/personal-calendar\?tab=build$/);
   await expect(page.getByRole("heading", { name: "Build handoff is blocked by unresolved review work" })).toBeVisible();
   await expect(
     page.getByText(/Resolve the project review queue before handing this project to the automated build path/i).first(),
   ).toBeVisible();
 
   await page.getByRole("tab", { name: "Activity" }).click();
+  await expect(page).toHaveURL(/\/projects\/personal-calendar\?tab=activity$/);
   await expect(page.getByRole("heading", { name: "Recent project activity" })).toBeVisible();
   await expect(page.getByText("Calendar intake").first()).toBeVisible();
 
   await page.getByRole("tab", { name: "Build execution" }).click();
+  await expect(page).toHaveURL(/\/projects\/personal-calendar\?tab=execution$/);
   await expect(page.getByRole("heading", { name: "The latest build-facing run is no longer active" })).toBeVisible();
   await expect(page.getByText("run-1234")).toBeVisible();
   await expect(page.getByText("Compiled project blueprint")).toBeVisible();
 
   await page.getByRole("tab", { name: "Outputs" }).click();
+  await expect(page).toHaveURL(/\/projects\/personal-calendar\?tab=outputs$/);
   await expect(page.getByRole("heading", { name: "Outputs and artifacts" })).toBeVisible();
   await expect(page.getByText("Generated build-facing project snapshot")).toBeVisible();
   await expect(page.getByText("component_export")).toBeVisible();

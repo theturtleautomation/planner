@@ -59,8 +59,18 @@ describe("project work helpers", () => {
     ]);
 
     expect(summary.status).toBe("active");
-    expect(summary.statusLabel).toBe("Active Socratic analysis");
+    expect(summary.statusLabel).toBe("Starting analysis");
     expect(summary.nextActionLabel).toBe("Continue analysis");
+  });
+
+  it("surfaces saved-brief waiting work as ready to start instead of raw phase drift", () => {
+    const summary = summarizeProjectWork(project(), [
+      session(),
+    ]);
+
+    expect(summary.status).toBe("recent");
+    expect(summary.statusLabel).toBe("Ready to start");
+    expect(summary.nextActionLabel).toBe("Open project");
   });
 
   it("sorts project summaries by most relevant recent work", () => {

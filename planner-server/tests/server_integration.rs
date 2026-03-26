@@ -65,12 +65,82 @@ fn test_state_with_router_and_lease(router: LlmRouter, lease: Duration) -> Arc<A
 }
 
 struct ResumeFlowMockLlm;
+const EXPECTED_RESUME_BANK_PROMPT: &str =
+    "What is the main outcome this project needs to deliver first?";
+
+fn mock_classification_response() -> String {
+    serde_json::json!({
+        "project_type": "cli_tool",
+        "complexity": "light",
+        "detected_signals": ["timer", "workout", "countdown"]
+    })
+    .to_string()
+}
+
+fn extract_target_dimension_label(content: &str) -> Option<String> {
+    let marker = "## Target Dimension: ";
+    let start = content.find(marker)? + marker.len();
+    let suffix = &content[start..];
+    let end = suffix.find(" (").or_else(|| suffix.find('\n'))?;
+    Some(suffix[..end].trim().to_ascii_lowercase())
+}
+
+fn mock_question_response_for_dimension(label: &str) -> String {
+    let payload = match label {
+        "goal" => serde_json::json!({
+            "question": "What is the main goal of this tool?",
+            "quick_options": [],
+            "allow_skip": false
+        }),
+        "core features" => serde_json::json!({
+            "question": "What are the must-have features in the first version?",
+            "quick_options": [],
+            "allow_skip": true
+        }),
+        "user flows" => serde_json::json!({
+            "question": "Which user flow needs to feel reliable first?",
+            "quick_options": [],
+            "allow_skip": true
+        }),
+        "success criteria" => serde_json::json!({
+            "question": "How will you know the first release is successful?",
+            "quick_options": [],
+            "allow_skip": false
+        }),
+        "out of scope" => serde_json::json!({
+            "question": "What should stay out of scope for the first release?",
+            "quick_options": [],
+            "allow_skip": true
+        }),
+        "security" => serde_json::json!({
+            "question": "What is the minimum security bar for the first release?",
+            "quick_options": [],
+            "allow_skip": false
+        }),
+        "error handling" => serde_json::json!({
+            "question": "What failure cases must the first release handle cleanly?",
+            "quick_options": [],
+            "allow_skip": false
+        }),
+        _ => serde_json::json!({
+            "question": "What are the must-have features in the first version?",
+            "quick_options": [],
+            "allow_skip": true
+        }),
+    };
+
+    payload.to_string()
+}
 
 #[async_trait]
 impl LlmClient for ResumeFlowMockLlm {
     async fn complete(&self, request: CompletionRequest) -> Result<CompletionResponse, LlmError> {
         let system = request.system.as_deref().unwrap_or("");
-        let content = if system.contains("Belief State Adjudicator") {
+        let content = if system
+            .contains("project classifier for a Socratic requirements elicitation system")
+        {
+            mock_classification_response()
+        } else if system.contains("Belief State Adjudicator") {
             let item_ids = request
                 .messages
                 .last()
@@ -131,12 +201,12 @@ impl LlmClient for ResumeFlowMockLlm {
             }"#
             .to_string()
         } else if system.contains("Generate ONE focused question about the target dimension") {
-            r#"{
-              "question": "What are the must-have features in the first version?",
-              "quick_options": [],
-              "allow_skip": true
-            }"#
-            .to_string()
+            let label = request
+                .messages
+                .last()
+                .and_then(|message| extract_target_dimension_label(&message.content))
+                .unwrap_or_else(|| "core features".to_string());
+            mock_question_response_for_dimension(&label)
         } else {
             return Err(LlmError::Other(format!(
                 "unexpected mock request system prompt: {}",
@@ -224,6 +294,44 @@ async fn wait_for_ws_prompt_or_bank_message(
 
         let parsed: serde_json::Value = serde_json::from_str(&text).unwrap();
         if parsed["type"] == "prompt" || parsed["type"] == "prompt_bank" {
+            return parsed;
+        }
+    }
+}
+
+async fn wait_for_ws_answerable_prompt_message(
+    ws: &mut tokio_tungstenite::WebSocketStream<
+        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+    >,
+) -> serde_json::Value {
+    loop {
+        let message = wait_for_ws_prompt_or_bank_message(ws).await;
+        if message["type"] == "prompt" {
+            return message;
+        }
+        if message["type"] == "prompt_bank"
+            && message["bank"]["banked_threads"]
+                .as_array()
+                .map(|threads| !threads.is_empty())
+                .unwrap_or(false)
+        {
+            return message;
+        }
+    }
+}
+
+async fn wait_for_ws_prompt_bank_where<F>(
+    ws: &mut tokio_tungstenite::WebSocketStream<
+        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+    >,
+    predicate: F,
+) -> serde_json::Value
+where
+    F: Fn(&serde_json::Value) -> bool,
+{
+    loop {
+        let parsed = wait_for_ws_message_type(ws, "prompt_bank").await;
+        if predicate(&parsed) {
             return parsed;
         }
     }
@@ -317,6 +425,70 @@ fn checkpoint_draft_prompt(
     }
 }
 
+fn banked_checkpoint_prompt(
+    category_id: &str,
+    question: &str,
+    target_dimension: planner_schemas::Dimension,
+    allow_skip: bool,
+) -> planner_schemas::PromptBankEntry {
+    let mut prompt = checkpoint_question_prompt(question, target_dimension, allow_skip);
+    prompt.origin_category_id = Some(category_id.to_string());
+    planner_schemas::PromptBankEntry {
+        category_id: category_id.to_string(),
+        prompt,
+    }
+}
+
+fn filled_slot(value: &str, source_turn: u32) -> planner_schemas::SlotValue {
+    planner_schemas::SlotValue {
+        value: value.to_string(),
+        source_turn,
+        source_quote: None,
+    }
+}
+
+fn build_resume_belief_state(
+    missing: Vec<planner_schemas::Dimension>,
+    required_dimensions: Vec<planner_schemas::Dimension>,
+) -> planner_schemas::RequirementsBeliefState {
+    use planner_schemas::{Dimension, RequirementsBeliefState};
+
+    let mut filled = std::collections::HashMap::new();
+    filled.insert(
+        Dimension::Security,
+        filled_slot("Passwordless sign-in is enough for launch.", 1),
+    );
+    filled.insert(
+        Dimension::ErrorHandling,
+        filled_slot("Show a clear retry path when sync fails.", 1),
+    );
+    filled.insert(
+        Dimension::SuccessCriteria,
+        filled_slot(
+            "The first release is successful when one workout timer can be completed cleanly.",
+            1,
+        ),
+    );
+    filled.insert(
+        Dimension::OutOfScope,
+        filled_slot(
+            "Team collaboration and admin controls stay out of scope.",
+            1,
+        ),
+    );
+
+    RequirementsBeliefState {
+        filled,
+        uncertain: Default::default(),
+        missing,
+        out_of_scope: Vec::new(),
+        contradictions: Vec::new(),
+        required_dimensions,
+        turn_count: 1,
+        classification: None,
+    }
+}
+
 async fn wait_for_session<F>(
     state: &Arc<AppState>,
     session_id: Uuid,
@@ -352,7 +524,7 @@ where
 #[tokio::test]
 async fn tier2_health_endpoint() {
     let state = test_state();
-    let app = test_app(state);
+    let app = test_app(state.clone());
 
     let req = Request::builder()
         .uri("/health")
@@ -382,7 +554,7 @@ async fn tier2_health_endpoint() {
 #[tokio::test]
 async fn tier2_models_endpoint() {
     let state = test_state();
-    let app = test_app(state);
+    let app = test_app(state.clone());
 
     let req = Request::builder()
         .uri("/models")
@@ -504,8 +676,11 @@ async fn tier2_session_prompt_bank_reports_banked_and_queued_threads_truthfully(
             planner_schemas::Dimension::Custom("platform".into()),
             true,
         ));
-        checkpoint.current_prompt.as_mut().unwrap().origin_category_id =
-            Some("verify-platform".into());
+        checkpoint
+            .current_prompt
+            .as_mut()
+            .unwrap()
+            .origin_category_id = Some("verify-platform".into());
         checkpoint.prompt_bank = vec![
             planner_schemas::PromptBankEntry {
                 category_id: "verify-platform".into(),
@@ -523,11 +698,14 @@ async fn tier2_session_prompt_bank_reports_banked_and_queued_threads_truthfully(
                     items: vec![planner_schemas::PromptItem {
                         item_id: "item-user-flows".into(),
                         kind: planner_schemas::PromptItemKind::Discovery,
-                        target_dimension: Some(planner_schemas::Dimension::Custom("user_flows".into())),
+                        target_dimension: Some(planner_schemas::Dimension::Custom(
+                            "user_flows".into(),
+                        )),
                         section_ref: None,
                         text: "Which user flows matter most?".into(),
                         options: vec![],
-                        response_mode: planner_schemas::PromptResponseMode::SingleSelectWithCustomText,
+                        response_mode:
+                            planner_schemas::PromptResponseMode::SingleSelectWithCustomText,
                         required: false,
                         priority: 100,
                         dependency_item_ids: vec![],
@@ -569,7 +747,9 @@ async fn tier2_session_prompt_bank_reports_banked_and_queued_threads_truthfully(
                     summary: "Discover the primary flows.".into(),
                     status: planner_schemas::SocraticCategoryStatus::Pending,
                     depth: 1,
-                    mapped_dimensions: vec![planner_schemas::Dimension::Custom("user_flows".into())],
+                    mapped_dimensions: vec![planner_schemas::Dimension::Custom(
+                        "user_flows".into(),
+                    )],
                     has_children: false,
                     has_prompt_ready: true,
                     item_count_hint: 2,
@@ -585,7 +765,7 @@ async fn tier2_session_prompt_bank_reports_banked_and_queued_threads_truthfully(
         });
     });
 
-    let app = test_app(state);
+    let app = test_app(state.clone());
     let response = app
         .oneshot(
             Request::builder()
@@ -609,6 +789,178 @@ async fn tier2_session_prompt_bank_reports_banked_and_queued_threads_truthfully(
     assert_eq!(parsed["queued_threads"].as_array().unwrap().len(), 0);
     assert_eq!(parsed["banked_threads"][0]["title"], "Verify Platform");
     assert_eq!(parsed["banked_threads"][1]["title"], "Explore User Flows");
+}
+
+#[tokio::test]
+async fn tier2_session_prompt_drafts_persist_without_mutating_prompt_bank() {
+    let state = test_state();
+    let session = state.sessions.create("dev|local");
+
+    state.sessions.update(session.id, |draft| {
+        draft.intake_phase = "interviewing".into();
+        draft.ensure_socratic_run_id();
+        let checkpoint = draft.ensure_checkpoint();
+        checkpoint.current_prompt = Some(checkpoint_question_prompt(
+            "Should this ship as a web app first?",
+            planner_schemas::Dimension::Custom("platform".into()),
+            true,
+        ));
+        checkpoint
+            .current_prompt
+            .as_mut()
+            .unwrap()
+            .origin_category_id = Some("verify-platform".into());
+        checkpoint.prompt_bank = vec![planner_schemas::PromptBankEntry {
+            category_id: "verify-platform".into(),
+            prompt: checkpoint.current_prompt.clone().expect("platform prompt"),
+        }];
+        checkpoint.active_thread_id = Some("verify-platform".into());
+        checkpoint.initial_prompt_bank_complete = true;
+    });
+
+    let app = test_app(state.clone());
+    let save_request = Request::builder()
+        .method("POST")
+        .uri(format!("/sessions/{}/prompt-drafts", session.id))
+        .header("content-type", "application/json")
+        .body(Body::from(
+            serde_json::json!({
+                "prompt_id": "prompt-question",
+                "answers": [
+                    {
+                        "item_id": "item-1",
+                        "selected_option_id": "web",
+                        "custom_text": "Web first for launch."
+                    }
+                ]
+            })
+            .to_string(),
+        ))
+        .unwrap();
+
+    let save_response = app.oneshot(save_request).await.unwrap();
+    assert_eq!(save_response.status(), StatusCode::OK);
+    let save_body = axum::body::to_bytes(save_response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let saved: serde_json::Value = serde_json::from_slice(&save_body).unwrap();
+    assert_eq!(saved["prompt_id"], "prompt-question");
+    assert_eq!(saved["saved_count"], 1);
+    assert_eq!(saved["cleared_count"], 0);
+
+    let app = test_app(state.clone());
+    let prompt_bank_response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/sessions/{}/prompt-bank", session.id))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(prompt_bank_response.status(), StatusCode::OK);
+    let prompt_bank_body = axum::body::to_bytes(prompt_bank_response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let prompt_bank: serde_json::Value = serde_json::from_slice(&prompt_bank_body).unwrap();
+
+    assert_eq!(prompt_bank["banked_threads"].as_array().unwrap().len(), 1);
+    assert_eq!(prompt_bank["active_thread_id"], "verify-platform");
+    assert_eq!(
+        prompt_bank["saved_drafts"]["item-1"]["custom_text"],
+        "Web first for launch."
+    );
+    assert_eq!(
+        prompt_bank["saved_drafts"]["item-1"]["selected_option_id"],
+        "web"
+    );
+
+    let app = test_app(state.clone());
+    let clear_request = Request::builder()
+        .method("POST")
+        .uri(format!("/sessions/{}/prompt-drafts", session.id))
+        .header("content-type", "application/json")
+        .body(Body::from(
+            serde_json::json!({
+                "prompt_id": "prompt-question",
+                "answers": [
+                    {
+                        "item_id": "item-1",
+                        "skipped": true
+                    }
+                ]
+            })
+            .to_string(),
+        ))
+        .unwrap();
+
+    let clear_response = app.oneshot(clear_request).await.unwrap();
+    assert_eq!(clear_response.status(), StatusCode::OK);
+    let clear_body = axum::body::to_bytes(clear_response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let cleared: serde_json::Value = serde_json::from_slice(&clear_body).unwrap();
+    assert_eq!(cleared["saved_count"], 0);
+    assert_eq!(cleared["cleared_count"], 1);
+
+    let app = test_app(state);
+    let prompt_bank_response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/sessions/{}/prompt-bank", session.id))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let prompt_bank_body = axum::body::to_bytes(prompt_bank_response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let prompt_bank: serde_json::Value = serde_json::from_slice(&prompt_bank_body).unwrap();
+    assert!(prompt_bank["saved_drafts"]
+        .as_object()
+        .expect("saved drafts object")
+        .is_empty());
+}
+
+#[tokio::test]
+async fn tier2_session_prompt_bank_does_not_treat_legacy_current_prompt_as_complete_bank() {
+    let state = test_state();
+    let session = state.sessions.create("dev|local");
+
+    state.sessions.update(session.id, |draft| {
+        draft.intake_phase = "interviewing".into();
+        draft.ensure_socratic_run_id();
+        let checkpoint = draft.ensure_checkpoint();
+        checkpoint.current_prompt = Some(checkpoint_question_prompt(
+            "What is the primary goal?",
+            planner_schemas::Dimension::Goal,
+            false,
+        ));
+        checkpoint.initial_prompt_bank_complete = true;
+    });
+
+    let app = test_app(state);
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/sessions/{}/prompt-bank", session.id))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let parsed: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+    assert!(parsed["banked_threads"].as_array().unwrap().is_empty());
+    assert_eq!(parsed["active_thread_id"], serde_json::Value::Null);
+    assert_eq!(parsed["initial_bank_complete"], false);
+    assert_eq!(parsed["build_ready"], false);
 }
 
 /// Test 4: Session capability fields are backend-computed from current phase truth.
@@ -695,6 +1047,10 @@ async fn tier2_session_capability_mapping() {
 
     let waiting_session = fetch_session(waiting.id).await;
     assert_eq!(waiting_session["resume_status"], "ready_to_start");
+    assert_eq!(
+        waiting_session["workspace_status"]["state"],
+        "ready_to_start"
+    );
     assert_eq!(waiting_session["can_resume_live"], false);
     assert_eq!(waiting_session["can_resume_checkpoint"], false);
     assert_eq!(waiting_session["can_restart_from_description"], false);
@@ -705,6 +1061,10 @@ async fn tier2_session_capability_mapping() {
     assert_eq!(
         interviewing_restart_session["resume_status"],
         "interview_restart_only"
+    );
+    assert_eq!(
+        interviewing_restart_session["workspace_status"]["state"],
+        "attention_required"
     );
     assert_eq!(interviewing_restart_session["can_resume_live"], false);
     assert_eq!(interviewing_restart_session["can_resume_checkpoint"], false);
@@ -809,6 +1169,10 @@ async fn tier2_session_capability_mapping() {
         .find(|s| s["id"] == waiting_id)
         .expect("waiting session should exist in list response");
     assert_eq!(waiting_summary["resume_status"], "ready_to_start");
+    assert_eq!(
+        waiting_summary["workspace_status"]["state"],
+        "ready_to_start"
+    );
     assert_eq!(waiting_summary["can_resume_live"], false);
 }
 
@@ -900,13 +1264,15 @@ async fn tier2_restart_from_description_resets_session_state() {
     let parsed: serde_json::Value = serde_json::from_slice(&body).unwrap();
     let session = &parsed["session"];
 
-    assert_eq!(session["intake_phase"], "interviewing");
+    assert_eq!(session["intake_phase"], "waiting");
     assert_eq!(session["project_description"], "Build a timer app");
     assert_eq!(session["messages"].as_array().unwrap().len(), 1);
     assert_eq!(session["events"].as_array().unwrap().len(), 0);
     assert!(session["checkpoint"].is_null());
     assert_eq!(session["current_step"], serde_json::Value::Null);
     assert_eq!(session["error_message"], serde_json::Value::Null);
+    assert_eq!(session["resume_status"], "ready_to_start");
+    assert_eq!(session["workspace_status"]["state"], "ready_to_start");
 }
 
 /// Test 4d: Retry-pipeline is only available for sessions with a failed
@@ -1240,9 +1606,10 @@ async fn tier2_socratic_ws_reconnect_checkpoint_reemits_question() {
     let ws_url = format!("ws://{}/sessions/{}/socratic/ws", addr, session_id);
 
     let (mut ws, _) = connect_async(ws_url).await.unwrap();
-    let prompt = wait_for_ws_message_type(&mut ws, "prompt").await;
+    let prompt = wait_for_ws_answerable_prompt_message(&mut ws).await;
+    let prompt_payload = prompt_payload(&prompt);
     assert_eq!(
-        prompt["prompt"]["items"][0]["text"],
+        prompt_payload["items"][0]["text"],
         "Who is the primary user?"
     );
 
@@ -1307,10 +1674,11 @@ async fn tier2_socratic_ws_reconnect_checkpoint_reemits_draft() {
     let ws_url = format!("ws://{}/sessions/{}/socratic/ws", addr, session_id);
 
     let (mut ws, _) = connect_async(ws_url).await.unwrap();
-    let prompt = wait_for_ws_message_type(&mut ws, "prompt").await;
-    assert_eq!(prompt["prompt"]["kind"], "draft_review");
+    let prompt = wait_for_ws_answerable_prompt_message(&mut ws).await;
+    let prompt_payload = prompt_payload(&prompt);
+    assert_eq!(prompt_payload["kind"], "draft_review");
     assert_eq!(
-        prompt["prompt"]["draft_snapshot"]["sections"][0]["heading"],
+        prompt_payload["draft_snapshot"]["sections"][0]["heading"],
         "Goal"
     );
 
@@ -1371,15 +1739,16 @@ async fn tier2_socratic_ws_resume_answer_progresses_to_next_question() {
     let ws_url = format!("ws://{}/sessions/{}/socratic/ws", addr, session_id);
 
     let (mut ws, _) = connect_async(ws_url).await.unwrap();
-    let resumed_prompt = wait_for_ws_message_type(&mut ws, "prompt").await;
+    let resumed_prompt = wait_for_ws_answerable_prompt_message(&mut ws).await;
+    let resumed_prompt_payload = prompt_payload(&resumed_prompt);
     assert_eq!(
-        resumed_prompt["prompt"]["items"][0]["text"],
+        resumed_prompt_payload["items"][0]["text"],
         "What is the main goal of this tool?"
     );
-    let prompt_id = resumed_prompt["prompt"]["prompt_id"]
+    let prompt_id = resumed_prompt_payload["prompt_id"]
         .as_str()
         .expect("prompt id should be present");
-    let item_id = resumed_prompt["prompt"]["items"][0]["item_id"]
+    let item_id = resumed_prompt_payload["items"][0]["item_id"]
         .as_str()
         .expect("prompt item id should be present");
 
@@ -1470,17 +1839,396 @@ async fn tier2_socratic_ws_resume_answer_progresses_to_next_question() {
             || checkpointed_core_features_branch,
         "expected resumed answer handling to leave either a checkpointed prompt bank, an active prompt, or a Core Features branch"
     );
-    assert!(
-        checkpoint
-            .current_prompt
-            .as_ref()
-            .and_then(|prompt| prompt.draft_snapshot.as_ref())
-            .is_none()
-    );
+    assert!(checkpoint
+        .current_prompt
+        .as_ref()
+        .and_then(|prompt| prompt.draft_snapshot.as_ref())
+        .is_none());
 
     let _ = ws.close(None).await;
     tokio::time::sleep(Duration::from_millis(250)).await;
 
+    handle.abort();
+}
+
+#[tokio::test]
+async fn tier2_socratic_ws_waiting_start_reaches_bank_first_reveal() {
+    let state = test_state_with_router(LlmRouter::with_mock(Box::new(ResumeFlowMockLlm)));
+    let session = state.sessions.create("dev|local");
+    let session_id = session.id;
+
+    state.sessions.update(session_id, |s| {
+        s.intake_phase = "waiting".into();
+        s.project_description = Some("Build a workout countdown timer".into());
+    });
+
+    let app = test_app(state.clone());
+    let (addr, handle) = spawn_test_server(app).await;
+    let ws_url = format!("ws://{}/sessions/{}/socratic/ws", addr, session_id);
+
+    let (mut ws, _) = connect_async(ws_url).await.unwrap();
+    ws.send(Message::Text(
+        serde_json::json!({
+            "type": "start_socratic",
+            "description": "Build a workout countdown timer"
+        })
+        .to_string()
+        .into(),
+    ))
+    .await
+    .unwrap();
+
+    let bank_message = wait_for_ws_prompt_bank_where(&mut ws, |message| {
+        message["bank"]["initial_bank_complete"]
+            .as_bool()
+            .unwrap_or(false)
+            && !message["bank"]["banked_threads"]
+                .as_array()
+                .map(|threads| threads.is_empty())
+                .unwrap_or(true)
+    })
+    .await;
+    let bank = &bank_message["bank"];
+    assert_eq!(bank["session_id"], session_id.to_string());
+    assert!(bank["initial_bank_complete"].as_bool().unwrap_or(false));
+    assert!(!bank["banked_threads"].as_array().unwrap().is_empty());
+    assert!(bank["active_thread_id"].is_string());
+
+    let after = wait_for_session(&state, session_id, Duration::from_secs(3), |session| {
+        session.intake_phase == "interviewing"
+            && session
+                .checkpoint
+                .as_ref()
+                .map(|checkpoint| {
+                    checkpoint.initial_prompt_bank_complete
+                        && !checkpoint.prompt_bank.is_empty()
+                        && checkpoint.current_prompt.is_none()
+                })
+                .unwrap_or(false)
+    })
+    .await;
+    let checkpoint = after
+        .checkpoint
+        .as_ref()
+        .expect("fresh-start checkpoint should be present");
+    assert!(checkpoint.current_prompt.is_none());
+    assert!(!checkpoint.prompt_bank.is_empty());
+
+    let prompt_bank_response = test_app(state.clone())
+        .oneshot(
+            Request::builder()
+                .uri(format!("/sessions/{}/prompt-bank", session_id))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(prompt_bank_response.status(), StatusCode::OK);
+    let prompt_bank_body = axum::body::to_bytes(prompt_bank_response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let prompt_bank: serde_json::Value = serde_json::from_slice(&prompt_bank_body).unwrap();
+    assert!(prompt_bank["initial_bank_complete"]
+        .as_bool()
+        .unwrap_or(false));
+    assert!(!prompt_bank["banked_threads"].as_array().unwrap().is_empty());
+
+    let _ = ws.close(None).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    handle.abort();
+}
+
+#[tokio::test]
+async fn tier2_socratic_ws_waiting_start_ignores_start_pipeline_alias() {
+    let state = test_state_with_router(LlmRouter::with_mock(Box::new(ResumeFlowMockLlm)));
+    let session = state.sessions.create("dev|local");
+    let session_id = session.id;
+
+    state.sessions.update(session_id, |s| {
+        s.intake_phase = "waiting".into();
+        s.project_description = Some("Build a workout countdown timer".into());
+    });
+
+    let app = test_app(state.clone());
+    let (addr, handle) = spawn_test_server(app).await;
+    let ws_url = format!("ws://{}/sessions/{}/socratic/ws", addr, session_id);
+
+    let (mut ws, _) = connect_async(ws_url).await.unwrap();
+    ws.send(Message::Text(
+        serde_json::json!({
+            "type": "start_pipeline",
+            "description": "Build a workout countdown timer"
+        })
+        .to_string()
+        .into(),
+    ))
+    .await
+    .unwrap();
+
+    assert!(
+        tokio::time::timeout(Duration::from_millis(300), ws.next())
+            .await
+            .is_err(),
+        "socratic websocket should ignore legacy start_pipeline startup messages"
+    );
+
+    let untouched = state.sessions.get(session_id).unwrap();
+    assert_eq!(untouched.intake_phase, "waiting");
+    assert!(!untouched.interview_runtime_active);
+    assert!(!untouched.interview_live_attached);
+
+    let _ = ws.close(None).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    handle.abort();
+}
+
+#[tokio::test]
+async fn tier2_socratic_ws_resume_answer_rebuilds_the_next_prompt_bank() {
+    use planner_schemas::Dimension;
+
+    let state = test_state_with_router(LlmRouter::with_mock(Box::new(ResumeFlowMockLlm)));
+    let session = state.sessions.create("dev|local");
+    let session_id = session.id;
+    let initial_category_id = "goal-thread";
+
+    state.sessions.update(session_id, |s| {
+        s.intake_phase = "interviewing".into();
+        s.project_description = Some("Build a timer app".into());
+        let checkpoint = s.ensure_checkpoint();
+        checkpoint.belief_state = Some(build_resume_belief_state(
+            vec![
+                Dimension::Goal,
+                Dimension::CoreFeatures,
+                Dimension::UserFlows,
+            ],
+            vec![Dimension::Goal, Dimension::CoreFeatures],
+        ));
+        checkpoint.prompt_bank = vec![banked_checkpoint_prompt(
+            initial_category_id,
+            "What is the main goal of this tool?",
+            Dimension::Goal,
+            false,
+        )];
+        checkpoint.active_thread_id = Some(initial_category_id.into());
+        checkpoint.initial_prompt_bank_complete = true;
+        checkpoint.touch();
+    });
+
+    let app = test_app(state.clone());
+    let (addr, handle) = spawn_test_server(app).await;
+    let ws_url = format!("ws://{}/sessions/{}/socratic/ws", addr, session_id);
+
+    let (mut ws, _) = connect_async(ws_url).await.unwrap();
+    let replayed_bank = wait_for_ws_message_type(&mut ws, "prompt_bank").await;
+    let replay_prompt = &replayed_bank["bank"]["banked_threads"][0]["prompt"];
+    let prompt_id = replay_prompt["prompt_id"]
+        .as_str()
+        .expect("replayed prompt id should be present");
+    let item_id = replay_prompt["items"][0]["item_id"]
+        .as_str()
+        .expect("replayed prompt item id should be present");
+
+    ws.send(Message::Text(
+        serde_json::json!({
+            "type": "prompt_response",
+            "prompt_id": prompt_id,
+            "answers": [{
+                "item_id": item_id,
+                "custom_text": "It should help someone complete one workout timer cleanly."
+            }],
+            "submitted_at": "2026-03-26T00:00:00Z"
+        })
+        .to_string()
+        .into(),
+    ))
+    .await
+    .unwrap();
+
+    let next_bank_message = wait_for_ws_prompt_bank_where(&mut ws, |message| {
+        message["bank"]["banked_threads"]
+            .as_array()
+            .map(|threads| {
+                !threads.is_empty()
+                    && threads
+                        .iter()
+                        .all(|thread| thread["category_id"] != initial_category_id)
+            })
+            .unwrap_or(false)
+    })
+    .await;
+    let next_bank = &next_bank_message["bank"];
+    let next_banked_threads = next_bank["banked_threads"]
+        .as_array()
+        .expect("next prompt bank should expose banked threads");
+    assert!(next_bank["initial_bank_complete"]
+        .as_bool()
+        .unwrap_or(false));
+    assert!(!next_banked_threads.is_empty());
+    assert!(next_banked_threads
+        .iter()
+        .all(|thread| thread["category_id"] != initial_category_id));
+    let next_active_thread_id = next_bank["active_thread_id"]
+        .as_str()
+        .expect("next active thread id should be present");
+    assert!(next_banked_threads.iter().any(|thread| {
+        thread["category_id"]
+            .as_str()
+            .map(|id| id == next_active_thread_id)
+            .unwrap_or(false)
+    }));
+
+    let after = wait_for_session(&state, session_id, Duration::from_secs(3), |session| {
+        session
+            .checkpoint
+            .as_ref()
+            .map(|checkpoint| {
+                checkpoint.current_prompt.is_none()
+                    && checkpoint.initial_prompt_bank_complete
+                    && !checkpoint.prompt_bank.is_empty()
+                    && checkpoint
+                        .prompt_bank
+                        .iter()
+                        .all(|entry| entry.category_id != initial_category_id)
+            })
+            .unwrap_or(false)
+    })
+    .await;
+    assert_eq!(after.intake_phase, "interviewing");
+    assert!(after.interview_live_attached);
+
+    let response = test_app(state.clone())
+        .oneshot(
+            Request::builder()
+                .uri(format!("/sessions/{}/prompt-bank", session_id))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let mirrored_bank: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(mirrored_bank["active_thread_id"], next_active_thread_id);
+    assert!(!mirrored_bank["banked_threads"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+
+    let _ = ws.close(None).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    handle.abort();
+}
+
+#[tokio::test]
+async fn tier2_socratic_ws_resume_answer_transitions_to_build_ready_state() {
+    use planner_schemas::Dimension;
+
+    let state = test_state_with_router(LlmRouter::with_mock(Box::new(ResumeFlowMockLlm)));
+    let session = state.sessions.create("dev|local");
+    let session_id = session.id;
+
+    state.sessions.update(session_id, |s| {
+        s.intake_phase = "interviewing".into();
+        s.project_description = Some("Build a timer app".into());
+        let checkpoint = s.ensure_checkpoint();
+        checkpoint.belief_state = Some(build_resume_belief_state(
+            vec![Dimension::Goal],
+            vec![Dimension::Goal],
+        ));
+        checkpoint.prompt_bank = vec![banked_checkpoint_prompt(
+            "goal-thread",
+            "What is the main goal of this tool?",
+            Dimension::Goal,
+            false,
+        )];
+        checkpoint.active_thread_id = Some("goal-thread".into());
+        checkpoint.initial_prompt_bank_complete = true;
+        checkpoint.touch();
+    });
+
+    let app = test_app(state.clone());
+    let (addr, handle) = spawn_test_server(app).await;
+    let ws_url = format!("ws://{}/sessions/{}/socratic/ws", addr, session_id);
+
+    let (mut ws, _) = connect_async(ws_url).await.unwrap();
+    let replayed_bank = wait_for_ws_message_type(&mut ws, "prompt_bank").await;
+    let replay_prompt = &replayed_bank["bank"]["banked_threads"][0]["prompt"];
+    let prompt_id = replay_prompt["prompt_id"]
+        .as_str()
+        .expect("replayed prompt id should be present");
+    let item_id = replay_prompt["items"][0]["item_id"]
+        .as_str()
+        .expect("replayed prompt item id should be present");
+
+    ws.send(Message::Text(
+        serde_json::json!({
+            "type": "prompt_response",
+            "prompt_id": prompt_id,
+            "answers": [{
+                "item_id": item_id,
+                "custom_text": "It should guide one person through a clean workout countdown."
+            }],
+            "submitted_at": "2026-03-26T00:00:00Z"
+        })
+        .to_string()
+        .into(),
+    ))
+    .await
+    .unwrap();
+
+    let build_ready_message = wait_for_ws_prompt_bank_where(&mut ws, |message| {
+        message["bank"]["build_ready"].as_bool().unwrap_or(false)
+    })
+    .await;
+    let build_ready_bank = &build_ready_message["bank"];
+    assert!(build_ready_bank["build_ready"].as_bool().unwrap_or(false));
+    assert!(build_ready_bank["banked_threads"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert!(build_ready_bank["queued_threads"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+
+    let _after = wait_for_session(&state, session_id, Duration::from_secs(3), |session| {
+        session
+            .checkpoint
+            .as_ref()
+            .map(|checkpoint| {
+                checkpoint
+                    .current_category_snapshot
+                    .as_ref()
+                    .map(|snapshot| snapshot.build_ready && checkpoint.prompt_bank.is_empty())
+                    .unwrap_or(false)
+            })
+            .unwrap_or(false)
+    })
+    .await;
+
+    let response = test_app(state.clone())
+        .oneshot(
+            Request::builder()
+                .uri(format!("/sessions/{}", session_id))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let parsed: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(
+        parsed["session"]["workspace_status"]["state"],
+        "build_ready"
+    );
+
+    let _ = ws.close(None).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
     handle.abort();
 }
 
@@ -1528,11 +2276,11 @@ async fn tier2_socratic_ws_live_runtime_reattach_within_lease() {
     let ws_url = format!("ws://{}/sessions/{}/socratic/ws", addr, session_id);
 
     let (mut ws1, _) = connect_async(&ws_url).await.unwrap();
-    let resumed_prompt = wait_for_ws_prompt_or_bank_message(&mut ws1).await;
+    let resumed_prompt = wait_for_ws_answerable_prompt_message(&mut ws1).await;
     let resumed_prompt_payload = prompt_payload(&resumed_prompt);
     assert_eq!(
         resumed_prompt_payload["items"][0]["text"],
-        "What is the main goal of this tool?"
+        EXPECTED_RESUME_BANK_PROMPT
     );
     let _ = ws1.close(None).await;
     tokio::time::sleep(Duration::from_millis(200)).await;
@@ -1545,7 +2293,7 @@ async fn tier2_socratic_ws_live_runtime_reattach_within_lease() {
     assert!(!detached.interview_live_attached);
 
     let (mut ws2, _) = connect_async(&ws_url).await.unwrap();
-    let replayed_prompt = wait_for_ws_prompt_or_bank_message(&mut ws2).await;
+    let replayed_prompt = wait_for_ws_answerable_prompt_message(&mut ws2).await;
     let replayed_prompt_payload = prompt_payload(&replayed_prompt);
     let prompt_id = replayed_prompt_payload["prompt_id"]
         .as_str()
@@ -1573,11 +2321,21 @@ async fn tier2_socratic_ws_live_runtime_reattach_within_lease() {
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     let attached_again = state.sessions.get(session_id).unwrap();
+    assert_eq!(attached_again.intake_phase, "interviewing");
+    assert!(attached_again.interview_runtime_active);
+    let checkpoint = attached_again
+        .checkpoint
+        .as_ref()
+        .expect("checkpoint should remain present after live reattach");
+    let goal = checkpoint
+        .belief_state
+        .as_ref()
+        .and_then(|belief| belief.filled.get(&Dimension::Goal))
+        .map(|slot| slot.value.clone());
     assert_eq!(
-        attached_again.resume_status,
-        ResumeStatus::InterviewAttached
+        goal.as_deref(),
+        Some("Build a countdown timer for workouts")
     );
-    assert!(attached_again.interview_live_attached);
 
     let _ = ws2.close(None).await;
     tokio::time::sleep(Duration::from_millis(200)).await;
@@ -1631,11 +2389,11 @@ async fn tier2_socratic_ws_reconnect_heavy_cycles_keep_prompt_replay_stable() {
     let mut expected_item_id: Option<String> = None;
     for _ in 0..8 {
         let (mut ws, _) = connect_async(&ws_url).await.unwrap();
-        let prompt = wait_for_ws_prompt_or_bank_message(&mut ws).await;
+        let prompt = wait_for_ws_answerable_prompt_message(&mut ws).await;
         let prompt_payload = prompt_payload(&prompt);
         assert_eq!(
             prompt_payload["items"][0]["text"],
-            "What is the main goal of this tool?"
+            EXPECTED_RESUME_BANK_PROMPT
         );
         let prompt_id = prompt_payload["prompt_id"]
             .as_str()
@@ -1663,7 +2421,7 @@ async fn tier2_socratic_ws_reconnect_heavy_cycles_keep_prompt_replay_stable() {
     }
 
     let (mut ws3, _) = connect_async(&ws_url).await.unwrap();
-    let prompt = wait_for_ws_prompt_or_bank_message(&mut ws3).await;
+    let prompt = wait_for_ws_answerable_prompt_message(&mut ws3).await;
     let prompt_payload = prompt_payload(&prompt);
     let prompt_id = prompt_payload["prompt_id"]
         .as_str()
@@ -1755,7 +2513,7 @@ async fn tier2_socratic_ws_live_runtime_lease_expiry_falls_back_to_checkpoint() 
     let ws_url = format!("ws://{}/sessions/{}/socratic/ws", addr, session_id);
 
     let (mut ws1, _) = connect_async(&ws_url).await.unwrap();
-    let _ = wait_for_ws_message_type(&mut ws1, "prompt").await;
+    let _ = wait_for_ws_answerable_prompt_message(&mut ws1).await;
     let _ = ws1.close(None).await;
 
     let _detached = wait_for_session(&state, session_id, Duration::from_secs(2), |session| {
@@ -1831,12 +2589,13 @@ async fn tier2_socratic_ws_duplicate_live_attach_is_rejected() {
     let ws_url = format!("ws://{}/sessions/{}/socratic/ws", addr, session_id);
 
     let (mut ws1, _) = connect_async(&ws_url).await.unwrap();
-    let prompt = wait_for_ws_message_type(&mut ws1, "prompt").await;
-    let prompt_id = prompt["prompt"]["prompt_id"]
+    let prompt = wait_for_ws_answerable_prompt_message(&mut ws1).await;
+    let prompt_payload = prompt_payload(&prompt);
+    let prompt_id = prompt_payload["prompt_id"]
         .as_str()
         .expect("prompt id should be present")
         .to_string();
-    let item_id = prompt["prompt"]["items"][0]["item_id"]
+    let item_id = prompt_payload["items"][0]["item_id"]
         .as_str()
         .expect("prompt item id should be present")
         .to_string();

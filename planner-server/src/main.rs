@@ -109,7 +109,9 @@ async fn main() {
         eprintln!();
         eprintln!("Options:");
         eprintln!("  --port <port>        HTTP port (default: 3100)");
-        eprintln!("  --static-dir <path>  Path to frontend build (default: ./planner-solid/dist/static)");
+        eprintln!(
+            "  --static-dir <path>  Path to frontend build (default: ./planner-solid/dist/static)"
+        );
         std::process::exit(0);
     }
 
@@ -267,7 +269,7 @@ async fn main() {
         }
     };
 
-    let llm_router = Arc::new(planner_core::llm::providers::LlmRouter::from_env());
+    let llm_router = Arc::new(planner_server::e2e_mock_llm::router_from_env_or_default());
     let live_runtime_lease_secs = std::env::var("PLANNER_LIVE_RUNTIME_LEASE_SECS")
         .ok()
         .and_then(|value| value.parse::<u64>().ok())

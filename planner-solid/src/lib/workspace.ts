@@ -1,9 +1,72 @@
-import type { PromptAnswer, PromptEnvelope } from "./types";
+import type { PromptAnswer, PromptEnvelope, PromptItem, SavedPromptAnswerDraft } from "./types";
 
 export type DraftEntry = {
   selectedOptionId?: string | null;
   customText?: string;
 };
+
+export function draftEntryFromSavedDraft(
+  draft: SavedPromptAnswerDraft | undefined,
+): DraftEntry | undefined {
+  if (!draft) return undefined;
+  return {
+    selectedOptionId: draft.selected_option_id ?? null,
+    customText: draft.custom_text ?? "",
+  };
+}
+
+export function draftHasContent(draft: DraftEntry | undefined): boolean {
+  if (!draft) return false;
+  return Boolean(draft.selectedOptionId || draft.customText?.trim());
+}
+
+export function countAnsweredPromptItems(
+  prompt: PromptEnvelope,
+  draftsByItemId: Record<string, DraftEntry | undefined>,
+): number {
+  return prompt.items.reduce((count, item) => {
+    if (draftHasContent(draftsByItemId[item.item_id])) {
+      return count + 1;
+    }
+    return count;
+  }, 0);
+}
+
+export function countProcessedPromptItems(
+  prompt: PromptEnvelope,
+  processedByItemId: Record<string, boolean | undefined>,
+): number {
+  return prompt.items.reduce((count, item) => (processedByItemId[item.item_id] ? count + 1 : count), 0);
+}
+
+export function firstUnprocessedPromptItemId(
+  prompt: PromptEnvelope,
+  processedByItemId: Record<string, boolean | undefined>,
+): string | null {
+  return prompt.items.find((item) => !processedByItemId[item.item_id])?.item_id ?? null;
+}
+
+export function describePromptItemProjection(
+  item: PromptItem,
+  draft: DraftEntry | undefined,
+): string[] {
+  if (!draftHasContent(draft)) return [];
+
+  const fragments: string[] = [];
+  if (draft?.selectedOptionId) {
+    const option = item.options.find((candidate) => candidate.option_id === draft.selectedOptionId);
+    if (option?.label) {
+      fragments.push(option.label);
+    }
+  }
+
+  const text = draft?.customText?.trim();
+  if (text) {
+    fragments.push(text);
+  }
+
+  return [...new Set(fragments)];
+}
 
 export function presentSessionTitle(session: {
   title?: string | null;

@@ -1,7 +1,7 @@
 # Project Plan
 
 **Status:** Active  
-**Date:** 2026-03-25
+**Date:** 2026-03-26
 
 ## Purpose
 
@@ -96,6 +96,20 @@ These are the main planning documents currently shaping the repo:
 - [Planner SolidStart Phase 17 Workflow Closeout And React Retirement Spec](/home/thetu/planner/docs/planner-solidstart-phase-17-workflow-closeout-and-react-retirement-spec.md)
 - [Planner SolidStart Phase 18 Prompt-Bank Conformance And Closeout Remediation Spec](/home/thetu/planner/docs/planner-solidstart-phase-18-prompt-bank-conformance-and-closeout-remediation-spec.md)
 - [Planner SolidStart Phase 19 Typography, Alignment, And Visual Consistency Remediation Spec](/home/thetu/planner/docs/planner-solidstart-phase-19-typography-alignment-and-visual-consistency-remediation-spec.md)
+- [Planner SolidStart Phase 20 Project Surfaces Local-App And Primitive Hardening Spec](/home/thetu/planner/docs/planner-solidstart-phase-20-project-surfaces-local-app-and-primitive-hardening-spec.md)
+- [Planner SolidStart Phase 21 Session Startup Truth And Status Clarity Spec](/home/thetu/planner/docs/planner-solidstart-phase-21-session-startup-truth-and-status-clarity-spec.md)
+- [Planner SolidStart Phase 22 Session Workspace Master-Detail Density And Autosave Spec](/home/thetu/planner/docs/planner-solidstart-phase-22-session-workspace-master-detail-density-and-autosave-spec.md)
+- [Planner SolidStart Phase 23 Session Live Artifact Split Spec](/home/thetu/planner/docs/planner-solidstart-phase-23-session-live-artifact-split-spec.md)
+- [Planner SolidStart Phase 24 Socratic Runtime Contract Reset Spec](/home/thetu/planner/docs/planner-solidstart-phase-24-socratic-runtime-contract-reset-spec.md)
+- [Planner SolidStart Phase 25 Socratic Runtime Verification Hardening Remediation Spec](/home/thetu/planner/docs/planner-solidstart-phase-25-socratic-runtime-verification-hardening-remediation-spec.md)
+- [Planner SolidStart Phase 26 Socratic Runtime Truth Completion Remediation Spec](/home/thetu/planner/docs/planner-solidstart-phase-26-socratic-runtime-truth-completion-remediation-spec.md)
+- [Planner SolidStart Phase 27 New Session Startup Truth Remediation Spec](/home/thetu/planner/docs/planner-solidstart-phase-27-new-session-startup-truth-remediation-spec.md)
+- [Planner SolidStart Phase 28 Session Entry And Startup Product Flow Spec](/home/thetu/planner/docs/planner-solidstart-phase-28-session-entry-and-startup-product-flow-spec.md)
+- [Planner SolidStart Phase 29 Work Entry Summary Truth And Workflow Continuity Spec](/home/thetu/planner/docs/planner-solidstart-phase-29-work-entry-summary-truth-and-workflow-continuity-spec.md)
+- [Planner SolidStart Phase 30 Project Workspace Route Family Decomposition Spec](/home/thetu/planner/docs/planner-solidstart-phase-30-project-workspace-route-family-decomposition-spec.md)
+- [Planner SolidStart Phase 31 Session Workspace Route Family Decomposition Spec](/home/thetu/planner/docs/planner-solidstart-phase-31-session-workspace-route-family-decomposition-spec.md)
+- [Planner SolidStart Phase 32 Work Entry IA And Session Route Topology Spec](/home/thetu/planner/docs/planner-solidstart-phase-32-work-entry-ia-and-session-route-topology-spec.md)
+- [Planner SolidStart Phase 33 Session Workspace Interaction And Artifact Refinement Spec](/home/thetu/planner/docs/planner-solidstart-phase-33-session-workspace-interaction-and-artifact-refinement-spec.md)
 - [Planning Status Audit Remediation Spec](/home/thetu/planner/docs/planning-status-audit-remediation-spec.md)
 
 ## Current Active Thread
@@ -213,6 +227,209 @@ Current planning state:
   restores route-family composition discipline, fixes the `/projects`
   directory surface, and adds live browser proof for representative desktop and
   mobile layouts
+- a project-surface architecture audit on 2026-03-25 then found that the
+  highest-traffic Solid project surfaces still rely on browser-native confirms,
+  route-owned manual tabs, repeated raw markup, and an overgrown workspace
+  route despite the Phase 19 visual cleanup
+- the bounded follow-on slice after that was
+  [Planner SolidStart Phase 20 Project Surfaces Local-App And Primitive Hardening Spec](/home/thetu/planner/docs/planner-solidstart-phase-20-project-surfaces-local-app-and-primitive-hardening-spec.md),
+  which is now implemented and hardens `/projects` and `/projects/:projectSlug`
+  around app-owned dialogs, URL-backed attached tabs, reusable project-surface
+  primitives, scoped component styling, and the normalized three-tier surface
+  depth model
+- direct live testing on 2026-03-25 then showed that the Solid session route
+  can still strand a newly created session in `waiting` while presenting a
+  false "Building the initial prompt bank…" state, and the session header
+  still leaks raw `waiting`/`current_step` strings instead of one truthful
+  low-noise startup/status explanation
+- the bounded follow-on slice after that is now
+  [Planner SolidStart Phase 21 Session Startup Truth And Status Clarity Spec](/home/thetu/planner/docs/planner-solidstart-phase-21-session-startup-truth-and-status-clarity-spec.md),
+  which hardens the session startup handoff, removes the false bank-assembly
+  idle state, and replaces raw phase/step chrome with a truthful session status
+  line
+- direct live route review and follow-on product diagnosis on 2026-03-25 then
+  confirmed that the active session workspace still wastes vertical space,
+  underutilizes the question map, relies on a large transactional submit
+  action, and lacks a truthful autosave/progression model despite the Phase 21
+  startup fix
+- the bounded follow-on slice after that is now
+  [Planner SolidStart Phase 22 Session Workspace Master-Detail Density And Autosave Spec](/home/thetu/planner/docs/planner-solidstart-phase-22-session-workspace-master-detail-density-and-autosave-spec.md),
+  which hardens the active session route around a permanent desktop question
+  map, dense active-thread canvas, real draft autosave, keyboard traversal,
+  and a compact thread-complete progression action instead of the oversized
+  submit workflow
+- Phase 22 implementation is now in progress:
+  - backend draft persistence, saved-draft recovery, the dense session
+    workspace layout, and the tablet/mobile map-sheet collapse are implemented
+  - targeted verification still shows keyboard-only thread traversal failing in
+    browser proof, so the slice is not yet ready to close out
+- a follow-on product-direction review on 2026-03-25 then determined that even
+  a cleaned-up master-detail desk still frames the route like a questionnaire
+  instead of a generative planning workspace
+- the bounded follow-on slice after that is now
+  [Planner SolidStart Phase 23 Session Live Artifact Split Spec](/home/thetu/planner/docs/planner-solidstart-phase-23-session-live-artifact-split-spec.md),
+  which makes the live specification artifact the primary desktop surface
+  through a 40/60 split, reuses the truthful draft-save groundwork from Phase
+  22, and shifts the route toward visible co-authoring instead of prompt
+  handling
+- a direct Socratic runtime audit on 2026-03-26 then established that the live
+  backend and Solid route still carry contradictory contracts at once:
+  - first reveal still falls back to a legacy single-prompt truth path through
+    `current_prompt` and heuristic prompt-bank shaping
+  - post-answer runtime can still fall back into category-selection state that
+    the Solid route does not expose or support
+  - checkpoint replay and session status still mix older single-prompt
+    semantics with newer full-bank gating
+- the next bounded slice after that was
+  [Planner SolidStart Phase 24 Socratic Runtime Contract Reset Spec](/home/thetu/planner/docs/planner-solidstart-phase-24-socratic-runtime-contract-reset-spec.md),
+  which resets the Socratic route around one strict first-reveal truth model,
+  one strict post-answer transition model, one strict checkpoint/resume model,
+  and one strict UI gating model, while also requiring the parallel
+  prompt-bank generation, startup transport cleanup, and prompt-bank transport
+  tightening work inside the same bounded slice before any further route polish
+  or expansion; the initial page must be complete for the currently derivable
+  bank, while later answers must still be allowed to generate new
+  questions/categories dynamically through the same truthful route contract
+- Phase 24 is now implemented:
+  - `/sessions/{id}/prompt-bank` and websocket replay no longer fabricate
+    first-reveal truth from `current_prompt`
+  - checkpoint resume now promotes legacy single-prompt data into prompt-bank
+    shape before the route consumes it
+  - the runtime no longer overwrites a full bank with a one-entry
+    `PromptGenerated` checkpoint projection and now parallelizes prompt-bank
+    generation in bounded batches
+  - the Solid route now treats websocket `prompt_bank` payloads as
+    authoritative updates and starts Socratic analysis with
+    `start_socratic` instead of `start_pipeline`
+- a Phase 24 closeout review on 2026-03-26 then found that the runtime reset is
+  implemented, but its verification surface is still narrower than the proof
+  promised by the phase:
+  - the repo still needs explicit proof for fresh-start bank reveal and
+    post-answer progression into next-bank/build-ready states
+- the bounded follow-on slice after that was
+  [Planner SolidStart Phase 25 Socratic Runtime Verification Hardening Remediation Spec](/home/thetu/planner/docs/planner-solidstart-phase-25-socratic-runtime-verification-hardening-remediation-spec.md),
+  which is now implemented and materially widened the verification surface for
+  fresh startup, post-answer next-bank/build-ready progression, bounded
+  parallel prompt-bank stability, and reconnect/reload runtime behavior
+- a follow-on implementation review on 2026-03-26 then found that the Socratic
+  runtime thread is still not honestly closed:
+  - legacy `current_prompt` still shapes live websocket replay and checkpoint
+    resume into false bank-complete truth
+  - the post-answer runtime and Solid route still leave a loophole where a
+    queued-only or category-only update can collapse the route back into the
+    initial loading gate or hidden-navigation assumptions
+  - the Phase 25 Playwright coverage is still mocked, so it does not prove the
+    live backend/frontend reconnect-reload and dynamic-expansion contract it
+    appears to close
+  - `start_pipeline` remains a live compatibility alias on the Socratic
+    websocket boundary even though `start_socratic` is the active product
+    contract
+- the bounded follow-on slice after that is now
+  [Planner SolidStart Phase 26 Socratic Runtime Truth Completion Remediation Spec](/home/thetu/planner/docs/planner-solidstart-phase-26-socratic-runtime-truth-completion-remediation-spec.md),
+  which is ready for implementation and completes the remaining runtime thread
+  by removing legacy single-prompt route truth from replay/resume, tightening
+  post-reveal workspace behavior around one visible route contract, adding live
+  browser-backed closeout proof where mocked proof was previously overstated,
+  and shrinking the `start_pipeline` compatibility boundary to explicit
+  migration behavior
+- Phase 26 implementation and live browser proof then closed the runtime
+  verification gap, but the real product-path proof also exposed one remaining
+  startup drift on `/sessions/new`:
+  - the route still creates a session, posts `start_socratic`, and navigates
+    to `/sessions/:id`
+  - the backend then marks the session as interviewing before any live runtime,
+    prompt bank, or checkpoint exists
+  - the session route can therefore land in restart-only truth immediately
+    after the user just started analysis
+- the bounded follow-on slice after that is now
+  [Planner SolidStart Phase 27 New Session Startup Truth Remediation Spec](/home/thetu/planner/docs/planner-solidstart-phase-27-new-session-startup-truth-remediation-spec.md),
+  which keeps the Phase 26 runtime contract intact while fixing the remaining
+  new-session product-path drift so saved-brief startup converges on one
+  waiting-state truth model instead of one route behaving as startup-ready and
+  another behaving as restart-only
+- a broader product-flow follow-up on 2026-03-26 then determined that the
+  startup-truth fix should land as part of one slightly wider session-entry
+  slice instead of as an isolated route patch:
+  - `/sessions/new` still represents "start a brief-backed session" as two
+    separate client calls, which can expose a blank orphan session outcome if
+    the second request fails
+  - the route still lacks a first-class startup transition between brief
+    submission and bank-first first reveal
+  - early startup failure recovery should preserve the saved brief and return
+    to startup truth instead of falling through technical recovery language
+- the bounded follow-on slice after that is now
+  [Planner SolidStart Phase 28 Session Entry And Startup Product Flow Spec](/home/thetu/planner/docs/planner-solidstart-phase-28-session-entry-and-startup-product-flow-spec.md),
+  which absorbs the required Phase 27 startup-truth fix while also unifying the
+  saved-brief entry contract, removing the visible orphan-session failure path,
+  adding a truthful startup transition, and hardening early startup retry
+  around brief-preserving product behavior
+- Phase 28 is now implemented:
+  - `/sessions/new` now creates a saved-brief startup-ready session in one
+    backend call instead of creating a blank session and then posting a second
+    startup request
+  - `POST /sessions/:id/socratic` and restart-from-description now preserve the
+    waiting/startup truth model instead of forcing false interviewing/restart
+    state before a live runtime exists
+  - the session route now exposes a truthful retry path for early startup
+    failure while preserving the saved brief
+  - live browser proof now covers the actual `/sessions/new` path for first
+    reveal, reload during startup, and early failure/retry, while the existing
+    Phase 26 live proof still passes
+- a repo-specific workflow follow-on review on 2026-03-26 then found that the
+  next highest-value slice should not be another silent route redesign:
+  - truthful startup and runtime status now live on the active session route,
+    but surrounding summary surfaces still fall back to raw `intake_phase` or
+    thin local heuristics
+  - project-first remains the selected operating model, but the root empty
+    state, session queue, and session return path still leave the product flow
+    feeling partially split between project-first and session-first entry
+  - the project and session workspace routes are real structural refactor
+    candidates, but they should be deferred to later specs instead of folded
+    into the next bounded implementation slice
+- the bounded follow-on slice after that is now
+  [Planner SolidStart Phase 29 Work Entry Summary Truth And Workflow Continuity Spec](/home/thetu/planner/docs/planner-solidstart-phase-29-work-entry-summary-truth-and-workflow-continuity-spec.md),
+  which keeps the Phase 26 bank-first runtime contract and the Phase 28
+  saved-brief startup contract intact while converging summary truth, entry
+  weighting, and return-navigation continuity across the main work-entry and
+  session-adjacent routes
+- Phase 29 is now implemented:
+  - summary and queue surfaces now project one shared `workspace_status`-based
+    status language instead of exposing raw `intake_phase` on the main work
+    entry, session queue, project session list, and project activity summary
+  - the root and sessions routes now reassert project-first entry while keeping
+    direct session creation available as a secondary path
+  - standalone sessions now expose the same explicit return-navigation contract
+    as project-scoped sessions, returning to `/sessions` when no owning project
+    exists
+  - verification now includes both the missing Phase 28 project-scoped
+    saved-brief startup proof and a dedicated Phase 29 browser spec covering
+    work-entry hierarchy, summary truth, and return navigation
+- with summary truth and workflow continuity now aligned, the next highest-value
+  planning move is a bounded spec for decomposing the overgrown project
+  workspace route family before more behavior accumulates in
+  `planner-solid/src/routes/projects/[projectSlug].tsx`
+- that next thread was built out as a four-spec sequence, and the first two
+  structural slices are now implemented:
+  - [Planner SolidStart Phase 30 Project Workspace Route Family Decomposition Spec](/home/thetu/planner/docs/planner-solidstart-phase-30-project-workspace-route-family-decomposition-spec.md)
+    is now implemented and keeps the current project product flow while
+    splitting the overgrown project route family into a thin route wrapper plus
+    extracted controller/screen/helper modules
+  - [Planner SolidStart Phase 31 Session Workspace Route Family Decomposition Spec](/home/thetu/planner/docs/planner-solidstart-phase-31-session-workspace-route-family-decomposition-spec.md)
+    is now implemented and applies the same thin-route pattern to the
+    1099-line session route without reopening the Phase 26 or Phase 28 runtime
+    contracts
+  - [Planner SolidStart Phase 32 Work Entry IA And Session Route Topology Spec](/home/thetu/planner/docs/planner-solidstart-phase-32-work-entry-ia-and-session-route-topology-spec.md)
+    is now implemented and retains the current route set while making
+    project-first versus direct-session hierarchy explicit in route copy and
+    CTA roles
+  - [Planner SolidStart Phase 33 Session Workspace Interaction And Artifact Refinement Spec](/home/thetu/planner/docs/planner-solidstart-phase-33-session-workspace-interaction-and-artifact-refinement-spec.md)
+    is now implemented and keeps the artifact-first workspace direction while
+    refining the session interaction model, grouped action chrome, denser
+    interview framing, and artifact-document emphasis without reopening the
+    runtime contract
+- the bank-first runtime and saved-brief startup contracts from Phase 26 and
+  Phase 28 remain locked dependencies across that series rather than becoming a
+  new planning branch
 - the route-level child spec for the Socratic lobby is
   [Socratic SolidStart Greenfield Platform Spec](/home/thetu/planner/docs/socratic-solidstart-greenfield-platform-spec.md)
 - the route-level Socratic spec is fed by the already-selected product
@@ -281,6 +498,41 @@ Current remediation result:
     composition contract
   - narrow-width shell, knowledge, and blueprint behavior is now covered by
     live browser verification in addition to the existing route checks
+- [Planner SolidStart Phase 20 Project Surfaces Local-App And Primitive Hardening Spec](/home/thetu/planner/docs/planner-solidstart-phase-20-project-surfaces-local-app-and-primitive-hardening-spec.md)
+  is now implemented:
+  - `/projects` now replaces the browser-owned delete confirm with an app-owned
+    alert dialog backed by a SolidStart action
+  - `/projects/:projectSlug` now uses an app-owned reveal shell and URL-backed
+    headless tabs instead of the native attached-surface disclosure
+  - the active Solid project surfaces now have a bounded primitive layer, a
+    strict three-tier depth contract, and co-located CSS Modules
+- [Planner SolidStart Phase 21 Session Startup Truth And Status Clarity Spec](/home/thetu/planner/docs/planner-solidstart-phase-21-session-startup-truth-and-status-clarity-spec.md)
+  is now implemented:
+  - `/sessions/:sessionId` now uses a backend-grounded `workspace_status`
+    contract instead of leaking raw `waiting` and raw `current_step` as the
+    primary explanation
+  - saved-brief `waiting` sessions now open the Socratic websocket and send the
+    existing startup handshake instead of stalling before prompt-bank assembly
+- [Planner SolidStart Phase 22 Session Workspace Master-Detail Density And Autosave Spec](/home/thetu/planner/docs/planner-solidstart-phase-22-session-workspace-master-detail-density-and-autosave-spec.md)
+  is now implemented as precursor groundwork and superseded as the preferred
+  desktop model:
+  - `/sessions/:sessionId` gained truthful draft autosave, saved-draft
+    recovery, compact progression, and the bounded responsive workspace shell
+  - the originally planned keyboard-only thread traversal closeout is no longer
+    the active target because the artifact-first Phase 23 surface replaced the
+    Phase 22 desktop interaction model
+- [Planner SolidStart Phase 23 Session Live Artifact Split Spec](/home/thetu/planner/docs/planner-solidstart-phase-23-session-live-artifact-split-spec.md)
+  is now implemented:
+  - `/sessions/:sessionId` now uses the artifact-first shell: compact Socratic
+    feed on the left, live spec document on the right, tabbed fallback under
+    `1024px`, and ghost-draft artifact projection from truthful saved and
+    committed answer data
+  - the prompt-bank hydration loop that was recursively rewriting
+    `promptBankGraph` has been removed, eliminating the client-side
+    maximum-call-stack failure during initial load and first commit
+  - commit-and-advance is now browser-proven for both the button and
+    `Cmd+Enter` path, including draft save, artifact update, processed
+    progression, and focus continuity
 
 Current SolidStart tranche status:
 
@@ -288,8 +540,12 @@ Current SolidStart tranche status:
   and workflow-closeout terms
 - the cross-page visual consistency and responsive hierarchy remediation thread
   is now also implemented for the active Solid app
-- no additional SolidStart remediation slice is currently committed from this
-  review thread
+- the project-surface local-app and primitive-hardening follow-on is now also
+  implemented for the active Solid app
+- the session-startup truth and status-clarity follow-on is now also
+  implemented for the active Solid app
+- the session live-artifact split follow-on is now also implemented for the
+  active Solid app
 
 ### Socratic Ethereal Cascade Redesign
 
@@ -676,7 +932,6 @@ Keep planning and implementation aligned to artifact state:
 
 The next move is:
 
-- review the implemented
-  [Planner SolidStart Phase 19 Typography, Alignment, And Visual Consistency Remediation Spec](/home/thetu/planner/docs/planner-solidstart-phase-19-typography-alignment-and-visual-consistency-remediation-spec.md)
-  as the current visual-quality baseline
-- choose the next bounded spec before starting another implementation slice
+- treat the deferred session-workspace series as complete and start the next
+  planning thread with `spec-lifecycle` only after deciding what product or
+  workflow surface should move next

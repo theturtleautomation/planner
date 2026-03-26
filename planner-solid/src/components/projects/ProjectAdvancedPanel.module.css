@@ -1,0 +1,107 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 22px;
+  border: 1px solid var(--surface-elevated-border);
+  border-radius: 20px;
+  background: var(--surface-elevated-bg);
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.headerTitle {
+  margin: 6px 0 0;
+  font-size: 22px;
+  line-height: 1.1;
+}
+
+.panel {
+  padding: 18px;
+  border: 1px solid var(--surface-elevated-border);
+  border-radius: 18px;
+  background: var(--surface-base-bg);
+}
+
+.surface {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.surfaceHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.surfaceTitle {
+  margin: 6px 0 0;
+  font-size: 18px;
+  line-height: 1.15;
+}
+
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.column {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.columnLabel {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.columnCopy {
+  padding: 14px 16px;
+  border: 1px solid var(--surface-elevated-border);
+  border-radius: 16px;
+  background: var(--surface-elevated-bg);
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+@media (max-width: 1080px) {
+  .metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .header,
+  .surfaceHead {
+    flex-direction: column;
+  }
+
+  .columns {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .metrics {
+    grid-template-columns: 1fr;
+  }
+}

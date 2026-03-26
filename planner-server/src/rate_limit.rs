@@ -40,9 +40,19 @@ const WINDOW_DURATION: Duration = Duration::from_secs(60);
 ///
 /// Stores per-key timestamp vectors.  Stale entries (older than the window)
 /// are pruned on every check and periodically via the eviction task.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct RateLimiter {
     inner: Mutex<HashMap<String, Vec<Instant>>>,
+    max_requests: usize,
+}
+
+impl Default for RateLimiter {
+    fn default() -> Self {
+        Self {
+            inner: Mutex::new(HashMap::new()),
+            max_requests: configured_max_requests(),
+        }
+    }
 }
 
 impl RateLimiter {
@@ -65,7 +75,7 @@ impl RateLimiter {
         // Evict timestamps outside the current window.
         timestamps.retain(|&ts| ts > window_start);
 
-        if timestamps.len() >= MAX_REQUESTS {
+        if timestamps.len() >= self.max_requests {
             return false; // Rate limit exceeded
         }
 
@@ -89,6 +99,14 @@ impl RateLimiter {
     pub fn active_key_count(&self) -> usize {
         self.inner.lock().len()
     }
+}
+
+fn configured_max_requests() -> usize {
+    std::env::var("PLANNER_RATE_LIMIT_MAX_REQUESTS")
+        .ok()
+        .and_then(|raw| raw.trim().parse::<usize>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(MAX_REQUESTS)
 }
 
 // ---------------------------------------------------------------------------

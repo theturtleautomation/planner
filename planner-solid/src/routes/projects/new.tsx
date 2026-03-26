@@ -36,10 +36,10 @@ export default function NewProjectPage() {
           <div class="section-head">
             <div>
               <div class="eyebrow">New project</div>
-              <h1 class="page-title">Create the container for the next analysis.</h1>
+              <h1 class="page-title">Create the primary container for the next analysis.</h1>
               <p class="page-copy">
-                Keep the entry lightweight. Name the project, add a short idea description, and
-                move straight into the workspace.
+                Projects are the main home for ongoing work. Name the project, add a short idea
+                description, and move straight into the workspace.
               </p>
             </div>
           </div>

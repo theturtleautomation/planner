@@ -15,6 +15,7 @@ import type {
   RunListResponse,
   SessionExportResponse,
   PromptBankResponse,
+  PromptAnswer,
   ProposedEdgesResponse,
   ProposedNodesResponse,
   ProjectResponse,
@@ -23,10 +24,11 @@ import type {
   ProjectImportHistoryResponse,
   ProjectImportResponse,
   SessionEventsResponse,
+  SavePromptDraftsResponse,
   StartSocraticResponse,
 } from "./types";
 
-const API_BASE = "/api";
+const API_BASE = typeof window === "undefined" ? "http://127.0.0.1:3100/api" : "/api";
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
@@ -102,10 +104,17 @@ export function getAdminEvents(params?: { limit?: number; level?: string; sessio
   return apiFetch(`/admin/events${query ? `?${query}` : ""}`);
 }
 
-export function createSession(): Promise<CreateSessionResponse> {
+export function createSession(payload?: {
+  projectRef?: string | null;
+  description?: string | null;
+}): Promise<CreateSessionResponse> {
+  const body = {
+    ...(payload?.projectRef ? { project_ref: payload.projectRef } : {}),
+    ...(payload?.description?.trim() ? { description: payload.description.trim() } : {}),
+  };
   return apiFetch("/sessions", {
     method: "POST",
-    body: "{}",
+    body: JSON.stringify(body),
   });
 }
 
@@ -175,6 +184,19 @@ export function startSocratic(sessionId: string, description: string): Promise<S
 
 export function getPromptBank(sessionId: string): Promise<PromptBankResponse> {
   return apiFetch(`/sessions/${encodeURIComponent(sessionId)}/prompt-bank`);
+}
+
+export function savePromptDrafts(
+  sessionId: string,
+  payload: { promptId: string; answers: PromptAnswer[] },
+): Promise<SavePromptDraftsResponse> {
+  return apiFetch(`/sessions/${encodeURIComponent(sessionId)}/prompt-drafts`, {
+    method: "POST",
+    body: JSON.stringify({
+      prompt_id: payload.promptId,
+      answers: payload.answers,
+    }),
+  });
 }
 
 export function listProjects(): Promise<ListProjectsResponse> {

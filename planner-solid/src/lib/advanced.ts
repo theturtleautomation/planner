@@ -8,6 +8,7 @@ import type {
   RunListResponse,
   SessionSummary,
 } from "./types";
+import { getSessionSummaryStatus } from "./session-status";
 
 export type AdvancedPanelTab =
   | "knowledge"
@@ -401,9 +402,10 @@ export function summarizeProjectActivity(params: {
   );
 
   if (sessions[0]) {
+    const sessionStatus = getSessionSummaryStatus(sessions[0]);
     items.push({
       title: sessions[0].title ?? "Active analysis session",
-      copy: `${sessions[0].intake_phase} · ${sessions[0].project_description ?? "Project analysis session"}`,
+      copy: `${sessionStatus.label} · ${sessions[0].project_description ?? "Project analysis session"}`,
       meta: sessions[0].last_activity_at,
     });
   }

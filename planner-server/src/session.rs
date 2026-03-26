@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
 use planner_schemas::artifacts::socratic::{
-    Contradiction, DomainClassification, PromptBankEntry, PromptEnvelope, PromptItem,
+    Contradiction, DomainClassification, PromptAnswer, PromptBankEntry, PromptEnvelope, PromptItem,
     PromptItemKind, PromptKind, PromptOption, PromptPreferredLayout, PromptResponseMode,
     PromptUiHints, QuestionOutput, RequirementsBeliefState, SocraticCategorySnapshot,
     SpeculativeDraft, UiCapabilities,
@@ -88,8 +88,81 @@ impl Default for ResumeStatus {
     }
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkspaceStatusState {
+    ReadyToStart,
+    StartingAnalysis,
+    Classifying,
+    AssemblingPromptBank,
+    AwaitingResponse,
+    BuildReady,
+    PipelineRunning,
+    Complete,
+    AttentionRequired,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkspaceStatusTone {
+    Neutral,
+    Active,
+    Success,
+    Warning,
+    Error,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WorkspaceStatus {
+    pub state: WorkspaceStatusState,
+    pub label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    pub tone: WorkspaceStatusTone,
+}
+
+impl WorkspaceStatus {
+    fn new(
+        state: WorkspaceStatusState,
+        label: impl Into<String>,
+        detail: Option<String>,
+        tone: WorkspaceStatusTone,
+    ) -> Self {
+        Self {
+            state,
+            label: label.into(),
+            detail,
+            tone,
+        }
+    }
+}
+
+impl Default for WorkspaceStatus {
+    fn default() -> Self {
+        Self::new(
+            WorkspaceStatusState::ReadyToStart,
+            "Ready to start analysis",
+            Some("Add a saved brief or start the Socratic session to begin analysis.".into()),
+            WorkspaceStatusTone::Neutral,
+        )
+    }
+}
+
 fn now_rfc3339() -> String {
     Utc::now().to_rfc3339()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SavedPromptAnswerDraft {
+    pub prompt_id: String,
+    pub item_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selected_option_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_text: Option<String>,
+    #[serde(default)]
+    pub skipped: bool,
+    pub updated_at: String,
 }
 
 /// Durable interview checkpoint used for detached session recovery UX.
@@ -466,6 +539,10 @@ pub struct Session {
     #[serde(default)]
     pub ui_capabilities: Option<UiCapabilities>,
 
+    /// Durable per-item answer drafts for the current prompt bank.
+    #[serde(default)]
+    pub saved_prompt_drafts: HashMap<String, SavedPromptAnswerDraft>,
+
     /// Whether an in-memory interview runtime currently exists for this session.
     ///
     /// This is server-local state and should not be persisted or exposed.
@@ -495,6 +572,10 @@ pub struct Session {
     /// High-level backend truth for resume UX.
     #[serde(default)]
     pub resume_status: ResumeStatus,
+
+    /// Structured, user-facing workspace startup and progress state.
+    #[serde(default)]
+    pub workspace_status: WorkspaceStatus,
 
     /// Structured event log for this session.
     #[serde(default)]
@@ -596,6 +677,7 @@ impl Session {
             intake_phase: "waiting".into(),
             interview_live_attached: false,
             ui_capabilities: None,
+            saved_prompt_drafts: HashMap::new(),
             interview_runtime_active: false,
             can_resume_live: false,
             can_resume_checkpoint: false,
@@ -603,6 +685,7 @@ impl Session {
             can_retry_pipeline: false,
             has_checkpoint: false,
             resume_status: ResumeStatus::default(),
+            workspace_status: WorkspaceStatus::default(),
             events: Vec::new(),
             current_step: None,
             error_message: None,
@@ -657,6 +740,204 @@ impl Session {
         for stage in &mut self.stages {
             stage.status = "pending".into();
         }
+    }
+
+    fn prompt_bank_started(&self) -> bool {
+        self.checkpoint
+            .as_ref()
+            .map(|checkpoint| {
+                !checkpoint.prompt_bank.is_empty() || checkpoint.current_category_snapshot.is_some()
+            })
+            .unwrap_or(false)
+            || self
+                .current_step
+                .as_deref()
+                .map(Self::step_indicates_prompt_bank_assembly)
+                .unwrap_or(false)
+    }
+
+    fn prompt_bank_ready(&self) -> bool {
+        self.checkpoint
+            .as_ref()
+            .map(|checkpoint| {
+                checkpoint.initial_prompt_bank_complete && !checkpoint.prompt_bank.is_empty()
+            })
+            .unwrap_or(false)
+    }
+
+    fn build_ready_detail(&self) -> Option<String> {
+        self.checkpoint
+            .as_ref()
+            .and_then(|checkpoint| checkpoint.current_category_snapshot.as_ref())
+            .filter(|snapshot| snapshot.build_ready && snapshot.active_category_path.is_empty())
+            .map(|snapshot| snapshot.build_readiness_message.clone())
+    }
+
+    fn step_indicates_classification(step: &str) -> bool {
+        matches!(
+            step,
+            "socratic.classify.started" | "socratic.classify.complete"
+        )
+    }
+
+    fn step_indicates_prompt_bank_assembly(step: &str) -> bool {
+        matches!(
+            step,
+            "socratic.category_state.generated"
+                | "socratic.workspace.generated"
+                | "socratic.prompt.generated"
+                | "socratic.workspace.refreshed"
+        )
+    }
+
+    fn detail_for_current_step(&self) -> Option<String> {
+        match self.current_step.as_deref() {
+            Some("socratic.classify.started") => {
+                Some("Reviewing the saved brief and determining the project shape.".into())
+            }
+            Some("socratic.classify.complete") => {
+                Some("Classification is complete. Building the first workspace threads now.".into())
+            }
+            Some("socratic.category_state.generated") => {
+                Some("The first question threads are being organized for the workspace.".into())
+            }
+            Some("socratic.workspace.generated") => Some(
+                "The first workspace structure is ready. Generating answerable prompts now.".into(),
+            ),
+            Some("socratic.prompt.generated") => {
+                Some("Generating the initial prompt bank before revealing the workspace.".into())
+            }
+            Some("pipeline.retry.started") => {
+                Some("Retrying the pipeline from the saved description.".into())
+            }
+            Some(step) if step.starts_with("pipeline.") => {
+                Some("The build pipeline is running from the current plan state.".into())
+            }
+            _ => None,
+        }
+    }
+
+    fn compute_workspace_status(&self) -> WorkspaceStatus {
+        if self.intake_phase == "error" {
+            return WorkspaceStatus::new(
+                WorkspaceStatusState::AttentionRequired,
+                "Needs attention",
+                self.error_message
+                    .clone()
+                    .or_else(|| Some("The last run stopped before completion.".into())),
+                WorkspaceStatusTone::Error,
+            );
+        }
+
+        if self.intake_phase == "complete" {
+            return WorkspaceStatus::new(
+                WorkspaceStatusState::Complete,
+                "Plan complete",
+                Some("The session is complete and ready for review.".into()),
+                WorkspaceStatusTone::Success,
+            );
+        }
+
+        if self.intake_phase == "pipeline_running" {
+            return WorkspaceStatus::new(
+                WorkspaceStatusState::PipelineRunning,
+                "Running the build pipeline",
+                self.detail_for_current_step().or_else(|| {
+                    Some(
+                        "Planner is turning the current session state into build artifacts.".into(),
+                    )
+                }),
+                WorkspaceStatusTone::Active,
+            );
+        }
+
+        if self.intake_phase == "waiting" {
+            return WorkspaceStatus::new(
+                WorkspaceStatusState::ReadyToStart,
+                "Ready to start analysis",
+                Some(if self.has_saved_description() {
+                    "Waiting for the session workspace to begin from the saved brief.".into()
+                } else {
+                    "This session does not have a saved brief yet.".into()
+                }),
+                WorkspaceStatusTone::Neutral,
+            );
+        }
+
+        if let Some(detail) = self.build_ready_detail() {
+            return WorkspaceStatus::new(
+                WorkspaceStatusState::BuildReady,
+                "Build handoff ready",
+                Some(detail),
+                WorkspaceStatusTone::Success,
+            );
+        }
+
+        if self.prompt_bank_ready() {
+            return WorkspaceStatus::new(
+                WorkspaceStatusState::AwaitingResponse,
+                "Waiting for your response",
+                Some("The first prompt bank is ready for local switching and answers.".into()),
+                WorkspaceStatusTone::Neutral,
+            );
+        }
+
+        if self.prompt_bank_started() {
+            return WorkspaceStatus::new(
+                WorkspaceStatusState::AssemblingPromptBank,
+                "Building the initial prompt bank",
+                self.detail_for_current_step().or_else(|| {
+                    Some(
+                        "Generating the first answerable threads before the workspace opens."
+                            .into(),
+                    )
+                }),
+                WorkspaceStatusTone::Active,
+            );
+        }
+
+        if self
+            .current_step
+            .as_deref()
+            .map(Self::step_indicates_classification)
+            .unwrap_or(false)
+        {
+            return WorkspaceStatus::new(
+                WorkspaceStatusState::Classifying,
+                "Classifying the project",
+                self.detail_for_current_step().or_else(|| {
+                    Some("Reviewing the saved brief to shape the first workspace.".into())
+                }),
+                WorkspaceStatusTone::Active,
+            );
+        }
+
+        if self.resume_status == ResumeStatus::InterviewRestartOnly
+            && !self.has_checkpoint
+            && !self.interview_runtime_active
+            && !self.interview_live_attached
+        {
+            return WorkspaceStatus::new(
+                WorkspaceStatusState::AttentionRequired,
+                "Analysis needs a restart",
+                Some(
+                    "The live interview stopped before a resume point was saved. Restart from the saved brief to continue."
+                        .into(),
+                ),
+                WorkspaceStatusTone::Warning,
+            );
+        }
+
+        if self.has_saved_description() {
+            return WorkspaceStatus::new(
+                WorkspaceStatusState::StartingAnalysis,
+                "Starting analysis",
+                Some("Waiting for the live Socratic runtime to begin from the saved brief.".into()),
+                WorkspaceStatusTone::Active,
+            );
+        }
+
+        WorkspaceStatus::default()
     }
 
     fn normalize_stage_name(raw: &str) -> Option<&'static str> {
@@ -845,9 +1126,10 @@ impl Session {
         self.socratic_run_id = None;
         self.checkpoint = None;
         self.has_checkpoint = false;
-        self.intake_phase = "interviewing".into();
+        self.intake_phase = "waiting".into();
         self.interview_live_attached = false;
         self.ui_capabilities = None;
+        self.saved_prompt_drafts.clear();
         self.interview_runtime_active = false;
         self.events.clear();
         self.current_step = None;
@@ -865,6 +1147,7 @@ impl Session {
         self.pipeline_running = true;
         self.intake_phase = "pipeline_running".into();
         self.interview_live_attached = false;
+        self.saved_prompt_drafts.clear();
         self.interview_runtime_active = false;
         self.events.clear();
         self.current_step = None;
@@ -921,6 +1204,7 @@ impl Session {
         duplicate.project_id = self.project_id;
         duplicate.project_slug = self.project_slug.clone();
         duplicate.project_name = self.project_name.clone();
+        duplicate.saved_prompt_drafts = self.saved_prompt_drafts.clone();
         duplicate.classification = checkpoint
             .as_ref()
             .and_then(|saved| saved.classification.clone())
@@ -970,6 +1254,67 @@ impl Session {
 
         duplicate.recompute_capabilities();
         duplicate
+    }
+
+    pub fn save_prompt_draft_answers(
+        &mut self,
+        prompt_id: &str,
+        answers: &[PromptAnswer],
+    ) -> (usize, usize, String) {
+        let saved_at = now_rfc3339();
+        let mut saved_count = 0usize;
+        let mut cleared_count = 0usize;
+
+        for answer in answers {
+            let selected_option_id = answer
+                .selected_option_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string);
+            let custom_text = answer
+                .custom_text
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string);
+
+            if selected_option_id.is_none() && custom_text.is_none() {
+                if self.saved_prompt_drafts.remove(&answer.item_id).is_some() {
+                    cleared_count += 1;
+                }
+                continue;
+            }
+
+            self.saved_prompt_drafts.insert(
+                answer.item_id.clone(),
+                SavedPromptAnswerDraft {
+                    prompt_id: prompt_id.to_string(),
+                    item_id: answer.item_id.clone(),
+                    selected_option_id,
+                    custom_text,
+                    skipped: answer.skipped,
+                    updated_at: saved_at.clone(),
+                },
+            );
+            saved_count += 1;
+        }
+
+        (saved_count, cleared_count, saved_at)
+    }
+
+    pub fn clear_saved_prompt_drafts_for_item_ids<I, S>(&mut self, item_ids: I) -> usize
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        let mut removed = 0usize;
+        for item_id in item_ids {
+            if self.saved_prompt_drafts.remove(item_id.as_ref()).is_some() {
+                removed += 1;
+            }
+        }
+        removed
     }
 
     /// Recompute capability flags from the current session state.
@@ -1036,6 +1381,7 @@ impl Session {
 
         self.can_retry_pipeline =
             self.has_saved_description() && !self.pipeline_running && self.pipeline_has_failed();
+        self.workspace_status = self.compute_workspace_status();
     }
 
     /// Count LLM calls from the event log.
@@ -1182,6 +1528,7 @@ pub struct SessionSummary {
     pub can_retry_pipeline: bool,
     pub has_checkpoint: bool,
     pub resume_status: ResumeStatus,
+    pub workspace_status: WorkspaceStatus,
     pub classification: Option<DomainClassification>,
     pub convergence_pct: Option<f32>,
     pub checkpoint_last_saved_at: Option<String>,
@@ -1667,6 +2014,7 @@ impl SessionStore {
                 can_retry_pipeline: s.can_retry_pipeline,
                 has_checkpoint: s.has_checkpoint,
                 resume_status: s.resume_status,
+                workspace_status: s.workspace_status.clone(),
                 classification: s.classification.clone(),
                 convergence_pct: s.belief_state.as_ref().map(|state| state.convergence_pct()),
                 checkpoint_last_saved_at: s
@@ -1718,6 +2066,7 @@ impl SessionStore {
                 can_retry_pipeline: s.can_retry_pipeline,
                 has_checkpoint: s.has_checkpoint,
                 resume_status: s.resume_status,
+                workspace_status: s.workspace_status.clone(),
                 classification: s.classification.clone(),
                 convergence_pct: s.belief_state.as_ref().map(|state| state.convergence_pct()),
                 checkpoint_last_saved_at: s
@@ -1791,6 +2140,10 @@ mod tests {
         assert!(!session.has_checkpoint);
         assert!(session.socratic_run_id.is_none());
         assert!(session.checkpoint.is_none());
+        assert_eq!(
+            session.workspace_status.state,
+            WorkspaceStatusState::ReadyToStart
+        );
     }
 
     #[test]
@@ -1802,6 +2155,10 @@ mod tests {
         let waiting = store.get(id).unwrap();
         assert_eq!(waiting.resume_status, ResumeStatus::ReadyToStart);
         assert!(!waiting.can_resume_live);
+        assert_eq!(
+            waiting.workspace_status.state,
+            WorkspaceStatusState::ReadyToStart
+        );
 
         let interviewing_attached = store
             .update(id, |s| {
@@ -1817,6 +2174,10 @@ mod tests {
         assert!(interviewing_attached.interview_live_attached);
         assert!(!interviewing_attached.can_resume_live);
         assert!(!interviewing_attached.can_resume_checkpoint);
+        assert_eq!(
+            interviewing_attached.workspace_status.state,
+            WorkspaceStatusState::StartingAnalysis
+        );
 
         let interviewing_live_detached = store
             .update(id, |s| {
@@ -1831,6 +2192,10 @@ mod tests {
         );
         assert!(interviewing_live_detached.can_resume_live);
         assert!(!interviewing_live_detached.can_resume_checkpoint);
+        assert_eq!(
+            interviewing_live_detached.workspace_status.state,
+            WorkspaceStatusState::StartingAnalysis
+        );
 
         let interviewing_restart = store
             .update(id, |s| {
@@ -1846,6 +2211,10 @@ mod tests {
         );
         assert!(!interviewing_restart.can_resume_live);
         assert!(interviewing_restart.can_restart_from_description);
+        assert_eq!(
+            interviewing_restart.workspace_status.state,
+            WorkspaceStatusState::AttentionRequired
+        );
 
         let interviewing_unknown = store
             .update(id, |s| {
@@ -1862,6 +2231,10 @@ mod tests {
         );
         assert!(!interviewing_unknown.can_resume_live);
         assert!(!interviewing_unknown.can_restart_from_description);
+        assert_eq!(
+            interviewing_unknown.workspace_status.state,
+            WorkspaceStatusState::ReadyToStart
+        );
 
         let interviewing_checkpoint = store
             .update(id, |s| {
@@ -1878,6 +2251,10 @@ mod tests {
         );
         assert!(interviewing_checkpoint.has_checkpoint);
         assert!(interviewing_checkpoint.can_resume_checkpoint);
+        assert_eq!(
+            interviewing_checkpoint.workspace_status.state,
+            WorkspaceStatusState::AwaitingResponse
+        );
 
         let live_attach = store
             .update(id, |s| {
@@ -1888,6 +2265,10 @@ mod tests {
         assert_eq!(live_attach.resume_status, ResumeStatus::LiveAttachAvailable);
         assert!(live_attach.can_resume_live);
         assert!(!live_attach.can_restart_from_description);
+        assert_eq!(
+            live_attach.workspace_status.state,
+            WorkspaceStatusState::PipelineRunning
+        );
 
         let retryable_failure = store
             .update(id, |s| {
@@ -1898,6 +2279,71 @@ mod tests {
             })
             .unwrap();
         assert!(retryable_failure.can_retry_pipeline);
+        assert_eq!(
+            retryable_failure.workspace_status.state,
+            WorkspaceStatusState::AttentionRequired
+        );
+    }
+
+    #[test]
+    fn workspace_status_tracks_prompt_bank_progress_truthfully() {
+        let store = SessionStore::new();
+        let created = store.create("dev|local");
+        let id = created.id;
+
+        let classifying = store
+            .update(id, |s| {
+                s.intake_phase = "interviewing".into();
+                s.project_description = Some("Build timer".into());
+                s.current_step = Some("socratic.classify.started".into());
+            })
+            .unwrap();
+        assert_eq!(
+            classifying.workspace_status.state,
+            WorkspaceStatusState::Classifying
+        );
+
+        let assembling = store
+            .update(id, |s| {
+                s.intake_phase = "interviewing".into();
+                s.project_description = Some("Build timer".into());
+                let checkpoint = s.ensure_checkpoint();
+                checkpoint.current_category_snapshot = Some(SocraticCategorySnapshot {
+                    revision: "rev-1".into(),
+                    root_category_ids: vec![],
+                    active_category_path: vec![],
+                    nodes: vec![],
+                    newly_available_category_ids: vec![],
+                    build_ready: false,
+                    build_readiness_message: "Question bank is still loading.".into(),
+                });
+                checkpoint.initial_prompt_bank_complete = false;
+                s.current_step = Some("socratic.prompt.generated".into());
+            })
+            .unwrap();
+        assert_eq!(
+            assembling.workspace_status.state,
+            WorkspaceStatusState::AssemblingPromptBank
+        );
+
+        let build_ready = store
+            .update(id, |s| {
+                let checkpoint = s.ensure_checkpoint();
+                checkpoint.current_category_snapshot = Some(SocraticCategorySnapshot {
+                    revision: "rev-2".into(),
+                    root_category_ids: vec![],
+                    active_category_path: vec![],
+                    nodes: vec![],
+                    newly_available_category_ids: vec![],
+                    build_ready: true,
+                    build_readiness_message: "No remaining prompt work blocks the handoff.".into(),
+                });
+            })
+            .unwrap();
+        assert_eq!(
+            build_ready.workspace_status.state,
+            WorkspaceStatusState::BuildReady
+        );
     }
 
     #[test]

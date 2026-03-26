@@ -13,11 +13,12 @@ use axum::{
     Router,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use uuid::Uuid;
 
-use planner_schemas::{PromptBankEntry, PromptEnvelope, SocraticCategorySnapshot};
+use planner_schemas::{PromptAnswer, PromptBankEntry, PromptEnvelope, SocraticCategorySnapshot};
 
 use crate::auth::{auth_middleware, Claims};
 use crate::import::{
@@ -81,6 +82,8 @@ pub struct CreateSessionResponse {
 pub struct CreateSessionRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project_ref: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -118,6 +121,8 @@ pub struct GetSessionPromptBankResponse {
     pub build_readiness_message: Option<String>,
     #[serde(default)]
     pub initial_bank_complete: bool,
+    #[serde(default)]
+    pub saved_drafts: HashMap<String, crate::session::SavedPromptAnswerDraft>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -136,6 +141,22 @@ pub struct QueuedPromptThread {
     pub summary: String,
     pub question_count: usize,
     pub status: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SaveSessionPromptDraftsRequest {
+    pub prompt_id: String,
+    #[serde(default)]
+    pub answers: Vec<PromptAnswer>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SaveSessionPromptDraftsResponse {
+    pub session_id: String,
+    pub prompt_id: String,
+    pub saved_count: usize,
+    pub cleared_count: usize,
+    pub saved_at: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -819,6 +840,10 @@ pub fn routes(state: Arc<AppState>) -> Router {
         .route("/sessions", get(list_sessions).post(create_session))
         .route("/sessions/{id}", get(get_session).patch(update_session))
         .route("/sessions/{id}/prompt-bank", get(get_session_prompt_bank))
+        .route(
+            "/sessions/{id}/prompt-drafts",
+            post(save_session_prompt_drafts),
+        )
         .route("/sessions/{id}/message", post(send_message))
         .route("/sessions/{id}/duplicate", post(duplicate_session))
         .route("/sessions/{id}/export", get(export_session))
@@ -3349,7 +3374,14 @@ async fn create_session(
     claims: Claims,
     req: Option<Json<CreateSessionRequest>>,
 ) -> Result<(StatusCode, Json<CreateSessionResponse>), (StatusCode, Json<ErrorResponse>)> {
-    let requested_project_ref = req.and_then(|Json(body)| body.project_ref);
+    let req = req.map(|Json(body)| body).unwrap_or_default();
+    let requested_project_ref = req.project_ref.clone();
+    let seeded_description = req
+        .description
+        .as_deref()
+        .map(str::trim)
+        .filter(|description| !description.is_empty())
+        .map(str::to_string);
     let resolved_project = requested_project_ref
         .as_deref()
         .map(|project_ref| resolve_project_for_user(&state, &claims, project_ref))
@@ -3357,12 +3389,38 @@ async fn create_session(
 
     let session = state.sessions.create(&claims.sub);
 
-    if let Some(project) = resolved_project {
+    if resolved_project.is_some() || seeded_description.is_some() {
+        let resolved_project = match (resolved_project, seeded_description.as_deref()) {
+            (Some(project), _) => Some(project),
+            (None, Some(description)) => Some(
+                ensure_session_project_assignment(&state, session.id, description).map_err(
+                    |error| {
+                        let _ = state.sessions.delete(session.id);
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            Json(ErrorResponse {
+                                error,
+                                code: Some("PROJECT_ASSIGNMENT_FAILED".into()),
+                            }),
+                        )
+                    },
+                )?,
+            ),
+            (None, None) => None,
+        };
+
         let _ = state.sessions.update(session.id, |draft| {
-            draft.project_id = Some(project.id);
-            draft.project_slug = Some(project.slug.clone());
-            draft.project_name = Some(project.name.clone());
-            draft.cxdb_project_id = Some(project.id);
+            if let Some(description) = seeded_description.as_deref() {
+                draft.project_description = Some(description.to_string());
+                draft.ensure_title_from_description();
+                draft.set_archived(false);
+            }
+            if let Some(project) = resolved_project.as_ref() {
+                draft.project_id = Some(project.id);
+                draft.project_slug = Some(project.slug.clone());
+                draft.project_name = Some(project.name.clone());
+                draft.cxdb_project_id = Some(project.id);
+            }
         });
     }
 
@@ -3396,13 +3454,6 @@ async fn get_session(
     }
 }
 
-fn prompt_focus_category_id(prompt: &PromptEnvelope) -> Option<&str> {
-    prompt
-        .origin_category_id
-        .as_deref()
-        .or_else(|| prompt.category_path.last().map(|entry| entry.category_id.as_str()))
-}
-
 fn category_snapshot_node<'a>(
     snapshot: &'a SocraticCategorySnapshot,
     category_id: &str,
@@ -3423,54 +3474,59 @@ fn category_status_label(status: &planner_schemas::SocraticCategoryStatus) -> &'
     }
 }
 
-fn checkpoint_active_prompt(
-    checkpoint: &crate::session::InterviewCheckpoint,
-) -> Option<PromptEnvelope> {
-    checkpoint
-        .active_thread_id
-        .as_deref()
-        .and_then(|active_thread_id| {
-            checkpoint
-                .prompt_bank
-                .iter()
-                .find(|entry| entry.category_id == active_thread_id)
-                .map(|entry| entry.prompt.clone())
-        })
-        .or_else(|| checkpoint.prompt_bank.first().map(|entry| entry.prompt.clone()))
-        .or_else(|| checkpoint.current_prompt.clone())
+fn session_prompt_by_id(session: &Session, prompt_id: &str) -> Option<PromptEnvelope> {
+    session.checkpoint.as_ref().and_then(|checkpoint| {
+        checkpoint
+            .prompt_bank
+            .iter()
+            .find(|entry| entry.prompt.prompt_id == prompt_id)
+            .map(|entry| entry.prompt.clone())
+    })
 }
 
-pub(crate) fn prompt_bank_response(session: &Session) -> GetSessionPromptBankResponse {
-    let checkpoint = session.checkpoint.as_ref();
-    let snapshot = checkpoint.and_then(|checkpoint| checkpoint.current_category_snapshot.as_ref());
-    let active_thread_id = checkpoint
-        .and_then(|checkpoint| checkpoint.active_thread_id.clone())
+fn visible_saved_prompt_drafts(
+    saved_prompt_drafts: &HashMap<String, crate::session::SavedPromptAnswerDraft>,
+    prompt_entries: &[PromptBankEntry],
+) -> HashMap<String, crate::session::SavedPromptAnswerDraft> {
+    let visible_item_ids = prompt_entries
+        .iter()
+        .flat_map(|entry| entry.prompt.items.iter().map(|item| item.item_id.clone()))
+        .collect::<std::collections::HashSet<_>>();
+
+    saved_prompt_drafts
+        .iter()
+        .filter(|(item_id, _)| visible_item_ids.contains(item_id.as_str()))
+        .map(|(item_id, draft)| (item_id.clone(), draft.clone()))
+        .collect()
+}
+
+pub(crate) fn prompt_bank_response_from_parts(
+    session_id: &str,
+    saved_prompt_drafts: &HashMap<String, crate::session::SavedPromptAnswerDraft>,
+    snapshot: Option<&SocraticCategorySnapshot>,
+    prompt_entries: &[PromptBankEntry],
+    requested_active_thread_id: Option<&str>,
+    initial_bank_complete: bool,
+) -> GetSessionPromptBankResponse {
+    let build_ready = snapshot
+        .map(|snapshot| snapshot.build_ready)
+        .unwrap_or(false);
+    let initial_bank_complete =
+        initial_bank_complete && (!prompt_entries.is_empty() || build_ready);
+    let active_thread_id = requested_active_thread_id
+        .filter(|active_thread_id| {
+            prompt_entries
+                .iter()
+                .any(|entry| entry.category_id == *active_thread_id)
+        })
+        .map(str::to_string)
         .or_else(|| {
-            checkpoint
-                .and_then(checkpoint_active_prompt)
-                .as_ref()
-                .and_then(prompt_focus_category_id)
-                .map(str::to_string)
+            prompt_entries
+                .first()
+                .map(|entry| entry.category_id.clone())
         });
 
-    let checkpoint_banked_entries = checkpoint
-        .map(|checkpoint| {
-            if checkpoint.prompt_bank.is_empty() {
-                checkpoint_active_prompt(checkpoint)
-                    .map(|prompt| {
-                        let category_id = prompt_focus_category_id(&prompt)
-                            .map(str::to_string)
-                            .unwrap_or_else(|| prompt.prompt_id.clone());
-                        vec![PromptBankEntry { category_id, prompt }]
-                    })
-                    .unwrap_or_default()
-            } else {
-                checkpoint.prompt_bank.clone()
-            }
-        })
-        .unwrap_or_default();
-
-    let banked_threads = checkpoint_banked_entries
+    let banked_threads = prompt_entries
         .iter()
         .map(|entry| {
             let fallback_title = entry
@@ -3504,7 +3560,7 @@ pub(crate) fn prompt_bank_response(session: &Session) -> GetSessionPromptBankRes
         })
         .collect::<Vec<_>>();
 
-    let banked_thread_ids = checkpoint_banked_entries
+    let banked_thread_ids = prompt_entries
         .iter()
         .map(|entry| entry.category_id.as_str())
         .collect::<std::collections::HashSet<_>>();
@@ -3527,27 +3583,50 @@ pub(crate) fn prompt_bank_response(session: &Session) -> GetSessionPromptBankRes
         })
         .unwrap_or_default();
 
-    let build_ready = snapshot.map(|snapshot| snapshot.build_ready).unwrap_or(false);
-    let initial_bank_complete = checkpoint
-        .map(|checkpoint| checkpoint.initial_prompt_bank_complete)
-        .unwrap_or(false)
-        || build_ready
-        || snapshot
-            .map(|snapshot| {
-                let prompt_ready_nodes = snapshot.nodes.iter().filter(|node| node.has_prompt_ready).count();
-                prompt_ready_nodes == 0 || banked_threads.len() >= prompt_ready_nodes
-            })
-            .unwrap_or(!banked_threads.is_empty());
-
     GetSessionPromptBankResponse {
-        session_id: session.id.to_string(),
+        session_id: session_id.to_string(),
         active_thread_id,
         banked_threads,
         queued_threads,
         build_ready,
         build_readiness_message: snapshot.map(|snapshot| snapshot.build_readiness_message.clone()),
         initial_bank_complete,
+        saved_drafts: visible_saved_prompt_drafts(saved_prompt_drafts, prompt_entries),
     }
+}
+
+pub(crate) fn prompt_bank_response(session: &Session) -> GetSessionPromptBankResponse {
+    let checkpoint = session.checkpoint.as_ref();
+
+    prompt_bank_response_from_parts(
+        &session.id.to_string(),
+        &session.saved_prompt_drafts,
+        checkpoint.and_then(|checkpoint| checkpoint.current_category_snapshot.as_ref()),
+        checkpoint
+            .map(|checkpoint| checkpoint.prompt_bank.as_slice())
+            .unwrap_or(&[]),
+        checkpoint.and_then(|checkpoint| checkpoint.active_thread_id.as_deref()),
+        checkpoint
+            .map(|checkpoint| checkpoint.initial_prompt_bank_complete)
+            .unwrap_or(false),
+    )
+}
+
+pub(crate) fn runtime_prompt_bank_response(
+    session: &Session,
+    snapshot: &SocraticCategorySnapshot,
+    prompt_entries: &[PromptBankEntry],
+    active_thread_id: Option<&str>,
+    initial_bank_complete: bool,
+) -> GetSessionPromptBankResponse {
+    prompt_bank_response_from_parts(
+        &session.id.to_string(),
+        &session.saved_prompt_drafts,
+        Some(snapshot),
+        prompt_entries,
+        active_thread_id,
+        initial_bank_complete,
+    )
 }
 
 async fn get_session_prompt_bank(
@@ -3569,6 +3648,96 @@ async fn get_session_prompt_bank(
             Json(ErrorResponse {
                 error: format!("Session not found: {}", id),
                 code: None,
+            }),
+        )),
+    }
+}
+
+async fn save_session_prompt_drafts(
+    State(state): State<Arc<AppState>>,
+    claims: Claims,
+    Path(id): Path<Uuid>,
+    Json(req): Json<SaveSessionPromptDraftsRequest>,
+) -> Result<Json<SaveSessionPromptDraftsResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let session = match state.sessions.get_if_owned(id, &claims.sub) {
+        Ok(session) => session,
+        Err(Some(())) => {
+            return Err((
+                StatusCode::FORBIDDEN,
+                Json(ErrorResponse {
+                    error: "Access denied".into(),
+                    code: None,
+                }),
+            ));
+        }
+        Err(None) => {
+            return Err((
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: format!("Session not found: {}", id),
+                    code: None,
+                }),
+            ));
+        }
+    };
+
+    let prompt = session_prompt_by_id(&session, &req.prompt_id).ok_or_else(|| {
+        (
+            StatusCode::CONFLICT,
+            Json(ErrorResponse {
+                error: "Prompt draft save rejected because the prompt is no longer current.".into(),
+                code: Some("prompt_stale".into()),
+            }),
+        )
+    })?;
+
+    let valid_item_ids = prompt
+        .items
+        .iter()
+        .map(|item| item.item_id.as_str())
+        .collect::<std::collections::HashSet<_>>();
+    let invalid_item = req
+        .answers
+        .iter()
+        .find(|answer| !valid_item_ids.contains(answer.item_id.as_str()))
+        .map(|answer| answer.item_id.clone());
+    if let Some(item_id) = invalid_item {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: format!("Prompt draft save included unknown item {}", item_id),
+                code: Some("prompt_item_invalid".into()),
+            }),
+        ));
+    }
+
+    let mut save_response = None;
+    let updated = state.sessions.update(id, |session| {
+        let (saved_count, cleared_count, saved_at) =
+            session.save_prompt_draft_answers(&req.prompt_id, &req.answers);
+        save_response = Some(SaveSessionPromptDraftsResponse {
+            session_id: session.id.to_string(),
+            prompt_id: req.prompt_id.clone(),
+            saved_count,
+            cleared_count,
+            saved_at,
+        });
+    });
+
+    match (updated, save_response) {
+        (Some(_), Some(response)) => Ok(Json(response)),
+        (None, _) => Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: format!("Session not found: {}", id),
+                code: None,
+            }),
+        )),
+        _ => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: "Prompt draft save failed unexpectedly.".into(),
+                code: Some("prompt_draft_save_failed".into()),
             }),
         )),
     }
@@ -4597,6 +4766,17 @@ async fn start_socratic(
     Path(id): Path<Uuid>,
     Json(req): Json<StartSocraticRequest>,
 ) -> Result<Json<StartSocraticResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let description = req.description.trim().to_string();
+    if description.is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "Description cannot be empty".into(),
+                code: Some("EMPTY_DESCRIPTION".into()),
+            }),
+        ));
+    }
+
     // Verify ownership (read-only).
     let session = match state.sessions.get_if_owned(id, &claims.sub) {
         Ok(session) => session,
@@ -4636,7 +4816,7 @@ async fn start_socratic(
         }
         project
     } else {
-        ensure_session_project_assignment(&state, id, &req.description).map_err(|error| {
+        ensure_session_project_assignment(&state, id, &description).map_err(|error| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse {
@@ -4650,21 +4830,14 @@ async fn start_socratic(
     // Store the initial description in the session for reference.
     stop_active_session_work(&state, id);
     state.sessions.update(id, |s| {
-        s.project_description = Some(req.description.clone());
+        s.reset_for_interview_restart();
+        s.project_description = Some(description.clone());
         s.ensure_title_from_description();
         s.set_archived(false);
-        s.intake_phase = "interviewing".into();
-        s.interview_live_attached = false;
-        s.interview_runtime_active = false;
         s.project_id = Some(project.id);
         s.project_slug = Some(project.slug.clone());
         s.project_name = Some(project.name.clone());
-        if s.cxdb_project_id.is_none() {
-            s.cxdb_project_id = Some(project.id);
-        }
-        s.ensure_socratic_run_id();
-        s.checkpoint = None;
-        s.has_checkpoint = false;
+        s.cxdb_project_id = Some(project.id);
     });
 
     // Touch to extend expiry.
@@ -10284,6 +10457,61 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_create_project_session_with_description_seeds_waiting_startup_truth() {
+        let state = test_state();
+        let project = state.projects.create(
+            "dev|local",
+            "Ops Console",
+            Some("Track service health, alerts, and deployment posture".into()),
+            None,
+            Vec::new(),
+            None,
+        );
+        let app = routes(state);
+
+        let req = Request::builder()
+            .method("POST")
+            .uri(format!("/projects/{}/sessions", project.slug))
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "title": "Ops Console analysis",
+                    "description": "Track service health, alerts, and deployment posture"
+                })
+                .to_string(),
+            ))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::CREATED);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let created: CreateSessionResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(
+            created.session.project_description.as_deref(),
+            Some("Track service health, alerts, and deployment posture")
+        );
+        assert_eq!(created.session.intake_phase, "waiting");
+        assert_eq!(
+            created.session.resume_status,
+            crate::session::ResumeStatus::ReadyToStart
+        );
+        assert_eq!(
+            created.session.workspace_status.state,
+            crate::session::WorkspaceStatusState::ReadyToStart
+        );
+        assert_eq!(created.session.project_id, Some(project.id));
+        assert_eq!(
+            created.session.project_slug.as_deref(),
+            Some(project.slug.as_str())
+        );
+        assert_eq!(
+            created.session.project_name.as_deref(),
+            Some(project.name.as_str())
+        );
+    }
+
+    #[tokio::test]
     async fn test_create_session() {
         let state = test_state();
         let app = routes(state.clone());
@@ -10305,6 +10533,97 @@ mod tests {
         // In dev mode, user_id is "dev|local"
         assert_eq!(created.session.user_id, "dev|local");
         assert_eq!(state.sessions.count(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_create_session_with_description_seeds_waiting_startup_truth() {
+        let state = test_state();
+        let app = routes(state.clone());
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/sessions")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "description": "Build an operations console for tracking service health"
+                })
+                .to_string(),
+            ))
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::CREATED);
+
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let created: CreateSessionResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(
+            created.session.project_description.as_deref(),
+            Some("Build an operations console for tracking service health")
+        );
+        assert_eq!(created.session.intake_phase, "waiting");
+        assert_eq!(
+            created.session.resume_status,
+            crate::session::ResumeStatus::ReadyToStart
+        );
+        assert_eq!(
+            created.session.workspace_status.state,
+            crate::session::WorkspaceStatusState::ReadyToStart
+        );
+        assert!(created.session.project_id.is_some());
+        assert!(created.session.project_slug.is_some());
+        assert!(created.session.project_name.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_start_socratic_preserves_waiting_startup_truth() {
+        let state = test_state();
+        let session = state.sessions.create("dev|local");
+        let id = session.id;
+        state.sessions.update(id, |draft| {
+            draft.project_description = Some("Old brief".into());
+            draft.intake_phase = "error".into();
+            draft.current_step = Some("socratic.prompt.generated".into());
+            draft.error_message = Some("Old failure".into());
+            draft.ensure_checkpoint();
+        });
+        let app = routes(state.clone());
+
+        let req = Request::builder()
+            .method("POST")
+            .uri(format!("/sessions/{}/socratic", id))
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "description": "Build an operations console for tracking service health"
+                })
+                .to_string(),
+            ))
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let updated = state.sessions.get(id).expect("session should remain available");
+        assert_eq!(
+            updated.project_description.as_deref(),
+            Some("Build an operations console for tracking service health")
+        );
+        assert_eq!(updated.intake_phase, "waiting");
+        assert_eq!(updated.resume_status, crate::session::ResumeStatus::ReadyToStart);
+        assert_eq!(
+            updated.workspace_status.state,
+            crate::session::WorkspaceStatusState::ReadyToStart
+        );
+        assert!(!updated.can_restart_from_description);
+        assert!(!updated.has_checkpoint);
+        assert!(updated.checkpoint.is_none());
+        assert!(updated.project_id.is_some());
+        assert!(updated.project_slug.is_some());
+        assert!(updated.project_name.is_some());
+        assert!(state.socratic_runtimes.get(id).is_none());
     }
 
     #[tokio::test]
@@ -10409,6 +10728,10 @@ mod tests {
             .unwrap();
         let wrapped: GetSessionResponse = serde_json::from_slice(&body).unwrap();
         assert_eq!(wrapped.session.id, id);
+        assert_eq!(
+            wrapped.session.workspace_status.state,
+            crate::session::WorkspaceStatusState::ReadyToStart
+        );
     }
 
     #[tokio::test]

@@ -302,13 +302,13 @@ test("phase 17 closes the workflow loop and keeps Solid as the active surface", 
 
   await expect(page.getByRole("button", { name: "Duplicate" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Export" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Restart from description" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Restart" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Retry pipeline" })).toBeVisible();
 
   await page.getByRole("button", { name: "Export" }).click();
   await expect(page.getByText(/Exported .*\.json/)).toBeVisible();
 
-  await page.getByRole("button", { name: "Restart from description" }).click();
+  await page.getByRole("button", { name: "Restart" }).click();
   await expect(page.getByText("Session reset to the original description.")).toBeVisible();
 
   await page.getByRole("button", { name: "Retry pipeline" }).click();
@@ -321,12 +321,13 @@ test("phase 17 closes the workflow loop and keeps Solid as the active surface", 
   await page.getByRole("link", { name: "Back to project" }).click();
   await expect(page).toHaveURL(/\/projects\/personal-calendar$/);
 
-  await page.getByText("Project review, readiness, and advanced surfaces").click();
+  await page.getByRole("button", { name: "Project review, readiness, and advanced surfaces" }).click();
+  await expect(page).toHaveURL(/\/projects\/personal-calendar\?tab=review$/);
   await page.getByRole("tab", { name: "Review" }).click();
   await page.getByRole("button", { name: "Start re-import" }).click();
-  await expect(page.getByRole("link", { name: "Open import desk" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Open import review" })).toBeVisible();
 
-  await page.getByRole("link", { name: "Open import desk" }).click();
+  await page.getByRole("link", { name: "Open import review" }).click();
   await expect(page).toHaveURL(/\/projects\/personal-calendar\/import$/);
   await page.getByRole("button", { name: "Start re-import" }).click();
   await expect(page.getByText("Re-import request queued")).toBeVisible();

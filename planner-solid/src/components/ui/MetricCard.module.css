@@ -1,0 +1,27 @@
+.card {
+  padding: 12px;
+  border: 1px solid var(--surface-elevated-border);
+  border-radius: 14px;
+  background: var(--surface-elevated-bg);
+}
+
+.label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.value {
+  margin-top: 8px;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--text-primary);
+}
+
+.text {
+  font-size: 14px;
+  line-height: 1.4;
+}

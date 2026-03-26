@@ -289,13 +289,8 @@ async fn generate_question(
         );
     }
 
-    let user_prompt = build_generation_prompt(
-        state,
-        strategy,
-        constitution,
-        conversation_history,
-        None,
-    );
+    let user_prompt =
+        build_generation_prompt(state, strategy, constitution, conversation_history, None);
 
     match lane {
         QuestionGenerationLane::Scaffold | QuestionGenerationLane::FastModel => {
@@ -503,7 +498,10 @@ fn choose_generation_lane(
 }
 
 fn has_unresolved_contradictions(state: &RequirementsBeliefState) -> bool {
-    state.contradictions.iter().any(|contradiction| !contradiction.resolved)
+    state
+        .contradictions
+        .iter()
+        .any(|contradiction| !contradiction.resolved)
 }
 
 fn unresolved_dependency_count(dimension: &Dimension, state: &RequirementsBeliefState) -> usize {
@@ -565,7 +563,10 @@ fn scaffold_question(
             "Which capabilities must be present in the first usable version?".to_string(),
             vec![
                 quick_option("Create and edit", "Create and edit the core records"),
-                quick_option("Browse and search", "Browse, filter, and search existing records"),
+                quick_option(
+                    "Browse and search",
+                    "Browse, filter, and search existing records",
+                ),
                 quick_option("Share or collaborate", "Collaboration or shared workflows"),
                 quick_option("Notifications", "Notifications, reminders, or alerts"),
                 quick_option("Reporting", "Reporting or dashboard views"),
@@ -575,22 +576,52 @@ fn scaffold_question(
         Dimension::SuccessCriteria => (
             "How will you judge the first release as successful?".to_string(),
             vec![
-                quick_option("Main flow works", "Users can complete the main workflow reliably"),
-                quick_option("Time saved", "The product saves time or reduces manual work"),
-                quick_option("Adoption target", "Success is measured by usage or adoption"),
-                quick_option("Business impact", "Success is measured by revenue or conversion impact"),
-                quick_option("Fewer errors", "Success is measured by fewer mistakes or support issues"),
+                quick_option(
+                    "Main flow works",
+                    "Users can complete the main workflow reliably",
+                ),
+                quick_option(
+                    "Time saved",
+                    "The product saves time or reduces manual work",
+                ),
+                quick_option(
+                    "Adoption target",
+                    "Success is measured by usage or adoption",
+                ),
+                quick_option(
+                    "Business impact",
+                    "Success is measured by revenue or conversion impact",
+                ),
+                quick_option(
+                    "Fewer errors",
+                    "Success is measured by fewer mistakes or support issues",
+                ),
             ],
             true,
         ),
         Dimension::UserFlows => (
             "Which end-to-end user flow needs to work first?".to_string(),
             vec![
-                quick_option("New user starts", "A new user can start and finish the primary task"),
-                quick_option("Returning user", "A returning user can review and continue work"),
-                quick_option("Admin setup", "An admin can set up people, settings, or permissions"),
-                quick_option("Edit existing work", "A user can update or correct existing data"),
-                quick_option("Repeat workflow", "A user can complete a scheduled or repeat action"),
+                quick_option(
+                    "New user starts",
+                    "A new user can start and finish the primary task",
+                ),
+                quick_option(
+                    "Returning user",
+                    "A returning user can review and continue work",
+                ),
+                quick_option(
+                    "Admin setup",
+                    "An admin can set up people, settings, or permissions",
+                ),
+                quick_option(
+                    "Edit existing work",
+                    "A user can update or correct existing data",
+                ),
+                quick_option(
+                    "Repeat workflow",
+                    "A user can complete a scheduled or repeat action",
+                ),
             ],
             true,
         ),
@@ -599,7 +630,10 @@ fn scaffold_question(
             vec![
                 quick_option("Advanced automation", "Advanced automation can wait"),
                 quick_option("Third-party integrations", "External integrations can wait"),
-                quick_option("Complex permissions", "Advanced roles or permission systems can wait"),
+                quick_option(
+                    "Complex permissions",
+                    "Advanced roles or permission systems can wait",
+                ),
                 quick_option("Analytics", "Advanced analytics or reporting can wait"),
                 quick_option("Mobile/offline", "Mobile or offline support can wait"),
             ],
@@ -876,24 +910,19 @@ mod tests {
             fail_first: false,
         }));
 
-        let output = generate_question(
-            &router,
-            &state,
-            &strategy,
-            &make_constitution(),
-            &[],
-        )
-        .await
-        .expect("platform scaffold should succeed");
+        let output = generate_question(&router, &state, &strategy, &make_constitution(), &[])
+            .await
+            .expect("platform scaffold should succeed");
 
         assert_eq!(output.target_dimension, Dimension::Platform);
-        assert_eq!(output.question, "Which platform should the first version prioritize?");
-        assert!(
-            models
-                .lock()
-                .expect("model log mutex should not be poisoned")
-                .is_empty()
+        assert_eq!(
+            output.question,
+            "Which platform should the first version prioritize?"
         );
+        assert!(models
+            .lock()
+            .expect("model log mutex should not be poisoned")
+            .is_empty());
     }
 
     #[tokio::test]
@@ -931,13 +960,14 @@ mod tests {
         .expect("success criteria scaffold should still succeed");
 
         assert_eq!(output.target_dimension, Dimension::SuccessCriteria);
-        assert_eq!(output.question, "How will you judge the first release as successful?");
-        assert!(
-            models
-                .lock()
-                .expect("model log mutex should not be poisoned")
-                .is_empty()
+        assert_eq!(
+            output.question,
+            "How will you judge the first release as successful?"
         );
+        assert!(models
+            .lock()
+            .expect("model log mutex should not be poisoned")
+            .is_empty());
     }
 
     #[tokio::test]

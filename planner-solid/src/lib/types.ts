@@ -6,6 +6,24 @@ export type ResumeStatus =
   | "interview_restart_only"
   | "interview_resume_unknown"
   | "interview_checkpoint_resumable";
+export type WorkspaceStatusState =
+  | "ready_to_start"
+  | "starting_analysis"
+  | "classifying"
+  | "assembling_prompt_bank"
+  | "awaiting_response"
+  | "build_ready"
+  | "pipeline_running"
+  | "complete"
+  | "attention_required";
+export type WorkspaceStatusTone = "neutral" | "active" | "success" | "warning" | "error";
+
+export interface WorkspaceStatus {
+  state: WorkspaceStatusState;
+  label: string;
+  detail?: string | null;
+  tone: WorkspaceStatusTone;
+}
 
 export interface SessionSummary {
   id: string;
@@ -27,6 +45,7 @@ export interface SessionSummary {
   can_retry_pipeline: boolean;
   has_checkpoint: boolean;
   resume_status: ResumeStatus;
+  workspace_status?: WorkspaceStatus | null;
 }
 
 export interface Session {
@@ -49,6 +68,7 @@ export interface Session {
   can_retry_pipeline: boolean;
   has_checkpoint: boolean;
   resume_status: ResumeStatus;
+  workspace_status?: WorkspaceStatus | null;
 }
 
 export type EventLevel = "info" | "warn" | "error";
@@ -368,6 +388,11 @@ export interface StartSocraticResponse {
   ws_url: string;
 }
 
+export interface ClientStartSocraticMessage {
+  type: "start_socratic";
+  description: string;
+}
+
 export interface PromptOption {
   option_id: string;
   label: string;
@@ -390,6 +415,15 @@ export interface PromptEnvelope {
   origin_category_id?: string | null;
   items: PromptItem[];
   allow_partial_submit: boolean;
+}
+
+export interface SavedPromptAnswerDraft {
+  prompt_id: string;
+  item_id: string;
+  selected_option_id?: string | null;
+  custom_text?: string | null;
+  skipped: boolean;
+  updated_at: string;
 }
 
 export interface PromptBankThread {
@@ -416,6 +450,7 @@ export interface PromptBankResponse {
   build_ready: boolean;
   build_readiness_message?: string | null;
   initial_bank_complete: boolean;
+  saved_drafts?: Record<string, SavedPromptAnswerDraft>;
 }
 
 export type ImportStatus = "queued" | "cloning" | "analyzing" | "review_pending" | "applied" | "failed";
@@ -560,4 +595,12 @@ export interface ClientPromptResponseMessage {
   client_context?: {
     viewport_class?: "mobile" | "tablet" | "desktop";
   };
+}
+
+export interface SavePromptDraftsResponse {
+  session_id: string;
+  prompt_id: string;
+  saved_count: number;
+  cleared_count: number;
+  saved_at: string;
 }

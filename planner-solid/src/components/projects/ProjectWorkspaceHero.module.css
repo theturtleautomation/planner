@@ -1,0 +1,61 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 24px;
+  border: 1px solid var(--surface-elevated-border);
+  border-radius: 20px;
+  background: var(--surface-elevated-bg);
+}
+
+.focus {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px;
+  align-items: flex-start;
+  padding: 18px;
+  border: 1px solid var(--surface-elevated-border);
+  border-radius: 16px;
+  background: var(--surface-base-bg);
+}
+
+.focusBody {
+  min-width: 0;
+}
+
+.focusLabel {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.focusTitle {
+  margin: 8px 0 0;
+  font-size: clamp(24px, 3vw, 32px);
+  line-height: 1.08;
+}
+
+.focusCopy {
+  margin: 10px 0 0;
+  color: var(--text-secondary);
+  line-height: 1.58;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+@media (max-width: 900px) {
+  .focus {
+    grid-template-columns: 1fr;
+  }
+
+  .actions {
+    justify-content: flex-start;
+  }
+}

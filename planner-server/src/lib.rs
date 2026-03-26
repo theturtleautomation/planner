@@ -5,6 +5,7 @@
 
 pub mod api;
 pub mod auth;
+pub mod e2e_mock_llm;
 pub mod import;
 pub mod project;
 pub mod rate_limit;
