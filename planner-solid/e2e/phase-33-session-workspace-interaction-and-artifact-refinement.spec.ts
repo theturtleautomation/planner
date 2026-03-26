@@ -171,48 +171,50 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-test("phase 33 groups topbar actions and strengthens the artifact-first workspace framing", async ({ page }) => {
+test("phase 34 shows the full question bank without a redundant artifact pane", async ({ page }) => {
   const draftSaves = [];
   await mockSessionWorkspace(page, draftSaves);
 
   await page.goto("/sessions/session-1");
 
   await expect(page.getByRole("link", { name: "Back to project" })).toBeVisible();
-  await expect(page.locator(".session-artifact-topbar")).toContainText("Artifact-first workspace");
-  await expect(page.locator(".session-action-group")).toHaveCount(2);
-  await expect(page.locator(".session-action-group").first()).toContainText("Workspace tools");
-  await expect(page.locator(".session-action-group").first()).toContainText("Project import");
-  await expect(page.locator(".session-action-group").first()).toContainText("Duplicate");
-  await expect(page.locator(".session-action-group").first()).toContainText("Export");
-  await expect(page.locator(".session-action-group").last()).toContainText("Recovery");
-  await expect(page.locator(".session-action-group").last()).toContainText("Restart");
-  await expect(page.locator(".session-artifact-summary-strip")).toContainText("Committed");
-  await expect(page.locator(".session-artifact-summary-strip")).toContainText("Live sections");
-  await expect(page.locator(".session-lane-head")).toContainText("Interview lane");
-  await expect(page.locator(".session-artifact-document-head")).toContainText("Working blueprint");
-  await expect(page.locator(".session-artifact-document-head")).toContainText("Captured so far");
-  await expect(page.locator(".session-artifact-question-label-row").first()).toContainText("Prompt anchor");
-  await expect(page.locator(".session-artifact-answer-label")).toHaveCount(1);
+  await expect(page.locator(".session-question-header")).toContainText("Question-bank workspace");
+  await expect(page.locator(".session-question-header-actions")).toContainText("Project import");
+  await expect(page.locator(".session-question-header-actions")).toContainText("Duplicate");
+  await expect(page.locator(".session-question-header-actions")).toContainText("Export");
+  await expect(page.locator(".session-question-header-actions")).toContainText("Restart");
+  await expect(page.locator(".session-question-summary-strip")).toContainText("Questions");
+  await expect(page.locator(".session-question-summary-strip")).toContainText("Committed");
+  await expect(page.locator(".session-question-jumpbar")).toContainText("Question bank");
+  await expect(page.locator(".session-thread-chip")).toHaveCount(2);
+  await expect(page.locator(".session-question-card")).toHaveCount(3);
+  await expect(page.locator("textarea")).toHaveCount(3);
+  await expect(page.getByText("How will you judge the first release as successful?")).toBeVisible();
+  await expect(page.getByText("What failure would make this release a miss?")).toBeVisible();
+  await expect(page.getByText("Which actions must work end to end on day one?")).toBeVisible();
+  await expect(page.locator(".session-queued-panel")).toContainText("Queued threads");
+  await expect(page.locator(".session-queued-panel")).toContainText("Integrations");
+  await expect(page.locator(".session-artifact-pane")).toHaveCount(0);
+  await expect(page.locator(".session-surface-tab")).toHaveCount(0);
+  await expect(page.getByText("Prompt anchor")).toHaveCount(0);
+  await expect(page.getByText("Working blueprint")).toHaveCount(0);
 });
 
-test("phase 33 preserves narrow-width interview and artifact switching", async ({ page }) => {
+test("phase 34 keeps the same all-questions-visible workspace on narrow widths", async ({ page }) => {
   const draftSaves = [];
   await mockSessionWorkspace(page, draftSaves);
   await page.setViewportSize({ width: 840, height: 900 });
 
   await page.goto("/sessions/session-1");
 
-  await expect(page.getByRole("tab", { name: "Interview" })).toBeVisible();
-  await expect(page.getByRole("tab", { name: "Artifact" })).toBeVisible();
-  await expect(page.locator(".session-interview-pane")).toBeVisible();
-  await expect(page.locator(".session-artifact-pane")).toHaveCount(0);
+  await expect(page.locator(".session-surface-tab")).toHaveCount(0);
+  await expect(page.locator(".session-question-card")).toHaveCount(3);
+  await expect(page.locator("textarea")).toHaveCount(3);
 
-  await page.getByRole("tab", { name: "Artifact" }).click();
-  await expect(page.locator(".session-artifact-pane")).toBeVisible();
-  await expect(page.locator(".session-artifact-document-head")).toContainText("Working blueprint");
-  await expect(page.locator(".session-artifact-section.is-queued")).toContainText("Queued sections");
-
-  await page.getByRole("tab", { name: "Interview" }).click();
-  await expect(page.locator(".session-interview-pane")).toBeVisible();
-  await expect(page.locator(".session-interview-head")).toContainText("Current thread");
+  await page.getByRole("button", { name: /Core workflows 0\/1/i }).click();
+  await expect(page.locator(".session-thread-section.is-active")).toContainText("Core workflows");
+  await expect(page.locator(".session-question-card.is-active")).toContainText(
+    "Which actions must work end to end on day one?",
+  );
+  await expect(page.locator(".session-queued-panel")).toContainText("Integrations");
 });

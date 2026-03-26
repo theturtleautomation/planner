@@ -24,16 +24,23 @@ export default function HomePage() {
     <section class="page page-scroll">
       <Title>Planner Work Entry</Title>
       <div class="stack page-frame">
-        <section class="hero-panel home-hero-panel">
-          <div class="eyebrow">Work entry</div>
-          <h1 class="hero-title">Open the project, continue the analysis, and move the build forward.</h1>
-          <p class="hero-copy">
-            Planner keeps projects as the main container for ongoing work. Recent analysis stays close, and direct sessions remain available as a focused detour when you need a one-off start without creating a new project first.
-          </p>
+        <section class="section-panel home-entry-panel">
+          <div class="home-entry-head">
+            <div>
+              <div class="eyebrow">Work entry</div>
+              <h1 class="home-entry-title">Project work</h1>
+              <p class="home-entry-copy">
+                Projects stay primary. Reopen the next project, or use a direct session when you need a focused one-off analysis.
+              </p>
+            </div>
+            <A class="btn btn-subtle" href="/projects">
+              All projects
+            </A>
+          </div>
           <Show
             when={featured()}
             fallback={
-              <div class="hero-actions">
+              <div class="home-entry-actions">
                 <A class="btn btn-primary" href="/projects/new">
                   Start the first project
                 </A>
@@ -44,27 +51,29 @@ export default function HomePage() {
             }
           >
             {summary => (
-              <>
-                <div class="hero-focus">
-                  <div>
-                    <div class="hero-focus-label">{summary().statusLabel}</div>
-                    <h2 class="hero-focus-title">{summary().project.name}</h2>
-                    <p class="hero-focus-copy">
-                      {summary().primarySession?.project_description?.trim() ||
-                        summary().project.description?.trim() ||
-                        "Continue shaping the current idea without hunting through route clutter."}
-                    </p>
-                  </div>
-                  <div class="hero-actions">
-                    <A class="btn btn-primary" href={`/projects/${summary().project.slug}`}>
-                      {summary().nextActionLabel}
-                    </A>
-                    <A class="btn btn-subtle" href="/sessions/new">
-                      Direct session
-                    </A>
-                  </div>
+              <div class="home-entry-spotlight">
+                <div class="home-entry-spotlight-meta">
+                  <span class={`state-badge is-${summary().status}`}>{summary().statusLabel}</span>
+                  <span>{summary().sessionCount} sessions</span>
                 </div>
-              </>
+                <h2 class="home-entry-spotlight-title">{summary().project.name}</h2>
+                <p class="home-entry-spotlight-copy">
+                  {summary().primarySession?.project_description?.trim() ||
+                    summary().project.description?.trim() ||
+                    "Continue shaping the current idea without hunting through route clutter."}
+                </p>
+                <div class="home-entry-actions">
+                  <A class="btn btn-primary" href={`/projects/${summary().project.slug}`}>
+                    {summary().nextActionLabel}
+                  </A>
+                  <A class="btn btn-subtle" href="/projects/new">
+                    New project
+                  </A>
+                  <A class="btn btn-subtle" href="/sessions/new">
+                    Direct session
+                  </A>
+                </div>
+              </div>
             )}
           </Show>
         </section>

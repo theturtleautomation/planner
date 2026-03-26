@@ -5,6 +5,7 @@
 **Parent:** [Planner SolidStart Phase 31 Session Workspace Route Family Decomposition Spec](/home/thetu/planner/docs/planner-solidstart-phase-31-session-workspace-route-family-decomposition-spec.md)  
 **Related Planning:** [Planner SolidStart Phase 22 Session Workspace Master-Detail Density And Autosave Spec](/home/thetu/planner/docs/planner-solidstart-phase-22-session-workspace-master-detail-density-and-autosave-spec.md), [Planner SolidStart Phase 23 Session Live Artifact Split Spec](/home/thetu/planner/docs/planner-solidstart-phase-23-session-live-artifact-split-spec.md), [Planner SolidStart Phase 29 Work Entry Summary Truth And Workflow Continuity Spec](/home/thetu/planner/docs/planner-solidstart-phase-29-work-entry-summary-truth-and-workflow-continuity-spec.md), [Project Plan](/home/thetu/planner/docs/project-plan.md)  
 **Source Review:** 2026-03-26 follow-on review of the implemented session workspace split, the current `session-workspace-screen.tsx` artifact/interview surface, and the precursor Phase 22/23 interaction decisions after Phase 32 route-topology clarification
+**Planning Note (2026-03-26):** follow-on user validation after implementation rejected the artifact-first split as the preferred session workspace because the route must keep all banked questions directly available from the start. The active correction is now [Planner SolidStart Phase 34 Session Question-Bank Workspace Reset Spec](/home/thetu/planner/docs/planner-solidstart-phase-34-session-question-bank-workspace-reset-spec.md).
 
 ## 1. Executive Judgment
 

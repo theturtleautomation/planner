@@ -110,6 +110,7 @@ These are the main planning documents currently shaping the repo:
 - [Planner SolidStart Phase 31 Session Workspace Route Family Decomposition Spec](/home/thetu/planner/docs/planner-solidstart-phase-31-session-workspace-route-family-decomposition-spec.md)
 - [Planner SolidStart Phase 32 Work Entry IA And Session Route Topology Spec](/home/thetu/planner/docs/planner-solidstart-phase-32-work-entry-ia-and-session-route-topology-spec.md)
 - [Planner SolidStart Phase 33 Session Workspace Interaction And Artifact Refinement Spec](/home/thetu/planner/docs/planner-solidstart-phase-33-session-workspace-interaction-and-artifact-refinement-spec.md)
+- [Planner SolidStart Phase 34 Session Question-Bank Workspace Reset Spec](/home/thetu/planner/docs/planner-solidstart-phase-34-session-question-bank-workspace-reset-spec.md)
 - [Planning Status Audit Remediation Spec](/home/thetu/planner/docs/planning-status-audit-remediation-spec.md)
 
 ## Current Active Thread
@@ -427,6 +428,15 @@ Current planning state:
     refining the session interaction model, grouped action chrome, denser
     interview framing, and artifact-document emphasis without reopening the
     runtime contract
+  - user validation on 2026-03-26 then rejected the artifact-first direction
+    itself because the session route must expose all banked questions from the
+    start rather than splitting the page into one editable prompt plus a
+    mirrored artifact surface
+  - the bounded correction is now
+    [Planner SolidStart Phase 34 Session Question-Bank Workspace Reset Spec](/home/thetu/planner/docs/planner-solidstart-phase-34-session-question-bank-workspace-reset-spec.md),
+    which is now implemented and removes the artifact pane as the preferred
+    workspace model while restoring the full question bank as the primary local
+    surface
 - the bank-first runtime and saved-brief startup contracts from Phase 26 and
   Phase 28 remain locked dependencies across that series rather than becoming a
   new planning branch
@@ -533,6 +543,15 @@ Current remediation result:
   - commit-and-advance is now browser-proven for both the button and
     `Cmd+Enter` path, including draft save, artifact update, processed
     progression, and focus continuity
+- [Planner SolidStart Phase 34 Session Question-Bank Workspace Reset Spec](/home/thetu/planner/docs/planner-solidstart-phase-34-session-question-bank-workspace-reset-spec.md)
+  is now implemented:
+  - user validation rejected the artifact-first split as redundant because it
+    hid editable work behind a mirrored second surface
+  - `/sessions/:sessionId` now uses a single question-bank workspace with all
+    banked questions rendered directly in one local surface
+  - the route keeps jump navigation, truthful draft-save recovery, per-
+    question commit-and-advance, and visible queued-later work without
+    reintroducing the old split layout
 
 Current SolidStart tranche status:
 

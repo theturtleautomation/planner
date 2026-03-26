@@ -96,6 +96,7 @@ export interface SessionWorkspaceController {
   handleSurfaceTabChange: (tab: SurfaceTab) => void;
   setActiveTask: (threadId: string, itemId: string | null, flushCurrent?: boolean) => void;
   handleDraftChange: (thread: PromptBankThread, itemId: string, next: DraftEntry) => void;
+  handleCommitAnswer: (thread: PromptBankThread, itemId: string, nextDraft?: DraftEntry) => Promise<void>;
   handleCommitCurrentAnswer: (nextDraft?: DraftEntry) => Promise<void>;
   handleDuplicate: (currentSession: Session) => Promise<void>;
   handleExport: (currentSession: Session) => Promise<void>;
@@ -382,10 +383,15 @@ export function useSessionWorkspaceController(): SessionWorkspaceController {
     return true;
   };
 
-  const handleCommitCurrentAnswer = async (nextDraft?: DraftEntry) => {
-    const thread = selectedThread();
-    const item = activeItem();
-    if (!thread || !item) return;
+  const handleCommitAnswer = async (
+    thread: PromptBankThread,
+    itemId: string,
+    nextDraft?: DraftEntry,
+  ) => {
+    const item = thread.prompt.items.find(candidate => candidate.item_id === itemId);
+    if (!item) return;
+
+    setActiveTask(thread.category_id, item.item_id, false);
     const currentDraft = nextDraft ?? draftsByQuestionId()[item.item_id];
     if (item.required && !draftHasContent(currentDraft)) {
       setSubmitError("This prompt needs an answer before you can continue.");
@@ -434,6 +440,13 @@ export function useSessionWorkspaceController(): SessionWorkspaceController {
     if (threadProcessed) {
       void submitThread(thread);
     }
+  };
+
+  const handleCommitCurrentAnswer = async (nextDraft?: DraftEntry) => {
+    const thread = selectedThread();
+    const item = activeItem();
+    if (!thread || !item) return;
+    await handleCommitAnswer(thread, item.item_id, nextDraft);
   };
 
   const handleDraftChange = (thread: PromptBankThread, itemId: string, next: DraftEntry) => {
@@ -694,6 +707,7 @@ export function useSessionWorkspaceController(): SessionWorkspaceController {
     handleSurfaceTabChange: setSurfaceTab,
     setActiveTask,
     handleDraftChange,
+    handleCommitAnswer,
     handleCommitCurrentAnswer,
     handleDuplicate,
     handleExport,

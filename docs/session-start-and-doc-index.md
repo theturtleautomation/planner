@@ -104,6 +104,7 @@ Read these when the task touches the relevant area.
 - [planner-solidstart-phase-31-session-workspace-route-family-decomposition-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-31-session-workspace-route-family-decomposition-spec.md)
 - [planner-solidstart-phase-32-work-entry-ia-and-session-route-topology-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-32-work-entry-ia-and-session-route-topology-spec.md)
 - [planner-solidstart-phase-33-session-workspace-interaction-and-artifact-refinement-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-33-session-workspace-interaction-and-artifact-refinement-spec.md)
+- [planner-solidstart-phase-34-session-question-bank-workspace-reset-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-34-session-question-bank-workspace-reset-spec.md)
 - [socratic-lobby-document-chrome-and-scroll-de-escalation-spec.md](/home/thetu/planner/docs/socratic-lobby-document-chrome-and-scroll-de-escalation-spec.md)
 - [socratic-lobby-first-reveal-preload-gate-spec.md](/home/thetu/planner/docs/socratic-lobby-first-reveal-preload-gate-spec.md)
 - [planner-design-system-command-center-plan.md](/home/thetu/planner/docs/planner-design-system-command-center-plan.md)
