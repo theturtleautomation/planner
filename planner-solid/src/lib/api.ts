@@ -30,6 +30,26 @@ import type {
 
 const API_BASE = typeof window === "undefined" ? "http://127.0.0.1:3100/api" : "/api";
 
+async function parseJsonResponse<T>(response: Response, path: string): Promise<T> {
+  if (response.status === 204 || response.status === 205) {
+    return undefined as T;
+  }
+
+  const text = await response.text().catch(() => "");
+  if (!text.trim()) {
+    throw new Error(`Expected JSON from ${path}, but the response body was empty.`);
+  }
+
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    const preview = text.slice(0, 200).replace(/\s+/g, " ").trim();
+    throw new Error(
+      `Expected JSON from ${path}, but received non-JSON content: ${preview || response.statusText || response.status}`,
+    );
+  }
+}
+
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     ...init,
@@ -44,7 +64,7 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error(text || `Request failed: ${response.status}`);
   }
 
-  return response.json() as Promise<T>;
+  return parseJsonResponse<T>(response, path);
 }
 
 async function apiFetchOptional<T>(path: string, init?: RequestInit): Promise<T | null> {
@@ -65,7 +85,7 @@ async function apiFetchOptional<T>(path: string, init?: RequestInit): Promise<T 
     throw new Error(text || `Request failed: ${response.status}`);
   }
 
-  return response.json() as Promise<T>;
+  return parseJsonResponse<T>(response, path);
 }
 
 const getCache = new Map<string, Promise<unknown>>();
