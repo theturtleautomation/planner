@@ -7,6 +7,15 @@ export default defineConfig({
   plugins: [solidStart(),
     nitro()
   ],
+  server: {
+    proxy: {
+      "/api": {
+        target: "http://localhost:3100",
+        changeOrigin: true,
+        ws: true,
+      },
+    },
+  },
   test: {
     environment: "jsdom",
     setupFiles: "./src/test/setup.ts",

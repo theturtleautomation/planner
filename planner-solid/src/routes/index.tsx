@@ -5,11 +5,13 @@ import { For, Show, createMemo, createResource } from "solid-js";
 import { listProjects, listSessions } from "~/lib/api";
 import { buildProjectWorkSummaries, selectGuidedEntryProject } from "~/lib/projects";
 
-function loadWorkEntry() {
-  return Promise.all([listProjects(), listSessions()]).then(([projects, sessions]) => ({
-    projects: projects.projects,
-    sessions: sessions.sessions,
-  }));
+async function loadWorkEntry() {
+  const [projectsResult, sessionsResult] = await Promise.allSettled([listProjects(), listSessions()]);
+
+  return {
+    projects: projectsResult.status === "fulfilled" ? projectsResult.value.projects : [],
+    sessions: sessionsResult.status === "fulfilled" ? sessionsResult.value.sessions : [],
+  };
 }
 
 export default function HomePage() {
