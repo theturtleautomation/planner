@@ -23,7 +23,6 @@ interface ProjectWorkspaceHeroProps {
 export function ProjectWorkspaceHero(props: ProjectWorkspaceHeroProps) {
   return (
     <section class={styles.root}>
-      <div class="eyebrow">Project workspace</div>
       <h1 class="hero-title">{props.projectName}</h1>
       <p class="hero-copy">
         {props.projectDescription?.trim() ||

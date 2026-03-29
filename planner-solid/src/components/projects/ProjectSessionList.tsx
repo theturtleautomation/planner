@@ -17,7 +17,6 @@ export function ProjectSessionList(props: ProjectSessionListProps) {
     <section class={styles.root}>
       <div class={styles.head}>
         <div>
-          <div class="eyebrow">Recent project work</div>
           <h2 class="section-title">Analysis sessions</h2>
         </div>
         <A class="btn btn-subtle" href="/sessions">
