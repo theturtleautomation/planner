@@ -67,11 +67,6 @@ export default function ProjectsPage() {
           <div class="section-head">
             <div>
               <div class="eyebrow">Projects</div>
-              <h1 class="page-title">Active work directory</h1>
-              <p class="page-copy">
-                Open the project container, not a maze of route families. Active analysis rises
-                first. Quiet projects stay compact.
-              </p>
             </div>
             <div class="page-actions">
               <A class="btn btn-primary" href="/projects/new">

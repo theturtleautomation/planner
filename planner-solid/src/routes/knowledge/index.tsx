@@ -66,11 +66,6 @@ export default function KnowledgePage() {
           <div class="section-head">
             <div>
               <div class="eyebrow">Knowledge inventory</div>
-              <h1 class="page-title">Knowledge</h1>
-              <p class="page-copy">
-                Browse captured project truth as an inventory first. Filters stay visible, and
-                selected-node detail remains attached instead of competing with the list.
-              </p>
             </div>
           </div>
           <div class="page-summary-row">
@@ -78,8 +73,7 @@ export default function KnowledgePage() {
               {projects()?.projects.find(project => project.slug === selectedProject())?.name ?? "Loading project…"}
             </span>
             <span class="page-summary-note">
-              {filteredNodes().length} visible node{filteredNodes().length === 1 ? "" : "s"} in
-              the current inventory slice.
+              {filteredNodes().length} visible node{filteredNodes().length === 1 ? "" : "s"} in this slice.
             </span>
           </div>
         </section>
@@ -88,7 +82,7 @@ export default function KnowledgePage() {
           <div class="section-head">
             <div>
               <div class="eyebrow">Scope and filters</div>
-              <h2 class="section-title">Inventory controls</h2>
+              <h2 class="section-title">Filters</h2>
             </div>
           </div>
           <div class="knowledge-toolbar">
@@ -129,10 +123,10 @@ export default function KnowledgePage() {
                 <h2 class="section-title">Nodes</h2>
               </div>
             </div>
-            <Show when={!blueprint.loading} fallback={<div class="advanced-loading">Loading knowledge inventory…</div>}>
+            <Show when={!blueprint.loading} fallback={<div class="advanced-loading">Loading inventory…</div>}>
               <Show
                 when={filteredNodes().length > 0}
-                fallback={<div class="empty-state">No nodes match the current project and filter slice.</div>}
+                fallback={<div class="empty-state">No nodes match the current filters.</div>}
               >
                 <div class="advanced-list">
                   <For each={filteredNodes()}>
@@ -160,13 +154,13 @@ export default function KnowledgePage() {
           <div class="knowledge-detail-panel">
             <div class="section-head">
               <div>
-                <div class="eyebrow">Attached detail</div>
+                <div class="eyebrow">Detail</div>
                 <h2 class="section-title">Selected node</h2>
               </div>
             </div>
             <Show
               when={selectedNode()}
-              fallback={<div class="empty-state">Select a node to inspect its attached detail.</div>}
+              fallback={<div class="empty-state">Select a node to inspect details.</div>}
             >
               {node => (
                 <div class="advanced-column-panel">

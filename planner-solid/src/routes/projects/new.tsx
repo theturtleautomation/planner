@@ -33,17 +33,6 @@ export default function NewProjectPage() {
       <Title>New Project</Title>
       <div class="stack page-frame">
         <section class="section-panel form-panel page-intro-panel">
-          <div class="section-head">
-            <div>
-              <div class="eyebrow">New project</div>
-              <h1 class="page-title">Create the primary container for the next analysis.</h1>
-              <p class="page-copy">
-                Projects are the main home for ongoing work. Name the project, add a short idea
-                description, and move straight into the workspace.
-              </p>
-            </div>
-          </div>
-
           <form class="inline-form" onSubmit={handleSubmit}>
             <label class="field-label">
               Project name

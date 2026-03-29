@@ -27,18 +27,6 @@ export default function HomePage() {
       <Title>Planner Work Entry</Title>
       <div class="stack page-frame">
         <section class="section-panel home-entry-panel">
-          <div class="home-entry-head">
-            <div>
-              <div class="eyebrow">Work entry</div>
-              <h1 class="home-entry-title">Project work</h1>
-              <p class="home-entry-copy">
-                Projects stay primary. Reopen the next project, or use a direct session when you need a focused one-off analysis.
-              </p>
-            </div>
-            <A class="btn btn-subtle" href="/projects">
-              All projects
-            </A>
-          </div>
           <Show
             when={featured()}
             fallback={
@@ -84,7 +72,6 @@ export default function HomePage() {
           <div class="section-head">
             <div>
               <div class="eyebrow">Recent projects</div>
-              <h2 class="section-title">Project-first work directory</h2>
             </div>
             <A class="btn btn-subtle" href="/projects">
               All projects

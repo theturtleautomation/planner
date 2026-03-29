@@ -32,7 +32,7 @@ export default function App() {
               </div>
               <nav class="app-nav" aria-label="Primary">
                 <A href="/" end activeClass="is-active">
-                  Work
+                  Home
                 </A>
                 <A href="/projects" activeClass="is-active">
                   Projects
