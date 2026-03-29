@@ -12,13 +12,11 @@ const deleteProjectAction = action(async (projectSlug: string) => deleteProject(
   name: "project-delete",
 });
 
-async function loadProjectsDirectory() {
-  const [projectsResult, sessionsResult] = await Promise.allSettled([listProjects(), listSessions()]);
-
-  return {
-    projects: projectsResult.status === "fulfilled" ? projectsResult.value.projects : [],
-    sessions: sessionsResult.status === "fulfilled" ? sessionsResult.value.sessions : [],
-  };
+function loadProjectsDirectory() {
+  return Promise.all([listProjects(), listSessions()]).then(([projects, sessions]) => ({
+    projects: projects.projects,
+    sessions: sessions.sessions,
+  }));
 }
 
 export default function ProjectsPage() {

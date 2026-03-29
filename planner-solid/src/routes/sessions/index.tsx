@@ -17,16 +17,8 @@ function formatTimestamp(value: string): string {
   });
 }
 
-async function loadSessions() {
-  try {
-    return await listSessions();
-  } catch {
-    return { sessions: [] };
-  }
-}
-
 export default function SessionsPage() {
-  const [data] = createResource(loadSessions);
+  const [data] = createResource(listSessions);
 
   return (
     <section class="page page-scroll">
