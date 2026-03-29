@@ -66,11 +66,6 @@ export default function KnowledgePage() {
           <div class="section-head">
             <div>
               <div class="eyebrow">Knowledge inventory</div>
-              <h1 class="page-title">Knowledge</h1>
-              <p class="page-copy">
-                Browse captured project truth as an inventory first. Filters stay visible, and
-                selected-node detail remains attached instead of competing with the list.
-              </p>
             </div>
           </div>
           <div class="page-summary-row">

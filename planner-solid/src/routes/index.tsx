@@ -84,7 +84,6 @@ export default function HomePage() {
           <div class="section-head">
             <div>
               <div class="eyebrow">Recent projects</div>
-              <h2 class="section-title">Project-first work directory</h2>
             </div>
             <A class="btn btn-subtle" href="/projects">
               All projects
