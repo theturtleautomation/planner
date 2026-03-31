@@ -1,9 +1,18 @@
 import { Title } from "@solidjs/meta";
-import { A } from "@solidjs/router";
-import { For, Show, createMemo, createResource } from "solid-js";
+import { A, useNavigate, useSearchParams } from "@solidjs/router";
+import { For, Match, Show, Switch, createEffect, createMemo, createResource, createSignal } from "solid-js";
+import { isServer } from "solid-js/web";
 
-import { listProjects, listSessions } from "~/lib/api";
-import { buildProjectWorkSummaries, selectGuidedEntryProject } from "~/lib/projects";
+import { ProjectCreateForm } from "~/components/projects/ProjectCreateForm";
+import { ConfirmDialog } from "~/components/ui/ConfirmDialog";
+import { StatusBadge } from "~/components/ui/StatusBadge";
+import { createProject, deleteProject, listProjects, listSessions } from "~/lib/api";
+import { isFrontendMockEnabled, withFrontendMockSearch } from "~/lib/mock/runtime";
+import { createMockProject, getMockProject } from "~/lib/mock/store";
+import { buildProjectWorkSummaries } from "~/lib/projects";
+import type { Project } from "~/lib/types";
+
+const PENDING_MOCK_PROJECT_STORAGE_KEY = "planner.frontend-mock.pending-project";
 
 function loadWorkEntry() {
   return Promise.all([listProjects(), listSessions()]).then(([projects, sessions]) => ({
@@ -12,95 +21,231 @@ function loadWorkEntry() {
   }));
 }
 
+function firstParam(value: string | string[] | undefined): string {
+  return Array.isArray(value) ? value[0] ?? "" : value ?? "";
+}
+
+function homeFallbackSlug(input: string): string {
+  return (
+    input
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 48) || "project"
+  );
+}
+
 export default function HomePage() {
-  const [data] = createResource(loadWorkEntry);
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const [data, { refetch }] = createResource(loadWorkEntry);
+  const [projectPendingDelete, setProjectPendingDelete] = createSignal<Project | null>(null);
+  const [deletePendingSlug, setDeletePendingSlug] = createSignal<string | null>(null);
+  const [deleteError, setDeleteError] = createSignal<string | null>(null);
+  const [autoCreateError, setAutoCreateError] = createSignal<string | null>(null);
+  const [autoCreating, setAutoCreating] = createSignal(false);
+  const [autoCreateStarted, setAutoCreateStarted] = createSignal(false);
+  const initialName = createMemo(() => firstParam(searchParams.name).trim());
+  const initialDescription = createMemo(() => firstParam(searchParams.description).trim());
   const summaries = createMemo(() => {
     const current = data();
     return current ? buildProjectWorkSummaries(current.projects, current.sessions) : [];
   });
-  const featured = createMemo(() => selectGuidedEntryProject(summaries()));
+
+  if (isServer && isFrontendMockEnabled() && initialName()) {
+    const slug = homeFallbackSlug(initialName());
+    const response = (() => {
+      try {
+        return getMockProject(slug);
+      } catch {
+        return createMockProject({
+          name: initialName(),
+          description: initialDescription() || null,
+          slug,
+        });
+      }
+    })();
+    const target = withFrontendMockSearch(`/projects/${response.project.slug}`);
+
+    return (
+      <section class="page page-scroll">
+        <Title>Creating Project</Title>
+        <div class="stack page-frame">
+          <section class="section-panel form-panel page-intro-panel">
+            <div class="empty-state">Creating project…</div>
+            <script>
+              {`window.sessionStorage.setItem(${JSON.stringify(PENDING_MOCK_PROJECT_STORAGE_KEY)}, ${JSON.stringify(
+                JSON.stringify({
+                  name: response.project.name,
+                  description: response.project.description,
+                  slug: response.project.slug,
+                }),
+              )}); window.location.replace(${JSON.stringify(target)});`}
+            </script>
+          </section>
+        </div>
+      </section>
+    );
+  }
+
+  createEffect(() => {
+    if (!initialName() || autoCreateStarted()) return;
+    if (isFrontendMockEnabled()) return;
+
+    setAutoCreateStarted(true);
+    setAutoCreating(true);
+    setAutoCreateError(null);
+
+    void createProject({
+      name: initialName(),
+      description: initialDescription() || null,
+    })
+      .then(response => {
+        navigate(withFrontendMockSearch(`/projects/${response.project.slug}`), {
+          replace: true,
+        });
+      })
+      .catch(error => {
+        setAutoCreateError(error instanceof Error ? error.message : "Unable to create project.");
+        setAutoCreating(false);
+      });
+  });
+
+  const openDeleteDialog = (project: Project) => {
+    setDeleteError(null);
+    setProjectPendingDelete(project);
+  };
+
+  const handleDeleteDialogOpenChange = (open: boolean) => {
+    if (open || !!deletePendingSlug()) return;
+    setProjectPendingDelete(null);
+  };
+
+  const handleDeleteProject = async () => {
+    const project = projectPendingDelete();
+    if (!project) return;
+
+    setDeleteError(null);
+    setDeletePendingSlug(project.slug);
+    try {
+      await deleteProject(project.slug);
+      await refetch();
+      setProjectPendingDelete(null);
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : "Failed to delete project.");
+    } finally {
+      setDeletePendingSlug(null);
+    }
+  };
 
   return (
     <section class="page page-scroll">
-      <Title>Planner Work Entry</Title>
+      <Title>Planner Home</Title>
       <div class="stack page-frame">
         <section class="section-panel home-entry-panel">
-          <Show
-            when={featured()}
-            fallback={
-              <div class="home-entry-actions">
-                <A class="btn btn-primary" href="/projects/new">
-                  Start the first project
-                </A>
-                <A class="btn btn-subtle" href="/sessions/new">
-                  Direct session
-                </A>
-              </div>
-            }
-          >
-            {summary => (
-              <div class="home-entry-spotlight">
-                <div class="home-entry-spotlight-meta">
-                  <span class={`state-badge is-${summary().status}`}>{summary().statusLabel}</span>
-                  <span>{summary().sessionCount} sessions</span>
-                </div>
-                <h2 class="home-entry-spotlight-title">{summary().project.name}</h2>
-                <p class="home-entry-spotlight-copy">
-                  {summary().primarySession?.project_description?.trim() ||
-                    summary().project.description?.trim() ||
-                    "Continue shaping the current idea without hunting through route clutter."}
-                </p>
-                <div class="home-entry-actions">
-                  <A class="btn btn-primary" href={`/projects/${summary().project.slug}`}>
-                    {summary().nextActionLabel}
-                  </A>
-                  <A class="btn btn-subtle" href="/projects/new">
-                    New project
-                  </A>
-                  <A class="btn btn-subtle" href="/sessions/new">
-                    Direct session
-                  </A>
-                </div>
-              </div>
-            )}
-          </Show>
+          <div class="home-entry-composer-shell">
+            <div class="home-entry-composer-copy">
+              <div class="eyebrow">Home</div>
+              <p class="home-entry-copy">
+                Start a new project immediately, then reopen existing work from the same shared
+                directory below.
+              </p>
+            </div>
+            <Switch>
+              <Match when={autoCreating()}>
+                <div class="empty-state">Creating project…</div>
+              </Match>
+              <Match when={autoCreateError()}>
+                {message => (
+                  <div class="stack">
+                    <div class="error-copy">{message()}</div>
+                    <ProjectCreateForm
+                      class="inline-form home-entry-form"
+                      initialDescription={firstParam(searchParams.description)}
+                      initialName={firstParam(searchParams.name)}
+                      titlePlaceholder="Project title"
+                      descriptionPlaceholder="What are you shaping, testing, or trying to make real?"
+                      secondaryAction={
+                        <A class="btn btn-subtle" href={withFrontendMockSearch("/sessions/new")}>
+                          Direct session
+                        </A>
+                      }
+                    />
+                  </div>
+                )}
+              </Match>
+              <Match when={true}>
+                <ProjectCreateForm
+                  class="inline-form home-entry-form"
+                  titlePlaceholder="Project title"
+                  descriptionPlaceholder="What are you shaping, testing, or trying to make real?"
+                  secondaryAction={
+                    <A class="btn btn-subtle" href={withFrontendMockSearch("/sessions/new")}>
+                      Direct session
+                    </A>
+                  }
+                />
+              </Match>
+            </Switch>
+          </div>
         </section>
 
-        <section class="section-panel">
+        <section class="section-panel page-intro-panel">
           <div class="section-head">
             <div>
-              <div class="eyebrow">Recent projects</div>
+              <div class="eyebrow">Projects</div>
+              <h2 class="group-title">Current work</h2>
             </div>
-            <A class="btn btn-subtle" href="/projects">
-              All projects
-            </A>
           </div>
+          <Show when={deleteError()}>
+            {message => <div class="error-copy">{message()}</div>}
+          </Show>
 
-          <Show
-            when={data()}
-            fallback={<div class="empty-state">Loading recent project work…</div>}
-          >
+          <Show when={data()} fallback={<div class="empty-state">Loading projects…</div>}>
             <Show
               when={summaries().length > 0}
-              fallback={<div class="empty-state">No projects yet. Create one and start a Socratic analysis.</div>}
+              fallback={
+                <div class="empty-state">
+                  No projects yet. Create one above and start a Socratic analysis.
+                </div>
+              }
             >
-              <div class="project-list compact">
-                <For each={summaries().slice(0, 4)}>
+              <div class="project-list">
+                <For each={summaries()}>
                   {summary => (
-                    <A class="project-row" href={`/projects/${summary.project.slug}`}>
-                      <div class="project-row-main">
-                        <div class="project-row-title">{summary.project.name}</div>
-                        <div class="project-row-copy">
-                          {summary.primarySession?.project_description?.trim() ||
-                            summary.project.description?.trim() ||
-                            "Ready for a new analysis path."}
+                    <div class="project-row">
+                      <A
+                        aria-label={summary.project.name}
+                        class="project-row-link"
+                        href={withFrontendMockSearch(`/projects/${summary.project.slug}`)}
+                      >
+                        <div class="project-row-main">
+                          <div class="project-row-title">{summary.project.name}</div>
+                          <div class="project-row-copy">
+                            {summary.primarySession?.project_description?.trim() ||
+                              summary.project.description?.trim() ||
+                              "Ready to start a new Socratic analysis."}
+                          </div>
                         </div>
+                        <div class="project-row-facts">
+                          <StatusBadge tone={summary.status}>{summary.statusLabel}</StatusBadge>
+                          <span>{summary.sessionCount} sessions</span>
+                          <span>{summary.nextActionLabel}</span>
+                        </div>
+                      </A>
+                      <div class="project-row-actions">
+                        <button
+                          aria-label={`Delete ${summary.project.name}`}
+                          class="btn btn-subtle btn-danger"
+                          disabled={deletePendingSlug() === summary.project.slug}
+                          type="button"
+                          onClick={() => openDeleteDialog(summary.project)}
+                        >
+                          {deletePendingSlug() === summary.project.slug ? "Deleting…" : "Delete"}
+                        </button>
                       </div>
-                      <div class="project-row-facts">
-                        <span class={`state-badge is-${summary.status}`}>{summary.statusLabel}</span>
-                        <span>{summary.sessionCount} sessions</span>
-                      </div>
-                    </A>
+                    </div>
                   )}
                 </For>
               </div>
@@ -108,6 +253,20 @@ export default function HomePage() {
           </Show>
         </section>
       </div>
+      <ConfirmDialog
+        confirmLabel="Delete project"
+        description={
+          projectPendingDelete()
+            ? `Delete "${projectPendingDelete()!.name}" permanently? This will stop any active sessions, remove this project's sessions and owned knowledge, and preserve shared knowledge by unlinking it from this project. This action cannot be undone.`
+            : ""
+        }
+        error={deleteError()}
+        open={!!projectPendingDelete()}
+        pending={deletePendingSlug() === projectPendingDelete()?.slug}
+        title="Delete project permanently"
+        onConfirm={handleDeleteProject}
+        onOpenChange={handleDeleteDialogOpenChange}
+      />
     </section>
   );
 }

@@ -1,13 +1,21 @@
 .PHONY: all build check test clean \
        rust rust-check rust-test rust-build rust-release \
        web web-install web-build web-test web-lint web-dev \
-       fmt clippy
+       fmt clippy \
+       builder-auth-status builder-launch builder-create-project builder-connect-repo \
+       builder-connect-repo-dryrun builder-index-repo builder-code \
+       builder-list-projects builder-get-project builder-update-project \
+       builder-server-launch builder-server-create-project builder-server-update-project \
+       builder-figma-generate builder-figma-publish builder-figma-migrate \
+       builder-sync-project
 
 # ---------------------------------------------------------------------------
 # Combo targets
 # ---------------------------------------------------------------------------
 
 all: check build ## Check + build everything (default)
+
+ARGS ?=
 
 build: rust-build web-build ## Build Rust (debug) + Web (prod)
 
@@ -63,6 +71,61 @@ web-lint: node_modules ## eslint
 
 web-dev: node_modules ## vite dev server
 	npm run dev --prefix planner-solid
+
+# ---------------------------------------------------------------------------
+# Builder
+# ---------------------------------------------------------------------------
+
+builder-auth-status: ## Show Builder CLI auth status
+	./scripts/builder-auth-status.sh $(ARGS)
+
+builder-launch: ## Launch the canonical Builder UI-review project against frontend mock mode
+	./scripts/builder-launch.sh $(ARGS)
+
+builder-create-project: ## Create the canonical Builder UI-review Fusion project non-interactively
+	./scripts/builder-create-project.sh $(ARGS)
+
+builder-connect-repo: ## Connect this repo to Builder Fusion
+	./scripts/builder-connect-repo.sh $(ARGS)
+
+builder-connect-repo-dryrun: ## Preview Builder Fusion repo connection config
+	./scripts/builder-connect-repo-dryrun.sh $(ARGS)
+
+builder-index-repo: ## Index this repo in Builder
+	./scripts/builder-index-repo.sh $(ARGS)
+
+builder-code: ## Run Builder code generation CLI in this repo
+	./scripts/builder-code.sh $(ARGS)
+
+builder-list-projects: ## List Fusion projects visible to the current Builder auth context
+	./scripts/builder-list-projects.sh $(ARGS)
+
+builder-get-project: ## Inspect the saved Fusion project or an explicit project ID
+	./scripts/builder-get-project.sh $(ARGS)
+
+builder-update-project: ## Sync the saved Fusion project's runtime settings to the canonical UI-review config
+	./scripts/builder-update-project.sh $(ARGS)
+
+builder-server-launch: ## Launch Builder Fusion against the server-backed integration runtime
+	BUILDER_PROJECT_CONFIG_PATH=./builder.server.config.json ./scripts/builder-launch.sh $(ARGS)
+
+builder-server-create-project: ## Create a server-backed integration Fusion project explicitly
+	BUILDER_PROJECT_CONFIG_PATH=./builder.server.config.json ./scripts/builder-create-project.sh $(ARGS)
+
+builder-server-update-project: ## Sync the saved Fusion project to the server-backed integration config explicitly
+	BUILDER_PROJECT_CONFIG_PATH=./builder.server.config.json ./scripts/builder-update-project.sh $(ARGS)
+
+builder-figma-generate: ## Run Builder Figma generate flow
+	./scripts/builder-figma-generate.sh $(ARGS)
+
+builder-figma-publish: ## Publish Builder Figma mappings
+	./scripts/builder-figma-publish.sh $(ARGS)
+
+builder-figma-migrate: ## Migrate Builder Figma mappings into this repo
+	./scripts/builder-figma-migrate.sh $(ARGS)
+
+builder-sync-project: ## Sync this repo into Builder CMS via fallback skill
+	./scripts/builder-sync-project.sh $(ARGS)
 
 # Auto-install if node_modules missing
 node_modules: planner-solid/package.json

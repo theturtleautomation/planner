@@ -1,6 +1,7 @@
 import { Title } from "@solidjs/meta";
 import { HttpStatusCode } from "@solidjs/start";
 import { A } from "@solidjs/router";
+import { withFrontendMockSearch } from "~/lib/mock/runtime";
 
 export default function NotFound() {
   return (
@@ -14,10 +15,10 @@ export default function NotFound() {
           That route is outside the current Planner workspace. Return to the project-first surface and continue the active analysis there.
         </p>
         <div class="button-row">
-          <A class="btn btn-primary" href="/projects">
+          <A class="btn btn-primary" href={withFrontendMockSearch("/projects")}>
             Open projects
           </A>
-          <A class="btn btn-subtle" href="/">
+          <A class="btn btn-subtle" href={withFrontendMockSearch("/")}>
             Go home
           </A>
         </div>

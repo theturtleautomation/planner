@@ -4310,8 +4310,8 @@ pub async fn run_pipeline_for_session(state: Arc<AppState>, session_id: Uuid, de
 
     let router = state.llm_router.clone();
 
-    let worker = match planner_core::pipeline::steps::factory_worker::CodexFactoryWorker::new() {
-        Ok(w) => w,
+    let worker = match crate::e2e_mock_llm::factory_worker_from_env_or_default() {
+        Ok(worker) => worker,
         Err(e) => {
             record_session_event(
                 &state,
@@ -4412,7 +4412,7 @@ pub async fn run_pipeline_for_session(state: Arc<AppState>, session_id: Uuid, de
             let mut pipeline_future =
                 Box::pin(planner_core::pipeline::run_full_pipeline_with_run_id(
                     &config,
-                    &worker,
+                    worker.as_ref(),
                     project_id,
                     run_id,
                     &description,
@@ -4444,7 +4444,7 @@ pub async fn run_pipeline_for_session(state: Arc<AppState>, session_id: Uuid, de
             let mut pipeline_future =
                 Box::pin(planner_core::pipeline::run_full_pipeline_with_run_id(
                     &config,
-                    &worker,
+                    worker.as_ref(),
                     project_id,
                     run_id,
                     &description,
@@ -6928,6 +6928,13 @@ mod tests {
             pipeline_runtimes: crate::runtime::SessionPipelineRegistry::new(),
             started_at: std::time::Instant::now(),
         })
+    }
+
+    fn env_guard() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+        LOCK.get_or_init(|| std::sync::Mutex::new(()))
+            .lock()
+            .unwrap()
     }
 
     fn test_state_with_event_store(data_dir: &std::path::Path) -> Arc<AppState> {
@@ -10606,13 +10613,19 @@ mod tests {
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
 
-        let updated = state.sessions.get(id).expect("session should remain available");
+        let updated = state
+            .sessions
+            .get(id)
+            .expect("session should remain available");
         assert_eq!(
             updated.project_description.as_deref(),
             Some("Build an operations console for tracking service health")
         );
         assert_eq!(updated.intake_phase, "waiting");
-        assert_eq!(updated.resume_status, crate::session::ResumeStatus::ReadyToStart);
+        assert_eq!(
+            updated.resume_status,
+            crate::session::ResumeStatus::ReadyToStart
+        );
         assert_eq!(
             updated.workspace_status.state,
             crate::session::WorkspaceStatusState::ReadyToStart
@@ -10966,6 +10979,61 @@ mod tests {
         assert!(response.planner_message.content.contains("pipeline"));
         // system + user + planner = 3
         assert_eq!(response.session.messages.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn full_pipeline_mock_mode_completes_pipeline_runtime() {
+        let _guard = env_guard();
+        std::env::set_var(crate::e2e_mock_llm::RUNTIME_MOCK_ENV, "full_pipeline");
+
+        let state = Arc::new(AppState {
+            sessions: SessionStore::new(),
+            blueprints: planner_core::blueprint::BlueprintStore::new(),
+            proposals: planner_core::discovery::ProposalStore::new(),
+            projects: crate::project::ProjectStore::new(),
+            imports: crate::import::ProjectImportStore::new(),
+            import_acquirer: Arc::new(ImmediateSuccessImportAcquirer),
+            import_analyzer: crate::import::default_import_analyzer(),
+            auth_config: None,
+            event_store: None,
+            cxdb: None,
+            llm_router: Arc::new(crate::e2e_mock_llm::router_from_env_or_default()),
+            socratic_runtimes: crate::runtime::SessionRuntimeRegistry::new(
+                std::time::Duration::from_secs(30),
+            ),
+            pipeline_runtimes: crate::runtime::SessionPipelineRegistry::new(),
+            started_at: std::time::Instant::now(),
+        });
+
+        let session = state.sessions.create("dev|local");
+        let session_id = session.id;
+        let worktree_root = std::env::temp_dir().join(format!("planner-full-mock-{}", session_id));
+        std::env::set_var(
+            "PLANNER_WORKTREE_ROOT",
+            worktree_root.to_string_lossy().to_string(),
+        );
+
+        run_pipeline_for_session(
+            state.clone(),
+            session_id,
+            "Build a countdown timer widget for workouts".into(),
+        )
+        .await;
+
+        let updated = state
+            .sessions
+            .get(session_id)
+            .expect("session should exist");
+        assert_eq!(updated.intake_phase, "complete");
+        assert!(!updated.pipeline_running);
+        assert!(updated.error_message.is_none());
+        assert!(updated.messages.iter().any(|message| {
+            message.role == "planner" && message.content.contains("Pipeline complete!")
+        }));
+
+        let _ = std::fs::remove_dir_all(&worktree_root);
+        std::env::remove_var("PLANNER_WORKTREE_ROOT");
+        std::env::remove_var(crate::e2e_mock_llm::RUNTIME_MOCK_ENV);
     }
 
     #[tokio::test]

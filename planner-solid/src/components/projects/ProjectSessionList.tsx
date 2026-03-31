@@ -1,6 +1,7 @@
 import { A } from "@solidjs/router";
 import { For, Show } from "solid-js";
 
+import { withFrontendMockSearch } from "~/lib/mock/runtime";
 import { formatProjectSurfaceTimestamp } from "~/lib/project-surface";
 import { getSessionSummaryStatus, getSessionSummarySurfaceTone } from "~/lib/session-status";
 import type { SessionSummary } from "~/lib/types";
@@ -19,7 +20,7 @@ export function ProjectSessionList(props: ProjectSessionListProps) {
         <div>
           <h2 class="section-title">Analysis sessions</h2>
         </div>
-        <A class="btn btn-subtle" href="/sessions">
+        <A class="btn btn-subtle" href={withFrontendMockSearch("/sessions")}>
           All sessions
         </A>
       </div>
@@ -35,7 +36,7 @@ export function ProjectSessionList(props: ProjectSessionListProps) {
               const surfaceTone = getSessionSummarySurfaceTone(session);
 
               return (
-                <A class={styles.row} href={`/sessions/${session.id}`}>
+                <A class={styles.row} href={withFrontendMockSearch(`/sessions/${session.id}`)}>
                   <div class={styles.rowMain}>
                     <div class={styles.rowTitle}>{presentSessionTitle(session)}</div>
                     <div class={styles.rowCopy}>

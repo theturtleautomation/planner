@@ -105,6 +105,20 @@ Read these when the task touches the relevant area.
 - [planner-solidstart-phase-32-work-entry-ia-and-session-route-topology-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-32-work-entry-ia-and-session-route-topology-spec.md)
 - [planner-solidstart-phase-33-session-workspace-interaction-and-artifact-refinement-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-33-session-workspace-interaction-and-artifact-refinement-spec.md)
 - [planner-solidstart-phase-34-session-question-bank-workspace-reset-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-34-session-question-bank-workspace-reset-spec.md)
+- [planner-solidstart-phase-35-backendless-mock-route-coverage-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-35-backendless-mock-route-coverage-spec.md)
+- [planner-solidstart-phase-35-1-shared-frontend-mock-foundation-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-35-1-shared-frontend-mock-foundation-spec.md)
+- [planner-solidstart-phase-35-2-work-entry-and-queue-routes-frontend-mock-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-35-2-work-entry-and-queue-routes-frontend-mock-spec.md)
+- [planner-solidstart-phase-35-3-session-workspace-frontend-mock-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-35-3-session-workspace-frontend-mock-spec.md)
+- [planner-solidstart-phase-35-4-project-workspace-frontend-mock-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-35-4-project-workspace-frontend-mock-spec.md)
+- [planner-solidstart-phase-35-5-import-review-frontend-mock-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-35-5-import-review-frontend-mock-spec.md)
+- [planner-solidstart-phase-35-6-knowledge-and-blueprint-frontend-mock-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-35-6-knowledge-and-blueprint-frontend-mock-spec.md)
+- [planner-solidstart-phase-35-7-events-discovery-and-admin-frontend-mock-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-35-7-events-discovery-and-admin-frontend-mock-spec.md)
+- [planner-solidstart-phase-35-8-backendless-mock-closeout-remediation-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-35-8-backendless-mock-closeout-remediation-spec.md)
+- [planner-solidstart-phase-35-9-backendless-mock-residual-cleanup-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-35-9-backendless-mock-residual-cleanup-spec.md)
+- [planner-solidstart-phase-35-10-builder-frontend-mock-runtime-alignment-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-35-10-builder-frontend-mock-runtime-alignment-spec.md)
+- [planner-solidstart-phase-36-home-project-directory-consolidation-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-36-home-project-directory-consolidation-spec.md)
+- [planner-solidstart-phase-36-1-frontend-mock-vite-shell-duplication-remediation-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-36-1-frontend-mock-vite-shell-duplication-remediation-spec.md)
+- [planner-solidstart-phase-36-2-home-route-canonicality-remediation-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-36-2-home-route-canonicality-remediation-spec.md)
 - [socratic-lobby-document-chrome-and-scroll-de-escalation-spec.md](/home/thetu/planner/docs/socratic-lobby-document-chrome-and-scroll-de-escalation-spec.md)
 - [socratic-lobby-first-reveal-preload-gate-spec.md](/home/thetu/planner/docs/socratic-lobby-first-reveal-preload-gate-spec.md)
 - [planner-design-system-command-center-plan.md](/home/thetu/planner/docs/planner-design-system-command-center-plan.md)
@@ -174,6 +188,12 @@ Read these when the task touches the relevant area.
 ### Operations and observability
 
 - [admin-observability-plan.md](/home/thetu/planner/docs/admin-observability-plan.md)
+- [builder-local-workflow.md](/home/thetu/planner/docs/builder-local-workflow.md)
+- [builder-developer-docs-phase-a-exhaustive-analysis.md](/home/thetu/planner/docs/builder-developer-docs-phase-a-exhaustive-analysis.md)
+- [builder-phase-b-documented-config-and-instruction-alignment-spec.md](/home/thetu/planner/docs/builder-phase-b-documented-config-and-instruction-alignment-spec.md)
+- [builder-fusion-project-management-and-runtime-sync-spec.md](/home/thetu/planner/docs/builder-fusion-project-management-and-runtime-sync-spec.md)
+- [builder-fusion-phase-01-api-grounded-skill-and-existing-project-contract-spec.md](/home/thetu/planner/docs/builder-fusion-phase-01-api-grounded-skill-and-existing-project-contract-spec.md)
+- [builder-fusion-phase-02-existing-project-helper-contract-spec.md](/home/thetu/planner/docs/builder-fusion-phase-02-existing-project-helper-contract-spec.md)
 
 ## Repo-Local Skills
 

@@ -9,7 +9,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "tsc --noEmit --skipLibCheck",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:e2e:frontend-mock": "VITE_PLANNER_FRONTEND_MOCK=1 playwright test --config playwright.frontend-mock.config.ts"
   },
   "dependencies": {
     "@kobalte/core": "^0.13.11",

@@ -1,10 +1,15 @@
 # Planner SolidStart Phase 26 Socratic Runtime Truth Completion Remediation Spec
 
-**Status:** ready for implementation  
+**Status:** implemented  
 **Date:** 2026-03-26  
 **Parent:** [Planner SolidStart Phase 24 Socratic Runtime Contract Reset Spec](/home/thetu/planner/docs/planner-solidstart-phase-24-socratic-runtime-contract-reset-spec.md)  
 **Related Planning:** [Planner SolidStart Phase 21 Session Startup Truth And Status Clarity Spec](/home/thetu/planner/docs/planner-solidstart-phase-21-session-startup-truth-and-status-clarity-spec.md), [Planner SolidStart Phase 24 Socratic Runtime Contract Reset Spec](/home/thetu/planner/docs/planner-solidstart-phase-24-socratic-runtime-contract-reset-spec.md), [Planner SolidStart Phase 25 Socratic Runtime Verification Hardening Remediation Spec](/home/thetu/planner/docs/planner-solidstart-phase-25-socratic-runtime-verification-hardening-remediation-spec.md), [Socratic Initial Prompt Bank And Dynamic Hydration Spec](/home/thetu/planner/docs/socratic-initial-prompt-bank-and-dynamic-hydration-spec.md), [Socratic SolidStart Greenfield Platform Spec](/home/thetu/planner/docs/socratic-solidstart-greenfield-platform-spec.md), [Project Plan](/home/thetu/planner/docs/project-plan.md)  
 **Source Review:** 2026-03-26 Socratic lobby/runtime implementation review across `planner-server/src/ws_socratic.rs`, `planner-core/src/pipeline/steps/socratic/socratic_engine.rs`, `planner-server/src/session.rs`, `planner-server/src/api.rs`, `planner-solid/src/routes/sessions/[sessionId].tsx`, `planner-solid/src/lib/prompt-bank.ts`, `planner-solid/src/lib/session-status.ts`, `planner-server/tests/server_integration.rs`, and `planner-solid/e2e/*`
+
+> Status sync note (2026-03-30): this slice was implemented and should no
+> longer advertise `ready for implementation`. The active planning spine in
+> [project-plan.md](/home/thetu/planner/docs/project-plan.md) already records
+> Phase 26 as closed by implementation and live browser proof.
 
 ## 1. Executive Judgment
 

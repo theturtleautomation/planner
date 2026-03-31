@@ -24,6 +24,7 @@ import {
   hasSelectionExclusions,
   summarizeDiffHeadline,
 } from "~/lib/import-history";
+import { withFrontendMockSearch } from "~/lib/mock/runtime";
 import type {
   ProjectImportDiffSummary,
   ProjectImportHistoryComparisonResponse,
@@ -253,10 +254,13 @@ export default function ProjectImportReviewPage() {
               </p>
             </div>
             <div class="hero-actions">
-              <A class="btn btn-subtle" href={`/projects/${projectSlug()}`}>
+              <A class="btn btn-subtle" href={withFrontendMockSearch(`/projects/${projectSlug()}`)}>
                 Back to project
               </A>
-              <A class="btn btn-subtle" href="#import-history">
+              <A
+                class="btn btn-subtle"
+                href={withFrontendMockSearch(`/projects/${projectSlug()}/import#import-history`)}
+              >
                 Jump to import history
               </A>
               <Show when={current()}>
@@ -266,7 +270,7 @@ export default function ProjectImportReviewPage() {
               </Show>
               <Show when={pendingReview() && current()?.import_job.seed_session_id}>
                 {seedSessionId => (
-                  <A class="btn btn-subtle" href={`/sessions/${seedSessionId()}`}>
+                  <A class="btn btn-subtle" href={withFrontendMockSearch(`/sessions/${seedSessionId()}`)}>
                     Open seeded session
                   </A>
                 )}

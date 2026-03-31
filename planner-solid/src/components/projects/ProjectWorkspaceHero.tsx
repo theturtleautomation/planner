@@ -2,6 +2,7 @@ import { A } from "@solidjs/router";
 import { Show } from "solid-js";
 
 import { StatusBadge } from "~/components/ui/StatusBadge";
+import { withFrontendMockSearch } from "~/lib/mock/runtime";
 import type { ProjectSurfaceTone } from "~/lib/project-surface";
 
 import styles from "./ProjectWorkspaceHero.module.css";
@@ -51,7 +52,7 @@ export function ProjectWorkspaceHero(props: ProjectWorkspaceHeroProps) {
           >
             {sessionId => (
               <>
-                <A class="btn btn-primary" href={`/sessions/${sessionId()}`}>
+                <A class="btn btn-primary" href={withFrontendMockSearch(`/sessions/${sessionId()}`)}>
                   Continue analysis
                 </A>
                 <button

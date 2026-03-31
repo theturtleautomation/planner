@@ -24,6 +24,7 @@ import {
   reviewToneForState,
   type ProjectSurfaceTab,
 } from "~/lib/project-surface";
+import { withFrontendMockSearch } from "~/lib/mock/runtime";
 import type { ProjectImportResponse, PromptBankResponse } from "~/lib/types";
 
 import styles from "./ProjectAdvancedPanel.module.css";
@@ -160,10 +161,13 @@ export function ProjectAdvancedPanel(props: ProjectAdvancedPanelProps) {
 
             <Show when={props.importReview || props.importState || props.reviewSummary.state !== "quiet"}>
               <div class="button-row">
-                <A class="btn btn-subtle" href={`/projects/${props.projectSlug}/import`}>
+                <A class="btn btn-subtle" href={withFrontendMockSearch(`/projects/${props.projectSlug}/import`)}>
                   Open import review
                 </A>
-                <A class="btn btn-subtle" href={`/projects/${props.projectSlug}/import#import-history`}>
+                <A
+                  class="btn btn-subtle"
+                  href={withFrontendMockSearch(`/projects/${props.projectSlug}/import#import-history`)}
+                >
                   Open import history
                 </A>
                 <button
@@ -176,7 +180,7 @@ export function ProjectAdvancedPanel(props: ProjectAdvancedPanelProps) {
                 </button>
                 <Show when={props.importReview?.import_job.seed_session_id}>
                   {seedSessionId => (
-                    <A class="btn btn-subtle" href={`/sessions/${seedSessionId()}`}>
+                    <A class="btn btn-subtle" href={withFrontendMockSearch(`/sessions/${seedSessionId()}`)}>
                       Open seeded session
                     </A>
                   )}
@@ -279,7 +283,7 @@ export function ProjectAdvancedPanel(props: ProjectAdvancedPanelProps) {
                 <div class="button-row">
                   <Show when={props.activeSessionId}>
                     {sessionId => (
-                      <A class="btn btn-subtle" href={`/sessions/${sessionId()}`}>
+                      <A class="btn btn-subtle" href={withFrontendMockSearch(`/sessions/${sessionId()}`)}>
                         Continue analysis
                       </A>
                     )}

@@ -11,7 +11,6 @@ import {
 } from "solid-js";
 
 import {
-  buildSocraticWebSocketUrl,
   duplicateSession,
   exportSession,
   getPromptBank,
@@ -33,6 +32,12 @@ import {
   shouldOpenSessionSocket,
   shouldSendStartupHandshake,
 } from "~/lib/session-status";
+import { withFrontendMockSearch } from "~/lib/mock/runtime";
+import {
+  createSessionTransport,
+  SESSION_TRANSPORT_OPEN,
+  type SessionTransport,
+} from "~/lib/session-transport";
 import type {
   ClientPromptResponseMessage,
   ClientStartSocraticMessage,
@@ -127,7 +132,7 @@ export function useSessionWorkspaceController(): SessionWorkspaceController {
   const [draftSaveState, setDraftSaveState] = createSignal<DraftSaveState>("idle");
   const [draftSaveMessage, setDraftSaveMessage] = createSignal<string | null>(null);
 
-  let socket: WebSocket | null = null;
+  let socket: SessionTransport | null = null;
   let draftSaveTimer: number | undefined;
   const lastSavedSignatureByPromptId: Record<string, string> = {};
   const inputRefs = new Map<string, HTMLTextAreaElement>();
@@ -358,7 +363,7 @@ export function useSessionWorkspaceController(): SessionWorkspaceController {
   };
 
   const submitThread = async (thread: PromptBankThread) => {
-    if (!socket || socket.readyState !== WebSocket.OPEN) {
+    if (!socket || socket.readyState !== SESSION_TRANSPORT_OPEN) {
       setSubmitError("Live interview connection is not ready.");
       return false;
     }
@@ -475,7 +480,7 @@ export function useSessionWorkspaceController(): SessionWorkspaceController {
       const response = await duplicateSession(activeSession.id, {
         title: `${presentSessionTitle(activeSession)} copy`,
       });
-      navigate(`/sessions/${response.session.id}`);
+      navigate(withFrontendMockSearch(`/sessions/${response.session.id}`));
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Unable to duplicate the session.");
     } finally {
@@ -612,7 +617,7 @@ export function useSessionWorkspaceController(): SessionWorkspaceController {
     if (socket) return;
 
     setSocketState("connecting");
-    socket = new WebSocket(buildSocraticWebSocketUrl(sessionId));
+    socket = createSessionTransport(sessionId);
     const startupDescription = shouldSendStartupHandshake(current.session)
       ? current.session.project_description?.trim() ?? null
       : null;

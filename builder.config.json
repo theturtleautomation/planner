@@ -1,0 +1,41 @@
+{
+  "plannerBuilderProfile": "frontend-mock-ui-review",
+  "command": "VITE_PLANNER_FRONTEND_MOCK=1 npm run dev --prefix planner-solid -- --host 127.0.0.1 --port 3000 --strictPort",
+  "serverUrl": "http://127.0.0.1:3000",
+  "commitMode": "draft-prs",
+  "workspace": {
+    "folders": [
+      {
+        "path": "./planner-solid",
+        "name": "planner-solid"
+      },
+      {
+        "path": "./planner-server",
+        "name": "planner-server"
+      },
+      {
+        "path": "./planner-core",
+        "name": "planner-core"
+      },
+      {
+        "path": "./docs",
+        "name": "docs"
+      }
+    ]
+  },
+  "allowedCommands": [
+    "cargo ",
+    "npm ",
+    "git diff ",
+    "git log ",
+    "git status ",
+    "ls ",
+    "find ",
+    "rg ",
+    "sed ",
+    "cat ",
+    "curl ",
+    "echo ",
+    "pwd "
+  ]
+}

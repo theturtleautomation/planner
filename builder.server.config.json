@@ -1,0 +1,41 @@
+{
+  "plannerBuilderProfile": "server-integration",
+  "command": "npm run build --prefix planner-solid && cargo run -p planner-server -- --port 4174 --static-dir ./planner-solid/dist/static",
+  "serverUrl": "http://127.0.0.1:4174",
+  "commitMode": "draft-prs",
+  "workspace": {
+    "folders": [
+      {
+        "path": "./planner-solid",
+        "name": "planner-solid"
+      },
+      {
+        "path": "./planner-server",
+        "name": "planner-server"
+      },
+      {
+        "path": "./planner-core",
+        "name": "planner-core"
+      },
+      {
+        "path": "./docs",
+        "name": "docs"
+      }
+    ]
+  },
+  "allowedCommands": [
+    "cargo ",
+    "npm ",
+    "git diff ",
+    "git log ",
+    "git status ",
+    "ls ",
+    "find ",
+    "rg ",
+    "sed ",
+    "cat ",
+    "curl ",
+    "echo ",
+    "pwd "
+  ]
+}

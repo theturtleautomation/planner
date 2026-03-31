@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "planner-builder-cms": {
+      "type": "http",
+      "url": "https://cdn.builder.io/api/v1/mcp/builder-content",
+      "bearer_token_env_var": "BUILDER_PRIVATE_API_KEY"
+    }
+  }
+}

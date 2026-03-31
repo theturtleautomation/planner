@@ -1,7 +1,16 @@
 import { MetaProvider, Title } from "@solidjs/meta";
-import { A, Route, Router } from "@solidjs/router";
-import { Suspense, lazy } from "solid-js";
+import { A, Route, Router, useLocation } from "@solidjs/router";
+import type { JSX } from "solid-js";
+import { Suspense, createMemo, lazy } from "solid-js";
 import "./app.css";
+import { FrontendMockBadge } from "./components/app/FrontendMockBadge";
+import {
+  getFrontendMockBadgeCopy,
+  getFrontendMockScenarioKey,
+  isFrontendMockEnabled,
+  setMockRuntimeLocationSearch,
+  withFrontendMockSearch,
+} from "./lib/mock/runtime";
 
 const HomePage = lazy(() => import("./routes/index"));
 const AdminPage = lazy(() => import("./routes/admin/index"));
@@ -18,52 +27,56 @@ const NewSessionPage = lazy(() => import("./routes/sessions/new"));
 const SessionWorkspacePage = lazy(() => import("./routes/sessions/[sessionId]"));
 const NotFoundPage = lazy(() => import("./routes/[...404]"));
 
+function AppShell(props: { children: JSX.Element }) {
+  const location = useLocation();
+  setMockRuntimeLocationSearch(location.search);
+  const mockLabel = createMemo(() => getFrontendMockBadgeCopy(getFrontendMockScenarioKey()));
+
+  return (
+    <MetaProvider>
+      <Title>Planner</Title>
+      <div class="app-shell">
+        <header class="app-header">
+          <div class="app-brand">
+            <span class="app-brand-mark">Planner</span>
+            <span class="app-brand-copy">Local-first project analysis and build workspace</span>
+            <FrontendMockBadge active={isFrontendMockEnabled()} label={mockLabel()} />
+          </div>
+          <nav class="app-nav" aria-label="Primary">
+            <A href={withFrontendMockSearch("/")} end activeClass="is-active">
+              Home
+            </A>
+            <A href={withFrontendMockSearch("/knowledge")} activeClass="is-active">
+              Knowledge
+            </A>
+            <A href={withFrontendMockSearch("/blueprint")} activeClass="is-active">
+              Blueprint
+            </A>
+            <A href={withFrontendMockSearch("/discovery")} activeClass="is-active">
+              Discovery
+            </A>
+            <A href={withFrontendMockSearch("/events")} activeClass="is-active">
+              Events
+            </A>
+            <A href={withFrontendMockSearch("/admin")} activeClass="is-active">
+              Admin
+            </A>
+            <A href={withFrontendMockSearch("/sessions")} activeClass="is-active">
+              Sessions
+            </A>
+          </nav>
+        </header>
+        <main class="app-main">
+          <Suspense>{props.children}</Suspense>
+        </main>
+      </div>
+    </MetaProvider>
+  );
+}
+
 export default function App() {
   return (
-    <Router
-      root={props => (
-        <MetaProvider>
-          <Title>Planner</Title>
-          <div class="app-shell">
-            <header class="app-header">
-              <div class="app-brand">
-                <span class="app-brand-mark">Planner</span>
-                <span class="app-brand-copy">Local-first project analysis and build workspace</span>
-              </div>
-              <nav class="app-nav" aria-label="Primary">
-                <A href="/" end activeClass="is-active">
-                  Home
-                </A>
-                <A href="/projects" activeClass="is-active">
-                  Projects
-                </A>
-                <A href="/knowledge" activeClass="is-active">
-                  Knowledge
-                </A>
-                <A href="/blueprint" activeClass="is-active">
-                  Blueprint
-                </A>
-                <A href="/discovery" activeClass="is-active">
-                  Discovery
-                </A>
-                <A href="/events" activeClass="is-active">
-                  Events
-                </A>
-                <A href="/admin" activeClass="is-active">
-                  Admin
-                </A>
-                <A href="/sessions" activeClass="is-active">
-                  Sessions
-                </A>
-              </nav>
-            </header>
-            <main class="app-main">
-              <Suspense>{props.children}</Suspense>
-            </main>
-          </div>
-        </MetaProvider>
-      )}
-    >
+    <Router root={props => <AppShell>{props.children}</AppShell>}>
       <Route path="/" component={HomePage} />
       <Route path="/admin" component={AdminPage} />
       <Route path="/blueprint" component={BlueprintPage} />

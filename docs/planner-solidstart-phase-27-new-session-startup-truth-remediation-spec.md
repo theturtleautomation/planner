@@ -1,10 +1,15 @@
 # Planner SolidStart Phase 27 New Session Startup Truth Remediation Spec
 
-**Status:** ready for implementation  
+**Status:** complete  
 **Date:** 2026-03-26  
 **Parent:** [Planner SolidStart Phase 21 Session Startup Truth And Status Clarity Spec](/home/thetu/planner/docs/planner-solidstart-phase-21-session-startup-truth-and-status-clarity-spec.md)  
 **Related Planning:** [Planner SolidStart Phase 21 Session Startup Truth And Status Clarity Spec](/home/thetu/planner/docs/planner-solidstart-phase-21-session-startup-truth-and-status-clarity-spec.md), [Planner SolidStart Phase 26 Socratic Runtime Truth Completion Remediation Spec](/home/thetu/planner/docs/planner-solidstart-phase-26-socratic-runtime-truth-completion-remediation-spec.md), [Socratic Initial Prompt Bank And Dynamic Hydration Spec](/home/thetu/planner/docs/socratic-initial-prompt-bank-and-dynamic-hydration-spec.md), [Session Workflow Web UI Implementation Plan](/home/thetu/planner/docs/session-workflow-webui-plan.md), [Project Plan](/home/thetu/planner/docs/project-plan.md)  
 **Source Review:** 2026-03-26 live Phase 26 browser proof against the real Rust server/runtime plus direct repo inspection of `planner-solid/src/routes/sessions/new.tsx`, `planner-solid/src/lib/session-status.ts`, and `planner-server/src/api.rs`
+
+> Status sync note (2026-03-30): this slice was absorbed by
+> [Planner SolidStart Phase 28 Session Entry And Startup Product Flow Spec](/home/thetu/planner/docs/planner-solidstart-phase-28-session-entry-and-startup-product-flow-spec.md)
+> and should not remain marked `ready for implementation` as a standalone
+> execution target.
 
 ## 1. Executive Judgment
 

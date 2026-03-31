@@ -3,6 +3,7 @@ import { A } from "@solidjs/router";
 import { For, Show, createResource } from "solid-js";
 
 import { listSessions } from "~/lib/api";
+import { withFrontendMockSearch } from "~/lib/mock/runtime";
 import { getSessionSummaryStatus, getSessionSummarySurfaceTone } from "~/lib/session-status";
 import { presentSessionTitle } from "~/lib/workspace";
 
@@ -35,10 +36,10 @@ export default function SessionsPage() {
               </p>
             </div>
             <div class="page-actions">
-              <A class="btn btn-primary" href="/projects/new">
+              <A class="btn btn-primary" href={withFrontendMockSearch("/projects/new")}>
                 New project
               </A>
-              <A class="btn btn-subtle" href="/sessions/new">
+              <A class="btn btn-subtle" href={withFrontendMockSearch("/sessions/new")}>
                 Direct session
               </A>
             </div>
@@ -69,7 +70,10 @@ export default function SessionsPage() {
                       const surfaceTone = getSessionSummarySurfaceTone(session);
 
                       return (
-                        <A class="queue-row" href={`/sessions/${session.id}`}>
+                        <A
+                          class="queue-row"
+                          href={withFrontendMockSearch(`/sessions/${session.id}`)}
+                        >
                           <div>
                             <h3 class="queue-title">{presentSessionTitle(session)}</h3>
                             <div class="queue-meta">

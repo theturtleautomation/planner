@@ -1710,8 +1710,8 @@ mod tests {
         ComplexityTier, Dimension, DraftSection, ProjectType, PromptAnswer, PromptBankEntry,
         PromptEnvelope, PromptItem, PromptItemKind, PromptKind, PromptOption,
         PromptPreferredLayout, PromptResponse, PromptResponseMode, PromptUiHints,
-        SocraticCategoryNode, SocraticCategoryPathEntry, SocraticCategoryStatus,
-        SpeculativeDraft, UiCapabilities, ViewportClass,
+        SocraticCategoryNode, SocraticCategoryPathEntry, SocraticCategoryStatus, SpeculativeDraft,
+        UiCapabilities, ViewportClass,
     };
 
     fn test_state() -> Arc<AppState> {

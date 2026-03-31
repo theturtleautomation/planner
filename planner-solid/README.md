@@ -1,32 +1,33 @@
-# SolidStart
+# planner-solid
 
-Everything you need to build a Solid project, powered by [`solid-start`](https://start.solidjs.com);
+`planner-solid` contains Planner's SolidStart frontend, but this repo is not a
+frontend-only Vite app.
 
-## Creating a project
+## Canonical Runtime
+
+The canonical local runtime is the Rust server serving the built frontend:
 
 ```bash
-# create a new project in the current directory
-npm init solid@latest
-
-# create a new project in my-app
-npm init solid@latest my-app
+cd /home/thetu/planner
+npm run build --prefix planner-solid
+cargo run -p planner-server -- --port 4174 --static-dir ./planner-solid/dist/static
 ```
 
-## Developing
+Then open `http://127.0.0.1:4174`.
 
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
+## Frontend-Only Iteration
+
+`npm run dev` still exists for isolated frontend work:
 
 ```bash
 npm run dev
-
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
 ```
 
-## Building
+But it is not the documented Builder/Fusion workflow and it is not the
+canonical runtime shape for Planner.
 
-Solid apps are built with _presets_, which optimise your project for deployment to different environments.
+## Builder Workflow
 
-By default, `npm run build` will generate a Node app that you can run with `npm start`. To use a different preset, add it to the `devDependencies` in `package.json` and specify in your `app.config.js`.
+For Builder Fusion, Codex MCP setup, required env handling, and caveats, use:
 
-## This project was created with the [Solid CLI](https://github.com/solidjs-community/solid-cli)
+- [../docs/builder-local-workflow.md](../docs/builder-local-workflow.md)

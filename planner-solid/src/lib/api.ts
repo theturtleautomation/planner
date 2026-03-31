@@ -27,8 +27,8 @@ import type {
   SavePromptDraftsResponse,
   StartSocraticResponse,
 } from "./types";
-
-const API_BASE = typeof window === "undefined" ? "http://127.0.0.1:3100/api" : "/api";
+import { apiRequest } from "./api-provider";
+import { getFrontendMockScenarioKey, isFrontendMockEnabled } from "./mock/runtime";
 
 async function parseJsonResponse<T>(response: Response, path: string): Promise<T> {
   if (response.status === 204 || response.status === 205) {
@@ -51,13 +51,7 @@ async function parseJsonResponse<T>(response: Response, path: string): Promise<T
 }
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {}),
-    },
-  });
+  const response = await apiRequest(path, init);
 
   if (!response.ok) {
     const text = await response.text().catch(() => response.statusText);
@@ -68,13 +62,7 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 async function apiFetchOptional<T>(path: string, init?: RequestInit): Promise<T | null> {
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {}),
-    },
-  });
+  const response = await apiRequest(path, init);
 
   if (response.status === 404) {
     return null;
@@ -91,20 +79,28 @@ async function apiFetchOptional<T>(path: string, init?: RequestInit): Promise<T 
 const getCache = new Map<string, Promise<unknown>>();
 
 function cachedGet<T>(path: string): Promise<T> {
-  const existing = getCache.get(path);
+  const cacheKey = isFrontendMockEnabled() ? `${getFrontendMockScenarioKey()}:${path}` : path;
+  const existing = getCache.get(cacheKey);
   if (existing) return existing as Promise<T>;
   const request = apiFetch<T>(path).catch(error => {
-    getCache.delete(path);
+    getCache.delete(cacheKey);
     throw error;
   });
-  getCache.set(path, request);
+  getCache.set(cacheKey, request);
   return request;
 }
 
 function invalidateCache(paths: string[]) {
   for (const path of paths) {
     getCache.delete(path);
+    if (isFrontendMockEnabled()) {
+      getCache.delete(`${getFrontendMockScenarioKey()}:${path}`);
+    }
   }
+}
+
+export function resetApiCacheForTesting(): void {
+  getCache.clear();
 }
 
 export function listSessions(): Promise<ListSessionsResponse> {
@@ -135,6 +131,9 @@ export function createSession(payload?: {
   return apiFetch("/sessions", {
     method: "POST",
     body: JSON.stringify(body),
+  }).then(response => {
+    invalidateCache(["/sessions"]);
+    return response as CreateSessionResponse;
   });
 }
 
@@ -477,11 +476,4 @@ export function createProjectSession(
     ]);
     return response as CreateSessionResponse;
   });
-}
-
-export function buildSocraticWebSocketUrl(sessionId: string): string {
-  const url = new URL(window.location.origin);
-  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-  url.pathname = `/api/sessions/${encodeURIComponent(sessionId)}/socratic/ws`;
-  return url.toString();
 }

@@ -9,6 +9,7 @@ import {
   type DraftEntry,
 } from "~/lib/workspace";
 import type { PromptItem } from "~/lib/types";
+import { withFrontendMockSearch } from "~/lib/mock/runtime";
 import {
   formatSavedLabel,
   getSessionReturnTarget,
@@ -240,7 +241,10 @@ export default function SessionWorkspaceScreen(props: { controller: SessionWorks
                 <div class="session-question-header-actions">
                   <Show when={currentSession().project_slug}>
                     {(projectSlug) => (
-                      <A class="btn btn-subtle" href={`/projects/${projectSlug()}/import`}>
+                      <A
+                        class="btn btn-subtle"
+                        href={withFrontendMockSearch(`/projects/${projectSlug()}/import`)}
+                      >
                         Project import
                       </A>
                     )}
@@ -308,7 +312,7 @@ export default function SessionWorkspaceScreen(props: { controller: SessionWorks
                     <p>{sessionStatus()?.detail ?? "Waiting for the next truthful workspace update."}</p>
                     <Show when={props.controller.needsSavedBriefAction()}>
                       <div class="button-row">
-                        <A class="btn btn-primary" href="/sessions/new">
+                        <A class="btn btn-primary" href={withFrontendMockSearch("/sessions/new")}>
                           Start a new session
                         </A>
                       </div>

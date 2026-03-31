@@ -1,6 +1,6 @@
 # Socratic SolidStart Greenfield Platform Spec
 
-**Status:** ready for implementation  
+**Status:** active  
 **Date:** 2026-03-24  
 **Parent:** [Project Plan](/home/thetu/planner/docs/project-plan.md)  
 **Source Research:** official Solid and SolidStart docs reviewed on 2026-03-24, plus prior local planning artifacts  
@@ -13,6 +13,9 @@
 > Socratic-only fork. The broader migration shape is now closed: full frontend
 > replacement, route cleanup allowed, direct replacement deployment, and no
 > intended split-framework end-state.
+>
+> Status sync note (2026-03-30): this remains an active route-level future-state
+> planning artifact, not a bounded delivery-ready implementation slice.
 
 ## 1. Executive Judgment
 

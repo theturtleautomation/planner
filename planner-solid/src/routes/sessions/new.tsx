@@ -3,6 +3,7 @@ import { A, useNavigate } from "@solidjs/router";
 import { createSignal } from "solid-js";
 
 import { createSession } from "~/lib/api";
+import { withFrontendMockSearch } from "~/lib/mock/runtime";
 
 export default function NewSessionPage() {
   const navigate = useNavigate();
@@ -20,7 +21,7 @@ export default function NewSessionPage() {
 
     try {
       const created = await createSession({ description: trimmed });
-      navigate(`/sessions/${created.session.id}`);
+      navigate(withFrontendMockSearch(`/sessions/${created.session.id}`));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
       setSubmitting(false);
@@ -73,7 +74,7 @@ export default function NewSessionPage() {
                 <button class="btn btn-primary" type="submit" disabled={submitting()}>
                   {submitting() ? "Starting…" : "Start direct session"}
                 </button>
-                <A class="btn btn-subtle" href="/projects/new">
+                <A class="btn btn-subtle" href={withFrontendMockSearch("/projects/new")}>
                   Start with a project instead
                 </A>
               </div>

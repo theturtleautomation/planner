@@ -1,0 +1,33 @@
+# Planner Builder Rules
+
+## Runtime
+
+- Treat `planner-server` as the canonical Builder runtime.
+- Do not target bare `npm run dev --prefix planner-solid` for Fusion work.
+- Use the same-origin app runtime at `http://127.0.0.1:4174`.
+- If the app is not already running, prefer the repo wrapper `make builder-launch`.
+
+## Build Model
+
+- Planner serves built frontend assets from `planner-server`.
+- When frontend code changes, rebuild `planner-solid` before expecting Builder to see those changes.
+- Keep Builder launch and local runtime assumptions aligned with `builder.config.json`.
+
+## Local AI Safety
+
+- Default Builder-connected local work to the deterministic Planner mock profile unless a human explicitly asks for live provider CLIs.
+- The canonical mock setting is `PLANNER_LLM_MOCK=full_pipeline`.
+- Do not require real Claude, Gemini, or Codex subscriptions just to make Builder local workflows function.
+
+## Repo Boundaries
+
+- Treat Fusion project runtime settings, Builder CMS content, and Builder DSI as separate surfaces.
+- Do not describe Builder CMS sync as if it updates Fusion project runtime settings.
+- Prefer committed repo configuration and instruction files over one-off chat guidance.
+
+## Change Discipline
+
+- Keep edits bounded to the task at hand.
+- Avoid destructive git operations.
+- Do not edit generated build artifacts under `planner-solid/dist`.
+- Prefer updating source files, Builder config files, and documented repo scripts.

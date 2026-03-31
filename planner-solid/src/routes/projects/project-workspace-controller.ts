@@ -47,6 +47,7 @@ import {
   readinessToneForState,
   type ProjectSurfaceTab,
 } from "~/lib/project-surface";
+import { withFrontendMockSearch } from "~/lib/mock/runtime";
 import type {
   ProjectImportResponse,
   ProjectResponse,
@@ -263,7 +264,7 @@ export function useProjectWorkspaceController(): ProjectWorkspaceController {
         title: `${currentProject.name} analysis`,
         description: currentProject.description ?? null,
       });
-      navigate(`/sessions/${response.session.id}`);
+      navigate(withFrontendMockSearch(`/sessions/${response.session.id}`));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to start a new project analysis.");
       setStarting(false);

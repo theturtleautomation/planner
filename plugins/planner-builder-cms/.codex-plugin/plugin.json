@@ -1,0 +1,40 @@
+{
+  "name": "planner-builder-cms",
+  "version": "0.1.0",
+  "description": "Repo-local Builder CMS MCP wiring for Planner.",
+  "author": {
+    "name": "The Turtle Automation",
+    "url": "https://github.com/theturtleautomation"
+  },
+  "homepage": "https://github.com/theturtleautomation/planner",
+  "repository": "https://github.com/theturtleautomation/planner",
+  "license": "MIT",
+  "keywords": [
+    "planner",
+    "builder",
+    "cms",
+    "mcp"
+  ],
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Planner Builder CMS",
+    "shortDescription": "Builder CMS MCP for this Planner repo",
+    "longDescription": "Provides the Builder CMS MCP configuration this Planner repo expects, without depending on a user-global Codex MCP entry.",
+    "developerName": "The Turtle Automation",
+    "category": "Coding",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/theturtleautomation/planner",
+    "privacyPolicyURL": "https://www.builder.io/privacy",
+    "termsOfServiceURL": "https://www.builder.io/terms",
+    "defaultPrompt": [
+      "Use Builder CMS MCP in this Planner repo",
+      "Inspect Builder content models for Planner",
+      "Help wire Builder content into Planner"
+    ],
+    "screenshots": []
+  }
+}

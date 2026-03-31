@@ -1,6 +1,6 @@
 # Planner SolidStart Platform Direction Spec
 
-**Status:** ready for implementation  
+**Status:** active  
 **Date:** 2026-03-24  
 **Parent:** [Project Plan](/home/thetu/planner/docs/project-plan.md)  
 **Source Research:** official Solid and SolidStart docs reviewed on 2026-03-24, plus current Planner planning artifacts  
@@ -10,6 +10,9 @@
 > future. This spec widens the SolidStart platform decision from a
 > Socratic-lobby-only fork to a whole-frontend greenfield direction for
 > Planner.
+>
+> Status sync note (2026-03-30): this is the active platform-direction
+> container, not a bounded delivery-ready slice.
 
 ## 1. Executive Judgment
 

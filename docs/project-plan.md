@@ -75,6 +75,7 @@ These are the main planning documents currently shaping the repo:
 - [Planner Design System Phase 7 Knowledge Inventory And Context Spec](/home/thetu/planner/docs/planner-design-system-phase-7-knowledge-inventory-and-context-spec.md)
 - [Planner Design System Phase 8 Blueprint Command Chrome And Inspector Spec](/home/thetu/planner/docs/planner-design-system-phase-8-blueprint-command-chrome-and-inspector-spec.md)
 - [Knowledge Library Project Scope Plan](/home/thetu/planner/docs/knowledge-library-project-scope-plan.md)
+- [Builder Fusion Project Management And Runtime Sync Spec](/home/thetu/planner/docs/builder-fusion-project-management-and-runtime-sync-spec.md)
 - [Import Existing Project Plan](/home/thetu/planner/docs/import-existing-project-plan.md)
 - [Import Existing Project Phase 1 Domain Skeleton Spec](/home/thetu/planner/docs/import-existing-project-phase-1-domain-skeleton-spec.md)
 - [Import Existing Project Phase 2 GitHub Acquisition Spec](/home/thetu/planner/docs/import-existing-project-phase-2-github-acquisition-spec.md)
@@ -111,6 +112,20 @@ These are the main planning documents currently shaping the repo:
 - [Planner SolidStart Phase 32 Work Entry IA And Session Route Topology Spec](/home/thetu/planner/docs/planner-solidstart-phase-32-work-entry-ia-and-session-route-topology-spec.md)
 - [Planner SolidStart Phase 33 Session Workspace Interaction And Artifact Refinement Spec](/home/thetu/planner/docs/planner-solidstart-phase-33-session-workspace-interaction-and-artifact-refinement-spec.md)
 - [Planner SolidStart Phase 34 Session Question-Bank Workspace Reset Spec](/home/thetu/planner/docs/planner-solidstart-phase-34-session-question-bank-workspace-reset-spec.md)
+- [Planner SolidStart Phase 35 Backendless Mock Route Coverage Spec](/home/thetu/planner/docs/planner-solidstart-phase-35-backendless-mock-route-coverage-spec.md)
+- [Planner SolidStart Phase 35.1 Shared Frontend Mock Foundation Spec](/home/thetu/planner/docs/planner-solidstart-phase-35-1-shared-frontend-mock-foundation-spec.md)
+- [Planner SolidStart Phase 35.2 Work-Entry And Queue Routes Frontend Mock Spec](/home/thetu/planner/docs/planner-solidstart-phase-35-2-work-entry-and-queue-routes-frontend-mock-spec.md)
+- [Planner SolidStart Phase 35.3 Session Workspace Frontend Mock Spec](/home/thetu/planner/docs/planner-solidstart-phase-35-3-session-workspace-frontend-mock-spec.md)
+- [Planner SolidStart Phase 35.4 Project Workspace Frontend Mock Spec](/home/thetu/planner/docs/planner-solidstart-phase-35-4-project-workspace-frontend-mock-spec.md)
+- [Planner SolidStart Phase 35.5 Import Review Frontend Mock Spec](/home/thetu/planner/docs/planner-solidstart-phase-35-5-import-review-frontend-mock-spec.md)
+- [Planner SolidStart Phase 35.6 Knowledge And Blueprint Frontend Mock Spec](/home/thetu/planner/docs/planner-solidstart-phase-35-6-knowledge-and-blueprint-frontend-mock-spec.md)
+- [Planner SolidStart Phase 35.7 Events, Discovery, And Admin Frontend Mock Spec](/home/thetu/planner/docs/planner-solidstart-phase-35-7-events-discovery-and-admin-frontend-mock-spec.md)
+  - [Planner SolidStart Phase 35.8 Backendless Mock Closeout Remediation Spec](/home/thetu/planner/docs/planner-solidstart-phase-35-8-backendless-mock-closeout-remediation-spec.md)
+  - [Planner SolidStart Phase 35.9 Backendless Mock Residual Cleanup Spec](/home/thetu/planner/docs/planner-solidstart-phase-35-9-backendless-mock-residual-cleanup-spec.md)
+- [Planner SolidStart Phase 35.10 Builder Frontend Mock Runtime Alignment Spec](/home/thetu/planner/docs/planner-solidstart-phase-35-10-builder-frontend-mock-runtime-alignment-spec.md)
+- [Planner SolidStart Phase 36 Home Project Directory Consolidation Spec](/home/thetu/planner/docs/planner-solidstart-phase-36-home-project-directory-consolidation-spec.md)
+- [Planner SolidStart Phase 36.1 Frontend Mock Vite Shell Duplication Remediation Spec](/home/thetu/planner/docs/planner-solidstart-phase-36-1-frontend-mock-vite-shell-duplication-remediation-spec.md)
+- [Planner SolidStart Phase 36.2 Home Route Canonicality Remediation Spec](/home/thetu/planner/docs/planner-solidstart-phase-36-2-home-route-canonicality-remediation-spec.md)
 - [Planning Status Audit Remediation Spec](/home/thetu/planner/docs/planning-status-audit-remediation-spec.md)
 
 ## Current Active Thread
@@ -437,6 +452,129 @@ Current planning state:
     which is now implemented and removes the artifact pane as the preferred
     workspace model while restoring the full question bank as the primary local
     surface
+  - the next enablement follow-on was drafted as
+    [Planner SolidStart Phase 35 Backendless Mock Route Coverage Spec](/home/thetu/planner/docs/planner-solidstart-phase-35-backendless-mock-route-coverage-spec.md),
+    which scopes a frontend-only mock runtime for Builder/UI route browsing so
+    the main Solid route family can be viewed without `planner-server` and
+    without depending on a working backend or real pipeline execution
+  - that mock-route capability was then explicitly decomposed into child slices
+    covering:
+    - [Planner SolidStart Phase 35.1 Shared Frontend Mock Foundation Spec](/home/thetu/planner/docs/planner-solidstart-phase-35-1-shared-frontend-mock-foundation-spec.md)
+    - [Planner SolidStart Phase 35.2 Work-Entry And Queue Routes Frontend Mock Spec](/home/thetu/planner/docs/planner-solidstart-phase-35-2-work-entry-and-queue-routes-frontend-mock-spec.md)
+    - [Planner SolidStart Phase 35.3 Session Workspace Frontend Mock Spec](/home/thetu/planner/docs/planner-solidstart-phase-35-3-session-workspace-frontend-mock-spec.md)
+    - [Planner SolidStart Phase 35.4 Project Workspace Frontend Mock Spec](/home/thetu/planner/docs/planner-solidstart-phase-35-4-project-workspace-frontend-mock-spec.md)
+    - [Planner SolidStart Phase 35.5 Import Review Frontend Mock Spec](/home/thetu/planner/docs/planner-solidstart-phase-35-5-import-review-frontend-mock-spec.md)
+    - [Planner SolidStart Phase 35.6 Knowledge And Blueprint Frontend Mock Spec](/home/thetu/planner/docs/planner-solidstart-phase-35-6-knowledge-and-blueprint-frontend-mock-spec.md)
+    - [Planner SolidStart Phase 35.7 Events, Discovery, And Admin Frontend Mock Spec](/home/thetu/planner/docs/planner-solidstart-phase-35-7-events-discovery-and-admin-frontend-mock-spec.md)
+  - that foundation spec is now implemented with the concrete decisions closed:
+    - `VITE_PLANNER_FRONTEND_MOCK=1` as the frontend activation gate
+    - `api.ts` retained as the public facade over an internal provider seam
+    - a shell-level mock badge in `app.tsx`
+    - a shared lib-level session transport abstraction replacing direct
+      websocket construction
+  - the first route-family slice is now implemented as
+    [Planner SolidStart Phase 35.2 Work-Entry And Queue Routes Frontend Mock Spec](/home/thetu/planner/docs/planner-solidstart-phase-35-2-work-entry-and-queue-routes-frontend-mock-spec.md),
+    which keeps the work-entry and queue routes browsable in frontend mock mode
+    while preserving scenario continuity across app navigation and create flows
+  - the remaining route-family slices are now also implemented:
+    - [Planner SolidStart Phase 35.3 Session Workspace Frontend Mock Spec](/home/thetu/planner/docs/planner-solidstart-phase-35-3-session-workspace-frontend-mock-spec.md)
+    - [Planner SolidStart Phase 35.4 Project Workspace Frontend Mock Spec](/home/thetu/planner/docs/planner-solidstart-phase-35-4-project-workspace-frontend-mock-spec.md)
+    - [Planner SolidStart Phase 35.5 Import Review Frontend Mock Spec](/home/thetu/planner/docs/planner-solidstart-phase-35-5-import-review-frontend-mock-spec.md)
+    - [Planner SolidStart Phase 35.6 Knowledge And Blueprint Frontend Mock Spec](/home/thetu/planner/docs/planner-solidstart-phase-35-6-knowledge-and-blueprint-frontend-mock-spec.md)
+    - [Planner SolidStart Phase 35.7 Events, Discovery, And Admin Frontend Mock Spec](/home/thetu/planner/docs/planner-solidstart-phase-35-7-events-discovery-and-admin-frontend-mock-spec.md)
+  - that closes the full Phase 35 backendless mock route-coverage tranche:
+    `planner-solid` can now browse the main route family in documented
+    frontend-only mock mode without `planner-server`, with shared scenario
+    continuity across session, project, import, graph, events, discovery, and
+    admin surfaces
+  - an implementation review after that closeout then identified one bounded
+    residual remediation slice:
+    [Planner SolidStart Phase 35.8 Backendless Mock Closeout Remediation Spec](/home/thetu/planner/docs/planner-solidstart-phase-35-8-backendless-mock-closeout-remediation-spec.md)
+  - that follow-on is now implemented and keeps Phase 35 and Phase 35.1
+    through 35.7 honestly closed by remediating:
+    - discovery scan reseeding after proposal review
+    - direct frontend-mock E2E proof using the shared scenario registry
+    - Builder-facing documentation drift between canonical runtime and
+      frontend-only browsing mode
+  - the current optional residual follow-on after that was
+    [Planner SolidStart Phase 35.9 Backendless Mock Residual Cleanup Spec](/home/thetu/planner/docs/planner-solidstart-phase-35-9-backendless-mock-residual-cleanup-spec.md),
+    which keeps the implemented tranche closed while scoping three bounded
+    quality items:
+    - the remaining Nitro `"send"` build warning
+    - broader migration of legacy Playwright route-fixture ownership onto the
+      shared frontend mock runtime where justified
+    - bounded frontend mock scenario-pack polish for richer Builder browsing
+  - that follow-on is now implemented and closes the currently known residual
+    Phase 35 cleanup thread by:
+    - documenting the Nitro warning as a contained dependency-version
+      limitation with fresh build proof
+    - migrating additional legacy Phase 08 and Phase 12 Playwright proofs onto
+      the shared frontend mock runtime
+    - adding the `ops-history` scenario variant for richer operational route
+      browsing
+  - direct Builder setup review on 2026-03-30 then found one remaining
+    operator-facing drift point: the repo still privileges the server-backed
+    `4174` Builder path even when the actual goal is frontend-only mock route
+    browsing, which led to the wrong Builder project configuration and broken
+    expectations for top-level mock navigation
+  - the bounded correction is now
+    [Planner SolidStart Phase 35.10 Builder Frontend Mock Runtime Alignment Spec](/home/thetu/planner/docs/planner-solidstart-phase-35-10-builder-frontend-mock-runtime-alignment-spec.md),
+    which makes the Builder UI-review contract singular around:
+    - `http://127.0.0.1:3000`
+    - `VITE_PLANNER_FRONTEND_MOCK=1 npm run dev --prefix planner-solid`
+    - no `PLANNER_LLM_MOCK`
+    - explicit proof that the shell route family actually works under that
+      Builder-targeted frontend mock runtime
+  - that correction is now implemented:
+    - `builder.config.json` now defines the canonical Builder UI-review project
+      on `3000`
+    - `builder.server.config.json` now holds the explicit server-backed
+      alternate on `4174`
+    - the repo-native Builder wrappers now honor the selected config profile
+      instead of forcing the server-backed path by default
+    - frontend-mock Playwright proof now runs against `vite dev` and exercises
+      shell navigation plus project/session/import continuity under the
+      Builder-targeted runtime
+  - direct design review on 2026-03-31 then identified one remaining work-entry
+    IA simplification opportunity: `/` and `/projects` are still acting as two
+    versions of the same project-entry surface, with the home route holding a
+    partial spotlight-plus-recent list while the real operating directory lives
+    one click deeper
+  - the bounded consolidation slice was then implemented as
+    [Planner SolidStart Phase 36 Home Project Directory Consolidation Spec](/home/thetu/planner/docs/planner-solidstart-phase-36-home-project-directory-consolidation-spec.md),
+    which closes that redundancy by:
+    - making `/` the canonical project directory and work-entry surface
+    - replacing the home spotlight as the topmost interaction with an inline
+      blank title/description project composer plus primary create action
+    - collapsing `/projects` into compatibility redirect/alias behavior and
+      removing the duplicate top-level shell nav destination
+    - keeping frontend-mock continuity truthful by bridging fallback-created
+      projects into browser-side mock state before later route fetches
+  - delivery proof for that slice then exposed one remaining Builder-facing
+    runtime defect in the frontend mock Vite path: the dev runtime was mixing
+    the normal SSR `StartServer` entry with the SPA client entry, so the server
+    rendered one shell and the client mounted a second `.app-shell` under the
+    same `#app`
+  - that remediation is now implemented as
+    [Planner SolidStart Phase 36.1 Frontend Mock Vite Shell Duplication Remediation Spec](/home/thetu/planner/docs/planner-solidstart-phase-36-1-frontend-mock-vite-shell-duplication-remediation-spec.md),
+    which restores a single rendered shell in the `3000` frontend-mock Builder
+    runtime by switching back to the hydrated SolidStart client entry and
+    tightening the frontend-mock Playwright proof to assert one shell and run
+    serially against the process-local scenario store
+  - a follow-up review of the implemented Phase 36 surfaces then found two
+    remaining canonical-route gaps:
+    - the home composer still degrades through `/projects/new`
+    - `/projects` is still a client-only redirect page rather than a true
+      route-level redirect or thin alias
+  - that remediation is now implemented as
+    [Planner SolidStart Phase 36.2 Home Route Canonicality Remediation Spec](/home/thetu/planner/docs/planner-solidstart-phase-36-2-home-route-canonicality-remediation-spec.md),
+    which closes those residual route-truth gaps by:
+    - moving the degraded-path home create flow onto `/` itself instead of
+      falling back through `/projects/new`
+    - making `/projects` a true compatibility redirect component instead of a
+      distinct client-only placeholder page
+    - tightening frontend-mock browser proof to cover the home-owned fallback
+      create path and the absence of a visible intermediate `/projects` page
 - the bank-first runtime and saved-brief startup contracts from Phase 26 and
   Phase 28 remain locked dependencies across that series rather than becoming a
   new planning branch
@@ -907,6 +1045,81 @@ Most recent completed slices include:
   [Import Existing Project Phase 15 Selection-Aware History Comparison Spec](/home/thetu/planner/docs/import-existing-project-phase-15-selection-aware-history-comparison-spec.md)
 - history selection summaries are implemented and verified in
   [Import Existing Project Phase 16 History Selection Summary Spec](/home/thetu/planner/docs/import-existing-project-phase-16-history-selection-summary-spec.md)
+
+### Builder Fusion Capability Expansion
+
+Status:
+
+- new parent capability spec drafted
+- first bounded child slice is now implemented for Builder skill/reference
+  hardening
+- existing-project helper work is now split into its own child slice
+- that helper slice is now implemented with narrow internal-endpoint
+  acceptance
+- live remote update against the saved Fusion project is still blocked in the
+  current auth context because Builder's project list does not expose that
+  saved project
+
+Canonical planning doc:
+
+- [Builder Fusion Project Management And Runtime Sync Spec](/home/thetu/planner/docs/builder-fusion-project-management-and-runtime-sync-spec.md)
+- [Builder Fusion Phase 01 API-Grounded Skill And Existing Project Contract Spec](/home/thetu/planner/docs/builder-fusion-phase-01-api-grounded-skill-and-existing-project-contract-spec.md)
+- [Builder Fusion Phase 02 Existing Project Helper Contract Spec](/home/thetu/planner/docs/builder-fusion-phase-02-existing-project-helper-contract-spec.md)
+
+Current planning state:
+
+- [Builder Local Workflow](/home/thetu/planner/docs/builder-local-workflow.md)
+  now truthfully covers Planner's same-origin Fusion runtime and local
+  `full_pipeline` mock path
+- [Builder Developer Docs Phase A Exhaustive Analysis](/home/thetu/planner/docs/builder-developer-docs-phase-a-exhaustive-analysis.md)
+  now maps Builder's documented developer surfaces into a repo-grounded
+  interaction model for Planner
+- [Builder Phase B Documented Config And Instruction Alignment Spec](/home/thetu/planner/docs/builder-phase-b-documented-config-and-instruction-alignment-spec.md)
+  is now implemented and lands the first repo-local config artifacts that
+  directly follow from the Phase A docs pass
+- Builder's published docs have now been analyzed for API and Project settings
+  boundaries, and the first child slice translates that documentation into a
+  required skill-update contract for Planner
+- the Builder skill and reference layer now explicitly captures documented
+  Admin/Write APIs, documented Fusion Project settings vocabulary, and the
+  internal-fallback boundary for existing Fusion project management
+- the remaining helper work for existing Fusion-project get/list/update is now
+  isolated in a separate child spec instead of being left as an implicit
+  follow-on under Phase 01
+- Planner has now explicitly accepted the narrow internal-endpoint risk for the
+  existing-project helper slice, with saved-project targeting and non-recreate
+  guardrails
+- repo-local wrappers now exist for launch, create-project, list-projects,
+  get-project, update-project, connect-repo, index-repo, and Builder CMS
+  `project` content sync
+- the existing-project helper slice now supports runtime command, runtime URL,
+  env/profile, and saved-project dry-run updates without recreating the
+  project
+- updating an existing saved Fusion project is now explicitly included in the
+  parent capability spec as a required behavior, not an implied helper
+- the analyzed Builder docs establish documented Admin/Write APIs and
+  documented Fusion Project settings semantics, but do not yet establish a
+  clearly documented public Fusion project CRUD/settings API
+- the new Phase A docs pass tightens that conclusion further by showing that
+  Builder's strongest documented integration path is local repo launch plus
+  `builder.config.json` and committed instruction files, not existing-project
+  CRUD/readback
+- Planner now commits `builder.config.json` and `.builderrules`, and the
+  repo-native Builder launch/create wrappers inherit command and URL defaults
+  from that documented config instead of hardcoding a separate runtime
+  contract
+- the current Builder auth context still returns zero visible projects for the
+  saved Fusion project ID, so the helper layer is implemented but live remote
+  update remains blocked until Builder exposes that project to the active auth
+  context
+
+Next valid move:
+
+- verify the documented repo-config path in practice and decide whether the
+  next Builder slice should focus on:
+  - broader Builder instruction layering beyond the root `.builderrules`
+  - repo-local DSI MCP setup
+  - or a tighter documented-config workflow around `builder.config.json`
 
 ## Immediate Bounded Closeout Slice
 

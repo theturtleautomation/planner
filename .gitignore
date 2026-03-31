@@ -5,3 +5,4 @@ node_modules
 *.swo
 .DS_Store
 .env
+.codex/builder-fusion-project.json

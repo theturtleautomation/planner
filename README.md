@@ -73,6 +73,56 @@ make test           # cargo test + vitest
 
 The pipeline will detect whichever of `claude`, `gemini`, or `codex` you have installed and route model calls accordingly.
 
+For local Builder/Fusion work where you do not want to expose real CLI
+subscriptions to the runtime, Planner also supports a deterministic runtime
+mock:
+
+```bash
+PLANNER_LLM_MOCK=full_pipeline cargo run -p planner-server -- --port 4174 --static-dir ./planner-solid/dist/static
+```
+
+`full_pipeline` mocks the Socratic session flow plus the full
+intake/compile/review/validate/telemetry pipeline and replaces the factory
+worker with a mock implementation. It is intended for UI, Builder, and workflow
+verification, not real generation fidelity.
+
+For Builder work, Planner now distinguishes two runtime paths:
+
+- the canonical Builder UI-review project uses frontend mock mode on `3000`
+  through `VITE_PLANNER_FRONTEND_MOCK=1`
+- the server-backed integration path uses `planner-server` on `4174`
+
+Builder-driven design changes under frontend mock mode still edit the same
+`planner-solid` route/component surfaces that `planner-server` later serves in
+the real app; the mock only swaps data/transport seams. See
+[docs/builder-local-workflow.md](./docs/builder-local-workflow.md) for the
+repeatable local Builder workflow, config split, and env caveats.
+
+Known frontend build note:
+
+- `npm run build --prefix planner-solid` currently completes successfully but
+  Nitro still reports a `"send" is not exported by h3/dist/_entries/node.mjs"`
+  warning while bundling the SSR output.
+- The warning is currently treated as a tooling-version split between
+  `@solidjs/start@2.0.0-alpha.2` using `h3@2.0.1-rc.4` and Nitro's current
+  `h3@1.15.10` dependency path, not as a confirmed Planner app regression.
+- Phase 35.9 reverified that the build exits `0` and the generated output still
+  previews successfully. Track it as a contained build-warning limitation until
+  the dependency stack is upgraded or aligned safely.
+
+Planner now also commits the Builder-facing repo config files described in
+Builder's developer docs:
+
+- [builder.config.json](./builder.config.json)
+- [builder.server.config.json](./builder.server.config.json)
+- [.builderrules](./.builderrules)
+
+`builder.config.json` is now the canonical Builder UI-review config for the
+frontend mock runtime on `3000`. `builder.server.config.json` is the explicit
+alternate config for server-backed integration work on `4174`. The repo-native
+Builder wrappers inherit their runtime command and URL defaults from the
+selected config file.
+
 ---
 
 ## Installation
@@ -412,7 +462,7 @@ If `--static-dir` does not exist, the server starts in API-only mode.
 A SolidStart + TypeScript frontend that keeps projects primary, treats Socratic analysis as the core workflow, and attaches advanced surfaces locally instead of scattering utility routes. Communicates with `planner-server` via REST and WebSocket. Auth0 remains optional — omitting Auth0 environment variables activates dev mode (no login required).
 
 ```bash
-# From repo root (proxied via root package.json)
+# From repo root
 npm run build
 npm run dev
 npm test
@@ -422,6 +472,12 @@ cd planner-solid
 npm install
 npm run dev
 ```
+
+`npm run dev` is available for isolated frontend iteration, but it is not the
+canonical Planner runtime and it is not the documented Builder/Fusion path. For
+same-origin app behavior, Builder work, and runtime-shape validation, build
+`planner-solid` and run `planner-server` instead. See
+[docs/builder-local-workflow.md](./docs/builder-local-workflow.md).
 
 See [AUTH0_SETUP.md](./AUTH0_SETUP.md) for authentication configuration. The retained `planner-web/` app is now historical baseline and migration reference, not the active frontend target.
 

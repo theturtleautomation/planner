@@ -1,4 +1,5 @@
 import type { Session } from "~/lib/types";
+import { withFrontendMockSearch } from "~/lib/mock/runtime";
 
 export type DraftSaveState = "idle" | "dirty" | "saving" | "saved" | "error";
 export type SurfaceTab = "interview" | "artifact";
@@ -26,13 +27,13 @@ export function formatSavedLabel(state: DraftSaveState, message: string | null) 
 export function getSessionReturnTarget(session: Session): SessionReturnTarget {
   if (session.project_slug) {
     return {
-      href: `/projects/${session.project_slug}`,
+      href: withFrontendMockSearch(`/projects/${session.project_slug}`),
       label: "Back to project",
     };
   }
 
   return {
-    href: "/sessions",
+    href: withFrontendMockSearch("/sessions"),
     label: "Back to sessions",
   };
 }
