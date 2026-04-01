@@ -445,9 +445,8 @@ install_llm_clis() {
     patch_gemini_cli_empty_tools_bug() {
         local gemini_pkg_dir="${INSTALL_DIR}/lib/node_modules/@google/gemini-cli"
         local gemini_pkg_json="${gemini_pkg_dir}/package.json"
-        local client_js="${gemini_pkg_dir}/node_modules/@google/gemini-cli-core/dist/src/core/client.js"
 
-        if [[ ! -f "${gemini_pkg_json}" ]] || [[ ! -f "${client_js}" ]]; then
+        if [[ ! -f "${gemini_pkg_json}" ]]; then
             warn "  ! gemini installed without expected package layout — skipping Planner compatibility patch"
             return 0
         fi
@@ -455,20 +454,25 @@ install_llm_clis() {
         local gemini_version=""
         gemini_version=$("${node_cmd}" -e "const pkg = require(process.argv[1]); process.stdout.write(pkg.version || '');" "${gemini_pkg_json}" 2>/dev/null || true)
 
-        if grep -q 'toolDeclarations.length > 0 ?' "${client_js}" 2>/dev/null; then
-            info "  ✓ gemini compatibility patch already present (${gemini_version:-unknown version})"
-            return 0
-        fi
-
-        if ! grep -q 'const tools = \[{ functionDeclarations: toolDeclarations }\];' "${client_js}" 2>/dev/null; then
-            warn "  ! gemini client.js layout changed (${gemini_version:-unknown version}) — skipping empty-tools patch"
-            return 0
-        fi
-
-        if "${node_cmd}" - "${client_js}" <<'NODE'
+        if "${node_cmd}" - "${gemini_pkg_dir}" <<'NODE'
 const fs = require('fs');
-const target = process.argv[2];
-let text = fs.readFileSync(target, 'utf8');
+const path = require('path');
+const root = process.argv[2];
+const targets = [];
+const legacy = path.join(root, 'node_modules/@google/gemini-cli-core/dist/src/core/client.js');
+if (fs.existsSync(legacy)) {
+  targets.push(legacy);
+}
+const bundleDir = path.join(root, 'bundle');
+if (fs.existsSync(bundleDir) && fs.statSync(bundleDir).isDirectory()) {
+  for (const entry of fs.readdirSync(bundleDir)) {
+    const full = path.join(bundleDir, entry);
+    if (entry.endsWith('.js') && fs.statSync(full).isFile()) {
+      targets.push(full);
+    }
+  }
+}
+const alreadyPatched = 'toolDeclarations.length > 0 ?';
 const replacements = [
   [
     'const tools = [{ functionDeclarations: toolDeclarations }];',
@@ -478,23 +482,58 @@ const replacements = [
     'return [{ functionDeclarations: toolDeclarations }];',
     'return toolDeclarations.length > 0 ? [{ functionDeclarations: toolDeclarations }] : undefined;',
   ],
+  [
+    'const tools = [{ functionDeclarations: toolDeclarations2 }];',
+    'const tools = toolDeclarations2.length > 0 ? [{ functionDeclarations: toolDeclarations2 }] : undefined;',
+  ],
+  [
+    'return [{ functionDeclarations: toolDeclarations2 }];',
+    'return toolDeclarations2.length > 0 ? [{ functionDeclarations: toolDeclarations2 }] : undefined;',
+  ],
 ];
-let changed = false;
-for (const [from, to] of replacements) {
-  if (text.includes(from)) {
-    text = text.split(from).join(to);
-    changed = true;
+
+let changedFiles = 0;
+let foundAlreadyPatched = false;
+for (const target of targets) {
+  let text = fs.readFileSync(target, 'utf8');
+  if (text.includes(alreadyPatched)) {
+    foundAlreadyPatched = true;
+    continue;
+  }
+  let changed = false;
+  for (const [from, to] of replacements) {
+    if (text.includes(from)) {
+      text = text.split(from).join(to);
+      changed = true;
+    }
+  }
+  if (changed) {
+    fs.writeFileSync(target, text);
+    changedFiles += 1;
   }
 }
-if (!changed) {
-  process.exit(2);
+if (changedFiles > 0) {
+  process.exit(0);
 }
-fs.writeFileSync(target, text);
+if (foundAlreadyPatched) {
+  process.exit(10);
+}
+if (targets.length === 0) {
+  process.exit(11);
+}
+process.exit(12);
 NODE
         then
             info "  ✓ patched gemini empty-tools bug (${gemini_version:-unknown version})"
         else
-            warn "  ✗ failed to patch gemini empty-tools bug (${gemini_version:-unknown version})"
+            local patch_status=$?
+            if [[ ${patch_status} -eq 10 ]]; then
+                info "  ✓ gemini compatibility patch already present (${gemini_version:-unknown version})"
+            elif [[ ${patch_status} -eq 11 ]]; then
+                warn "  ! gemini installed without expected package layout — skipping Planner compatibility patch"
+            else
+                warn "  ! gemini CLI layout changed (${gemini_version:-unknown version}) — skipping empty-tools patch"
+            fi
         fi
     }
 
@@ -774,7 +813,10 @@ probe_gemini_runtime() {
     local timeout_cmd=()
     local output=""
     local status=0
-    local shell_cmd="cd ${INSTALL_DIR} && HOME=${cli_home}/gemini GEMINI_CLI_SYSTEM_SETTINGS_PATH=${cli_home}/gemini/settings.json ${planner_bin}/gemini --prompt \"Reply with OK only.\" --output-format json --model gemini-2.5-flash-lite"
+    local shell_cmd=""
+    local model=""
+    local last_error=""
+    local probe_models=("gemini-2.5-flash-lite" "gemini-2.5-flash")
 
     GEMINI_PROBE_ERROR=""
 
@@ -787,17 +829,23 @@ probe_gemini_runtime() {
         timeout_cmd=(timeout 30s)
     fi
 
-    output="$("${timeout_cmd[@]}" sudo -u "${SERVICE_USER}" /bin/bash --noprofile --norc -lc "${shell_cmd}" 2>&1)"
-    status=$?
-    if [[ ${status} -eq 0 ]]; then
-        if grep -qE '"(response|result)"[[:space:]]*:' <<< "${output}"; then
-            return 0
-        fi
-        GEMINI_PROBE_ERROR="runtime probe returned unexpected output: $(echo "${output}" | tr '\n' ' ' | sed 's/[[:space:]]\\+/ /g' | cut -c1-220)"
-        return 1
-    fi
+    for model in "${probe_models[@]}"; do
+        shell_cmd="cd ${INSTALL_DIR}/cli-sandbox && HOME=${cli_home}/gemini GEMINI_CLI_SYSTEM_SETTINGS_PATH=${cli_home}/gemini/settings.json ${planner_bin}/gemini -e none --prompt \"Reply with OK only.\" --output-format json --model ${model}"
 
-    GEMINI_PROBE_ERROR="runtime probe failed (exit ${status}): $(echo "${output}" | tr '\n' ' ' | sed 's/[[:space:]]\\+/ /g' | cut -c1-220)"
+        output="$("${timeout_cmd[@]}" sudo -u "${SERVICE_USER}" /bin/bash --noprofile --norc -lc "${shell_cmd}" 2>&1)"
+        status=$?
+        if [[ ${status} -eq 0 ]]; then
+            if grep -qE '"(response|result)"[[:space:]]*:' <<< "${output}"; then
+                return 0
+            fi
+            last_error="runtime probe on ${model} returned unexpected output: $(echo "${output}" | tr '\n' ' ' | sed 's/[[:space:]]\\+/ /g' | cut -c1-320)"
+            continue
+        fi
+
+        last_error="runtime probe on ${model} failed (exit ${status}): $(echo "${output}" | tr '\n' ' ' | sed 's/[[:space:]]\\+/ /g' | cut -c1-320)"
+    done
+
+    GEMINI_PROBE_ERROR="runtime probe failed for models ${probe_models[*]}; last error: ${last_error}"
     return 1
 }
 
@@ -939,7 +987,7 @@ check_llm_auth() {
         warn "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
         echo ""
         info "Gemini health check command:"
-        warn "  sudo -u ${SERVICE_USER} /bin/bash --noprofile --norc -lc 'cd ${INSTALL_DIR} && HOME=${cli_home}/gemini GEMINI_CLI_SYSTEM_SETTINGS_PATH=${cli_home}/gemini/settings.json ${planner_bin}/gemini --prompt \"Reply with OK only.\" --output-format json --model gemini-2.5-flash-lite'"
+        warn "  sudo -u ${SERVICE_USER} /bin/bash --noprofile --norc -lc 'cd ${INSTALL_DIR}/cli-sandbox && HOME=${cli_home}/gemini GEMINI_CLI_SYSTEM_SETTINGS_PATH=${cli_home}/gemini/settings.json ${planner_bin}/gemini -e none --prompt \"Reply with OK only.\" --output-format json --model gemini-2.5-flash-lite'"
         echo ""
         info "Claude health check command:"
         warn "  sudo -u ${SERVICE_USER} /bin/bash --noprofile --norc -lc 'cd ${INSTALL_DIR}/cli-sandbox && HOME=${cli_home}/claude CLAUDE_CONFIG_DIR=${cli_home}/claude/.claude ENABLE_CLAUDEAI_MCP_SERVERS=false ${planner_bin}/claude -p \"Reply with OK only.\" --permission-mode acceptEdits --output-format stream-json --verbose --model claude-opus-4-6'"

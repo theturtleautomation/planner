@@ -68,10 +68,10 @@ const CLI_SANDBOX_DIR: &str = "/opt/planner/cli-sandbox";
 /// Directory where CLI binaries are installed by deploy/install.sh.
 /// The installer places claude, gemini, codex, and node here.
 const CLI_BIN_DIR: &str = "/opt/planner/bin";
-const GEMINI_CLIENT_RELATIVE_PATH: &str =
+const GEMINI_LEGACY_CLIENT_RELATIVE_PATH: &str =
     "node_modules/@google/gemini-cli-core/dist/src/core/client.js";
 const GEMINI_EMPTY_TOOLS_ALREADY_PATCHED: &str = "toolDeclarations.length > 0 ?";
-const GEMINI_EMPTY_TOOLS_REPLACEMENTS: [(&str, &str); 2] = [
+const GEMINI_EMPTY_TOOLS_REPLACEMENTS: [(&str, &str); 4] = [
     (
         "const tools = [{ functionDeclarations: toolDeclarations }];",
         "const tools = toolDeclarations.length > 0 ? [{ functionDeclarations: toolDeclarations }] : undefined;",
@@ -79,6 +79,14 @@ const GEMINI_EMPTY_TOOLS_REPLACEMENTS: [(&str, &str); 2] = [
     (
         "return [{ functionDeclarations: toolDeclarations }];",
         "return toolDeclarations.length > 0 ? [{ functionDeclarations: toolDeclarations }] : undefined;",
+    ),
+    (
+        "const tools = [{ functionDeclarations: toolDeclarations2 }];",
+        "const tools = toolDeclarations2.length > 0 ? [{ functionDeclarations: toolDeclarations2 }] : undefined;",
+    ),
+    (
+        "return [{ functionDeclarations: toolDeclarations2 }];",
+        "return toolDeclarations2.length > 0 ? [{ functionDeclarations: toolDeclarations2 }] : undefined;",
     ),
 ];
 const CLAUDE_CONFIG_FILE_NAME: &str = ".claude.json";
@@ -382,7 +390,29 @@ pub fn cli_available(name: &str) -> bool {
 }
 
 fn gemini_package_root_has_expected_layout(root: &Path) -> bool {
-    root.join("package.json").is_file() && root.join(GEMINI_CLIENT_RELATIVE_PATH).is_file()
+    root.join("package.json").is_file()
+        && (root.join(GEMINI_LEGACY_CLIENT_RELATIVE_PATH).is_file() || root.join("bundle").is_dir())
+}
+
+fn gemini_patch_target_files(root: &Path) -> Vec<PathBuf> {
+    let mut targets = Vec::new();
+
+    let legacy = root.join(GEMINI_LEGACY_CLIENT_RELATIVE_PATH);
+    if legacy.is_file() {
+        targets.push(legacy);
+    }
+
+    let bundle_dir = root.join("bundle");
+    if let Ok(entries) = std::fs::read_dir(bundle_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|ext| ext.to_str()) == Some("js") {
+                targets.push(path);
+            }
+        }
+    }
+
+    targets
 }
 
 fn find_gemini_package_root(binary_path: &str) -> Option<PathBuf> {
@@ -452,49 +482,63 @@ fn ensure_gemini_empty_tools_patch(binary_path: &str) {
         return;
     };
 
-    let client_js = root.join(GEMINI_CLIENT_RELATIVE_PATH);
     let version = read_gemini_package_version(&root).unwrap_or_else(|| "unknown".into());
-    let source = match std::fs::read_to_string(&client_js) {
-        Ok(source) => source,
-        Err(error) => {
+    let targets = gemini_patch_target_files(&root);
+    let mut patched_any = false;
+    let mut already_patched = false;
+
+    for target in targets {
+        let source = match std::fs::read_to_string(&target) {
+            Ok(source) => source,
+            Err(error) => {
+                tracing::warn!(
+                    "Failed to read Gemini CLI patch target {} ({}): {}",
+                    target.display(),
+                    version,
+                    error
+                );
+                continue;
+            }
+        };
+
+        if source.contains(GEMINI_EMPTY_TOOLS_ALREADY_PATCHED) {
+            already_patched = true;
+            continue;
+        }
+
+        let Some(patched) = patch_gemini_empty_tools_source(&source) else {
+            continue;
+        };
+
+        if let Err(error) = std::fs::write(&target, patched) {
             tracing::warn!(
-                "Failed to read Gemini CLI client.js for compatibility patch ({}): {}",
+                "Failed to write Gemini CLI compatibility patch target {} ({}): {}",
+                target.display(),
                 version,
                 error
             );
-            return;
+            continue;
         }
-    };
 
-    if source.contains(GEMINI_EMPTY_TOOLS_ALREADY_PATCHED) {
+        patched_any = true;
+    }
+
+    if patched_any {
+        tracing::info!(
+            "Patched Gemini CLI empty-tools bug at runtime ({})",
+            version
+        );
+    } else if already_patched {
         tracing::debug!(
             "Gemini empty-tools compatibility patch already present ({})",
             version
         );
-        return;
-    }
-
-    let Some(patched) = patch_gemini_empty_tools_source(&source) else {
+    } else {
         tracing::warn!(
-            "Gemini client.js layout changed; skipping empty-tools compatibility patch ({})",
+            "Gemini CLI layout changed; skipping empty-tools compatibility patch ({})",
             version
         );
-        return;
-    };
-
-    if let Err(error) = std::fs::write(&client_js, patched) {
-        tracing::warn!(
-            "Failed to write Gemini CLI compatibility patch ({}): {}",
-            version,
-            error
-        );
-        return;
     }
-
-    tracing::info!(
-        "Patched Gemini CLI empty-tools bug at runtime ({})",
-        version
-    );
 }
 
 /// Build a single prompt string from a CompletionRequest.
@@ -946,6 +990,8 @@ impl LlmClient for GoogleCliClient {
         // is unnecessary for text-only completions.
         let model_arg = request.model.clone();
         let args = vec![
+            "-e",
+            "none",
             "--prompt",
             &prompt,
             "--output-format",
@@ -1499,12 +1545,17 @@ mod tests {
         let source = r#"
 const tools = [{ functionDeclarations: toolDeclarations }];
 return [{ functionDeclarations: toolDeclarations }];
+const tools = [{ functionDeclarations: toolDeclarations2 }];
+return [{ functionDeclarations: toolDeclarations2 }];
 "#;
         let patched = patch_gemini_empty_tools_source(source).expect("expected patch");
 
         assert!(patched.contains("toolDeclarations.length > 0 ?"));
+        assert!(patched.contains("toolDeclarations2.length > 0 ?"));
         assert!(!patched.contains("const tools = [{ functionDeclarations: toolDeclarations }];"));
         assert!(!patched.contains("return [{ functionDeclarations: toolDeclarations }];"));
+        assert!(!patched.contains("const tools = [{ functionDeclarations: toolDeclarations2 }];"));
+        assert!(!patched.contains("return [{ functionDeclarations: toolDeclarations2 }];"));
     }
 
     #[test]
@@ -1521,7 +1572,7 @@ const tools = toolDeclarations.length > 0 ? [{ functionDeclarations: toolDeclara
             std::env::temp_dir().join(format!("planner-gemini-test-{}", uuid::Uuid::new_v4()));
         let binary = temp_root.join("bin/gemini");
         let package_root = temp_root.join("lib/node_modules/@google/gemini-cli");
-        let client_js = package_root.join(GEMINI_CLIENT_RELATIVE_PATH);
+        let client_js = package_root.join(GEMINI_LEGACY_CLIENT_RELATIVE_PATH);
         fs::create_dir_all(binary.parent().expect("bin dir")).unwrap();
         fs::create_dir_all(client_js.parent().expect("client dir")).unwrap();
         fs::write(&binary, "#!/usr/bin/env node\n").unwrap();
@@ -1538,6 +1589,35 @@ const tools = toolDeclarations.length > 0 ? [{ functionDeclarations: toolDeclara
 
         let found = find_gemini_package_root(binary.to_str().unwrap()).expect("package root");
         assert_eq!(found, package_root);
+
+        let _ = fs::remove_dir_all(temp_root);
+    }
+
+    #[test]
+    fn find_gemini_package_root_supports_bundled_installs() {
+        let temp_root =
+            std::env::temp_dir().join(format!("planner-gemini-bundle-test-{}", uuid::Uuid::new_v4()));
+        let binary = temp_root.join("bin/gemini");
+        let package_root = temp_root.join("lib/node_modules/@google/gemini-cli");
+        let bundle_file = package_root.join("bundle/chunk-TEST.js");
+        fs::create_dir_all(binary.parent().expect("bin dir")).unwrap();
+        fs::create_dir_all(bundle_file.parent().expect("bundle dir")).unwrap();
+        fs::write(&binary, "#!/usr/bin/env node\n").unwrap();
+        fs::write(
+            package_root.join("package.json"),
+            "{\"name\":\"@google/gemini-cli\"}",
+        )
+        .unwrap();
+        fs::write(
+            &bundle_file,
+            "const tools = [{ functionDeclarations: toolDeclarations2 }];",
+        )
+        .unwrap();
+
+        let found = find_gemini_package_root(binary.to_str().unwrap()).expect("package root");
+        assert_eq!(found, package_root);
+        let targets = gemini_patch_target_files(&found);
+        assert!(targets.contains(&bundle_file));
 
         let _ = fs::remove_dir_all(temp_root);
     }
