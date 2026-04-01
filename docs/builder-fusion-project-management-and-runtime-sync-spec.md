@@ -152,14 +152,18 @@ The current bounded child slices under this parent capability plan are now:
 
 - [Builder Fusion Phase 01 API-Grounded Skill And Existing Project Contract Spec](/home/thetu/planner/docs/builder-fusion-phase-01-api-grounded-skill-and-existing-project-contract-spec.md)
 - [Builder Fusion Phase 02 Existing Project Helper Contract Spec](/home/thetu/planner/docs/builder-fusion-phase-02-existing-project-helper-contract-spec.md)
+- [Builder Fusion Phase 03 Sync Verification Workflow Spec](/home/thetu/planner/docs/builder-fusion-phase-03-sync-verification-workflow-spec.md)
 
 Current child-slice state:
 
 - Phase 01 is implemented for Builder skill/reference hardening
 - Phase 02 is implemented for existing Fusion-project helpers with narrow
   internal-endpoint acceptance
+- Phase 03 is implemented for repo-native sync verification across local
+  config, saved project state, and visible remote Fusion settings
 - current Builder verification is still limited by auth-context visibility:
-  the saved project is not returned by the current project-list query, so live
+  the saved project is not returned by the current project-list query, so the
+  new verify-sync workflow truthfully reports `visibility_blocked` and live
   remote update against that exact project remains unproven in this environment
 
 ### Tranche 1: Fusion Project Read/Update
@@ -313,11 +317,15 @@ Implementation slices promoted from this parent spec must include proof for:
 
 ## Readiness Judgment
 
-This parent capability spec is intentionally **not** ready for direct
-implementation as one broad change. It is broad enough to serve as the source
+This parent capability spec remains intentionally **not** ready for direct
+implementation as one broad change. It continues to serve as the source
 planning artifact for follow-on bounded implementation slices.
 
-The next valid move is to draft and promote the first bounded child slice:
+The current honest next move is now narrower:
 
-- Fusion project read/update for an existing saved project, including remote
-  runtime command inspection and update
+- either verify live remote update from a Builder auth context that can
+  actually see the saved Fusion project, or
+- explicitly decide whether Planner wants a future `builder-ensure-project`
+  slice despite the duplicate-project risk when visibility is blocked
+
+No additional child slice is currently promoted automatically beyond Phase 03.

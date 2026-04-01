@@ -22,6 +22,30 @@ builder_default_profile() {
   printf '%s\n' "frontend-mock-ui-review"
 }
 
+builder_expected_runtime_profile() {
+  local mock_mode="${PLANNER_BUILDER_LLM_MOCK_MODE:-full_pipeline}"
+
+  if [[ "${BUILDER_CONFIG_PROFILE:-}" != "server-integration" ]]; then
+    printf '%s\n' "live"
+    return
+  fi
+
+  case "$mock_mode" in
+    disabled)
+      printf '%s\n' "live"
+      ;;
+    full_pipeline)
+      printf '%s\n' "mock-full-pipeline"
+      ;;
+    phase26_live)
+      printf '%s\n' "mock-socratic"
+      ;;
+    *)
+      printf 'custom:%s\n' "$mock_mode"
+      ;;
+  esac
+}
+
 builder_resolve_config() {
   local config_file="$1"
 
@@ -65,7 +89,7 @@ builder_resolve_config() {
   esac
 }
 
-builder_validate_resolved_config() {
+builder_collect_validation_errors() {
   local config_file="$1"
   local errors=()
 
@@ -118,11 +142,26 @@ builder_validate_resolved_config() {
   esac
 
   if ((${#errors[@]} > 0)); then
-    printf 'Builder config validation failed for %s\n' "$config_file" >&2
     local error
     for error in "${errors[@]}"; do
-      printf '  - %s\n' "$error" >&2
+      printf '%s\n' "$error"
     done
+    return 1
+  fi
+
+  return 0
+}
+
+builder_validate_resolved_config() {
+  local config_file="$1"
+  local validation_errors=""
+
+  if ! validation_errors="$(builder_collect_validation_errors "$config_file")"; then
+    printf 'Builder config validation failed for %s\n' "$config_file" >&2
+    while IFS= read -r error; do
+      [[ -n "$error" ]] || continue
+      printf '  - %s\n' "$error" >&2
+    done <<<"$validation_errors"
     exit 1
   fi
 }

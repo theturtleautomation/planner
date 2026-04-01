@@ -151,6 +151,7 @@ runtime settings:
 
 ```bash
 make builder-update-project
+make builder-verify-sync
 ```
 
 Server-backed alternate launch:
@@ -168,6 +169,7 @@ to that path explicitly:
 ```bash
 make builder-server-create-project
 make builder-server-update-project
+make builder-server-verify-sync
 ```
 
 Server-backed mock mode values:
@@ -388,6 +390,7 @@ Planner also exposes a repo-native wrapper:
 make builder-auth-status
 make builder-print-config
 make builder-validate-config
+make builder-verify-sync
 make builder-dsi-status
 make builder-launch
 make builder-create-project
@@ -396,6 +399,7 @@ make builder-get-project
 make builder-update-project
 make builder-server-print-config
 make builder-server-validate-config
+make builder-server-verify-sync
 make builder-connect-repo
 make builder-connect-repo-dryrun
 make builder-index-repo
@@ -414,8 +418,10 @@ Inspection and validation:
 ```bash
 make builder-print-config
 make builder-validate-config
+make builder-verify-sync
 make builder-server-print-config
 make builder-server-validate-config
+make builder-server-verify-sync
 ```
 
 What these commands now tell you explicitly:
@@ -426,9 +432,21 @@ What these commands now tell you explicitly:
 - the resolved runtime URL and command
 - the remote Builder project profile that `create` or `update` will use
 - whether `PLANNER_BUILDER_LLM_MOCK_MODE` matters for the selected path
+- whether the saved Fusion project is visible and aligned or blocked/drifted
+  for the selected path
 
 The launch/create/update wrappers now print the same resolved contract before
 doing any work, so wrapper output and docs tell the same runtime story.
+
+The verify-sync wrappers are read-only. They compare:
+
+- the active local config contract
+- the saved project in `.codex/builder-fusion-project.json`
+- the visible remote Fusion project settings when the current auth context can
+  see that project
+
+If the saved remote project is not visible, the verify-sync command reports a
+truthful blocked state instead of pretending comparison succeeded.
 
 The existing-project helper targets use documented Builder Project settings
 semantics with an internal fallback transport. They are intended to operate on

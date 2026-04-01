@@ -1144,6 +1144,7 @@ Canonical planning doc:
 - [Builder Fusion Project Management And Runtime Sync Spec](/home/thetu/planner/docs/builder-fusion-project-management-and-runtime-sync-spec.md)
 - [Builder Fusion Phase 01 API-Grounded Skill And Existing Project Contract Spec](/home/thetu/planner/docs/builder-fusion-phase-01-api-grounded-skill-and-existing-project-contract-spec.md)
 - [Builder Fusion Phase 02 Existing Project Helper Contract Spec](/home/thetu/planner/docs/builder-fusion-phase-02-existing-project-helper-contract-spec.md)
+- [Builder Fusion Phase 03 Sync Verification Workflow Spec](/home/thetu/planner/docs/builder-fusion-phase-03-sync-verification-workflow-spec.md)
 
 Current planning state:
 
@@ -1174,6 +1175,9 @@ Current planning state:
 - the existing-project helper slice now supports runtime command, runtime URL,
   env/profile, and saved-project dry-run updates without recreating the
   project
+- the new verify-sync slice now adds one repo-native read-only verification
+  workflow for local config, saved project state, and visible remote Fusion
+  settings
 - updating an existing saved Fusion project is now explicitly included in the
   parent capability spec as a required behavior, not an implied helper
 - the analyzed Builder docs establish documented Admin/Write APIs and
@@ -1188,9 +1192,9 @@ Current planning state:
   from that documented config instead of hardcoding a separate runtime
   contract
 - the current Builder auth context still returns zero visible projects for the
-  saved Fusion project ID, so the helper layer is implemented but live remote
-  update remains blocked until Builder exposes that project to the active auth
-  context
+  saved Fusion project ID, so the helper and verification layers are
+  implemented but both live remote update and remote drift comparison remain
+  blocked until Builder exposes that project to the active auth context
 - the previously open "decide the next Builder slice" branch is now narrowed
   into two explicit follow-ons rather than an open-ended note:
   - [Builder Phase C Documented Config Workflow Tightening Spec](/home/thetu/planner/docs/builder-phase-c-documented-config-workflow-tightening-spec.md)
@@ -1213,7 +1217,15 @@ Current planning state:
 
 Current ready Builder follow-ons:
 
-- none currently promoted after Builder Phase D
+- none currently promoted after Builder Fusion Phase 03
+
+Builder next move:
+
+- either run the live remote update/readback path from a Builder auth context
+  that can actually see the saved Fusion project, or
+- create a fresh bounded spec if Planner wants to pursue an
+  `ensure-project` workflow despite the duplicate-project risk while remote
+  visibility remains blocked
 
 ## Immediate Bounded Closeout Slice
 

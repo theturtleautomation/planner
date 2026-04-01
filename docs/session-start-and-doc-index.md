@@ -202,6 +202,7 @@ Read these when the task touches the relevant area.
 - [builder-fusion-project-management-and-runtime-sync-spec.md](/home/thetu/planner/docs/builder-fusion-project-management-and-runtime-sync-spec.md)
 - [builder-fusion-phase-01-api-grounded-skill-and-existing-project-contract-spec.md](/home/thetu/planner/docs/builder-fusion-phase-01-api-grounded-skill-and-existing-project-contract-spec.md)
 - [builder-fusion-phase-02-existing-project-helper-contract-spec.md](/home/thetu/planner/docs/builder-fusion-phase-02-existing-project-helper-contract-spec.md)
+- [builder-fusion-phase-03-sync-verification-workflow-spec.md](/home/thetu/planner/docs/builder-fusion-phase-03-sync-verification-workflow-spec.md)
 
 ## Repo-Local Skills
 

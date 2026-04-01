@@ -129,13 +129,17 @@ contract explicitly:
 ```bash
 make builder-print-config
 make builder-validate-config
+make builder-verify-sync
 make builder-server-print-config
 make builder-server-validate-config
+make builder-server-verify-sync
 ```
 
 The wrappers now also print the active config path, resolved URL/command,
 workflow label, and remote Builder profile assumptions before launch, create,
-or update.
+or update. The verify-sync wrappers add one read-only alignment check for local
+config, saved Fusion project state, and visible remote Builder project
+settings.
 
 Planner also now ships repo-local Builder plugins for both CMS and DSI:
 

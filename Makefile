@@ -6,9 +6,11 @@
        builder-launch builder-create-project builder-connect-repo \
        builder-connect-repo-dryrun builder-index-repo builder-code \
        builder-list-projects builder-get-project builder-update-project \
+       builder-verify-sync \
        builder-dsi-status \
        builder-server-print-config builder-server-validate-config \
        builder-server-launch builder-server-create-project builder-server-update-project \
+       builder-server-verify-sync \
        builder-figma-generate builder-figma-publish builder-figma-migrate \
        builder-sync-project
 
@@ -115,6 +117,9 @@ builder-get-project: ## Inspect the saved Fusion project or an explicit project 
 builder-update-project: ## Sync the saved Fusion project's runtime settings to the canonical UI-review config
 	./scripts/builder-update-project.sh $(ARGS)
 
+builder-verify-sync: ## Verify the canonical Builder UI-review config against saved and visible remote Fusion state
+	./scripts/builder-verify-sync.sh $(ARGS)
+
 builder-dsi-status: ## Verify repo-local Builder DSI plugin wiring and prerequisites
 	./scripts/builder-dsi-status.sh $(ARGS)
 
@@ -132,6 +137,9 @@ builder-server-create-project: ## Create a server-backed integration Fusion proj
 
 builder-server-update-project: ## Sync the saved Fusion project to the server-backed integration config explicitly
 	BUILDER_PROJECT_CONFIG_PATH=./builder.server.config.json ./scripts/builder-update-project.sh $(ARGS)
+
+builder-server-verify-sync: ## Verify the server-backed Builder config against saved and visible remote Fusion state
+	BUILDER_PROJECT_CONFIG_PATH=./builder.server.config.json ./scripts/builder-verify-sync.sh $(ARGS)
 
 builder-figma-generate: ## Run Builder Figma generate flow
 	./scripts/builder-figma-generate.sh $(ARGS)
