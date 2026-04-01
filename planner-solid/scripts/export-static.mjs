@@ -8,7 +8,6 @@ const manifestPath = path.join(clientDir, ".vite", "manifest.json");
 
 const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
 const entry = manifest["src/entry-client.tsx"];
-
 if (!entry?.file) {
   throw new Error("Solid client manifest is missing src/entry-client.tsx");
 }
@@ -35,6 +34,9 @@ ${modulePreloads}
   </head>
   <body>
     <div id="app"></div>
+    <script>
+      globalThis._$HY = { done: true };
+    </script>
     <script type="module" src="/${entry.file}"></script>
   </body>
 </html>

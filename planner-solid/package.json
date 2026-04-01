@@ -10,6 +10,7 @@
     "test:watch": "vitest",
     "lint": "tsc --noEmit --skipLibCheck",
     "test:e2e": "playwright test",
+    "test:e2e:canonical-static": "playwright test --config playwright.canonical-static.config.ts e2e/phase-37-canonical-static-runtime.spec.ts",
     "test:e2e:frontend-mock": "VITE_PLANNER_FRONTEND_MOCK=1 playwright test --config playwright.frontend-mock.config.ts"
   },
   "dependencies": {

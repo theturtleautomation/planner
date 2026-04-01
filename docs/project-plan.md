@@ -612,25 +612,18 @@ Current planning state:
       - frontend-mock proof for collapsed selector behavior and workspace focus
         return
     - [Planner SolidStart Phase 37.2 Session Command Rail Canonical Runtime Proof Spec](/home/thetu/planner/docs/planner-solidstart-phase-37-2-session-command-rail-canonical-runtime-proof-spec.md)
-      remains unimplemented after an attempted delivery pass found a broader
-      canonical-runtime blocker:
-      - a dedicated `planner-server` proof harness was able to create real
-        sessions under the deterministic `phase26_live` mock profile
-      - but the built static runtime crashes on both `/` and `/sessions/:id`
-        before the command-rail route mounts, with
-        `TypeError: Cannot read properties of undefined (reading 'done')` from
-        the bundled client runtime
-      - the failing proof artifacts were not retained in-repo, so the slice is
-        now blocked on canonical static-runtime parity rather than on missing
-        test intent
-    - that blocker is now isolated in
+      remains ready for implementation, but its earlier bootstrap blocker came
+      from a broader runtime issue rather than from missing proof intent
+    - that blocker was isolated in
       [Planner SolidStart Phase 37.3 Canonical Static Runtime Parity Remediation Spec](/home/thetu/planner/docs/planner-solidstart-phase-37-3-canonical-static-runtime-parity-remediation-spec.md),
-      which is ready for implementation and scopes:
-      - restoring successful built frontend bootstrap under `planner-server`
-      - verifying that `/` and `/sessions/:sessionId` mount without the
-        `reading 'done'` client crash
-      - unblocking the actual canonical parity proof in Phase 37.2 without
-        reopening the session-route design slice
+      which is now implemented and:
+      - repairs the built static HTML bootstrap by defining the minimal
+        hydration sentinel required for client-render startup under
+        `planner-server`
+      - adds a dedicated canonical-static Playwright proof for `/` and
+        `/sessions/:sessionId`
+      - removes the runtime blocker, so 37.2 is now unblocked and can return
+        to full command-rail parity proof instead of bootstrap remediation
 - the bank-first runtime and saved-brief startup contracts from Phase 26 and
   Phase 28 remain locked dependencies across that series rather than becoming a
   new planning branch

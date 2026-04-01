@@ -4,7 +4,7 @@
 **Date:** 2026-04-01  
 **Parent:** [Planner SolidStart Phase 37 Session Workspace Command Rail Hierarchy Spec](/home/thetu/planner/docs/planner-solidstart-phase-37-session-workspace-command-rail-hierarchy-spec.md)  
 **Related Planning:** [Planner SolidStart Phase 35.3 Session Workspace Frontend Mock Spec](/home/thetu/planner/docs/planner-solidstart-phase-35-3-session-workspace-frontend-mock-spec.md), [Planner SolidStart Phase 35.10 Builder Frontend Mock Runtime Alignment Spec](/home/thetu/planner/docs/planner-solidstart-phase-35-10-builder-frontend-mock-runtime-alignment-spec.md), [Builder Local Workflow](/home/thetu/planner/docs/builder-local-workflow.md), [Project Plan](/home/thetu/planner/docs/project-plan.md)  
-**Delivery Attempt Note (2026-04-01):** attempted delivery against a dedicated server-backed `planner-server` harness found a broader canonical-runtime blocker before the session route could be proven. The built static runtime crashes on load at `/` and `/sessions/:id` with `TypeError: Cannot read properties of undefined (reading 'done')` from the bundled client runtime, so no passing canonical browser-proof artifact was retained in-repo. This slice remains blocked on canonical static-runtime parity rather than unstarted.
+**Delivery Attempt Note (2026-04-01):** an earlier delivery attempt found a broader canonical-runtime blocker before the session route could be proven. That bootstrap failure is now repaired by [Planner SolidStart Phase 37.3 Canonical Static Runtime Parity Remediation Spec](/home/thetu/planner/docs/planner-solidstart-phase-37-3-canonical-static-runtime-parity-remediation-spec.md), so this slice is unblocked and returns to its intended proof-only scope.
 
 ## 1. Purpose
 

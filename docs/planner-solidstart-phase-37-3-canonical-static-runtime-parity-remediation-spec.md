@@ -1,6 +1,6 @@
 # Planner SolidStart Phase 37.3 Canonical Static Runtime Parity Remediation Spec
 
-**Status:** ready for implementation  
+**Status:** implemented  
 **Date:** 2026-04-01  
 **Parent:** [Planner SolidStart Phase 37 Session Workspace Command Rail Hierarchy Spec](/home/thetu/planner/docs/planner-solidstart-phase-37-session-workspace-command-rail-hierarchy-spec.md)  
 **Related Planning:** [Planner SolidStart Phase 37.2 Session Command Rail Canonical Runtime Proof Spec](/home/thetu/planner/docs/planner-solidstart-phase-37-2-session-command-rail-canonical-runtime-proof-spec.md), [Planner SolidStart Phase 35.10 Builder Frontend Mock Runtime Alignment Spec](/home/thetu/planner/docs/planner-solidstart-phase-35-10-builder-frontend-mock-runtime-alignment-spec.md), [Builder Local Workflow](/home/thetu/planner/docs/builder-local-workflow.md), [Project Plan](/home/thetu/planner/docs/project-plan.md)  
@@ -138,3 +138,36 @@ If the root cause proves larger than one bounded slice:
    serving?
 2. Does the runtime need a permanent export-path correction, or is the defect a
    smaller regression in the current built asset contract?
+
+## 12. Implementation Update
+
+Implemented on 2026-04-01.
+
+What landed:
+
+- [export-static.mjs](/home/thetu/planner/planner-solid/scripts/export-static.mjs)
+  now injects `globalThis._$HY = { done: true };` into the exported static
+  HTML so the built server-backed runtime performs client render bootstrap
+  instead of crashing while trying to hydrate absent SSR state
+- added canonical static-runtime browser proof in
+  [phase-37-canonical-static-runtime.spec.ts](/home/thetu/planner/planner-solid/e2e/phase-37-canonical-static-runtime.spec.ts)
+- added a dedicated non-conflicting Playwright config in
+  [playwright.canonical-static.config.ts](/home/thetu/planner/planner-solid/playwright.canonical-static.config.ts)
+  and a matching package script
+
+Verification completed:
+
+- `npm --prefix planner-solid run build`
+- manual browser verification against `planner-server --port 4176 --static-dir ./planner-solid/dist/static`
+  for `/` and `/sessions/81208f33-f7d9-4a56-bbe1-0bcd86307072`
+- `npm --prefix planner-solid run lint`
+- `npm --prefix planner-solid run test:e2e:canonical-static`
+
+Verification result:
+
+- the client bootstrap crash on `globalThis._$HY.done` is gone
+- `/` now mounts the real app shell under the built server-backed runtime
+- `/sessions/:sessionId` now mounts the real session route without the
+  previous `reading 'done'` client crash
+- Phase 37.2 is unblocked again and can return to its intended command-rail
+  parity proof scope
