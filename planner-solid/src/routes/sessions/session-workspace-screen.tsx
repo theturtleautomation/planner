@@ -4,6 +4,7 @@ import { For, Show, createEffect, createSignal, onCleanup } from "solid-js";
 
 import {
   countProcessedPromptItems,
+  draftHasContent,
   firstUnprocessedPromptItemId,
   presentSessionTitle,
   type DraftEntry,
@@ -16,12 +17,27 @@ import {
 } from "./session-workspace-view";
 import type { SessionWorkspaceController } from "./session-workspace-controller";
 
+function describeDraft(item: PromptItem, draft: DraftEntry | undefined, isProcessed: boolean): string {
+  const customText = draft?.customText?.trim();
+  if (customText) {
+    return customText.length > 88 ? `${customText.slice(0, 88).trimEnd()}…` : customText;
+  }
+
+  if (draft?.selectedOptionId) {
+    const selected = item.options.find(option => option.option_id === draft.selectedOptionId);
+    if (selected) return selected.label;
+  }
+
+  return isProcessed ? "Committed" : "Select to answer";
+}
+
 function QuestionComposer(props: {
   item: PromptItem;
   itemIndex: number;
   itemCount: number;
   draft?: DraftEntry;
   isActive: boolean;
+  isProcessed: boolean;
   saveStateLabel: string;
   onActivate: () => void;
   onDraftChange: (itemId: string, next: DraftEntry) => void;
@@ -68,9 +84,12 @@ function QuestionComposer(props: {
     }
   });
 
+  const hasDraft = () => draftHasContent(props.draft);
+  const preview = () => describeDraft(props.item, props.draft, props.isProcessed);
+
   return (
     <section
-      class={`session-question-card${props.isActive ? " is-active" : ""}`}
+      class={`session-question-card${props.isActive ? " is-active" : ""}${props.isProcessed ? " is-processed" : ""}`}
       onClick={() => props.onActivate()}
     >
       <div class="session-question-card-head">
@@ -81,74 +100,86 @@ function QuestionComposer(props: {
           <Show when={props.isActive}>
             <span class="session-question-current-badge">Current</span>
           </Show>
+          <Show when={!props.isActive && props.isProcessed}>
+            <span class="session-question-state-badge">Committed</span>
+          </Show>
+          <Show when={!props.isActive && !props.isProcessed && hasDraft()}>
+            <span class="session-question-state-badge is-draft">Draft</span>
+          </Show>
         </div>
-        <div class="session-question-save-state">{props.saveStateLabel}</div>
+        <Show when={props.isActive}>
+          <div class="session-question-save-state">{props.saveStateLabel}</div>
+        </Show>
       </div>
       <p class="session-question-copy">{props.item.text}</p>
-      <Show when={props.item.options.length > 0}>
-        <div class="session-question-options">
-          <For each={props.item.options}>
-            {(option, index) => (
-              <button
-                class={`session-option-chip${selectedOptionId() === option.option_id ? " is-selected" : ""}`}
-                type="button"
-                onClick={() => {
-                  props.onActivate();
-                  const next = selectedOptionId() === option.option_id ? null : option.option_id;
-                  setSelectedOptionId(next);
-                  scheduleDraftSync();
-                }}
-              >
-                <span class="session-option-chip-index">[{index() + 1}]</span>
-                {option.label}
-              </button>
-            )}
-          </For>
-        </div>
-      </Show>
-      <textarea
-        ref={element => props.inputRef(props.item.item_id, element)}
-        class="session-question-input"
-        value={customText()}
-        onFocus={() => props.onActivate()}
-        onKeyDown={event => {
-          if (!(event.metaKey || event.ctrlKey) || event.key !== "Enter") return;
-          event.preventDefault();
-          event.stopPropagation();
-          props.onActivate();
-          props.onCommit(flushDraftSync());
-        }}
-        onInput={event => {
-          props.onActivate();
-          setCustomText(event.currentTarget.value);
-          scheduleDraftSync();
-        }}
-        placeholder="Type your answer"
-      />
-      <div class="session-question-actions">
-        <div class="session-question-hint">Draft saves automatically. Press Cmd+Enter to commit and advance.</div>
-        <button
-          class="btn btn-primary session-commit-button"
-          type="button"
-          onClick={() => {
+      <Show
+        when={props.isActive}
+        fallback={<div class="session-question-preview">{preview()}</div>}
+      >
+        <Show when={props.item.options.length > 0}>
+          <div class="session-question-options">
+            <For each={props.item.options}>
+              {(option, index) => (
+                <button
+                  class={`session-option-chip${selectedOptionId() === option.option_id ? " is-selected" : ""}`}
+                  type="button"
+                  onClick={() => {
+                    props.onActivate();
+                    const next = selectedOptionId() === option.option_id ? null : option.option_id;
+                    setSelectedOptionId(next);
+                    scheduleDraftSync();
+                  }}
+                >
+                  <span class="session-option-chip-index">[{index() + 1}]</span>
+                  {option.label}
+                </button>
+              )}
+            </For>
+          </div>
+        </Show>
+        <textarea
+          ref={element => props.inputRef(props.item.item_id, element)}
+          class="session-question-input"
+          value={customText()}
+          onFocus={() => props.onActivate()}
+          onKeyDown={event => {
+            if (!(event.metaKey || event.ctrlKey) || event.key !== "Enter") return;
+            event.preventDefault();
+            event.stopPropagation();
             props.onActivate();
             props.onCommit(flushDraftSync());
           }}
-        >
-          Commit and next
-        </button>
-      </div>
+          onInput={event => {
+            props.onActivate();
+            setCustomText(event.currentTarget.value);
+            scheduleDraftSync();
+          }}
+          placeholder="Type your answer"
+        />
+        <div class="session-question-actions">
+          <div class="session-question-hint">Draft saves automatically. Press Cmd+Enter to commit and advance.</div>
+          <button
+            class="btn btn-primary session-commit-button"
+            type="button"
+            onClick={() => {
+              props.onActivate();
+              props.onCommit(flushDraftSync());
+            }}
+          >
+            Commit and next
+          </button>
+        </div>
+      </Show>
     </section>
   );
 }
 
 export default function SessionWorkspaceScreen(props: { controller: SessionWorkspaceController }) {
-  const threadRefs = new Map<string, HTMLElement>();
+  let workAreaRef: HTMLElement | undefined;
 
   const jumpToThread = (threadId: string, itemId: string | null) => {
     props.controller.setActiveTask(threadId, itemId, false);
-    const element = threadRefs.get(threadId);
-    element?.scrollIntoView({ behavior: "smooth", block: "start" });
+    workAreaRef?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
   return (
@@ -172,6 +203,7 @@ export default function SessionWorkspaceScreen(props: { controller: SessionWorks
           const sessionStatus = () => props.controller.sessionStatus();
           const workspaceReady = () => props.controller.workspaceReady();
           const returnTarget = () => getSessionReturnTarget(currentSession());
+          const activeThreadProgress = () => props.controller.activeThreadProgress();
           const committedAnswerCount = () =>
             props.controller.bankedThreads().reduce(
               (total, thread) => total + countProcessedPromptItems(thread.prompt, props.controller.processedByItemId()),
@@ -212,86 +244,72 @@ export default function SessionWorkspaceScreen(props: { controller: SessionWorks
                       </div>
                     )}
                   </Show>
-                  <p class="session-question-intro">
-                    Every banked question is available from the start. Jump anywhere and answer in place without
-                    leaving the main workspace.
-                  </p>
-                  <div class="session-question-summary-strip">
-                    <div class="session-question-summary-pill">
-                      <span class="session-question-summary-label">Questions</span>
-                      <span>{totalPromptItemCount()}</span>
-                    </div>
-                    <div class="session-question-summary-pill">
-                      <span class="session-question-summary-label">Committed</span>
-                      <span>{committedAnswerCount()}</span>
-                    </div>
-                    <div class="session-question-summary-pill">
-                      <span class="session-question-summary-label">Live threads</span>
-                      <span>{liveThreadCount()}</span>
-                    </div>
+                  <div class="session-question-progress-line">
+                    <span>{committedAnswerCount()} of {totalPromptItemCount()} answers committed</span>
+                    <span>{liveThreadCount()} live {liveThreadCount() === 1 ? "thread" : "threads"}</span>
                     <Show when={queuedThreadCount() > 0}>
-                      <div class="session-question-summary-pill">
-                        <span class="session-question-summary-label">Queued later</span>
-                        <span>{queuedThreadCount()}</span>
-                      </div>
+                      <span>{queuedThreadCount()} queued later</span>
                     </Show>
                   </div>
                 </div>
 
-                <div class="session-question-header-actions">
-                  <Show when={currentSession().project_slug}>
-                    {(projectSlug) => (
-                      <A
+                <details class="session-question-header-actions">
+                  <summary class="btn btn-subtle session-question-actions-trigger">Session actions</summary>
+                  <div class="session-question-actions-menu">
+                    <Show when={currentSession().project_slug}>
+                      {(projectSlug) => (
+                        <A
+                          class="btn btn-subtle"
+                          href={withFrontendMockSearch(`/projects/${projectSlug()}/import`)}
+                        >
+                          Project import
+                        </A>
+                      )}
+                    </Show>
+                    <button
+                      class="btn btn-subtle"
+                      type="button"
+                      disabled={props.controller.actionPending() !== null}
+                      onClick={() => void props.controller.handleDuplicate(currentSession())}
+                    >
+                      {props.controller.actionPending() === "duplicate" ? "Duplicating…" : "Duplicate"}
+                    </button>
+                    <button
+                      class="btn btn-subtle"
+                      type="button"
+                      disabled={props.controller.actionPending() !== null}
+                      onClick={() => void props.controller.handleExport(currentSession())}
+                    >
+                      {props.controller.actionPending() === "export" ? "Exporting…" : "Export"}
+                    </button>
+                    <Show when={currentSession().can_restart_from_description}>
+                      <button
                         class="btn btn-subtle"
-                        href={withFrontendMockSearch(`/projects/${projectSlug()}/import`)}
+                        type="button"
+                        disabled={props.controller.actionPending() !== null}
+                        onClick={() => void props.controller.handleRestart(currentSession())}
                       >
-                        Project import
-                      </A>
-                    )}
-                  </Show>
-                  <button
-                    class="btn btn-subtle"
-                    type="button"
-                    disabled={props.controller.actionPending() !== null}
-                    onClick={() => void props.controller.handleDuplicate(currentSession())}
-                  >
-                    {props.controller.actionPending() === "duplicate" ? "Duplicating…" : "Duplicate"}
-                  </button>
-                  <button
-                    class="btn btn-subtle"
-                    type="button"
-                    disabled={props.controller.actionPending() !== null}
-                    onClick={() => void props.controller.handleExport(currentSession())}
-                  >
-                    {props.controller.actionPending() === "export" ? "Exporting…" : "Export"}
-                  </button>
-                  <Show when={currentSession().can_restart_from_description}>
-                    <button
-                      class="btn btn-subtle"
-                      type="button"
-                      disabled={props.controller.actionPending() !== null}
-                      onClick={() => void props.controller.handleRestart(currentSession())}
-                    >
-                      {props.controller.actionPending() === "restart"
-                        ? currentSession().intake_phase === "error"
-                          ? "Retrying…"
-                          : "Restarting…"
-                        : currentSession().intake_phase === "error"
-                          ? "Retry startup"
-                          : "Restart"}
-                    </button>
-                  </Show>
-                  <Show when={currentSession().can_retry_pipeline}>
-                    <button
-                      class="btn btn-subtle"
-                      type="button"
-                      disabled={props.controller.actionPending() !== null}
-                      onClick={() => void props.controller.handleRetry(currentSession())}
-                    >
-                      {props.controller.actionPending() === "retry" ? "Retrying…" : "Retry pipeline"}
-                    </button>
-                  </Show>
-                </div>
+                        {props.controller.actionPending() === "restart"
+                          ? currentSession().intake_phase === "error"
+                            ? "Retrying…"
+                            : "Restarting…"
+                          : currentSession().intake_phase === "error"
+                            ? "Retry startup"
+                            : "Restart"}
+                      </button>
+                    </Show>
+                    <Show when={currentSession().can_retry_pipeline}>
+                      <button
+                        class="btn btn-subtle"
+                        type="button"
+                        disabled={props.controller.actionPending() !== null}
+                        onClick={() => void props.controller.handleRetry(currentSession())}
+                      >
+                        {props.controller.actionPending() === "retry" ? "Retrying…" : "Retry pipeline"}
+                      </button>
+                    </Show>
+                  </div>
+                </details>
               </header>
 
               <Show when={props.controller.actionNotice()}>
@@ -333,18 +351,16 @@ export default function SessionWorkspaceScreen(props: { controller: SessionWorks
                 }
               >
                 <div class="session-question-shell">
-                  <section class="session-question-jumpbar">
-                    <div class="session-question-jumpbar-head">
-                      <div class="session-lane-kicker">Question bank</div>
-                      <p class="session-question-jumpbar-copy">
-                        Every live thread is already loaded locally. Use the jump list to move through the bank.
-                      </p>
+                  <aside class="session-question-rail">
+                    <div class="session-question-rail-head">
+                      <div class="session-lane-kicker">Threads</div>
+                      <div class="session-question-rail-count">{liveThreadCount()} live threads</div>
                     </div>
-                    <div class="session-question-jump-list">
+                    <div class="session-question-rail-list">
                       <For each={props.controller.bankedThreads()}>
                         {(thread) => (
                           <button
-                            class={`session-thread-chip${currentThread()?.category_id === thread.category_id ? " is-active" : ""}`}
+                            class={`session-thread-rail-button${currentThread()?.category_id === thread.category_id ? " is-active" : ""}`}
                             type="button"
                             onClick={() => jumpToThread(
                               thread.category_id,
@@ -353,15 +369,33 @@ export default function SessionWorkspaceScreen(props: { controller: SessionWorks
                                 ?? null,
                             )}
                           >
-                            <span>{thread.title}</span>
-                            <span class="session-thread-chip-count">
-                              {countProcessedPromptItems(thread.prompt, props.controller.processedByItemId())}/{thread.prompt.items.length}
+                            <span class="session-thread-rail-title">{thread.title}</span>
+                            <span class="session-thread-rail-progress">
+                              {countProcessedPromptItems(thread.prompt, props.controller.processedByItemId())}/{thread.prompt.items.length} answered
                             </span>
                           </button>
                         )}
                       </For>
                     </div>
-                  </section>
+                    <Show when={props.controller.queuedThreads().length > 0}>
+                      <details class="session-question-queued-disclosure">
+                        <summary>
+                          Queued later
+                          <span>{props.controller.queuedThreads().length}</span>
+                        </summary>
+                        <div class="session-queued-list">
+                          <For each={props.controller.queuedThreads()}>
+                            {(thread) => (
+                              <div class="session-queued-row">
+                                <div class="session-queued-title">{thread.title}</div>
+                                <div class="session-queued-summary">{thread.summary}</div>
+                              </div>
+                            )}
+                          </For>
+                        </div>
+                      </details>
+                    </Show>
+                  </aside>
 
                   <Show
                     when={props.controller.bankedThreads().length > 0}
@@ -375,85 +409,54 @@ export default function SessionWorkspaceScreen(props: { controller: SessionWorks
                       </div>
                     }
                   >
-                    <div class="session-question-stack">
-                      <For each={props.controller.bankedThreads()}>
-                        {(thread) => (
-                          <article
-                            ref={element => threadRefs.set(thread.category_id, element)}
-                            class={`session-thread-section${currentThread()?.category_id === thread.category_id ? " is-active" : ""}`}
-                          >
-                            <div class="session-thread-section-head">
-                              <div>
-                                <div class="session-thread-section-state-row">
-                                  <span class="session-thread-section-state">
-                                    {currentThread()?.category_id === thread.category_id ? "Current thread" : "Live thread"}
-                                  </span>
-                                </div>
-                                <h2 class="session-thread-section-title">{thread.title}</h2>
-                                <p class="session-thread-section-summary">{thread.summary}</p>
-                              </div>
-                              <div class="session-thread-section-meta">
-                                {countProcessedPromptItems(thread.prompt, props.controller.processedByItemId())}/{thread.prompt.items.length} committed
-                              </div>
+                    <Show when={currentThread()}>
+                      {(thread) => (
+                        <article ref={workAreaRef} class="session-thread-workspace">
+                          <div class="session-thread-workspace-head">
+                            <div class="session-thread-workspace-copy">
+                              <div class="session-thread-workspace-kicker">Active thread</div>
+                              <h2 class="session-thread-section-title">{thread().title}</h2>
+                              <p class="session-thread-section-summary">{thread().summary}</p>
                             </div>
-
-                            <div class="session-thread-section-body">
-                              <For each={thread.prompt.items}>
-                                {(item, index) => (
-                                  <QuestionComposer
-                                    item={item}
-                                    itemIndex={index()}
-                                    itemCount={thread.prompt.items.length}
-                                    draft={props.controller.draftsByQuestionId()[item.item_id]}
-                                    isActive={currentQuestion()?.item_id === item.item_id}
-                                    saveStateLabel={formatSavedLabel(
-                                      props.controller.draftSaveState(),
-                                      props.controller.draftSaveMessage(),
-                                    )}
-                                    onActivate={() => props.controller.setActiveTask(thread.category_id, item.item_id, false)}
-                                    onDraftChange={(itemId, next) => props.controller.handleDraftChange(thread, itemId, next)}
-                                    onCommit={draft => void props.controller.handleCommitAnswer(thread, item.item_id, draft)}
-                                    inputRef={props.controller.registerInputRef}
-                                  />
-                                )}
-                              </For>
-                            </div>
-
-                            <Show when={props.controller.submittingThreadId() === thread.category_id}>
-                              <div class="status-copy session-inline-status is-inline">
-                                Continuing synthesis for {thread.title}…
-                              </div>
-                            </Show>
-                          </article>
-                        )}
-                      </For>
-
-                      <Show when={props.controller.queuedThreads().length > 0}>
-                        <section class="session-queued-panel">
-                          <div class="session-thread-section-head">
-                            <div>
-                              <div class="session-thread-section-state-row">
-                                <span class="session-thread-section-state">Queued later</span>
-                              </div>
-                              <h2 class="session-thread-section-title">Queued threads</h2>
-                              <p class="session-thread-section-summary">
-                                These threads are visible for planning context but are not answerable yet.
-                              </p>
+                            <div class="session-thread-workspace-meta">
+                              <span>{activeThreadProgress()} of {thread().prompt.items.length} answered</span>
+                              <Show when={currentQuestion()}>
+                                <span>Question {props.controller.activeItemIndex() + 1} of {thread().prompt.items.length}</span>
+                              </Show>
                             </div>
                           </div>
-                          <div class="session-queued-list">
-                            <For each={props.controller.queuedThreads()}>
-                              {(thread) => (
-                                <div class="session-queued-row">
-                                  <div class="session-queued-title">{thread.title}</div>
-                                  <div class="session-queued-summary">{thread.summary}</div>
-                                </div>
+
+                          <div class="session-thread-section-body">
+                            <For each={thread().prompt.items}>
+                              {(item, index) => (
+                                <QuestionComposer
+                                  item={item}
+                                  itemIndex={index()}
+                                  itemCount={thread().prompt.items.length}
+                                  draft={props.controller.draftsByQuestionId()[item.item_id]}
+                                  isActive={currentQuestion()?.item_id === item.item_id}
+                                  isProcessed={!!props.controller.processedByItemId()[item.item_id]}
+                                  saveStateLabel={formatSavedLabel(
+                                    props.controller.draftSaveState(),
+                                    props.controller.draftSaveMessage(),
+                                  )}
+                                  onActivate={() => props.controller.setActiveTask(thread().category_id, item.item_id, false)}
+                                  onDraftChange={(itemId, next) => props.controller.handleDraftChange(thread(), itemId, next)}
+                                  onCommit={draft => void props.controller.handleCommitAnswer(thread(), item.item_id, draft)}
+                                  inputRef={props.controller.registerInputRef}
+                                />
                               )}
                             </For>
                           </div>
-                        </section>
-                      </Show>
-                    </div>
+
+                          <Show when={props.controller.submittingThreadId() === thread().category_id}>
+                            <div class="status-copy session-inline-status is-inline">
+                              Continuing synthesis for {thread().title}…
+                            </div>
+                          </Show>
+                        </article>
+                      )}
+                    </Show>
                   </Show>
                 </div>
               </Show>

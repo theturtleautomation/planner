@@ -126,6 +126,7 @@ These are the main planning documents currently shaping the repo:
 - [Planner SolidStart Phase 36 Home Project Directory Consolidation Spec](/home/thetu/planner/docs/planner-solidstart-phase-36-home-project-directory-consolidation-spec.md)
 - [Planner SolidStart Phase 36.1 Frontend Mock Vite Shell Duplication Remediation Spec](/home/thetu/planner/docs/planner-solidstart-phase-36-1-frontend-mock-vite-shell-duplication-remediation-spec.md)
 - [Planner SolidStart Phase 36.2 Home Route Canonicality Remediation Spec](/home/thetu/planner/docs/planner-solidstart-phase-36-2-home-route-canonicality-remediation-spec.md)
+- [Planner SolidStart Phase 37 Session Workspace Command Rail Hierarchy Spec](/home/thetu/planner/docs/planner-solidstart-phase-37-session-workspace-command-rail-hierarchy-spec.md)
 - [Planning Status Audit Remediation Spec](/home/thetu/planner/docs/planning-status-audit-remediation-spec.md)
 
 ## Current Active Thread
@@ -575,6 +576,25 @@ Current planning state:
       distinct client-only placeholder page
     - tightening frontend-mock browser proof to cover the home-owned fallback
       create path and the absence of a visible intermediate `/projects` page
+  - a direct design review of the active session workspace on 2026-04-01 then
+    found that the post-Phase-34 question-bank route still carries too much
+    redundant orientation chrome:
+    - status and progress are repeated across the header, summary pills, jump
+      bar, thread headers, and question cards
+    - queued later work still takes too much visual weight relative to the
+      active answering flow
+  - that bounded follow-on is now captured as
+    [Planner SolidStart Phase 37 Session Workspace Command Rail Hierarchy Spec](/home/thetu/planner/docs/planner-solidstart-phase-37-session-workspace-command-rail-hierarchy-spec.md),
+    which is now implemented and explicitly:
+    - preserves the bank-first local-availability contract from Phase 34 while
+      revising the presentation rule that kept all questions expanded in one
+      long primary scroll surface at once
+    - replaces the stacked summary-plus-jump-plus-thread hierarchy with a
+      compact header, sticky command rail, and single active-thread work area
+    - collapses inactive question cards to preview state and demotes queued
+      work into subordinate rail disclosure rather than a peer panel
+    - extends frontend-mock proof with a dedicated multi-thread session
+      scenario so local rail switching is browser-proven
 - the bank-first runtime and saved-brief startup contracts from Phase 26 and
   Phase 28 remain locked dependencies across that series rather than becoming a
   new planning branch

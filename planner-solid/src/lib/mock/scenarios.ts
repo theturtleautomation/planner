@@ -684,9 +684,115 @@ export function createScenarioState(scenarioKey: MockScenarioKey): MockState {
       ];
       state.promptBanks = {
         "session-11": promptBank("session-11", {
+          banked_threads: [
+            {
+              category_id: "workflow",
+              title: "Workflow",
+              summary: "Confirm the main workflow shape.",
+              question_count: 2,
+              prompt: {
+                prompt_id: "prompt-session-11-workflow",
+                title: "Workflow",
+                kind: "question_batch",
+                instructions: "Answer the workflow questions first.",
+                origin_category_id: "workflow",
+                allow_partial_submit: true,
+                items: [
+                  {
+                    item_id: "item-session-11-1",
+                    kind: "discovery",
+                    text: "What is the main user flow this first version needs to support?",
+                    required: true,
+                    options: [
+                      {
+                        option_id: "option-session-11-calendar",
+                        label: "Calendar-first planning",
+                        semantic_value: "calendar-first-planning",
+                      },
+                      {
+                        option_id: "option-session-11-task",
+                        label: "Task planning flow",
+                        semantic_value: "task-planning-flow",
+                      },
+                    ],
+                  },
+                  {
+                    item_id: "item-session-11-2",
+                    kind: "verification",
+                    text: "What should the first shipped scope avoid?",
+                    required: true,
+                    options: [
+                      {
+                        option_id: "option-session-11-avoid-sync",
+                        label: "Avoid cross-device sync",
+                        semantic_value: "avoid-cross-device-sync",
+                      },
+                      {
+                        option_id: "option-session-11-avoid-collab",
+                        label: "Avoid collaboration features",
+                        semantic_value: "avoid-collaboration-features",
+                      },
+                    ],
+                  },
+                ],
+              },
+            },
+            {
+              category_id: "scope",
+              title: "Scope",
+              summary: "Define the release boundaries before delivery handoff.",
+              question_count: 2,
+              prompt: {
+                prompt_id: "prompt-session-11-scope",
+                title: "Scope",
+                kind: "question_batch",
+                instructions: "Define the first-release scope boundaries.",
+                origin_category_id: "scope",
+                allow_partial_submit: true,
+                items: [
+                  {
+                    item_id: "item-session-11-3",
+                    kind: "discovery",
+                    text: "Which planning output needs to feel complete in v1?",
+                    required: true,
+                    options: [
+                      {
+                        option_id: "option-session-11-summary",
+                        label: "A trustworthy weekly plan summary",
+                        semantic_value: "weekly-plan-summary",
+                      },
+                      {
+                        option_id: "option-session-11-review",
+                        label: "A review flow for pending work",
+                        semantic_value: "pending-work-review",
+                      },
+                    ],
+                  },
+                  {
+                    item_id: "item-session-11-4",
+                    kind: "verification",
+                    text: "What belongs after the first release?",
+                    required: true,
+                    options: [
+                      {
+                        option_id: "option-session-11-sync-later",
+                        label: "Cross-device sync",
+                        semantic_value: "cross-device-sync",
+                      },
+                      {
+                        option_id: "option-session-11-sharing-later",
+                        label: "Shared calendars",
+                        semantic_value: "shared-calendars",
+                      },
+                    ],
+                  },
+                ],
+              },
+            },
+          ],
           saved_drafts: {
             "item-session-11-1": {
-              prompt_id: "prompt-session-11",
+              prompt_id: "prompt-session-11-workflow",
               item_id: "item-session-11-1",
               selected_option_id: "option-session-11-calendar",
               custom_text: "The first release should make weekly planning effortless.",

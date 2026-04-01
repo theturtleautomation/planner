@@ -119,6 +119,7 @@ Read these when the task touches the relevant area.
 - [planner-solidstart-phase-36-home-project-directory-consolidation-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-36-home-project-directory-consolidation-spec.md)
 - [planner-solidstart-phase-36-1-frontend-mock-vite-shell-duplication-remediation-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-36-1-frontend-mock-vite-shell-duplication-remediation-spec.md)
 - [planner-solidstart-phase-36-2-home-route-canonicality-remediation-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-36-2-home-route-canonicality-remediation-spec.md)
+- [planner-solidstart-phase-37-session-workspace-command-rail-hierarchy-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-37-session-workspace-command-rail-hierarchy-spec.md)
 - [socratic-lobby-document-chrome-and-scroll-de-escalation-spec.md](/home/thetu/planner/docs/socratic-lobby-document-chrome-and-scroll-de-escalation-spec.md)
 - [socratic-lobby-first-reveal-preload-gate-spec.md](/home/thetu/planner/docs/socratic-lobby-first-reveal-preload-gate-spec.md)
 - [planner-design-system-command-center-plan.md](/home/thetu/planner/docs/planner-design-system-command-center-plan.md)
