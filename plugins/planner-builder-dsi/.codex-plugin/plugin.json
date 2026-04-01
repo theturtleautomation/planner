@@ -1,0 +1,41 @@
+{
+  "name": "planner-builder-dsi",
+  "version": "0.1.0",
+  "description": "Repo-local Builder DSI MCP wiring for Planner.",
+  "author": {
+    "name": "The Turtle Automation",
+    "url": "https://github.com/theturtleautomation"
+  },
+  "homepage": "https://github.com/theturtleautomation/planner",
+  "repository": "https://github.com/theturtleautomation/planner",
+  "license": "MIT",
+  "keywords": [
+    "planner",
+    "builder",
+    "dsi",
+    "design-system",
+    "mcp"
+  ],
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Planner Builder DSI",
+    "shortDescription": "Builder DSI MCP for this Planner repo",
+    "longDescription": "Provides the Builder DSI MCP configuration this Planner repo expects, without depending on a user-global Codex MCP entry.",
+    "developerName": "The Turtle Automation",
+    "category": "Coding",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/theturtleautomation/planner",
+    "privacyPolicyURL": "https://www.builder.io/privacy",
+    "termsOfServiceURL": "https://www.builder.io/terms",
+    "defaultPrompt": [
+      "Use Builder DSI MCP in this Planner repo",
+      "Inspect Builder design system docs for Planner",
+      "Plan design-system-aware UI work in Planner"
+    ],
+    "screenshots": []
+  }
+}

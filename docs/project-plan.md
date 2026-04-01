@@ -127,6 +127,11 @@ These are the main planning documents currently shaping the repo:
 - [Planner SolidStart Phase 36.1 Frontend Mock Vite Shell Duplication Remediation Spec](/home/thetu/planner/docs/planner-solidstart-phase-36-1-frontend-mock-vite-shell-duplication-remediation-spec.md)
 - [Planner SolidStart Phase 36.2 Home Route Canonicality Remediation Spec](/home/thetu/planner/docs/planner-solidstart-phase-36-2-home-route-canonicality-remediation-spec.md)
 - [Planner SolidStart Phase 37 Session Workspace Command Rail Hierarchy Spec](/home/thetu/planner/docs/planner-solidstart-phase-37-session-workspace-command-rail-hierarchy-spec.md)
+- [Planner SolidStart Phase 37.1 Session Command Rail Narrow-Width And Focus Continuity Spec](/home/thetu/planner/docs/planner-solidstart-phase-37-1-session-command-rail-narrow-width-and-focus-continuity-spec.md)
+- [Planner SolidStart Phase 37.2 Session Command Rail Canonical Runtime Proof Spec](/home/thetu/planner/docs/planner-solidstart-phase-37-2-session-command-rail-canonical-runtime-proof-spec.md)
+- [Planner SolidStart Phase 37.3 Canonical Static Runtime Parity Remediation Spec](/home/thetu/planner/docs/planner-solidstart-phase-37-3-canonical-static-runtime-parity-remediation-spec.md)
+- [Builder Phase C Documented Config Workflow Tightening Spec](/home/thetu/planner/docs/builder-phase-c-documented-config-workflow-tightening-spec.md)
+- [Builder Phase D Repo-Local DSI MCP Setup Spec](/home/thetu/planner/docs/builder-phase-d-repo-local-dsi-mcp-setup-spec.md)
 - [Planning Status Audit Remediation Spec](/home/thetu/planner/docs/planning-status-audit-remediation-spec.md)
 
 ## Current Active Thread
@@ -595,6 +600,37 @@ Current planning state:
       work into subordinate rail disclosure rather than a peer panel
     - extends frontend-mock proof with a dedicated multi-thread session
       scenario so local rail switching is browser-proven
+  - the next session-route follow-ons after Phase 37 are now explicitly split
+    into two bounded child specs instead of being left as an implied cleanup
+    queue:
+    - [Planner SolidStart Phase 37.1 Session Command Rail Narrow-Width And Focus Continuity Spec](/home/thetu/planner/docs/planner-solidstart-phase-37-1-session-command-rail-narrow-width-and-focus-continuity-spec.md)
+      is now implemented and scopes:
+      - the narrow-width command-rail pattern via a sheet-style selector for
+        all widths below `1024px`
+      - focus and scroll continuity after thread switches and viewport changes
+      - queued-work treatment and accessibility on compressed layouts
+      - frontend-mock proof for collapsed selector behavior and workspace focus
+        return
+    - [Planner SolidStart Phase 37.2 Session Command Rail Canonical Runtime Proof Spec](/home/thetu/planner/docs/planner-solidstart-phase-37-2-session-command-rail-canonical-runtime-proof-spec.md)
+      remains unimplemented after an attempted delivery pass found a broader
+      canonical-runtime blocker:
+      - a dedicated `planner-server` proof harness was able to create real
+        sessions under the deterministic `phase26_live` mock profile
+      - but the built static runtime crashes on both `/` and `/sessions/:id`
+        before the command-rail route mounts, with
+        `TypeError: Cannot read properties of undefined (reading 'done')` from
+        the bundled client runtime
+      - the failing proof artifacts were not retained in-repo, so the slice is
+        now blocked on canonical static-runtime parity rather than on missing
+        test intent
+    - that blocker is now isolated in
+      [Planner SolidStart Phase 37.3 Canonical Static Runtime Parity Remediation Spec](/home/thetu/planner/docs/planner-solidstart-phase-37-3-canonical-static-runtime-parity-remediation-spec.md),
+      which is ready for implementation and scopes:
+      - restoring successful built frontend bootstrap under `planner-server`
+      - verifying that `/` and `/sessions/:sessionId` mount without the
+        `reading 'done'` client crash
+      - unblocking the actual canonical parity proof in Phase 37.2 without
+        reopening the session-route design slice
 - the bank-first runtime and saved-brief startup contracts from Phase 26 and
   Phase 28 remain locked dependencies across that series rather than becoming a
   new planning branch
@@ -1132,14 +1168,29 @@ Current planning state:
   saved Fusion project ID, so the helper layer is implemented but live remote
   update remains blocked until Builder exposes that project to the active auth
   context
+- the previously open "decide the next Builder slice" branch is now narrowed
+  into two explicit follow-ons rather than an open-ended note:
+  - [Builder Phase C Documented Config Workflow Tightening Spec](/home/thetu/planner/docs/builder-phase-c-documented-config-workflow-tightening-spec.md)
+    is now implemented and adds:
+    - shared config resolution and validation around `builder.config.json` and
+      explicit alternate config overrides
+    - repo-native `builder-print-config` and `builder-validate-config`
+      entrypoints for both default and alternate Builder paths
+    - clearer wrapper output that prints the effective config path, runtime
+      URL, command, workflow label, and remote Builder profile assumptions
+    - config-synced docs so the default frontend-mock UI-review path and the
+      alternate server-backed path are harder to confuse operationally
+  - [Builder Phase D Repo-Local DSI MCP Setup Spec](/home/thetu/planner/docs/builder-phase-d-repo-local-dsi-mcp-setup-spec.md)
+    is now implemented and adds:
+    - a repo-local `planner-builder-dsi` plugin with repo marketplace
+      discovery
+    - `make builder-dsi-status` for plugin/prerequisite verification
+    - docs that separate Fusion runtime config, Builder CMS content work, and
+      Builder DSI design-system work
 
-Next valid move:
+Current ready Builder follow-ons:
 
-- verify the documented repo-config path in practice and decide whether the
-  next Builder slice should focus on:
-  - broader Builder instruction layering beyond the root `.builderrules`
-  - repo-local DSI MCP setup
-  - or a tighter documented-config workflow around `builder.config.json`
+- none currently promoted after Builder Phase D
 
 ## Immediate Bounded Closeout Slice
 

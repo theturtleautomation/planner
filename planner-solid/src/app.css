@@ -2106,6 +2106,46 @@ summary:focus-visible {
   gap: 10px;
 }
 
+.session-question-rail-mobile-bar {
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.session-question-rail-mobile-trigger {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  min-height: 0;
+  padding: 10px 12px;
+}
+
+.session-question-rail-mobile-kicker {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.session-question-rail-mobile-label {
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.session-question-rail-mobile-meta {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: right;
+}
+
 .session-question-queued-disclosure summary {
   display: flex;
   align-items: center;
@@ -2170,6 +2210,25 @@ summary:focus-visible {
   font-size: 20px;
   line-height: 1.08;
   letter-spacing: -0.025em;
+}
+
+.session-thread-section-title:focus {
+  outline: none;
+}
+
+.session-question-rail-sheet {
+  justify-self: flex-start;
+}
+
+.session-question-rail-sheet-body {
+  position: static;
+  top: auto;
+  max-width: none;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  backdrop-filter: none;
 }
 
 .session-thread-workspace-meta {
@@ -2380,6 +2439,20 @@ summary:focus-visible {
   }
 }
 
+@media (max-width: 1023px) {
+  .session-question-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .session-question-shell > .session-question-rail {
+    display: none;
+  }
+
+  .session-question-rail-mobile-bar {
+    display: flex;
+  }
+}
+
 @media (max-width: 900px) {
   .app-header {
     flex-direction: column;
@@ -2562,7 +2635,8 @@ summary:focus-visible {
 
   .session-thread-workspace,
   .session-question-card,
-  .session-question-rail {
+  .session-question-rail,
+  .session-question-rail-sheet-body {
     padding: 14px;
     border-radius: 16px;
   }
@@ -2570,5 +2644,14 @@ summary:focus-visible {
   .session-thread-workspace-meta {
     align-items: flex-start;
     white-space: normal;
+  }
+
+  .session-question-rail-mobile-bar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .session-question-rail-mobile-meta {
+    text-align: left;
   }
 }

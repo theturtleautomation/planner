@@ -2,9 +2,12 @@
        rust rust-check rust-test rust-build rust-release \
        web web-install web-build web-test web-lint web-dev \
        fmt clippy \
-       builder-auth-status builder-launch builder-create-project builder-connect-repo \
+       builder-auth-status builder-print-config builder-validate-config \
+       builder-launch builder-create-project builder-connect-repo \
        builder-connect-repo-dryrun builder-index-repo builder-code \
        builder-list-projects builder-get-project builder-update-project \
+       builder-dsi-status \
+       builder-server-print-config builder-server-validate-config \
        builder-server-launch builder-server-create-project builder-server-update-project \
        builder-figma-generate builder-figma-publish builder-figma-migrate \
        builder-sync-project
@@ -79,6 +82,12 @@ web-dev: node_modules ## vite dev server
 builder-auth-status: ## Show Builder CLI auth status
 	./scripts/builder-auth-status.sh $(ARGS)
 
+builder-print-config: ## Print the canonical Builder UI-review config contract
+	./scripts/builder-print-config.sh $(ARGS)
+
+builder-validate-config: ## Validate the canonical Builder UI-review config contract
+	./scripts/builder-validate-config.sh $(ARGS)
+
 builder-launch: ## Launch the canonical Builder UI-review project against frontend mock mode
 	./scripts/builder-launch.sh $(ARGS)
 
@@ -105,6 +114,15 @@ builder-get-project: ## Inspect the saved Fusion project or an explicit project 
 
 builder-update-project: ## Sync the saved Fusion project's runtime settings to the canonical UI-review config
 	./scripts/builder-update-project.sh $(ARGS)
+
+builder-dsi-status: ## Verify repo-local Builder DSI plugin wiring and prerequisites
+	./scripts/builder-dsi-status.sh $(ARGS)
+
+builder-server-print-config: ## Print the alternate server-backed Builder config contract
+	BUILDER_PROJECT_CONFIG_PATH=./builder.server.config.json ./scripts/builder-print-config.sh $(ARGS)
+
+builder-server-validate-config: ## Validate the alternate server-backed Builder config contract
+	BUILDER_PROJECT_CONFIG_PATH=./builder.server.config.json ./scripts/builder-validate-config.sh $(ARGS)
 
 builder-server-launch: ## Launch Builder Fusion against the server-backed integration runtime
 	BUILDER_PROJECT_CONFIG_PATH=./builder.server.config.json ./scripts/builder-launch.sh $(ARGS)

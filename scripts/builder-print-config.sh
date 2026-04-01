@@ -10,13 +10,5 @@ source "$SCRIPT_DIR/builder-config-common.sh"
 builder_require_jq
 builder_resolve_config "$CONFIG_FILE"
 builder_validate_resolved_config "$CONFIG_FILE"
-builder_print_contract launch
+builder_print_contract inspect
 
-PORT="${BUILDER_PROJECT_RUNTIME_PORT:-$BUILDER_CONFIG_PORT}"
-APP_COMMAND="$(builder_launch_command)"
-
-exec /home/thetu/.codex/skills/builder-workflow/scripts/launch-fusion.sh \
-  --port "$PORT" \
-  --command "$APP_COMMAND" \
-  --no-open \
-  "$@"

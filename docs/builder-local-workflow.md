@@ -29,8 +29,9 @@ Keep these concerns separate:
    - Open the app on the same origin that serves `/api`.
    - Use this when backend/runtime truth matters.
 3. **Builder MCP for Codex**
-   - This repo ships a repo-local Codex plugin for Builder CMS.
-   - Builder DSI remains a user-level MCP setup.
+   - This repo ships repo-local Codex plugins for Builder CMS and Builder DSI.
+   - CMS and DSI are different Builder surfaces and should stay separate in
+     workflow and mental model.
 
 ## Canonical Builder UI-Review Project
 
@@ -271,11 +272,53 @@ Notes:
   `~/.codex/config.toml`.
 - Existing Codex sessions may need a restart before newly added repo-local
   plugins are discovered.
-- Builder DSI is still user-global. If you want it in Codex, add it with:
+
+## Builder DSI Repo-Local Plugin
+
+Planner now also ships a repo-local Codex plugin for Builder DSI:
+
+- plugin manifest: `plugins/planner-builder-dsi/.codex-plugin/plugin.json`
+- plugin MCP config: `plugins/planner-builder-dsi/.mcp.json`
+- repo marketplace: `.agents/plugins/marketplace.json`
+
+This MCP config runs:
+
+```text
+npx -y @builder.io/dev-tools@latest dsi-mcp
+```
+
+Use Builder DSI for:
+
+- design-system discovery
+- design-system docs
+- design-aware planning
+- design-system-aware implementation
+
+Do not use Builder DSI as if it were:
+
+- Fusion runtime/project configuration
+- Builder CMS content mutation
+- a requirement for all Builder work
+
+Verify the repo-local DSI setup with:
 
 ```bash
-codex mcp add builder-dsi -- npx @builder.io/dev-tools@latest dsi-mcp
+make builder-dsi-status
 ```
+
+What this check covers:
+
+- repo-local DSI plugin files exist and parse
+- `.agents/plugins/marketplace.json` advertises the local DSI plugin
+- `node` and `npx` are installed
+- Node.js is v20+
+- `npx @builder.io/dev-tools@latest dsi-mcp --help` is runnable when
+  `timeout` is available
+
+What it does not prove:
+
+- that an already-running Codex session has hot-discovered the new plugin
+- that Builder account auth is active for interactive DSI work
 
 ## Environment Variables
 
@@ -295,6 +338,11 @@ That only exports values into the current shell session. It does not make them
 globally available, and it should not be treated as proof that another shell,
 terminal tab, or editor session has the variable loaded.
 
+Builder DSI does not use `BUILDER_PRIVATE_API_KEY` in the same way as the CMS
+plugin. Its repo-local requirement is the `npx @builder.io/dev-tools@latest
+dsi-mcp` command path plus Builder account access when you actually use the
+DSI surface.
+
 ## Known Limitations
 
 - Planner's canonical Builder path is build-first, not HMR-first.
@@ -304,8 +352,8 @@ terminal tab, or editor session has the variable loaded.
   interactive repo setup.
 - Repo-local Builder CMS wiring still depends on
   `BUILDER_PRIVATE_API_KEY` being exported in the shell that launches Codex.
-- Builder DSI remains outside the repo unless you add a separate repo-local
-  plugin for it.
+- Repo-local Builder DSI still depends on `node`, `npx`, Node.js v20+, and a
+  Codex session restart if the plugin was added after the session started.
 
 ## Codex Fallback Skill
 
@@ -338,11 +386,16 @@ Planner also exposes a repo-native wrapper:
 
 ```bash
 make builder-auth-status
+make builder-print-config
+make builder-validate-config
+make builder-dsi-status
 make builder-launch
 make builder-create-project
 make builder-list-projects
 make builder-get-project
 make builder-update-project
+make builder-server-print-config
+make builder-server-validate-config
 make builder-connect-repo
 make builder-connect-repo-dryrun
 make builder-index-repo
@@ -355,6 +408,27 @@ make builder-sync-project
 
 These targets delegate to repo-local wrapper scripts, which call the global
 Builder skill scripts.
+
+Inspection and validation:
+
+```bash
+make builder-print-config
+make builder-validate-config
+make builder-server-print-config
+make builder-server-validate-config
+```
+
+What these commands now tell you explicitly:
+
+- which config file is active
+- whether you are on the default frontend-mock UI-review path or the alternate
+  server-backed path
+- the resolved runtime URL and command
+- the remote Builder project profile that `create` or `update` will use
+- whether `PLANNER_BUILDER_LLM_MOCK_MODE` matters for the selected path
+
+The launch/create/update wrappers now print the same resolved contract before
+doing any work, so wrapper output and docs tell the same runtime story.
 
 The existing-project helper targets use documented Builder Project settings
 semantics with an internal fallback transport. They are intended to operate on
@@ -390,8 +464,10 @@ The repo wrapper now creates Fusion projects with Planner-specific defaults:
 - `needSetup: false`
 - `settings.installCommand = npm install --prefix planner-solid`
 - `settings.setupDependencies` includes `node`, `npm`, `pnpm`, and `rust`
-- `settings.devServerCommand = npm run build --prefix planner-solid && cargo run -p planner-server -- --port 4174 --static-dir ./planner-solid/dist/static`
-- `settings.devServerUrl = http://127.0.0.1:4174`
+- `settings.devServerCommand` and `settings.devServerUrl` inherit from the
+  selected Builder config file
+- default config: frontend mock runtime on `3000`
+- alternate config: server-backed runtime on `4174`
 - `settings.mainBranchName = main`
 - `settings.environmentVariables = []`
 

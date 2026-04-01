@@ -123,6 +123,37 @@ alternate config for server-backed integration work on `4174`. The repo-native
 Builder wrappers inherit their runtime command and URL defaults from the
 selected config file.
 
+Use these before launch or project mutation if you want to inspect the resolved
+contract explicitly:
+
+```bash
+make builder-print-config
+make builder-validate-config
+make builder-server-print-config
+make builder-server-validate-config
+```
+
+The wrappers now also print the active config path, resolved URL/command,
+workflow label, and remote Builder profile assumptions before launch, create,
+or update.
+
+Planner also now ships repo-local Builder plugins for both CMS and DSI:
+
+- `plugins/planner-builder-cms`
+- `plugins/planner-builder-dsi`
+
+Keep the responsibilities separate:
+
+- Fusion config/runtime: local app launch, Builder project settings, repo index
+- Builder CMS: content models and content entries
+- Builder DSI: design-system-aware planning and implementation
+
+Use this to verify the repo-local DSI setup and prerequisites:
+
+```bash
+make builder-dsi-status
+```
+
 ---
 
 ## Installation

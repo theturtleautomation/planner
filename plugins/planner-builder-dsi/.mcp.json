@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "planner-builder-dsi": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@builder.io/dev-tools@latest",
+        "dsi-mcp"
+      ]
+    }
+  }
+}

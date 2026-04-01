@@ -86,3 +86,25 @@ test("phase 37 session command rail keeps thread switching local in frontend moc
   await expect(page.getByText("Define the release boundaries before delivery handoff.")).toBeVisible();
   await expect(page.getByText("Which planning output needs to feel complete in v1?")).toBeVisible();
 });
+
+test("phase 37.1 session command rail collapses into a thread sheet below desktop widths", async ({ page }) => {
+  await page.setViewportSize({ width: 840, height: 900 });
+  await page.goto("/sessions/session-11?mockScenario=session-workspace");
+
+  await expect(page.getByRole("button", { name: /Threads.*Workflow/ })).toBeVisible();
+  await expect(page.locator(".session-question-shell > .session-question-rail")).toHaveCount(0);
+
+  await page.getByRole("button", { name: /Threads.*Workflow/ }).click();
+  await expect(page.getByRole("dialog", { name: "Session threads" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Scope/ })).toBeVisible();
+
+  await page.getByRole("button", { name: /Scope/ }).click();
+  await expect(page.getByRole("dialog", { name: "Session threads" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Scope", exact: true })).toBeFocused();
+  await expect(page.getByText("Define the release boundaries before delivery handoff.")).toBeVisible();
+
+  await page.getByRole("button", { name: /Threads.*Scope/ }).click();
+  await page.getByRole("button", { name: "Close" }).click();
+  await expect(page.getByRole("dialog", { name: "Session threads" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Scope", exact: true })).toBeVisible();
+});

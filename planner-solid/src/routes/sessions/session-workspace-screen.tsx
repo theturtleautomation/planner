@@ -174,13 +174,86 @@ function QuestionComposer(props: {
   );
 }
 
+function ThreadRail(props: {
+  currentThreadId: string | undefined;
+  liveThreadCount: number;
+  bankedThreads: SessionWorkspaceController["bankedThreads"];
+  queuedThreads: SessionWorkspaceController["queuedThreads"];
+  processedByItemId: SessionWorkspaceController["processedByItemId"];
+  onSelectThread: (threadId: string, itemId: string | null) => void;
+}) {
+  return (
+    <>
+      <div class="session-question-rail-head">
+        <div class="session-lane-kicker">Threads</div>
+        <div class="session-question-rail-count">{props.liveThreadCount} live threads</div>
+      </div>
+      <div class="session-question-rail-list">
+        <For each={props.bankedThreads()}>
+          {(thread) => (
+            <button
+              class={`session-thread-rail-button${props.currentThreadId === thread.category_id ? " is-active" : ""}`}
+              type="button"
+              onClick={() => props.onSelectThread(
+                thread.category_id,
+                firstUnprocessedPromptItemId(thread.prompt, props.processedByItemId())
+                  ?? thread.prompt.items[0]?.item_id
+                  ?? null,
+              )}
+            >
+              <span class="session-thread-rail-title">{thread.title}</span>
+              <span class="session-thread-rail-progress">
+                {countProcessedPromptItems(thread.prompt, props.processedByItemId())}/{thread.prompt.items.length} answered
+              </span>
+            </button>
+          )}
+        </For>
+      </div>
+      <Show when={props.queuedThreads().length > 0}>
+        <details class="session-question-queued-disclosure">
+          <summary>
+            Queued later
+            <span>{props.queuedThreads().length}</span>
+          </summary>
+          <div class="session-queued-list">
+            <For each={props.queuedThreads()}>
+              {(thread) => (
+                <div class="session-queued-row">
+                  <div class="session-queued-title">{thread.title}</div>
+                  <div class="session-queued-summary">{thread.summary}</div>
+                </div>
+              )}
+            </For>
+          </div>
+        </details>
+      </Show>
+    </>
+  );
+}
+
 export default function SessionWorkspaceScreen(props: { controller: SessionWorkspaceController }) {
   let workAreaRef: HTMLElement | undefined;
+  let workAreaHeadingRef: HTMLHeadingElement | undefined;
+  const [railSheetOpen, setRailSheetOpen] = createSignal(false);
 
-  const jumpToThread = (threadId: string, itemId: string | null) => {
+  const jumpToThread = (threadId: string, itemId: string | null, fromCollapsedSelector = false) => {
     props.controller.setActiveTask(threadId, itemId, false);
+    if (fromCollapsedSelector) {
+      setRailSheetOpen(false);
+      queueMicrotask(() => {
+        workAreaRef?.scrollIntoView({ behavior: "smooth", block: "start" });
+        workAreaHeadingRef?.focus();
+      });
+      return;
+    }
     workAreaRef?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
+
+  createEffect(() => {
+    if (!props.controller.isCollapsedLayout()) {
+      setRailSheetOpen(false);
+    }
+  });
 
   return (
     <section class="page">
@@ -213,6 +286,8 @@ export default function SessionWorkspaceScreen(props: { controller: SessionWorks
             props.controller.bankedThreads().reduce((total, thread) => total + thread.prompt.items.length, 0);
           const liveThreadCount = () => props.controller.bankedThreads().length;
           const queuedThreadCount = () => props.controller.queuedThreads().length;
+          const isCollapsedLayout = () => props.controller.isCollapsedLayout();
+          const collapsedSelectorLabel = () => currentThread()?.title ?? "Choose thread";
 
           return (
             <div class="session-question-route">
@@ -351,51 +426,18 @@ export default function SessionWorkspaceScreen(props: { controller: SessionWorks
                 }
               >
                 <div class="session-question-shell">
-                  <aside class="session-question-rail">
-                    <div class="session-question-rail-head">
-                      <div class="session-lane-kicker">Threads</div>
-                      <div class="session-question-rail-count">{liveThreadCount()} live threads</div>
-                    </div>
-                    <div class="session-question-rail-list">
-                      <For each={props.controller.bankedThreads()}>
-                        {(thread) => (
-                          <button
-                            class={`session-thread-rail-button${currentThread()?.category_id === thread.category_id ? " is-active" : ""}`}
-                            type="button"
-                            onClick={() => jumpToThread(
-                              thread.category_id,
-                              firstUnprocessedPromptItemId(thread.prompt, props.controller.processedByItemId())
-                                ?? thread.prompt.items[0]?.item_id
-                                ?? null,
-                            )}
-                          >
-                            <span class="session-thread-rail-title">{thread.title}</span>
-                            <span class="session-thread-rail-progress">
-                              {countProcessedPromptItems(thread.prompt, props.controller.processedByItemId())}/{thread.prompt.items.length} answered
-                            </span>
-                          </button>
-                        )}
-                      </For>
-                    </div>
-                    <Show when={props.controller.queuedThreads().length > 0}>
-                      <details class="session-question-queued-disclosure">
-                        <summary>
-                          Queued later
-                          <span>{props.controller.queuedThreads().length}</span>
-                        </summary>
-                        <div class="session-queued-list">
-                          <For each={props.controller.queuedThreads()}>
-                            {(thread) => (
-                              <div class="session-queued-row">
-                                <div class="session-queued-title">{thread.title}</div>
-                                <div class="session-queued-summary">{thread.summary}</div>
-                              </div>
-                            )}
-                          </For>
-                        </div>
-                      </details>
-                    </Show>
-                  </aside>
+                  <Show when={!isCollapsedLayout()}>
+                    <aside class="session-question-rail">
+                      <ThreadRail
+                        currentThreadId={currentThread()?.category_id}
+                        liveThreadCount={liveThreadCount()}
+                        bankedThreads={props.controller.bankedThreads}
+                        queuedThreads={props.controller.queuedThreads}
+                        processedByItemId={props.controller.processedByItemId}
+                        onSelectThread={(threadId, itemId) => jumpToThread(threadId, itemId)}
+                      />
+                    </aside>
+                  </Show>
 
                   <Show
                     when={props.controller.bankedThreads().length > 0}
@@ -412,10 +454,29 @@ export default function SessionWorkspaceScreen(props: { controller: SessionWorks
                     <Show when={currentThread()}>
                       {(thread) => (
                         <article ref={workAreaRef} class="session-thread-workspace">
+                          <Show when={isCollapsedLayout()}>
+                            <div class="session-question-rail-mobile-bar">
+                              <button
+                                class="btn btn-subtle session-question-rail-mobile-trigger"
+                                type="button"
+                                aria-expanded={railSheetOpen()}
+                                aria-haspopup="dialog"
+                                onClick={() => setRailSheetOpen(true)}
+                              >
+                                <span class="session-question-rail-mobile-kicker">Threads</span>
+                                <span class="session-question-rail-mobile-label">{collapsedSelectorLabel()}</span>
+                              </button>
+                              <span class="session-question-rail-mobile-meta">
+                                {activeThreadProgress()} of {thread().prompt.items.length} answered
+                              </span>
+                            </div>
+                          </Show>
                           <div class="session-thread-workspace-head">
                             <div class="session-thread-workspace-copy">
                               <div class="session-thread-workspace-kicker">Active thread</div>
-                              <h2 class="session-thread-section-title">{thread().title}</h2>
+                              <h2 ref={workAreaHeadingRef} class="session-thread-section-title" tabindex="-1">
+                                {thread().title}
+                              </h2>
                               <p class="session-thread-section-summary">{thread().summary}</p>
                             </div>
                             <div class="session-thread-workspace-meta">
@@ -458,6 +519,43 @@ export default function SessionWorkspaceScreen(props: { controller: SessionWorks
                       )}
                     </Show>
                   </Show>
+                </div>
+              </Show>
+
+              <Show when={workspaceReady() && isCollapsedLayout() && railSheetOpen()}>
+                <div
+                  class="session-map-sheet-backdrop session-question-rail-sheet-backdrop"
+                  onClick={() => setRailSheetOpen(false)}
+                >
+                  <div
+                    class="session-map-sheet session-question-rail-sheet"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label="Session threads"
+                    onClick={event => event.stopPropagation()}
+                  >
+                    <div class="session-map-sheet-head">
+                      <div>
+                        <div class="session-lane-kicker">Threads</div>
+                        <div class="session-question-rail-count">{liveThreadCount()} live threads</div>
+                      </div>
+                      <button class="btn btn-subtle" type="button" onClick={() => setRailSheetOpen(false)}>
+                        Close
+                      </button>
+                    </div>
+                    <div class="session-map-sheet-scroll">
+                      <div class="session-question-rail session-question-rail-sheet-body">
+                        <ThreadRail
+                          currentThreadId={currentThread()?.category_id}
+                          liveThreadCount={liveThreadCount()}
+                          bankedThreads={props.controller.bankedThreads}
+                          queuedThreads={props.controller.queuedThreads}
+                          processedByItemId={props.controller.processedByItemId}
+                          onSelectThread={(threadId, itemId) => jumpToThread(threadId, itemId, true)}
+                        />
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </Show>
             </div>
