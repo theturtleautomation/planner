@@ -112,6 +112,10 @@ test("phase 37.2 canonical runtime keeps the command rail truthful as queued wor
   await expect(page.locator(".session-question-jumpbar")).toHaveCount(0);
   await expect(page.locator(".session-question-shell > .session-question-rail")).toHaveCount(1);
   await expect(page.locator(".session-thread-workspace")).toHaveCount(1);
+  await expect(page.locator(".session-question-current-badge")).toHaveCount(0);
+  await expect(page.locator(".session-question-state-badge")).toHaveCount(0);
+  await expect(page.getByText("Drafts autosave. Cmd/Ctrl+Enter commits.")).toBeVisible();
+  await expect(page.getByText("Draft saves automatically. Press Cmd+Enter to commit and advance.")).toHaveCount(0);
   await expect(page.locator(".session-queued-panel")).toHaveCount(0);
   if ((await page.locator(".session-question-queued-disclosure").count()) > 0) {
     await expect(page.locator(".session-question-queued-disclosure")).toBeVisible();

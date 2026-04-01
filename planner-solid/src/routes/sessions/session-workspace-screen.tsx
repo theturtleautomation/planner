@@ -13,9 +13,11 @@ import type { PromptItem } from "~/lib/types";
 import { withFrontendMockSearch } from "~/lib/mock/runtime";
 import {
   formatSavedLabel,
+  shouldShowQuestionSaveState,
   getSessionReturnTarget,
 } from "./session-workspace-view";
 import type { SessionWorkspaceController } from "./session-workspace-controller";
+import type { DraftSaveState } from "./session-workspace-view";
 
 function describeDraft(item: PromptItem, draft: DraftEntry | undefined, isProcessed: boolean): string {
   const customText = draft?.customText?.trim();
@@ -39,6 +41,7 @@ function QuestionComposer(props: {
   isActive: boolean;
   isProcessed: boolean;
   saveStateLabel: string;
+  saveStateState: DraftSaveState;
   onActivate: () => void;
   onDraftChange: (itemId: string, next: DraftEntry) => void;
   onCommit: (next: DraftEntry) => void;
@@ -93,23 +96,9 @@ function QuestionComposer(props: {
       onClick={() => props.onActivate()}
     >
       <div class="session-question-card-head">
-        <div class="session-question-card-title-row">
-          <div class="session-question-kicker">
-            Question {props.itemIndex + 1}/{props.itemCount}
-          </div>
-          <Show when={props.isActive}>
-            <span class="session-question-current-badge">Current</span>
-          </Show>
-          <Show when={!props.isActive && props.isProcessed}>
-            <span class="session-question-state-badge">Committed</span>
-          </Show>
-          <Show when={!props.isActive && !props.isProcessed && hasDraft()}>
-            <span class="session-question-state-badge is-draft">Draft</span>
-          </Show>
+        <div class="session-question-kicker">
+          Question {props.itemIndex + 1}/{props.itemCount}
         </div>
-        <Show when={props.isActive}>
-          <div class="session-question-save-state">{props.saveStateLabel}</div>
-        </Show>
       </div>
       <p class="session-question-copy">{props.item.text}</p>
       <Show
@@ -157,7 +146,14 @@ function QuestionComposer(props: {
           placeholder="Type your answer"
         />
         <div class="session-question-actions">
-          <div class="session-question-hint">Draft saves automatically. Press Cmd+Enter to commit and advance.</div>
+          <Show when={shouldShowQuestionSaveState(props.saveStateState)}>
+            <div
+              class={`session-question-save-state${props.saveStateState === "error" ? " is-error" : ""}`}
+              role={props.saveStateState === "error" ? "status" : undefined}
+            >
+              {props.saveStateLabel}
+            </div>
+          </Show>
           <button
             class="btn btn-primary session-commit-button"
             type="button"
@@ -486,6 +482,9 @@ export default function SessionWorkspaceScreen(props: { controller: SessionWorks
                               </Show>
                             </div>
                           </div>
+                          <div class="session-thread-workspace-note">
+                            Drafts autosave. Cmd/Ctrl+Enter commits.
+                          </div>
 
                           <div class="session-thread-section-body">
                             <For each={thread().prompt.items}>
@@ -501,6 +500,7 @@ export default function SessionWorkspaceScreen(props: { controller: SessionWorks
                                     props.controller.draftSaveState(),
                                     props.controller.draftSaveMessage(),
                                   )}
+                                  saveStateState={props.controller.draftSaveState()}
                                   onActivate={() => props.controller.setActiveTask(thread().category_id, item.item_id, false)}
                                   onDraftChange={(itemId, next) => props.controller.handleDraftChange(thread(), itemId, next)}
                                   onCommit={draft => void props.controller.handleCommitAnswer(thread(), item.item_id, draft)}

@@ -24,6 +24,10 @@ export function formatSavedLabel(state: DraftSaveState, message: string | null) 
   return message ?? "Draft ready";
 }
 
+export function shouldShowQuestionSaveState(state: DraftSaveState) {
+  return state !== "idle";
+}
+
 export function getSessionReturnTarget(session: Session): SessionReturnTarget {
   if (session.project_slug) {
     return {

@@ -79,6 +79,10 @@ test("phase 37 session command rail keeps thread switching local in frontend moc
   await expect(page.getByRole("button", { name: /Scope/ })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Workflow", exact: true })).toBeVisible();
   await expect(page.getByText("Confirm the main workflow shape.")).toBeVisible();
+  await expect(page.locator(".session-question-current-badge")).toHaveCount(0);
+  await expect(page.locator(".session-question-state-badge")).toHaveCount(0);
+  await expect(page.getByText("Drafts autosave. Cmd/Ctrl+Enter commits.")).toBeVisible();
+  await expect(page.getByText("Draft saves automatically. Press Cmd+Enter to commit and advance.")).toHaveCount(0);
 
   await page.getByRole("button", { name: /Scope/ }).click();
   await expect(page).toHaveURL(/\/sessions\/session-11\?mockScenario=session-workspace$/);

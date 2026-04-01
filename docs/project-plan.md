@@ -633,6 +633,16 @@ Current planning state:
         `/sessions/:sessionId`
       - removed the runtime blocker that 37.2 then closed with the fuller
         canonical command-rail proof
+    - the next bounded session-route follow-on was
+      [Planner SolidStart Phase 37.4 Session Question Chrome Reduction Spec](/home/thetu/planner/docs/planner-solidstart-phase-37-4-session-question-chrome-reduction-spec.md),
+      which is now implemented and:
+      - removes redundant `Current` / `Committed` / `Draft` micro-badges when
+        active styling or preview text already carries the same truth
+      - demotes autosave and keyboard guidance into one calmer thread-level
+        note while preserving visible draft-save error state
+      - proves the reduced chrome under both the frontend-mock session route
+        and the canonical `planner-server` runtime without reopening the
+        command rail or backend session contracts
 - the bank-first runtime and saved-brief startup contracts from Phase 26 and
   Phase 28 remain locked dependencies across that series rather than becoming a
   new planning branch

@@ -123,6 +123,7 @@ Read these when the task touches the relevant area.
 - [planner-solidstart-phase-37-1-session-command-rail-narrow-width-and-focus-continuity-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-37-1-session-command-rail-narrow-width-and-focus-continuity-spec.md)
 - [planner-solidstart-phase-37-2-session-command-rail-canonical-runtime-proof-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-37-2-session-command-rail-canonical-runtime-proof-spec.md)
 - [planner-solidstart-phase-37-3-canonical-static-runtime-parity-remediation-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-37-3-canonical-static-runtime-parity-remediation-spec.md)
+- [planner-solidstart-phase-37-4-session-question-chrome-reduction-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-37-4-session-question-chrome-reduction-spec.md)
 - [socratic-lobby-document-chrome-and-scroll-de-escalation-spec.md](/home/thetu/planner/docs/socratic-lobby-document-chrome-and-scroll-de-escalation-spec.md)
 - [socratic-lobby-first-reveal-preload-gate-spec.md](/home/thetu/planner/docs/socratic-lobby-first-reveal-preload-gate-spec.md)
 - [planner-design-system-command-center-plan.md](/home/thetu/planner/docs/planner-design-system-command-center-plan.md)
