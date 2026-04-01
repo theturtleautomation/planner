@@ -33,8 +33,9 @@ test("phase 35 frontend mock runtime drives Builder-targeted shell navigation an
   await expect(page).toHaveURL(/\/sessions\/session-1(\?mockScenario=default)?$/);
   await expect(page.getByRole("heading", { name: "Calendar intake", exact: true })).toBeVisible();
   await expect(page.getByText("Every banked question is available from the start.")).toHaveCount(0);
-  await expect(page.locator(".session-question-progress-line")).toContainText("0 of 0 answers committed");
+  await expect(page.locator(".session-question-progress-line")).toHaveCount(0);
   await expect(page.locator(".session-question-status-row")).toBeVisible();
+  await expect(page.locator(".session-question-actions-trigger")).toHaveText("Actions");
 
   await primaryNav.getByRole("link", { name: "Knowledge" }).first().click();
   await expect(page).toHaveURL(/\/knowledge(\?mockScenario=default)?$/);
@@ -74,7 +75,7 @@ test("phase 37 session command rail keeps thread switching local in frontend moc
   await page.goto("/sessions/session-11?mockScenario=session-workspace");
 
   await expect(page.getByRole("heading", { name: "Session workspace mock", exact: true })).toBeVisible();
-  await expect(page.getByText("0 of 4 answers committed")).toBeVisible();
+  await expect(page.locator(".session-question-progress-line")).toHaveCount(0);
   await expect(page.getByRole("button", { name: /Workflow/ })).toBeVisible();
   await expect(page.getByRole("button", { name: /Scope/ })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Workflow", exact: true })).toBeVisible();
@@ -83,6 +84,8 @@ test("phase 37 session command rail keeps thread switching local in frontend moc
   await expect(page.locator(".session-question-state-badge")).toHaveCount(0);
   await expect(page.getByText("Drafts autosave. Cmd/Ctrl+Enter commits.")).toBeVisible();
   await expect(page.getByText("Draft saves automatically. Press Cmd+Enter to commit and advance.")).toHaveCount(0);
+  await expect(page.locator(".session-question-progress-line")).toHaveCount(0);
+  await expect(page.locator(".session-question-actions-trigger")).toHaveText("Actions");
 
   await page.getByRole("button", { name: /Scope/ }).click();
   await expect(page).toHaveURL(/\/sessions\/session-11\?mockScenario=session-workspace$/);

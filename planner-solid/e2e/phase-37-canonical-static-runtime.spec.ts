@@ -89,7 +89,7 @@ test("phase 37.3 canonical static runtime mounts a session route without hydrati
   await expect(page.locator(".app-shell")).toBeVisible();
   await expect(page.getByRole("heading", { name: sessionTitle })).toBeVisible();
   await expect(page.getByText("Question-bank workspace")).toBeVisible();
-  await expect(page.getByText("Session actions")).toBeVisible();
+  await expect(page.locator(".session-question-actions-trigger")).toHaveText("Actions");
 
   expect(failures.pageErrors).toEqual([]);
   expect(failures.consoleErrors).toEqual([]);
@@ -116,6 +116,8 @@ test("phase 37.2 canonical runtime keeps the command rail truthful as queued wor
   await expect(page.locator(".session-question-state-badge")).toHaveCount(0);
   await expect(page.getByText("Drafts autosave. Cmd/Ctrl+Enter commits.")).toBeVisible();
   await expect(page.getByText("Draft saves automatically. Press Cmd+Enter to commit and advance.")).toHaveCount(0);
+  await expect(page.locator(".session-question-progress-line")).toHaveCount(0);
+  await expect(page.locator(".session-question-actions-trigger")).toHaveText("Actions");
   await expect(page.locator(".session-queued-panel")).toHaveCount(0);
   if ((await page.locator(".session-question-queued-disclosure").count()) > 0) {
     await expect(page.locator(".session-question-queued-disclosure")).toBeVisible();

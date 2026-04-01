@@ -643,6 +643,17 @@ Current planning state:
       - proves the reduced chrome under both the frontend-mock session route
         and the canonical `planner-server` runtime without reopening the
         command rail or backend session contracts
+    - the next bounded session-route follow-on was
+      [Planner SolidStart Phase 37.5 Session Header Signal Consolidation Spec](/home/thetu/planner/docs/planner-solidstart-phase-37-5-session-header-signal-consolidation-spec.md),
+      which is now implemented and:
+      - reduces the remaining session-header density after the command-rail and
+        question-card cleanup passes by removing the redundant aggregate
+        progress strip
+      - keeps queued-later work out of peer header metadata because that truth
+        already lives in the rail disclosure
+      - consolidates top-of-route notice/error messaging into one predictable
+        feedback slot while keeping capability-driven actions and backend
+        session behavior unchanged
 - the bank-first runtime and saved-brief startup contracts from Phase 26 and
   Phase 28 remain locked dependencies across that series rather than becoming a
   new planning branch

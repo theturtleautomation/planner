@@ -1899,7 +1899,7 @@ summary:focus-visible {
 
 .session-question-header,
 .session-question-shell,
-.session-inline-status {
+.session-question-feedback {
   width: min(1180px, calc(100% - 32px));
   margin: 0 auto;
 }
@@ -1908,7 +1908,7 @@ summary:focus-visible {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 20px;
+  gap: 16px;
   padding: 18px 0 4px;
 }
 
@@ -1966,7 +1966,6 @@ summary:focus-visible {
 .session-question-preview,
 .session-question-rail-count,
 .session-thread-rail-progress,
-.session-question-progress-line,
 .session-thread-workspace-meta {
   color: var(--text-secondary);
   font-size: 13px;
@@ -1982,27 +1981,9 @@ summary:focus-visible {
   margin-top: 2px;
 }
 
-.session-question-progress-line {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.session-question-progress-line span {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.session-question-progress-line span + span::before {
-  content: "•";
-  color: var(--text-muted);
-  margin-right: 4px;
-}
-
 .session-question-header-actions {
   position: relative;
+  flex: 0 0 auto;
 }
 
 .session-question-header-actions summary {
@@ -2014,7 +1995,25 @@ summary:focus-visible {
 }
 
 .session-question-actions-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
   cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.session-question-actions-trigger:hover,
+.session-question-actions-trigger:focus-visible {
+  color: var(--text-secondary);
+  outline: none;
 }
 
 .session-question-actions-menu {
@@ -2035,6 +2034,20 @@ summary:focus-visible {
 .session-question-loading {
   width: min(1180px, calc(100% - 32px));
   margin: 0 auto 24px;
+}
+
+.session-question-feedback {
+  padding: 12px 14px;
+  border: 1px solid rgba(120, 179, 255, 0.16);
+  border-radius: 14px;
+  background: rgba(120, 179, 255, 0.08);
+  color: var(--text-secondary);
+}
+
+.session-question-feedback.is-error {
+  border-color: rgba(255, 120, 120, 0.18);
+  background: rgba(255, 120, 120, 0.08);
+  color: var(--danger-color);
 }
 
 .session-question-loading.is-inline {
@@ -2598,7 +2611,7 @@ summary:focus-visible {
 
   .session-question-header,
   .session-question-shell,
-  .session-inline-status,
+  .session-question-feedback,
   .session-question-loading {
     width: min(100%, calc(100% - 28px));
   }
@@ -2609,6 +2622,15 @@ summary:focus-visible {
   .session-question-actions {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .session-question-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .session-question-header-actions {
+    align-self: flex-start;
   }
 
   .session-thread-workspace,

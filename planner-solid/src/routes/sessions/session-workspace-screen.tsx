@@ -273,17 +273,21 @@ export default function SessionWorkspaceScreen(props: { controller: SessionWorks
           const workspaceReady = () => props.controller.workspaceReady();
           const returnTarget = () => getSessionReturnTarget(currentSession());
           const activeThreadProgress = () => props.controller.activeThreadProgress();
-          const committedAnswerCount = () =>
-            props.controller.bankedThreads().reduce(
-              (total, thread) => total + countProcessedPromptItems(thread.prompt, props.controller.processedByItemId()),
-              0,
-            );
-          const totalPromptItemCount = () =>
-            props.controller.bankedThreads().reduce((total, thread) => total + thread.prompt.items.length, 0);
           const liveThreadCount = () => props.controller.bankedThreads().length;
-          const queuedThreadCount = () => props.controller.queuedThreads().length;
           const isCollapsedLayout = () => props.controller.isCollapsedLayout();
           const collapsedSelectorLabel = () => currentThread()?.title ?? "Choose thread";
+          const routeFeedback = () => {
+            const submitError = props.controller.submitError();
+            if (submitError) return { tone: "error" as const, message: submitError };
+
+            const actionError = props.controller.actionError();
+            if (actionError) return { tone: "error" as const, message: actionError };
+
+            const actionNotice = props.controller.actionNotice();
+            if (actionNotice) return { tone: "notice" as const, message: actionNotice };
+
+            return null;
+          };
 
           return (
             <div class="session-question-route">
@@ -315,17 +319,10 @@ export default function SessionWorkspaceScreen(props: { controller: SessionWorks
                       </div>
                     )}
                   </Show>
-                  <div class="session-question-progress-line">
-                    <span>{committedAnswerCount()} of {totalPromptItemCount()} answers committed</span>
-                    <span>{liveThreadCount()} live {liveThreadCount() === 1 ? "thread" : "threads"}</span>
-                    <Show when={queuedThreadCount() > 0}>
-                      <span>{queuedThreadCount()} queued later</span>
-                    </Show>
-                  </div>
                 </div>
 
                 <details class="session-question-header-actions">
-                  <summary class="btn btn-subtle session-question-actions-trigger">Session actions</summary>
+                  <summary class="session-question-actions-trigger">Actions</summary>
                   <div class="session-question-actions-menu">
                     <Show when={currentSession().project_slug}>
                       {(projectSlug) => (
@@ -383,14 +380,12 @@ export default function SessionWorkspaceScreen(props: { controller: SessionWorks
                 </details>
               </header>
 
-              <Show when={props.controller.actionNotice()}>
-                {(notice) => <div class="status-copy session-inline-status">{notice()}</div>}
-              </Show>
-              <Show when={props.controller.actionError()}>
-                {(message) => <div class="error-copy session-inline-status">{message()}</div>}
-              </Show>
-              <Show when={props.controller.submitError()}>
-                {(message) => <div class="error-copy session-inline-status">{message()}</div>}
+              <Show when={routeFeedback()}>
+                {(feedback) => (
+                  <div class={`session-question-feedback${feedback().tone === "error" ? " is-error" : ""}`}>
+                    {feedback().message}
+                  </div>
+                )}
               </Show>
 
               <Show
