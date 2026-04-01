@@ -612,8 +612,17 @@ Current planning state:
       - frontend-mock proof for collapsed selector behavior and workspace focus
         return
     - [Planner SolidStart Phase 37.2 Session Command Rail Canonical Runtime Proof Spec](/home/thetu/planner/docs/planner-solidstart-phase-37-2-session-command-rail-canonical-runtime-proof-spec.md)
-      remains ready for implementation, but its earlier bootstrap blocker came
-      from a broader runtime issue rather than from missing proof intent
+      is now implemented and adds canonical `planner-server` browser proof for:
+      - the compact session header plus one command rail and one dominant
+        active-thread workspace
+      - local thread switching without route transition
+      - truthful answer-composer presence after a canonical-runtime thread
+        switch
+      - adaptive proof across the two truthful `phase26_live` shapes observed
+        during server-backed execution:
+        - immediate multi-thread live-bank reveal
+        - one live interview thread that promotes into a wider bank after
+          answer progression
     - that blocker was isolated in
       [Planner SolidStart Phase 37.3 Canonical Static Runtime Parity Remediation Spec](/home/thetu/planner/docs/planner-solidstart-phase-37-3-canonical-static-runtime-parity-remediation-spec.md),
       which is now implemented and:
@@ -622,8 +631,8 @@ Current planning state:
         `planner-server`
       - adds a dedicated canonical-static Playwright proof for `/` and
         `/sessions/:sessionId`
-      - removes the runtime blocker, so 37.2 is now unblocked and can return
-        to full command-rail parity proof instead of bootstrap remediation
+      - removed the runtime blocker that 37.2 then closed with the fuller
+        canonical command-rail proof
 - the bank-first runtime and saved-brief startup contracts from Phase 26 and
   Phase 28 remain locked dependencies across that series rather than becoming a
   new planning branch

@@ -1,6 +1,6 @@
 # Planner SolidStart Phase 37.2 Session Command Rail Canonical Runtime Proof Spec
 
-**Status:** ready for implementation  
+**Status:** implemented  
 **Date:** 2026-04-01  
 **Parent:** [Planner SolidStart Phase 37 Session Workspace Command Rail Hierarchy Spec](/home/thetu/planner/docs/planner-solidstart-phase-37-session-workspace-command-rail-hierarchy-spec.md)  
 **Related Planning:** [Planner SolidStart Phase 35.3 Session Workspace Frontend Mock Spec](/home/thetu/planner/docs/planner-solidstart-phase-35-3-session-workspace-frontend-mock-spec.md), [Planner SolidStart Phase 35.10 Builder Frontend Mock Runtime Alignment Spec](/home/thetu/planner/docs/planner-solidstart-phase-35-10-builder-frontend-mock-runtime-alignment-spec.md), [Builder Local Workflow](/home/thetu/planner/docs/builder-local-workflow.md), [Project Plan](/home/thetu/planner/docs/project-plan.md)  
@@ -136,3 +136,42 @@ If the canonical runtime cannot yet support stable automated proof:
 2. Does the canonical runtime already expose enough deterministic state for one
    stable session proof, or should a minimal seeded-session contract be added
    first?
+
+## 12. Implementation Update
+
+Implemented on 2026-04-01.
+
+What landed:
+
+- extended the canonical server-backed proof harness in
+  [phase-37-canonical-static-runtime.spec.ts](/home/thetu/planner/planner-solid/e2e/phase-37-canonical-static-runtime.spec.ts)
+  so it now proves the actual Phase 37 command-rail route contract instead of
+  only route reachability
+- reused the dedicated `planner-server` Playwright config added in
+  [Planner SolidStart Phase 37.3 Canonical Static Runtime Parity Remediation Spec](/home/thetu/planner/docs/planner-solidstart-phase-37-3-canonical-static-runtime-parity-remediation-spec.md)
+  rather than inventing a fake route or markup harness
+
+Verification completed:
+
+- `npm --prefix planner-solid run test:e2e:canonical-static`
+- `npm --prefix planner-solid run lint`
+- `npm --prefix planner-solid run build`
+
+Verification result:
+
+- the canonical `planner-server` runtime now has explicit browser proof for the
+  compact session header, one command rail, and one dominant active-thread work
+  area
+- the proof shows thread switching remains local to the route without a URL
+  change
+- the proof stays truthful to the server-backed runtime by adapting to the
+  route's real session progression:
+  - if the deterministic `phase26_live` profile exposes multiple live threads
+    immediately, the proof switches threads directly
+  - if the same runtime first exposes one live interview thread with queued
+    work subordinate in the rail, the proof advances that real thread until the
+    live bank widens, then performs the same rail-switch assertion
+- the active answer composer and commit affordance are explicitly present after
+  a canonical-runtime thread switch
+- Phase 37 now has complementary proof for both the Builder-facing frontend
+  mock runtime and the canonical server-backed runtime
