@@ -153,6 +153,8 @@ The current bounded child slices under this parent capability plan are now:
 - [Builder Fusion Phase 01 API-Grounded Skill And Existing Project Contract Spec](/home/thetu/planner/docs/builder-fusion-phase-01-api-grounded-skill-and-existing-project-contract-spec.md)
 - [Builder Fusion Phase 02 Existing Project Helper Contract Spec](/home/thetu/planner/docs/builder-fusion-phase-02-existing-project-helper-contract-spec.md)
 - [Builder Fusion Phase 03 Sync Verification Workflow Spec](/home/thetu/planner/docs/builder-fusion-phase-03-sync-verification-workflow-spec.md)
+- [Builder Fusion Phase 04 Project Visibility Diagnosis And Remediation Spec](/home/thetu/planner/docs/builder-fusion-phase-04-project-visibility-diagnosis-and-remediation-spec.md)
+- [Builder Fusion Phase 05 Branch Surface Visibility Reconciliation Spec](/home/thetu/planner/docs/builder-fusion-phase-05-branch-surface-visibility-reconciliation-spec.md)
 
 Current child-slice state:
 
@@ -161,10 +163,31 @@ Current child-slice state:
   internal-endpoint acceptance
 - Phase 03 is implemented for repo-native sync verification across local
   config, saved project state, and visible remote Fusion settings
-- current Builder verification is still limited by auth-context visibility:
-  the saved project is not returned by the current project-list query, so the
-  new verify-sync workflow truthfully reports `visibility_blocked` and live
-  remote update against that exact project remains unproven in this environment
+- Phase 04 is implemented for multi-surface visibility diagnosis, richer saved
+  project context persistence on future create flows, and truthful
+  classification of blocked states
+- Phase 05 is implemented for branch-surface reconciliation and proves the
+  current saved project is partially visible rather than generically blocked
+- current Builder verification is still limited by metadata-surface
+  visibility:
+  the saved project is still not returned by either repo metadata read surface
+  in the current auth context, and direct metadata read still returns `404`
+- Phase 04 narrowed the blocked case to a concrete evidence trail:
+  - the active Builder auth context matches the current CLI/env
+  - `org-tree` returns zero projects
+  - `projects?apiKey=...&userId=...` returns zero projects
+  - direct read of the saved project returns `404` with and without `userId`
+  - the older saved state lacks `spaceId`/`userId`, so the repo could not yet
+    prove stale state vs space drift vs Builder-side limitation for that exact
+    historical project
+- Phase 05 then adds the missing Builder branch surface to the model and
+  proves:
+  - `projects/branches?projectId=...` returns live branch data for the saved
+    project
+  - the correct current visibility classification is `branch_visible_only`
+  - `builder-get-project` must return partial visibility instead of `not_found`
+  - `builder-verify-sync` must return a partial visibility state instead of
+    pretending full remote settings comparison is possible
 
 ### Tranche 1: Fusion Project Read/Update
 

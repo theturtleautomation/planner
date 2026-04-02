@@ -6,7 +6,7 @@
        builder-launch builder-create-project builder-connect-repo \
        builder-connect-repo-dryrun builder-index-repo builder-code \
        builder-list-projects builder-get-project builder-update-project \
-       builder-verify-sync \
+       builder-verify-sync builder-diagnose-project-visibility \
        builder-dsi-status \
        builder-server-print-config builder-server-validate-config \
        builder-server-launch builder-server-create-project builder-server-update-project \
@@ -119,6 +119,9 @@ builder-update-project: ## Sync the saved Fusion project's runtime settings to t
 
 builder-verify-sync: ## Verify the canonical Builder UI-review config against saved and visible remote Fusion state
 	./scripts/builder-verify-sync.sh $(ARGS)
+
+builder-diagnose-project-visibility: ## Diagnose why the saved Fusion project is or is not visible in the current auth context
+	./scripts/builder-diagnose-project-visibility.sh $(ARGS)
 
 builder-dsi-status: ## Verify repo-local Builder DSI plugin wiring and prerequisites
 	./scripts/builder-dsi-status.sh $(ARGS)

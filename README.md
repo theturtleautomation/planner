@@ -130,6 +130,7 @@ contract explicitly:
 make builder-print-config
 make builder-validate-config
 make builder-verify-sync
+make builder-diagnose-project-visibility
 make builder-server-print-config
 make builder-server-validate-config
 make builder-server-verify-sync
@@ -139,7 +140,21 @@ The wrappers now also print the active config path, resolved URL/command,
 workflow label, and remote Builder profile assumptions before launch, create,
 or update. The verify-sync wrappers add one read-only alignment check for local
 config, saved Fusion project state, and visible remote Builder project
-settings.
+settings. The dedicated visibility diagnosis target explains why a saved Fusion
+project is blocked or only partially visible when readback fails, including
+the current auth context and evidence from both the metadata read surfaces and
+the Builder branch surface.
+
+Current Builder-specific caveat:
+
+- a saved Fusion project may be `branch_visible_only`, meaning Builder's branch
+  surface still exposes the project while metadata surfaces do not
+- in that case `make builder-get-project` returns a partial result and
+  `make builder-verify-sync` reports `visibility_partial` instead of pretending
+  the project is fully unreadable or fully in sync
+- do not diagnose `api.builder.io` by opening API URLs directly in a browser
+  tab; Builder serves the web-app shell there, so authenticated network-panel
+  traffic or repo-native scripts are the reliable sources of truth
 
 Planner also now ships repo-local Builder plugins for both CMS and DSI:
 

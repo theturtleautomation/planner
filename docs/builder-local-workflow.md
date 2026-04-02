@@ -391,6 +391,7 @@ make builder-auth-status
 make builder-print-config
 make builder-validate-config
 make builder-verify-sync
+make builder-diagnose-project-visibility
 make builder-dsi-status
 make builder-launch
 make builder-create-project
@@ -419,6 +420,7 @@ Inspection and validation:
 make builder-print-config
 make builder-validate-config
 make builder-verify-sync
+make builder-diagnose-project-visibility
 make builder-server-print-config
 make builder-server-validate-config
 make builder-server-verify-sync
@@ -434,6 +436,8 @@ What these commands now tell you explicitly:
 - whether `PLANNER_BUILDER_LLM_MOCK_MODE` matters for the selected path
 - whether the saved Fusion project is visible and aligned or blocked/drifted
   for the selected path
+- why the saved Fusion project is blocked when visibility fails, including the
+  current auth context, read-surface evidence, and visibility classification
 
 The launch/create/update wrappers now print the same resolved contract before
 doing any work, so wrapper output and docs tell the same runtime story.
@@ -448,15 +452,63 @@ The verify-sync wrappers are read-only. They compare:
 If the saved remote project is not visible, the verify-sync command reports a
 truthful blocked state instead of pretending comparison succeeded.
 
+If the saved project is visible only on Builder's branch surface, the
+verification command now reports a truthful partial state instead:
+
+- `status: visibility_partial`
+- `visibility.state: branch_visible_only`
+
+That means the saved Fusion project is still live enough for branch truth, but
+the current metadata read surfaces do not expose its project settings.
+
+Use the dedicated diagnosis target when you need the underlying evidence:
+
+```bash
+make builder-diagnose-project-visibility
+```
+
+The diagnosis output now proves:
+
+- the current Builder CLI/env user and space
+- whether `org-tree` and `projects?apiKey=...&userId=...` disagree
+- whether direct project read fails with and without `userId`
+- whether the Builder branch surface returns live branches for the saved
+  project ID
+- whether the saved project state has enough context to classify the failure as
+  stale, mismatched, branch-visible-only, API-surface-specific, or still
+  `undetermined`
+
+Older saved Fusion state files may lack `spaceId` and `userId`. In that case,
+the repo still reports the visibility state honestly instead of guessing stale
+state or auth drift. When branch truth is available, the repo now classifies
+that state as `branch_visible_only`; otherwise it may remain `undetermined`.
+Future `make builder-create-project` flows persist richer saved-state context
+automatically so this diagnosis is more precise going forward.
+
 The existing-project helper targets use documented Builder Project settings
 semantics with an internal fallback transport. They are intended to operate on
 the saved project in `.codex/builder-fusion-project.json`, warn before remote
 mutation, and avoid recreating a project during read/update flows.
 
 If Builder does not return the saved Fusion project in the current project-list
-query, `make builder-get-project` will return a truthful `not_found` payload
-and `make builder-update-project` will block live mutation while still
-supporting `--dryrun` for payload inspection.
+query, the outcome now depends on the other Builder surfaces:
+
+- if the branch surface also fails, `make builder-get-project` returns a
+  truthful `not_found` payload
+- if the branch surface succeeds, `make builder-get-project` returns
+  `status: partial` and the repo reports the project as `branch_visible_only`
+- in both cases, `make builder-update-project` still blocks live mutation when
+  metadata settings remain unreadable, while still supporting `--dryrun` for
+  payload inspection
+
+Do not validate `api.builder.io` behavior by opening an API URL directly in a
+browser tab. Builder serves the web-app shell there, and the in-page runtime
+rewrites `api.builder.io` requests toward the main app host. Use one of these
+instead:
+
+- the browser network panel on an authenticated Builder session
+- repo-native scripts such as `make builder-diagnose-project-visibility`
+- authenticated direct probes from the repo shell
 
 Pass CLI flags through `make` with `ARGS="..."`:
 

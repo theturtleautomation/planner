@@ -145,34 +145,37 @@ else
   }
 
   if [[ $remote_project_status -eq 0 ]]; then
+    remote_status="$(jq -r '.status // "ok"' <<<"$remote_project_output")"
     remote_command="$(jq -r '.remoteProject.settings.devServerCommand // ""' <<<"$remote_project_output")"
     remote_server_url="$(jq -r '.remoteProject.settings.devServerUrl // ""' <<<"$remote_project_output")"
     remote_runtime_profile="$(jq -r '.remoteProject.runtimeProfile // ""' <<<"$remote_project_output")"
     mismatch_file="$(mktemp)"
     trap 'rm -f "$mismatch_file"' EXIT
 
-    if [[ "$remote_command" != "$BUILDER_CONFIG_COMMAND" ]]; then
-      jq -cn \
-        --arg field "devServerCommand" \
-        --arg expected "$BUILDER_CONFIG_COMMAND" \
-        --arg actual "$remote_command" \
-        '{field: $field, expected: $expected, actual: $actual}' >>"$mismatch_file"
-    fi
+    if [[ "$remote_status" == "ok" ]]; then
+      if [[ "$remote_command" != "$BUILDER_CONFIG_COMMAND" ]]; then
+        jq -cn \
+          --arg field "devServerCommand" \
+          --arg expected "$BUILDER_CONFIG_COMMAND" \
+          --arg actual "$remote_command" \
+          '{field: $field, expected: $expected, actual: $actual}' >>"$mismatch_file"
+      fi
 
-    if [[ "$remote_server_url" != "$BUILDER_CONFIG_SERVER_URL" ]]; then
-      jq -cn \
-        --arg field "devServerUrl" \
-        --arg expected "$BUILDER_CONFIG_SERVER_URL" \
-        --arg actual "$remote_server_url" \
-        '{field: $field, expected: $expected, actual: $actual}' >>"$mismatch_file"
-    fi
+      if [[ "$remote_server_url" != "$BUILDER_CONFIG_SERVER_URL" ]]; then
+        jq -cn \
+          --arg field "devServerUrl" \
+          --arg expected "$BUILDER_CONFIG_SERVER_URL" \
+          --arg actual "$remote_server_url" \
+          '{field: $field, expected: $expected, actual: $actual}' >>"$mismatch_file"
+      fi
 
-    if [[ "$remote_runtime_profile" != "$expected_runtime_profile" ]]; then
-      jq -cn \
-        --arg field "runtimeProfile" \
-        --arg expected "$expected_runtime_profile" \
-        --arg actual "$remote_runtime_profile" \
-        '{field: $field, expected: $expected, actual: $actual}' >>"$mismatch_file"
+      if [[ "$remote_runtime_profile" != "$expected_runtime_profile" ]]; then
+        jq -cn \
+          --arg field "runtimeProfile" \
+          --arg expected "$expected_runtime_profile" \
+          --arg actual "$remote_runtime_profile" \
+          '{field: $field, expected: $expected, actual: $actual}' >>"$mismatch_file"
+      fi
     fi
 
     mismatch_json="$(jq -s '.' "$mismatch_file")"
@@ -180,7 +183,11 @@ else
     trap - EXIT
 
     overall_status="in_sync"
-    if [[ "$(jq 'length' <<<"$mismatch_json")" != "0" ]]; then
+    visibility_state="visible"
+    if [[ "$remote_status" == "partial" ]]; then
+      overall_status="visibility_partial"
+      visibility_state="branch_visible_only"
+    elif [[ "$(jq 'length' <<<"$mismatch_json")" != "0" ]]; then
       overall_status="drifted"
     fi
 
@@ -194,7 +201,9 @@ else
       --arg expectedRuntimeProfile "$expected_runtime_profile" \
       --arg stateFile "$state_file" \
       --argjson savedProject "$saved_state_json" \
+      --arg visibilityState "$visibility_state" \
       --argjson remoteProject "$(jq -c '.remoteProject' <<<"$remote_project_output")" \
+      --argjson diagnosis "$(jq -c '.diagnosis // null' <<<"$remote_project_output")" \
       --argjson mismatches "$mismatch_json" '
       {
         status: $status,
@@ -209,17 +218,24 @@ else
         stateFile: $stateFile,
         savedProject: $savedProject,
         visibility: {
-          state: "visible"
+          state: $visibilityState,
+          classification: (
+            if $visibilityState == "branch_visible_only" then
+              ($diagnosis.classification // "branch_visible_only")
+            else null
+            end
+          )
         },
         remoteProject: $remoteProject,
+        diagnosis: $diagnosis,
         mismatches: $mismatches
       }')"
   else
     diagnosis_output="$("$SCRIPT_DIR/builder-diagnose-project-visibility.sh" 2>/dev/null || true)"
-    diagnosis_code="$(jq -r '.diagnosis // "unknown"' <<<"$diagnosis_output" 2>/dev/null || printf 'unknown\n')"
+    diagnosis_code="$(jq -r '.classification // "undetermined"' <<<"$diagnosis_output" 2>/dev/null || printf 'undetermined\n')"
     overall_status="visibility_blocked"
 
-    if [[ "$diagnosis_code" == "saved_project_missing_but_other_projects_visible" ]]; then
+    if [[ "$diagnosis_code" == "saved_project_stale" ]]; then
       overall_status="drifted"
     fi
 
@@ -247,7 +263,8 @@ else
         stateFile: $stateFile,
         savedProject: $savedProject,
         visibility: {
-          state: "blocked"
+          state: "blocked",
+          classification: ($diagnosis.classification // null)
         },
         diagnosis: $diagnosis
       }')"
@@ -278,7 +295,7 @@ case "$(jq -r '.status' <<<"$summary_json")" in
   missing_saved_project)
     jq -r '.warnings[] | "Warning: " + .' <<<"$summary_json"
     ;;
-  in_sync|drifted)
+  in_sync)
     printf 'Remote project: %s\n' "$(jq -r '.remoteProject.id + " (" + (.remoteProject.name // "unnamed") + ")"' <<<"$summary_json")"
     printf 'Remote server URL: %s\n' "$(jq -r '.remoteProject.settings.devServerUrl // "unset"' <<<"$summary_json")"
     printf 'Remote runtime profile: %s\n' "$(jq -r '.remoteProject.runtimeProfile // "unknown"' <<<"$summary_json")"
@@ -289,8 +306,25 @@ case "$(jq -r '.status' <<<"$summary_json")" in
       jq -r '.mismatches[] | "  - " + .field + ": expected `" + .expected + "` but remote is `" + .actual + "`"' <<<"$summary_json"
     fi
     ;;
+  drifted)
+    if [[ "$(jq '.remoteProject != null' <<<"$summary_json")" == "true" ]]; then
+      printf 'Remote project: %s\n' "$(jq -r '.remoteProject.id + " (" + (.remoteProject.name // "unnamed") + ")"' <<<"$summary_json")"
+      printf 'Remote server URL: %s\n' "$(jq -r '.remoteProject.settings.devServerUrl // "unset"' <<<"$summary_json")"
+      printf 'Remote runtime profile: %s\n' "$(jq -r '.remoteProject.runtimeProfile // "unknown"' <<<"$summary_json")"
+      if [[ "$(jq '.mismatches | length' <<<"$summary_json")" == "0" ]]; then
+        printf 'Mismatches: none\n'
+      else
+        printf 'Mismatches:\n'
+        jq -r '.mismatches[] | "  - " + .field + ": expected `" + .expected + "` but remote is `" + .actual + "`"' <<<"$summary_json"
+      fi
+    else
+      printf 'Visibility classification: %s\n' "$(jq -r '.visibility.classification // "unknown"' <<<"$summary_json")"
+      printf 'Visibility evidence: %s\n' "$(jq -r '(.diagnosis.evidence // []) | join(", ")' <<<"$summary_json")"
+    fi
+    ;;
   visibility_blocked)
-    printf 'Visibility diagnosis: %s\n' "$(jq -r '.diagnosis.diagnosis // "unknown"' <<<"$summary_json")"
+    printf 'Visibility classification: %s\n' "$(jq -r '.visibility.classification // "unknown"' <<<"$summary_json")"
+    printf 'Visibility evidence: %s\n' "$(jq -r '(.diagnosis.evidence // []) | join(", ")' <<<"$summary_json")"
     ;;
 esac
 

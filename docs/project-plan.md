@@ -1145,6 +1145,8 @@ Canonical planning doc:
 - [Builder Fusion Phase 01 API-Grounded Skill And Existing Project Contract Spec](/home/thetu/planner/docs/builder-fusion-phase-01-api-grounded-skill-and-existing-project-contract-spec.md)
 - [Builder Fusion Phase 02 Existing Project Helper Contract Spec](/home/thetu/planner/docs/builder-fusion-phase-02-existing-project-helper-contract-spec.md)
 - [Builder Fusion Phase 03 Sync Verification Workflow Spec](/home/thetu/planner/docs/builder-fusion-phase-03-sync-verification-workflow-spec.md)
+- [Builder Fusion Phase 04 Project Visibility Diagnosis And Remediation Spec](/home/thetu/planner/docs/builder-fusion-phase-04-project-visibility-diagnosis-and-remediation-spec.md)
+- [Builder Fusion Phase 05 Branch Surface Visibility Reconciliation Spec](/home/thetu/planner/docs/builder-fusion-phase-05-branch-surface-visibility-reconciliation-spec.md)
 
 Current planning state:
 
@@ -1195,8 +1197,31 @@ Current planning state:
   saved Fusion project ID, so the helper and verification layers are
   implemented but both live remote update and remote drift comparison remain
   blocked until Builder exposes that project to the active auth context
-- the previously open "decide the next Builder slice" branch is now narrowed
-  into two explicit follow-ons rather than an open-ended note:
+- the Phase 04 visibility remediation slice is now implemented and proves:
+  - the active Builder auth context matches the current CLI/env user and space
+  - both repo read surfaces currently return zero visible projects
+  - direct read of the saved project returns `404` with and without `userId`
+  - the historical saved state lacks `spaceId`/`userId`, so the current case
+    is truthfully classified as `undetermined` rather than guessed stale state
+    or guessed auth mismatch
+  - future create flows now persist richer saved project context so the repo
+    can classify this failure mode more precisely next time
+- the Phase 05 branch-surface reconciliation slice is now implemented and
+  proves:
+  - the saved Fusion project is not fully invisible in the current auth context
+  - Builder's branch surface still exposes live branch data for the saved
+    project even though the metadata surfaces do not
+  - the correct current visibility classification is now
+    `branch_visible_only`
+  - `builder-get-project` now returns a truthful partial result rather than
+    collapsing to `not_found`
+  - `builder-verify-sync` now returns `visibility_partial` rather than
+    pretending the project is either fully visible or fully blocked
+  - browser-opening `https://api.builder.io/...` is not authoritative evidence
+    because Builder serves the app shell there; authenticated network capture
+    or repo-native probes are the reliable evidence sources
+- the previously open "decide the next Builder slice" branch was narrowed
+  into explicit follow-ons rather than an open-ended note:
   - [Builder Phase C Documented Config Workflow Tightening Spec](/home/thetu/planner/docs/builder-phase-c-documented-config-workflow-tightening-spec.md)
     is now implemented and adds:
     - shared config resolution and validation around `builder.config.json` and
@@ -1217,15 +1242,14 @@ Current planning state:
 
 Current ready Builder follow-ons:
 
-- none currently promoted after Builder Fusion Phase 03
+- no additional Builder follow-on is promoted yet
 
 Builder next move:
 
-- either run the live remote update/readback path from a Builder auth context
-  that can actually see the saved Fusion project, or
-- create a fresh bounded spec if Planner wants to pursue an
-  `ensure-project` workflow despite the duplicate-project risk while remote
-  visibility remains blocked
+- if Planner needs live remote update or full remote drift comparison for the
+  saved Fusion project, the next bounded slice should focus on recovery policy
+  for a project that is `branch_visible_only` but still missing from metadata
+  surfaces
 
 ## Immediate Bounded Closeout Slice
 
