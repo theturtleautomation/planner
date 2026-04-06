@@ -1,0 +1,373 @@
+# Docs Health Report
+
+Generated: 2026-04-06T12:35:24.566Z
+
+## Top risky docs (score < 70)
+- **README.md** — score 45, staleDays 0, orphan yes, broken links: builder.config.json, builder.server.config.json, .builderrules…, missing refs: src/**/*.rs, src/api/__tests__/client.test.ts, src/components/__tests__/ChatPanel.test.tsx…
+- **docs/planner-solidstart-phase-20-project-surfaces-local-app-and-primitive-hardening-spec.md** — score 55, staleDays 0, orphan yes, broken links: docs/home/thetu/planner/docs/planner-solidstart-platform-direction-spec.md, docs/home/thetu/planner/docs/planner-solidstart-phase-03-project-review-and-build-readiness-spec.md, docs/home/thetu/planner/docs/planner-solidstart-phase-14-project-import-review-route-spec.md…, missing refs: src/components/ui/, src/components/projects/
+- **planner-solid/node_modules/unenv/README.md** — score 55, staleDays 0, orphan yes, broken links: planner-solid/node_modules/unenv/src/runtime/node, planner-solid/node_modules/unenv/src/runtime/mock, missing refs: src/runtime/mock, src/runtime/node, src/runtime/npm…
+- **docs/planner-solidstart-phase-19-typography-alignment-and-visual-consistency-remediation-spec.md** — score 60, staleDays 0, orphan yes, broken links: docs/home/thetu/planner/docs/planner-solidstart-platform-direction-spec.md, docs/home/thetu/planner/docs/planner-solidstart-phase-18-prompt-bank-conformance-and-closeout-remediation-spec.md, docs/home/thetu/planner/docs/planner-ui-reset-route-by-route-spec-queue.md…, missing refs: src/app.css
+- **planner-solid/node_modules/@rollup/plugin-replace/README.md** — score 60, staleDays 0, orphan yes, broken links: planner-solid/node_modules/@rollup/plugin-replace/.github/CONTRIBUTING.md, planner-solid/node_modules/@rollup/plugin-replace/LICENSE, missing refs: src/index.js, src/**/*.js, src/**/*.js
+- **planner-solid/node_modules/fast-glob/README.md** — score 60, staleDays 0, orphan yes, broken links: planner-solid/node_modules/fast-glob/src/managers/tasks.ts, missing refs: src/**/*.js, src/*.??, src/**/*.{css,scss}…
+- **AUDIT_CORE.md** — score 65, staleDays 0, orphan yes, missing refs: src/lib.rs, src/main.rs, src/llm/mod.rs…
+- **AUDIT_FRONTEND.md** — score 65, staleDays 0, orphan yes, missing refs: src/main.tsx, src/App.tsx, src/config.ts…
+- **CHANGES_FRONTEND_TESTS.md** — score 65, staleDays 0, orphan yes, missing refs: src/test/setup.ts, src/components/__tests__/MessageInput.test.tsx, src/components/__tests__/PipelineBar.test.tsx…
+- **docs/builder-fusion-phase-01-api-grounded-skill-and-existing-project-contract-spec.md** — score 65, staleDays 0, orphan yes, broken links: docs/home/thetu/planner/docs/builder-fusion-project-management-and-runtime-sync-spec.md, docs/home/thetu/planner/docs/builder-local-workflow.md, docs/home/thetu/planner/docs/project-plan.md…
+- **docs/builder-fusion-phase-02-existing-project-helper-contract-spec.md** — score 65, staleDays 0, orphan yes, broken links: docs/home/thetu/planner/docs/builder-fusion-project-management-and-runtime-sync-spec.md, docs/home/thetu/planner/docs/builder-fusion-phase-01-api-grounded-skill-and-existing-project-contract-spec.md, docs/home/thetu/planner/docs/builder-local-workflow.md…
+- **docs/builder-fusion-phase-03-sync-verification-workflow-spec.md** — score 65, staleDays 0, orphan yes, broken links: docs/home/thetu/planner/docs/builder-fusion-project-management-and-runtime-sync-spec.md, docs/home/thetu/planner/docs/builder-fusion-phase-02-existing-project-helper-contract-spec.md, docs/home/thetu/planner/docs/builder-local-workflow.md…
+- **docs/builder-fusion-phase-04-project-visibility-diagnosis-and-remediation-spec.md** — score 65, staleDays 0, orphan yes, broken links: docs/home/thetu/planner/docs/builder-fusion-project-management-and-runtime-sync-spec.md, docs/home/thetu/planner/docs/builder-fusion-phase-03-sync-verification-workflow-spec.md, docs/home/thetu/planner/docs/builder-local-workflow.md…
+- **docs/builder-fusion-phase-05-branch-surface-visibility-reconciliation-spec.md** — score 65, staleDays 0, orphan yes, broken links: docs/home/thetu/planner/docs/builder-fusion-project-management-and-runtime-sync-spec.md, docs/home/thetu/planner/docs/builder-fusion-phase-04-project-visibility-diagnosis-and-remediation-spec.md, docs/home/thetu/planner/docs/builder-local-workflow.md…
+- **docs/builder-fusion-project-management-and-runtime-sync-spec.md** — score 65, staleDays 0, orphan yes, broken links: docs/home/thetu/planner/docs/builder-local-workflow.md, docs/home/thetu/planner/docs/project-plan.md, docs/home/thetu/planner/docs/admin-observability-plan.md…
+- **docs/builder-phase-b-documented-config-and-instruction-alignment-spec.md** — score 65, staleDays 0, orphan yes, broken links: docs/home/thetu/planner/docs/builder-developer-docs-phase-a-exhaustive-analysis.md, docs/home/thetu/planner/docs/builder-fusion-project-management-and-runtime-sync-spec.md, docs/home/thetu/planner/docs/project-plan.md…
+- **docs/builder-phase-c-documented-config-workflow-tightening-spec.md** — score 65, staleDays 0, orphan yes, broken links: docs/home/thetu/planner/docs/builder-phase-b-documented-config-and-instruction-alignment-spec.md, docs/home/thetu/planner/docs/builder-developer-docs-phase-a-exhaustive-analysis.md, docs/home/thetu/planner/docs/project-plan.md…
+- **docs/builder-phase-d-repo-local-dsi-mcp-setup-spec.md** — score 65, staleDays 0, orphan yes, broken links: docs/home/thetu/planner/docs/builder-developer-docs-phase-a-exhaustive-analysis.md, docs/home/thetu/planner/docs/project-plan.md, docs/home/thetu/planner/docs/builder-local-workflow.md…
+- **docs/import-existing-project-phase-10-historical-review-draft-restore-spec.md** — score 65, staleDays 0, orphan yes, broken links: docs/home/thetu/planner/docs/project-plan.md, docs/home/thetu/planner/docs/import-existing-project-plan.md, docs/home/thetu/planner/docs/import-existing-project-phase-9-historical-restore-spec.md…
+- **docs/import-existing-project-phase-11-selective-apply-merge-controls-spec.md** — score 65, staleDays 0, orphan yes, broken links: docs/home/thetu/planner/docs/project-plan.md, docs/home/thetu/planner/docs/import-existing-project-plan.md, docs/home/thetu/planner/docs/import-existing-project-phase-10-historical-review-draft-restore-spec.md…
+- **docs/import-existing-project-phase-12-historical-applied-restore-for-review-spec.md** — score 65, staleDays 0, orphan yes, broken links: docs/home/thetu/planner/docs/project-plan.md, docs/home/thetu/planner/docs/import-existing-project-plan.md, docs/home/thetu/planner/docs/import-existing-project-phase-11-selective-apply-merge-controls-spec.md…
+- **docs/import-existing-project-phase-13-historical-entry-comparison-spec.md** — score 65, staleDays 0, orphan yes, broken links: docs/home/thetu/planner/docs/project-plan.md, docs/home/thetu/planner/docs/import-existing-project-plan.md, docs/home/thetu/planner/docs/import-existing-project-phase-12-historical-applied-restore-for-review-spec.md…
+- **docs/import-existing-project-phase-14-arbitrary-history-comparison-spec.md** — score 65, staleDays 0, orphan yes, broken links: docs/home/thetu/planner/docs/project-plan.md, docs/home/thetu/planner/docs/import-existing-project-plan.md, docs/home/thetu/planner/docs/import-existing-project-phase-13-historical-entry-comparison-spec.md…
+- **docs/import-existing-project-phase-15-selection-aware-history-comparison-spec.md** — score 65, staleDays 0, orphan yes, broken links: docs/home/thetu/planner/docs/project-plan.md, docs/home/thetu/planner/docs/import-existing-project-plan.md, docs/home/thetu/planner/docs/import-existing-project-phase-14-arbitrary-history-comparison-spec.md…
+- **docs/import-existing-project-phase-16-history-selection-summary-spec.md** — score 65, staleDays 0, orphan yes, broken links: docs/home/thetu/planner/docs/project-plan.md, docs/home/thetu/planner/docs/import-existing-project-plan.md, docs/home/thetu/planner/docs/import-existing-project-phase-15-selection-aware-history-comparison-spec.md…
+- **docs/import-existing-project-phase-2-github-acquisition-spec.md** — score 65, staleDays 0, orphan yes, broken links: docs/home/thetu/planner/docs/project-plan.md, docs/home/thetu/planner/docs/import-existing-project-plan.md, docs/home/thetu/planner/docs/import-existing-project-phase-1-domain-skeleton-spec.md…
+- **docs/import-existing-project-phase-3-analysis-draft-and-socratic-handoff-spec.md** — score 65, staleDays 0, orphan yes, broken links: docs/home/thetu/planner/docs/project-plan.md, docs/home/thetu/planner/docs/import-existing-project-plan.md, docs/home/thetu/planner/docs/import-existing-project-phase-2-github-acquisition-spec.md…
+- **docs/import-existing-project-phase-4-review-apply-spec.md** — score 65, staleDays 0, orphan yes, broken links: docs/home/thetu/planner/docs/project-plan.md, docs/home/thetu/planner/docs/import-existing-project-plan.md, docs/home/thetu/planner/docs/import-existing-project-phase-3-analysis-draft-and-socratic-handoff-spec.md…
+- **docs/import-existing-project-phase-5-local-provider-spec.md** — score 65, staleDays 0, orphan yes, broken links: docs/home/thetu/planner/docs/project-plan.md, docs/home/thetu/planner/docs/import-existing-project-plan.md, docs/home/thetu/planner/docs/import-existing-project-phase-4-review-apply-spec.md…
+- **docs/import-existing-project-phase-6-reimport-and-lifecycle-cleanup-spec.md** — score 65, staleDays 0, orphan yes, broken links: docs/home/thetu/planner/docs/project-plan.md, docs/home/thetu/planner/docs/import-existing-project-plan.md, docs/home/thetu/planner/docs/import-existing-project-phase-5-local-provider-spec.md…
+- **docs/import-existing-project-phase-7-history-and-draft-diff-spec.md** — score 65, staleDays 0, orphan yes, broken links: docs/home/thetu/planner/docs/project-plan.md, docs/home/thetu/planner/docs/import-existing-project-plan.md, docs/home/thetu/planner/docs/import-existing-project-phase-6-reimport-and-lifecycle-cleanup-spec.md…
+- **docs/import-existing-project-phase-8-canonical-reconciliation-spec.md** — score 65, staleDays 0, orphan yes, broken links: docs/home/thetu/planner/docs/project-plan.md, docs/home/thetu/planner/docs/import-existing-project-plan.md, docs/home/thetu/planner/docs/import-existing-project-phase-7-history-and-draft-diff-spec.md…
+- **docs/import-existing-project-phase-9-historical-restore-spec.md** — score 65, staleDays 0, orphan yes, broken links: docs/home/thetu/planner/docs/project-plan.md, docs/home/thetu/planner/docs/import-existing-project-plan.md, docs/home/thetu/planner/docs/import-existing-project-phase-8-canonical-reconciliation-spec.md…
+- **docs/import-existing-project-plan.md** — score 65, staleDays 0, orphan yes, broken links: docs/home/thetu/planner/docs/import-existing-project-phase-1-domain-skeleton-spec.md, docs/home/thetu/planner/docs/import-existing-project-phase-2-github-acquisition-spec.md, docs/home/thetu/planner/docs/import-existing-project-phase-3-analysis-draft-and-socratic-handoff-spec.md…
+- **docs/phase-07-socratic-prompt-protocol-redesign-implementation.md** — score 65, staleDays 0, orphan yes, broken links: docs/home/thetu/planner/planner-schemas/src/artifacts/socratic.rs, docs/home/thetu/planner/planner-server/src/session.rs, docs/home/thetu/planner/planner-server/src/session.rs…
+- **docs/phase-09-socratic-recursive-category-synthesis-spec.md** — score 65, staleDays 0, orphan yes, broken links: docs/home/thetu/planner/docs/project-plan.md, docs/home/thetu/planner/docs/phase-08-socratic-category-drilldown-implementation.md, docs/home/thetu/planner/docs/phase-08-socratic-category-drilldown-implementation.md…
+- **docs/phase-10-socratic-category-status-and-refresh-spec.md** — score 65, staleDays 0, orphan yes, broken links: docs/home/thetu/planner/docs/project-plan.md, docs/home/thetu/planner/docs/phase-08-socratic-category-drilldown-implementation.md, docs/home/thetu/planner/docs/phase-09-socratic-recursive-category-synthesis-spec.md…
+- **docs/phase-11-socratic-category-replay-and-validation-spec.md** — score 65, staleDays 0, orphan yes, broken links: docs/home/thetu/planner/docs/project-plan.md, docs/home/thetu/planner/docs/phase-08-socratic-category-drilldown-implementation.md, docs/home/thetu/planner/docs/phase-10-socratic-category-status-and-refresh-spec.md…
+- **docs/phase-12-socratic-live-question-workspace-spec.md** — score 65, staleDays 0, orphan yes, broken links: docs/home/thetu/planner/docs/project-plan.md, docs/home/thetu/planner/docs/phase-08-socratic-category-drilldown-implementation.md, docs/home/thetu/planner/docs/phase-07-socratic-prompt-protocol-redesign-implementation.md…
+- **docs/phase-13-socratic-realtime-workspace-deltas-and-warm-prompt-library-spec.md** — score 65, staleDays 0, orphan yes, broken links: docs/home/thetu/planner/docs/project-plan.md, docs/home/thetu/planner/docs/phase-12-socratic-live-question-workspace-spec.md, docs/home/thetu/planner/docs/phase-11-socratic-category-replay-and-validation-spec.md…
+- **docs/planner-design-system-command-center-plan.md** — score 65, staleDays 0, orphan yes, broken links: docs/home/thetu/planner/docs/project-plan.md, docs/home/thetu/planner/planner-web/src/index.css, docs/home/thetu/planner/planner-web/src/components/Layout.tsx…
+- **docs/planner-design-system-phase-1-tonal-foundation-spec.md** — score 65, staleDays 0, orphan yes, broken links: docs/home/thetu/planner/docs/planner-design-system-command-center-plan.md, docs/home/thetu/planner/planner-web/src/index.css, docs/home/thetu/planner/planner-web/src/components/Layout.tsx…
+- **docs/planner-design-system-phase-2-editorial-typography-and-cta-spec.md** — score 65, staleDays 0, orphan yes, broken links: docs/home/thetu/planner/docs/planner-design-system-command-center-plan.md, docs/home/thetu/planner/docs/planner-design-system-phase-1-tonal-foundation-spec.md, docs/home/thetu/planner/planner-web/src/index.css…
+- **docs/planner-design-system-phase-3-overlay-depth-and-restrained-glass-spec.md** — score 65, staleDays 0, orphan yes, broken links: docs/home/thetu/planner/docs/planner-design-system-command-center-plan.md, docs/home/thetu/planner/docs/planner-design-system-phase-2-editorial-typography-and-cta-spec.md, docs/home/thetu/planner/planner-web/src/index.css…
+- **docs/planner-design-system-phase-4-utility-route-consistency-spec.md** — score 65, staleDays 0, orphan yes, broken links: docs/home/thetu/planner/docs/planner-design-system-command-center-plan.md, docs/home/thetu/planner/docs/planner-design-system-phase-3-overlay-depth-and-restrained-glass-spec.md, docs/home/thetu/planner/planner-web/src/pages/Dashboard.tsx…
+- **docs/planner-design-system-phase-5-route-hierarchy-and-operational-density-spec.md** — score 65, staleDays 0, orphan yes, broken links: docs/home/thetu/planner/docs/planner-design-system-command-center-plan.md, docs/home/thetu/planner/docs/planner-design-system-phase-4-utility-route-consistency-spec.md, docs/home/thetu/planner/planner-web/src/pages/HomeHubPage.tsx…
+- **docs/planner-design-system-phase-6-operational-surfaces-and-event-density-spec.md** — score 65, staleDays 0, orphan yes, broken links: docs/home/thetu/planner/docs/planner-design-system-command-center-plan.md, docs/home/thetu/planner/docs/planner-design-system-phase-5-route-hierarchy-and-operational-density-spec.md, docs/home/thetu/planner/planner-web/src/pages/AdminPage.tsx…
+- **docs/planner-design-system-phase-7-knowledge-inventory-and-context-spec.md** — score 65, staleDays 0, orphan yes, broken links: docs/home/thetu/planner/docs/planner-design-system-command-center-plan.md, docs/home/thetu/planner/docs/planner-design-system-phase-6-operational-surfaces-and-event-density-spec.md, docs/home/thetu/planner/planner-web/src/pages/KnowledgeLibraryPage.tsx…
+- **docs/planner-design-system-phase-8-blueprint-command-chrome-and-inspector-spec.md** — score 65, staleDays 0, orphan yes, broken links: docs/home/thetu/planner/docs/planner-design-system-command-center-plan.md, docs/home/thetu/planner/docs/planner-design-system-phase-7-knowledge-inventory-and-context-spec.md, docs/home/thetu/planner/planner-web/src/pages/BlueprintPage.tsx…
+- **docs/planner-solidstart-phase-00-shell-sessions-and-socratic-anchor-spec.md** — score 65, staleDays 0, orphan yes, broken links: docs/home/thetu/planner/docs/planner-solidstart-platform-direction-spec.md, docs/home/thetu/planner/docs/socratic-solidstart-greenfield-platform-spec.md, docs/home/thetu/planner/docs/socratic-initial-prompt-bank-and-dynamic-hydration-spec.md…
+
+## Near‑duplicate clusters
+- Cluster 1: AUDIT_SERVER_TUI_SCHEMAS.md, COMPREHENSIVE_AUDIT.md, docs/blueprint-research/architecture_tools_research.md
+- Cluster 2: CHANGES_REAL_TESTS.md, planner-solid/node_modules/fastq/README.md, planner-solid/node_modules/srvx/README.md, planner-solid/node_modules/ultrahtml/README.md
+- Cluster 3: DEPLOYMENT.md, docs/planner-solidstart-phase-04-project-build-path-and-automation-handoff-spec.md, docs/planner-ui-reset-phase-00-shell-navigation-and-auth-spec.md, planner-web/node_modules/ajv/README.md
+- Cluster 4: README.md, docs/planner-solidstart-phase-37-4-session-question-chrome-reduction-spec.md
+- Cluster 5: docs/builder-fusion-phase-01-api-grounded-skill-and-existing-project-contract-spec.md, docs/builder-fusion-phase-05-branch-surface-visibility-reconciliation-spec.md, docs/builder-fusion-project-management-and-runtime-sync-spec.md, planner-solid/node_modules/picomatch/README.md
+- Cluster 6: docs/builder-fusion-phase-04-project-visibility-diagnosis-and-remediation-spec.md, planner-web/node_modules/@vitejs/plugin-react/README.md
+- Cluster 7: docs/builder-phase-b-documented-config-and-instruction-alignment-spec.md, planner-solid/node_modules/decimal.js/README.md, planner-web/node_modules/decimal.js/README.md
+- Cluster 8: docs/import-existing-project-phase-10-historical-review-draft-restore-spec.md, planner-web/node_modules/@bramus/specificity/README.md
+- Cluster 9: docs/import-existing-project-phase-11-selective-apply-merge-controls-spec.md, docs/import-existing-project-phase-7-history-and-draft-diff-spec.md, docs/planner-design-system-phase-5-route-hierarchy-and-operational-density-spec.md
+- Cluster 10: docs/import-existing-project-phase-12-historical-applied-restore-for-review-spec.md, docs/import-existing-project-phase-7-history-and-draft-diff-spec.md
+- Cluster 11: docs/import-existing-project-phase-13-historical-entry-comparison-spec.md, docs/import-existing-project-plan.md
+- Cluster 12: docs/import-existing-project-phase-14-arbitrary-history-comparison-spec.md, docs/planner-solidstart-phase-25-socratic-runtime-verification-hardening-remediation-spec.md
+- Cluster 13: docs/import-existing-project-phase-9-historical-restore-spec.md, planner-solid/node_modules/@nodelib/fs.scandir/README.md, planner-web/node_modules/d3-timer/README.md
+- Cluster 14: docs/knowledge-library-project-scope-plan.md, docs/planner-solidstart-phase-24-socratic-runtime-contract-reset-spec.md
+- Cluster 15: docs/phase-04-knowledge-filter-bar-implementation.md, docs/planner-solidstart-phase-33-session-workspace-interaction-and-artifact-refinement-spec.md, docs/socratic-ethereal-cascade-redesign-spec.md, planner-solid/node_modules/terser/README.md, planner-web/node_modules/type-check/README.md
+- Cluster 16: docs/phase-06-project-archive-delete-implementation.md, planner-web/node_modules/d3-random/README.md
+- Cluster 17: docs/phase-07-socratic-prompt-protocol-redesign-implementation-prompt.md, docs/phase-12-socratic-live-question-workspace-spec.md, docs/socratic-ethereal-cascade-redesign-spec.md, docs/socratic-lobby-consultant-desk-spec.md, docs/socratic-project-picture-mvp-path-and-gap-analysis-spec.md, docs/socratic-solidstart-greenfield-platform-spec.md
+- Cluster 18: docs/phase-07-socratic-prompt-protocol-redesign-implementation.md, docs/socratic-lobby-consultant-desk-spec.md
+- Cluster 19: docs/phase-08-socratic-category-drilldown-implementation.md, docs/planner-ui-reset-audit-evidence-closeout-spec.md
+- Cluster 20: docs/planner-design-system-command-center-plan.md, planner-web/node_modules/levn/README.md
+- Cluster 21: docs/planner-design-system-phase-2-editorial-typography-and-cta-spec.md, docs/planner-design-system-phase-3-overlay-depth-and-restrained-glass-spec.md, docs/planner-solidstart-phase-36-2-home-route-canonicality-remediation-spec.md
+- Cluster 22: docs/planner-design-system-phase-8-blueprint-command-chrome-and-inspector-spec.md, docs/socratic-project-picture-first-reveal-screen-spec.md
+- Cluster 23: docs/planner-ledger-population-analysis-and-pass-plan.md, planner-solid/node_modules/unist-util-is/readme.md, planner-web/node_modules/unist-util-is/readme.md
+- Cluster 24: docs/planner-solidstart-phase-00-shell-sessions-and-socratic-anchor-spec.md, docs/socratic-ethereal-cascade-redesign-spec.md, docs/socratic-lobby-master-detail-local-workspace-spec.md, docs/socratic-solidstart-greenfield-platform-spec.md
+- Cluster 25: docs/planner-solidstart-phase-02-project-advanced-surfaces-spec.md, docs/planner-solidstart-phase-03-project-review-and-build-readiness-spec.md, docs/planner-ui-reset-phase-02-projects-directory-spec.md, planner-web/node_modules/levn/README.md
+- Cluster 26: docs/planner-solidstart-phase-07-project-outputs-and-artifacts-spec.md, planner-solid/node_modules/youch/README.md
+- Cluster 27: docs/planner-solidstart-phase-09-admin-operations-route-spec.md, planner-solid/node_modules/jackspeak/README.md
+- Cluster 28: docs/planner-solidstart-phase-10-knowledge-inventory-route-spec.md, docs/planner-solidstart-phase-35-5-import-review-frontend-mock-spec.md
+- Cluster 29: docs/planner-solidstart-phase-14-project-import-review-route-spec.md, planner-web/node_modules/is-plain-obj/readme.md
+- Cluster 30: docs/planner-solidstart-phase-17-workflow-closeout-and-react-retirement-spec.md, docs/planner-solidstart-phase-31-session-workspace-route-family-decomposition-spec.md, planner-solid/node_modules/tar/README.md, planner-solid/node_modules/unstorage/README.md
+- Cluster 31: docs/planner-solidstart-phase-18-prompt-bank-conformance-and-closeout-remediation-spec.md, docs/planner-ui-reset-phase-01-home-hub-spec.md, docs/planning-status-audit-remediation-spec.md, docs/socratic-initial-prompt-bank-and-dynamic-hydration-spec.md, docs/socratic-lobby-consultant-desk-spec.md, docs/socratic-solidstart-greenfield-platform-spec.md
+- Cluster 32: docs/planner-solidstart-phase-20-project-surfaces-local-app-and-primitive-hardening-spec.md, docs/planner-solidstart-phase-30-project-workspace-route-family-decomposition-spec.md, docs/planner-ui-reset-phase-00-shell-navigation-and-auth-spec.md, docs/planner-ui-reset-phase-01-home-hub-spec.md, docs/socratic-solidstart-greenfield-platform-spec.md
+- Cluster 33: docs/planner-solidstart-phase-21-session-startup-truth-and-status-clarity-spec.md, docs/planner-solidstart-phase-27-new-session-startup-truth-remediation-spec.md, docs/planner-solidstart-phase-28-session-entry-and-startup-product-flow-spec.md, docs/project-plan.md
+- Cluster 34: docs/planner-solidstart-phase-22-session-workspace-master-detail-density-and-autosave-spec.md, docs/planner-solidstart-phase-23-session-live-artifact-split-spec.md, docs/planner-solidstart-phase-27-new-session-startup-truth-remediation-spec.md, docs/planner-solidstart-phase-33-session-workspace-interaction-and-artifact-refinement-spec.md, planner-web/node_modules/levn/README.md
+- Cluster 35: docs/planner-solidstart-phase-26-socratic-runtime-truth-completion-remediation-spec.md, docs/planner-solidstart-phase-27-new-session-startup-truth-remediation-spec.md, docs/planner-solidstart-phase-28-session-entry-and-startup-product-flow-spec.md, docs/planner-solidstart-phase-35-backendless-mock-route-coverage-spec.md, docs/planner-ui-reset-phase-00-shell-navigation-and-auth-spec.md, docs/socratic-convergence-autonomy-boundary-spec.md, docs/socratic-project-picture-first-reveal-screen-spec.md, docs/socratic-solidstart-greenfield-platform-spec.md, planner-web/node_modules/d3-zoom/README.md, planner-web/node_modules/levn/README.md, planner-web/node_modules/undici/README.md
+- Cluster 36: docs/planner-solidstart-phase-32-work-entry-ia-and-session-route-topology-spec.md, planner-web/node_modules/@rolldown/pluginutils/README.md
+- Cluster 37: docs/planner-solidstart-phase-34-session-question-bank-workspace-reset-spec.md, docs/planner-solidstart-phase-40-project-only-entry-and-stale-draft-hardening-spec.md, planner-solid/node_modules/exsolve/README.md, planner-solid/node_modules/tar/README.md
+- Cluster 38: docs/planner-solidstart-phase-35-4-project-workspace-frontend-mock-spec.md, docs/planner-ui-reset-phase-03-project-workspace-spec.md
+- Cluster 39: docs/planner-solidstart-phase-35-9-backendless-mock-residual-cleanup-spec.md, planner-web/node_modules/remark-rehype/readme.md
+- Cluster 40: docs/planner-solidstart-phase-37-3-canonical-static-runtime-parity-remediation-spec.md, docs/planner-solidstart-phase-37-4-session-question-chrome-reduction-spec.md
+- Cluster 41: docs/planner-solidstart-phase-37-5-session-header-signal-consolidation-spec.md, planner-solid/node_modules/send/README.md
+- Cluster 42: docs/planner-solidstart-phase-38-2-socratic-multimodal-planner-and-adjudication-spec.md, planner-solid/node_modules/c12/README.md
+- Cluster 43: docs/planner-ui-reset-phase-07-blueprint-workspace-spec.md, planner-solid/node_modules/archiver-utils/node_modules/minimatch/README.md
+- Cluster 44: docs/planner-ui-reset-route-by-route-spec-queue.md, docs/planning-status-audit-remediation-spec.md
+- Cluster 45: docs/repo-graph-workflow.md, planner-solid/node_modules/@vitest/snapshot/README.md
+- Cluster 46: docs/session-start-and-doc-index.md, docs/socratic-current-state-vs-thesis-review.md, planner-web/node_modules/@eslint/plugin-kit/README.md, planner-web/node_modules/d3-contour/README.md, planner-web/node_modules/micromark-util-chunked/readme.md
+- Cluster 47: docs/socratic-project-picture-mvp-slice-spec.md, planner-web/node_modules/keyv/README.md
+- Cluster 48: models.md, planner-web/node_modules/find-up/readme.md
+- Cluster 49: planner-solid/node_modules/@adobe/css-tools/README.md, planner-web/node_modules/@adobe/css-tools/README.md
+- Cluster 50: planner-solid/node_modules/@adobe/css-tools/docs/API.md, planner-web/node_modules/@adobe/css-tools/docs/API.md
+- Cluster 51: planner-solid/node_modules/@adobe/css-tools/docs/AST.md, planner-web/node_modules/@adobe/css-tools/docs/AST.md
+- Cluster 52: planner-solid/node_modules/@adobe/css-tools/docs/CHANGELOG.md, planner-web/node_modules/@adobe/css-tools/docs/CHANGELOG.md
+- Cluster 53: planner-solid/node_modules/@adobe/css-tools/docs/EXAMPLES.md, planner-web/node_modules/@adobe/css-tools/docs/EXAMPLES.md
+- Cluster 54: planner-solid/node_modules/@asamuzakjp/css-color/README.md, planner-web/node_modules/@asamuzakjp/css-color/README.md
+- Cluster 55: planner-solid/node_modules/@asamuzakjp/css-color/node_modules/lru-cache/LICENSE.md, planner-solid/node_modules/@asamuzakjp/dom-selector/node_modules/lru-cache/LICENSE.md, planner-solid/node_modules/archiver-utils/node_modules/path-scurry/LICENSE.md, planner-solid/node_modules/cssstyle/node_modules/lru-cache/LICENSE.md, planner-solid/node_modules/jackspeak/LICENSE.md, planner-solid/node_modules/minimatch/LICENSE.md, planner-solid/node_modules/minipass/LICENSE.md, planner-solid/node_modules/path-scurry/LICENSE.md, planner-solid/node_modules/path-scurry/node_modules/lru-cache/LICENSE.md, planner-solid/node_modules/tar/LICENSE.md, planner-solid/node_modules/unstorage/node_modules/lru-cache/LICENSE.md, planner-web/node_modules/@asamuzakjp/css-color/node_modules/lru-cache/LICENSE.md, planner-web/node_modules/@asamuzakjp/dom-selector/node_modules/lru-cache/LICENSE.md, planner-web/node_modules/@typescript-eslint/typescript-estree/node_modules/minimatch/LICENSE.md, planner-web/node_modules/cssstyle/node_modules/lru-cache/LICENSE.md
+- Cluster 56: planner-solid/node_modules/@asamuzakjp/css-color/node_modules/lru-cache/README.md, planner-solid/node_modules/@asamuzakjp/dom-selector/node_modules/lru-cache/README.md, planner-solid/node_modules/cssstyle/node_modules/lru-cache/README.md, planner-solid/node_modules/path-scurry/node_modules/lru-cache/README.md, planner-solid/node_modules/unstorage/node_modules/lru-cache/README.md, planner-web/node_modules/@asamuzakjp/css-color/node_modules/lru-cache/README.md, planner-web/node_modules/@asamuzakjp/dom-selector/node_modules/lru-cache/README.md, planner-web/node_modules/cssstyle/node_modules/lru-cache/README.md
+- Cluster 57: planner-solid/node_modules/@asamuzakjp/dom-selector/README.md, planner-solid/node_modules/croner/README.md, planner-web/node_modules/@asamuzakjp/dom-selector/README.md
+- Cluster 58: planner-solid/node_modules/@asamuzakjp/nwsapi/README.md, planner-web/node_modules/@asamuzakjp/nwsapi/README.md
+- Cluster 59: planner-solid/node_modules/@babel/code-frame/README.md, planner-solid/node_modules/@tanstack/directive-functions-plugin/node_modules/@babel/code-frame/README.md, planner-solid/node_modules/@tanstack/server-functions-plugin/node_modules/@babel/code-frame/README.md, planner-web/node_modules/@babel/code-frame/README.md
+- Cluster 60: planner-solid/node_modules/@babel/compat-data/README.md, planner-web/node_modules/@babel/compat-data/README.md
+- Cluster 61: planner-solid/node_modules/@babel/core/README.md, planner-web/node_modules/@babel/core/README.md
+- Cluster 62: planner-solid/node_modules/@babel/generator/README.md, planner-web/node_modules/@babel/generator/README.md
+- Cluster 63: planner-solid/node_modules/@babel/helper-compilation-targets/README.md, planner-web/node_modules/@babel/helper-compilation-targets/README.md
+- Cluster 64: planner-solid/node_modules/@babel/helper-globals/README.md, planner-web/node_modules/@babel/helper-globals/README.md
+- Cluster 65: planner-solid/node_modules/@babel/helper-module-imports/README.md, planner-web/node_modules/@babel/helper-module-imports/README.md
+- Cluster 66: planner-solid/node_modules/@babel/helper-module-transforms/README.md, planner-web/node_modules/@babel/helper-module-transforms/README.md
+- Cluster 67: planner-solid/node_modules/@babel/helper-plugin-utils/README.md, planner-web/node_modules/@babel/helper-plugin-utils/README.md
+- Cluster 68: planner-solid/node_modules/@babel/helper-string-parser/README.md, planner-web/node_modules/@babel/helper-string-parser/README.md
+- Cluster 69: planner-solid/node_modules/@babel/helper-validator-identifier/README.md, planner-web/node_modules/@babel/helper-validator-identifier/README.md
+- Cluster 70: planner-solid/node_modules/@babel/helper-validator-option/README.md, planner-solid/node_modules/@jridgewell/sourcemap-codec/README.md, planner-solid/node_modules/@parcel/watcher-wasm/node_modules/picomatch/README.md, planner-solid/node_modules/@parcel/watcher/node_modules/picomatch/README.md, planner-solid/node_modules/@rollup/plugin-commonjs/node_modules/picomatch/README.md, planner-solid/node_modules/@rollup/pluginutils/node_modules/picomatch/README.md, planner-solid/node_modules/@vercel/nft/node_modules/picomatch/README.md, planner-solid/node_modules/rollup-plugin-visualizer/node_modules/picomatch/README.md, planner-solid/node_modules/tinyglobby/node_modules/picomatch/README.md, planner-solid/node_modules/unimport/node_modules/picomatch/README.md, planner-solid/node_modules/unplugin-utils/node_modules/picomatch/README.md, planner-solid/node_modules/unplugin/node_modules/picomatch/README.md, planner-solid/node_modules/vite/node_modules/picomatch/README.md, planner-solid/node_modules/vitest/node_modules/picomatch/README.md, planner-web/node_modules/@babel/helper-validator-option/README.md, planner-web/node_modules/@jridgewell/sourcemap-codec/README.md
+- Cluster 71: planner-solid/node_modules/@babel/helpers/README.md, planner-web/node_modules/@babel/helpers/README.md
+- Cluster 72: planner-solid/node_modules/@babel/parser/CHANGELOG.md, planner-web/node_modules/@babel/parser/CHANGELOG.md
+- Cluster 73: planner-solid/node_modules/@babel/parser/README.md, planner-web/node_modules/@babel/parser/README.md
+- Cluster 74: planner-solid/node_modules/@babel/runtime/README.md, planner-web/node_modules/@babel/runtime/README.md
+- Cluster 75: planner-solid/node_modules/@babel/template/README.md, planner-web/node_modules/@babel/template/README.md
+- Cluster 76: planner-solid/node_modules/@babel/traverse/README.md, planner-web/node_modules/@babel/traverse/README.md
+- Cluster 77: planner-solid/node_modules/@babel/types/README.md, planner-web/node_modules/@babel/types/README.md
+- Cluster 78: planner-solid/node_modules/@csstools/color-helpers/CHANGELOG.md, planner-web/node_modules/@csstools/color-helpers/CHANGELOG.md
+- Cluster 79: planner-solid/node_modules/@csstools/color-helpers/LICENSE.md, planner-solid/node_modules/@csstools/css-syntax-patches-for-csstree/LICENSE.md, planner-web/node_modules/@csstools/color-helpers/LICENSE.md, planner-web/node_modules/@csstools/css-syntax-patches-for-csstree/LICENSE.md
+- Cluster 80: planner-solid/node_modules/@csstools/color-helpers/README.md, planner-solid/node_modules/@rollup/plugin-commonjs/README.md, planner-web/node_modules/@csstools/color-helpers/README.md
+- Cluster 81: planner-solid/node_modules/@csstools/css-calc/CHANGELOG.md, planner-web/node_modules/@csstools/css-calc/CHANGELOG.md
+- Cluster 82: planner-solid/node_modules/@csstools/css-calc/LICENSE.md, planner-solid/node_modules/@csstools/css-color-parser/LICENSE.md, planner-solid/node_modules/@csstools/css-parser-algorithms/LICENSE.md, planner-solid/node_modules/@csstools/css-tokenizer/LICENSE.md, planner-solid/node_modules/@poppinss/colors/LICENSE.md, planner-solid/node_modules/async-sema/license.md, planner-solid/node_modules/ms/license.md, planner-solid/node_modules/source-map-support/LICENSE.md, planner-web/node_modules/@csstools/css-calc/LICENSE.md, planner-web/node_modules/@csstools/css-color-parser/LICENSE.md, planner-web/node_modules/@csstools/css-parser-algorithms/LICENSE.md, planner-web/node_modules/@csstools/css-tokenizer/LICENSE.md, planner-web/node_modules/fast-levenshtein/LICENSE.md, planner-web/node_modules/ms/license.md, planner-web/node_modules/ts-api-utils/LICENSE.md
+- Cluster 83: planner-solid/node_modules/@csstools/css-calc/README.md, planner-web/node_modules/@csstools/css-calc/README.md
+- Cluster 84: planner-solid/node_modules/@csstools/css-color-parser/CHANGELOG.md, planner-web/node_modules/@csstools/css-color-parser/CHANGELOG.md
+- Cluster 85: planner-solid/node_modules/@csstools/css-color-parser/README.md, planner-web/node_modules/@csstools/css-color-parser/README.md
+- Cluster 86: planner-solid/node_modules/@csstools/css-parser-algorithms/CHANGELOG.md, planner-web/node_modules/@csstools/css-parser-algorithms/CHANGELOG.md
+- Cluster 87: planner-solid/node_modules/@csstools/css-parser-algorithms/README.md, planner-web/node_modules/@csstools/css-parser-algorithms/README.md
+- Cluster 88: planner-solid/node_modules/@csstools/css-syntax-patches-for-csstree/README.md, planner-web/node_modules/@csstools/css-syntax-patches-for-csstree/README.md
+- Cluster 89: planner-solid/node_modules/@csstools/css-tokenizer/CHANGELOG.md, planner-web/node_modules/@csstools/css-tokenizer/CHANGELOG.md
+- Cluster 90: planner-solid/node_modules/@csstools/css-tokenizer/README.md, planner-web/node_modules/@csstools/css-tokenizer/README.md
+- Cluster 91: planner-solid/node_modules/@esbuild/linux-x64/README.md, planner-solid/node_modules/nitropack/node_modules/@esbuild/linux-x64/README.md, planner-solid/node_modules/vite/node_modules/@esbuild/linux-x64/README.md, planner-web/node_modules/@esbuild/linux-x64/README.md
+- Cluster 92: planner-solid/node_modules/@jridgewell/gen-mapping/README.md, planner-web/node_modules/@jridgewell/gen-mapping/README.md
+- Cluster 93: planner-solid/node_modules/@jridgewell/remapping/README.md, planner-web/node_modules/@jridgewell/remapping/README.md
+- Cluster 94: planner-solid/node_modules/@jridgewell/resolve-uri/README.md, planner-web/node_modules/@jridgewell/resolve-uri/README.md
+- Cluster 95: planner-solid/node_modules/@jridgewell/trace-mapping/README.md, planner-web/node_modules/@jridgewell/trace-mapping/README.md
+- Cluster 96: planner-solid/node_modules/@kobalte/core/LICENSE.md, planner-solid/node_modules/@poppinss/dumper/LICENSE.md, planner-solid/node_modules/@poppinss/exception/LICENSE.md, planner-solid/node_modules/balanced-match/LICENSE.md, planner-solid/node_modules/node-addon-api/LICENSE.md, planner-solid/node_modules/node-fetch/LICENSE.md, planner-solid/node_modules/youch-core/LICENSE.md, planner-solid/node_modules/youch/LICENSE.md, planner-web/node_modules/@typescript-eslint/typescript-estree/node_modules/balanced-match/LICENSE.md
+- Cluster 97: planner-solid/node_modules/@kobalte/utils/LICENSE.md, planner-solid/node_modules/bindings/LICENSE.md
+- Cluster 98: planner-solid/node_modules/@mapbox/node-pre-gyp/README.md, planner-solid/node_modules/data-urls/node_modules/whatwg-mimetype/README.md, planner-web/node_modules/whatwg-mimetype/README.md
+- Cluster 99: planner-solid/node_modules/@mapbox/node-pre-gyp/node_modules/semver/README.md, planner-solid/node_modules/nitropack/node_modules/semver/README.md, planner-web/node_modules/@typescript-eslint/typescript-estree/node_modules/semver/README.md
+- Cluster 100: planner-solid/node_modules/@parcel/watcher-wasm/README.md, planner-solid/node_modules/@parcel/watcher/README.md
+- Cluster 101: planner-solid/node_modules/@playwright/test/README.md, planner-solid/node_modules/playwright/README.md, planner-web/node_modules/@playwright/test/README.md, planner-web/node_modules/playwright/README.md
+- Cluster 102: planner-solid/node_modules/@rollup/plugin-commonjs/node_modules/fdir/README.md, planner-solid/node_modules/tinyglobby/node_modules/fdir/README.md, planner-solid/node_modules/vite/node_modules/fdir/README.md, planner-web/node_modules/eslint-plugin-react-refresh/README.md, planner-web/node_modules/fdir/README.md
+- Cluster 103: planner-solid/node_modules/@rollup/rollup-linux-x64-gnu/README.md, planner-web/node_modules/@rollup/rollup-linux-x64-gnu/README.md
+- Cluster 104: planner-solid/node_modules/@rollup/rollup-linux-x64-musl/README.md, planner-web/node_modules/@rollup/rollup-linux-x64-musl/README.md
+- Cluster 105: planner-solid/node_modules/@shikijs/vscode-textmate/LICENSE.md, planner-solid/node_modules/async-sema/license.md, planner-solid/node_modules/ms/license.md, planner-solid/node_modules/source-map-support/LICENSE.md, planner-web/node_modules/dpop/LICENSE.md, planner-web/node_modules/es-cookie/LICENSE.md, planner-web/node_modules/jose/LICENSE.md, planner-web/node_modules/ms/license.md, planner-web/node_modules/oauth4webapi/LICENSE.md, planner-web/node_modules/openid-client/LICENSE.md, planner-web/node_modules/ts-api-utils/LICENSE.md
+- Cluster 106: planner-solid/node_modules/@solid-primitives/keyed/README.md, planner-solid/node_modules/@solid-primitives/static-store/README.md
+- Cluster 107: planner-solid/node_modules/@standard-schema/spec/README.md, planner-web/node_modules/@standard-schema/spec/README.md
+- Cluster 108: planner-solid/node_modules/@testing-library/dom/README.md, planner-web/node_modules/@testing-library/dom/README.md, planner-web/node_modules/@testing-library/react/README.md
+- Cluster 109: planner-solid/node_modules/@testing-library/jest-dom/CHANGELOG.md, planner-web/node_modules/@testing-library/jest-dom/CHANGELOG.md
+- Cluster 110: planner-solid/node_modules/@testing-library/jest-dom/README.md, planner-web/node_modules/@testing-library/jest-dom/README.md
+- Cluster 111: planner-solid/node_modules/@testing-library/jest-dom/node_modules/dom-accessibility-api/LICENSE.md, planner-solid/node_modules/dom-accessibility-api/LICENSE.md, planner-solid/node_modules/esbuild/LICENSE.md, planner-solid/node_modules/nitropack/node_modules/esbuild/LICENSE.md, planner-solid/node_modules/vite/node_modules/esbuild/LICENSE.md, planner-web/node_modules/@testing-library/jest-dom/node_modules/dom-accessibility-api/LICENSE.md, planner-web/node_modules/dom-accessibility-api/LICENSE.md, planner-web/node_modules/esbuild/LICENSE.md, planner-web/node_modules/react-router-dom/LICENSE.md, planner-web/node_modules/react-router/LICENSE.md
+- Cluster 112: planner-solid/node_modules/@testing-library/jest-dom/node_modules/dom-accessibility-api/README.md, planner-solid/node_modules/dom-accessibility-api/README.md, planner-web/node_modules/@testing-library/jest-dom/node_modules/dom-accessibility-api/README.md, planner-web/node_modules/dom-accessibility-api/README.md
+- Cluster 113: planner-solid/node_modules/@types/aria-query/README.md, planner-web/node_modules/@types/aria-query/README.md
+- Cluster 114: planner-solid/node_modules/@types/babel__core/README.md, planner-web/node_modules/@types/babel__core/README.md
+- Cluster 115: planner-solid/node_modules/@types/babel__generator/README.md, planner-web/node_modules/@types/babel__generator/README.md
+- Cluster 116: planner-solid/node_modules/@types/babel__template/README.md, planner-web/node_modules/@types/babel__template/README.md
+- Cluster 117: planner-solid/node_modules/@types/babel__traverse/README.md, planner-web/node_modules/@types/babel__traverse/README.md
+- Cluster 118: planner-solid/node_modules/@types/chai/README.md, planner-web/node_modules/@types/chai/README.md
+- Cluster 119: planner-solid/node_modules/@types/deep-eql/README.md, planner-web/node_modules/@types/deep-eql/README.md
+- Cluster 120: planner-solid/node_modules/@types/estree/README.md, planner-web/node_modules/@types/estree/README.md
+- Cluster 121: planner-solid/node_modules/@types/hast/README.md, planner-web/node_modules/@types/hast/README.md
+- Cluster 122: planner-solid/node_modules/@types/mdast/README.md, planner-web/node_modules/@types/mdast/README.md
+- Cluster 123: planner-solid/node_modules/@types/unist/README.md, planner-web/node_modules/@types/unist/README.md
+- Cluster 124: planner-solid/node_modules/@ungap/structured-clone/README.md, planner-web/node_modules/@ungap/structured-clone/README.md
+- Cluster 125: planner-solid/node_modules/@vercel/nft/readme.md, planner-solid/node_modules/exsolve/README.md, planner-solid/node_modules/tar-stream/README.md, planner-solid/node_modules/unctx/README.md, planner-web/node_modules/keyv/README.md
+- Cluster 126: planner-solid/node_modules/@vitest/mocker/node_modules/estree-walker/README.md, planner-solid/node_modules/unctx/node_modules/estree-walker/README.md, planner-solid/node_modules/unimport/node_modules/estree-walker/README.md, planner-web/node_modules/estree-walker/README.md
+- Cluster 127: planner-solid/node_modules/acorn/CHANGELOG.md, planner-web/node_modules/acorn/CHANGELOG.md
+- Cluster 128: planner-solid/node_modules/acorn/README.md, planner-web/node_modules/acorn/README.md
+- Cluster 129: planner-solid/node_modules/agent-base/README.md, planner-web/node_modules/agent-base/README.md
+- Cluster 130: planner-solid/node_modules/anymatch/README.md, planner-solid/node_modules/regex-recursion/README.md
+- Cluster 131: planner-solid/node_modules/archiver-utils/node_modules/balanced-match/LICENSE.md, planner-solid/node_modules/hookable/LICENSE.md, planner-solid/node_modules/readdir-glob/node_modules/balanced-match/LICENSE.md, planner-web/node_modules/balanced-match/LICENSE.md
+- Cluster 132: planner-solid/node_modules/archiver-utils/node_modules/balanced-match/README.md, planner-solid/node_modules/readdir-glob/node_modules/balanced-match/README.md, planner-web/node_modules/balanced-match/README.md
+- Cluster 133: planner-solid/node_modules/archiver-utils/node_modules/brace-expansion/README.md, planner-solid/node_modules/isarray/README.md, planner-solid/node_modules/readdir-glob/node_modules/brace-expansion/README.md, planner-web/node_modules/brace-expansion/README.md
+- Cluster 134: planner-solid/node_modules/archiver-utils/node_modules/glob/README.md, planner-solid/node_modules/archiver-utils/node_modules/minimatch/README.md, planner-solid/node_modules/glob/README.md, planner-solid/node_modules/minimatch/README.md, planner-web/node_modules/@typescript-eslint/typescript-estree/node_modules/minimatch/README.md
+- Cluster 135: planner-solid/node_modules/archiver-utils/node_modules/path-scurry/README.md, planner-solid/node_modules/path-scurry/README.md
+- Cluster 136: planner-solid/node_modules/aria-query/CHANGELOG.md, planner-web/node_modules/aria-query/CHANGELOG.md
+- Cluster 137: planner-solid/node_modules/aria-query/README.md, planner-web/node_modules/aria-query/README.md
+- Cluster 138: planner-solid/node_modules/assertion-error/README.md, planner-web/node_modules/assertion-error/README.md
+- Cluster 139: planner-solid/node_modules/async/CHANGELOG.md, planner-web/node_modules/eslint/README.md
+- Cluster 140: planner-solid/node_modules/balanced-match/README.md, planner-web/node_modules/@typescript-eslint/typescript-estree/node_modules/balanced-match/README.md
+- Cluster 141: planner-solid/node_modules/baseline-browser-mapping/README.md, planner-web/node_modules/baseline-browser-mapping/README.md
+- Cluster 142: planner-solid/node_modules/bidi-js/README.md, planner-solid/node_modules/tar/README.md, planner-web/node_modules/bidi-js/README.md
+- Cluster 143: planner-solid/node_modules/brace-expansion/README.md, planner-web/node_modules/@typescript-eslint/typescript-estree/node_modules/brace-expansion/README.md
+- Cluster 144: planner-solid/node_modules/braces/README.md, planner-solid/node_modules/ioredis/README.md
+- Cluster 145: planner-solid/node_modules/browserslist/README.md, planner-web/node_modules/browserslist/README.md
+- Cluster 146: planner-solid/node_modules/caniuse-lite/README.md, planner-web/node_modules/caniuse-lite/README.md
+- Cluster 147: planner-solid/node_modules/ccount/readme.md, planner-web/node_modules/ccount/readme.md
+- Cluster 148: planner-solid/node_modules/chai/README.md, planner-web/node_modules/chai/README.md
+- Cluster 149: planner-solid/node_modules/character-entities-html4/readme.md, planner-web/node_modules/character-entities-html4/readme.md
+- Cluster 150: planner-solid/node_modules/character-entities-legacy/readme.md, planner-solid/node_modules/space-separated-tokens/readme.md, planner-web/node_modules/character-entities-legacy/readme.md, planner-web/node_modules/space-separated-tokens/readme.md
+- Cluster 151: planner-solid/node_modules/chokidar/README.md, planner-solid/node_modules/node-addon-api/README.md, planner-web/node_modules/react-router/CHANGELOG.md
+- Cluster 152: planner-solid/node_modules/chownr/LICENSE.md, planner-solid/node_modules/glob/LICENSE.md, planner-solid/node_modules/package-json-from-dist/LICENSE.md, planner-solid/node_modules/tar/node_modules/yallist/LICENSE.md
+- Cluster 153: planner-solid/node_modules/cliui/README.md, planner-solid/node_modules/youch/README.md
+- Cluster 154: planner-solid/node_modules/color-convert/CHANGELOG.md, planner-web/node_modules/color-convert/CHANGELOG.md
+- Cluster 155: planner-solid/node_modules/color-convert/README.md, planner-web/node_modules/color-convert/README.md
+- Cluster 156: planner-solid/node_modules/color-name/README.md, planner-web/node_modules/color-name/README.md
+- Cluster 157: planner-solid/node_modules/comma-separated-tokens/readme.md, planner-web/node_modules/comma-separated-tokens/readme.md
+- Cluster 158: planner-solid/node_modules/commander/CHANGELOG.md, planner-solid/node_modules/mime-db/HISTORY.md, planner-solid/node_modules/toidentifier/HISTORY.md, planner-web/node_modules/extend/CHANGELOG.md
+- Cluster 159: planner-solid/node_modules/commander/Readme.md, planner-web/node_modules/commander/Readme.md
+- Cluster 160: planner-solid/node_modules/confbox/README.md, planner-solid/node_modules/mlly/node_modules/confbox/README.md
+- Cluster 161: planner-solid/node_modules/confbox/dist/THIRD-PARTY-LICENSES.md, planner-solid/node_modules/rollup/LICENSE.md, planner-solid/node_modules/vite/LICENSE.md, planner-solid/node_modules/vitest/LICENSE.md, planner-web/node_modules/rollup/LICENSE.md, planner-web/node_modules/vite/LICENSE.md
+- Cluster 162: planner-solid/node_modules/convert-source-map/README.md, planner-web/node_modules/convert-source-map/README.md
+- Cluster 163: planner-solid/node_modules/cross-spawn/README.md, planner-web/node_modules/cross-spawn/README.md
+- Cluster 164: planner-solid/node_modules/css-tree/README.md, planner-web/node_modules/css-tree/README.md
+- Cluster 165: planner-solid/node_modules/css.escape/README.md, planner-web/node_modules/css.escape/README.md
+- Cluster 166: planner-solid/node_modules/cssstyle/README.md, planner-web/node_modules/cssstyle/README.md
+- Cluster 167: planner-solid/node_modules/csstype/README.md, planner-web/node_modules/csstype/README.md
+- Cluster 168: planner-solid/node_modules/data-urls/README.md, planner-web/node_modules/data-urls/README.md
+- Cluster 169: planner-solid/node_modules/data-urls/node_modules/tr46/LICENSE.md, planner-solid/node_modules/hookable/LICENSE.md, planner-solid/node_modules/jsdom/node_modules/tr46/LICENSE.md, planner-solid/node_modules/w3c-xmlserializer/LICENSE.md, planner-web/node_modules/tr46/LICENSE.md, planner-web/node_modules/w3c-xmlserializer/LICENSE.md
+- Cluster 170: planner-solid/node_modules/data-urls/node_modules/tr46/README.md, planner-solid/node_modules/jsdom/node_modules/tr46/README.md, planner-web/node_modules/tr46/README.md
+- Cluster 171: planner-solid/node_modules/data-urls/node_modules/webidl-conversions/LICENSE.md, planner-solid/node_modules/jsdom/node_modules/webidl-conversions/LICENSE.md, planner-solid/node_modules/webidl-conversions/LICENSE.md, planner-web/node_modules/webidl-conversions/LICENSE.md
+- Cluster 172: planner-solid/node_modules/data-urls/node_modules/webidl-conversions/README.md, planner-solid/node_modules/jsdom/node_modules/webidl-conversions/README.md, planner-web/node_modules/webidl-conversions/README.md
+- Cluster 173: planner-solid/node_modules/data-urls/node_modules/whatwg-url/README.md, planner-solid/node_modules/jsdom/node_modules/whatwg-url/README.md, planner-web/node_modules/whatwg-url/README.md
+- Cluster 174: planner-solid/node_modules/debug/README.md, planner-solid/node_modules/micromark-util-sanitize-uri/readme.md, planner-web/node_modules/debug/README.md, planner-web/node_modules/micromark-util-sanitize-uri/readme.md
+- Cluster 175: planner-solid/node_modules/decimal.js/LICENCE.md, planner-web/node_modules/decimal.js/LICENCE.md
+- Cluster 176: planner-solid/node_modules/define-lazy-prop/readme.md, planner-web/node_modules/@eslint/core/README.md
+- Cluster 177: planner-solid/node_modules/denque/README.md, planner-solid/node_modules/nanoid/README.md, planner-web/node_modules/nanoid/README.md
+- Cluster 178: planner-solid/node_modules/depd/History.md, planner-solid/node_modules/etag/HISTORY.md, planner-solid/node_modules/file-uri-to-path/History.md, planner-solid/node_modules/fresh/HISTORY.md, planner-solid/node_modules/http-errors/HISTORY.md, planner-solid/node_modules/mime-types/HISTORY.md, planner-solid/node_modules/on-finished/HISTORY.md, planner-solid/node_modules/parseurl/HISTORY.md, planner-solid/node_modules/range-parser/HISTORY.md, planner-solid/node_modules/statuses/HISTORY.md, planner-solid/node_modules/toidentifier/HISTORY.md, planner-solid/node_modules/util-deprecate/History.md, planner-web/node_modules/extend/CHANGELOG.md
+- Cluster 179: planner-solid/node_modules/dequal/readme.md, planner-web/node_modules/dequal/readme.md
+- Cluster 180: planner-solid/node_modules/devlop/readme.md, planner-web/node_modules/devlop/readme.md
+- Cluster 181: planner-solid/node_modules/diff/README.md, planner-web/node_modules/iconv-lite/Changelog.md
+- Cluster 182: planner-solid/node_modules/diff/release-notes.md, planner-web/node_modules/jsdom/README.md
+- Cluster 183: planner-solid/node_modules/dotenv/README-es.md, planner-web/node_modules/ajv/README.md
+- Cluster 184: planner-solid/node_modules/dotenv/README.md, planner-web/node_modules/flatted/README.md
+- Cluster 185: planner-solid/node_modules/electron-to-chromium/README.md, planner-web/node_modules/electron-to-chromium/README.md
+- Cluster 186: planner-solid/node_modules/entities/readme.md, planner-web/node_modules/entities/readme.md
+- Cluster 187: planner-solid/node_modules/es-module-lexer/README.md, planner-solid/node_modules/node-gyp-build/README.md, planner-web/node_modules/es-module-lexer/README.md
+- Cluster 188: planner-solid/node_modules/esbuild/README.md, planner-solid/node_modules/nitropack/node_modules/esbuild/README.md, planner-solid/node_modules/vite/node_modules/esbuild/README.md, planner-web/node_modules/esbuild/README.md
+- Cluster 189: planner-solid/node_modules/escalade/readme.md, planner-web/node_modules/escalade/readme.md
+- Cluster 190: planner-solid/node_modules/event-target-shim/README.md, planner-web/node_modules/micromark-util-resolve-all/readme.md
+- Cluster 191: planner-solid/node_modules/expect-type/README.md, planner-web/node_modules/expect-type/README.md
+- Cluster 192: planner-solid/node_modules/expect-type/SECURITY.md, planner-web/node_modules/expect-type/SECURITY.md
+- Cluster 193: planner-solid/node_modules/fastq/SECURITY.md, planner-solid/node_modules/reusify/SECURITY.md
+- Cluster 194: planner-solid/node_modules/gensync/README.md, planner-solid/node_modules/tldts/README.md, planner-web/node_modules/gensync/README.md, planner-web/node_modules/tldts/README.md
+- Cluster 195: planner-solid/node_modules/giget/node_modules/citty/README.md, planner-solid/node_modules/listhen/node_modules/citty/README.md, planner-solid/node_modules/untun/node_modules/citty/README.md, planner-solid/node_modules/untyped/node_modules/citty/README.md
+- Cluster 196: planner-solid/node_modules/h3/README.md, planner-solid/node_modules/listhen/node_modules/h3/README.md, planner-solid/node_modules/nitropack/node_modules/h3/README.md, planner-solid/node_modules/unstorage/node_modules/h3/README.md
+- Cluster 197: planner-solid/node_modules/hast-util-whitespace/readme.md, planner-web/node_modules/hast-util-whitespace/readme.md
+- Cluster 198: planner-solid/node_modules/hookable/README.md, planner-web/node_modules/micromark-core-commonmark/readme.md
+- Cluster 199: planner-solid/node_modules/html-encoding-sniffer/README.md, planner-web/node_modules/html-encoding-sniffer/README.md
+- Cluster 200: planner-solid/node_modules/html-to-image/README.md, planner-web/node_modules/remark-rehype/readme.md
+- Cluster 201: planner-solid/node_modules/http-proxy-agent/README.md, planner-web/node_modules/http-proxy-agent/README.md
+- Cluster 202: planner-solid/node_modules/https-proxy-agent/README.md, planner-web/node_modules/https-proxy-agent/README.md
+- Cluster 203: planner-solid/node_modules/ignore/README.md, planner-web/node_modules/@typescript-eslint/eslint-plugin/node_modules/ignore/README.md
+- Cluster 204: planner-solid/node_modules/indent-string/readme.md, planner-web/node_modules/indent-string/readme.md
+- Cluster 205: planner-solid/node_modules/iron-webcrypto/LICENSE.md, planner-solid/node_modules/ms/license.md, planner-solid/node_modules/source-map-support/LICENSE.md, planner-web/node_modules/fast-levenshtein/LICENSE.md, planner-web/node_modules/ms/license.md, planner-web/node_modules/ts-api-utils/LICENSE.md
+- Cluster 206: planner-solid/node_modules/is-extglob/README.md, planner-web/node_modules/is-extglob/README.md
+- Cluster 207: planner-solid/node_modules/is-glob/README.md, planner-solid/node_modules/listhen/node_modules/crossws/README.md, planner-solid/node_modules/nitropack/node_modules/crossws/README.md, planner-solid/node_modules/unstorage/node_modules/crossws/README.md, planner-web/node_modules/is-glob/README.md
+- Cluster 208: planner-solid/node_modules/is-potential-custom-element-name/README.md, planner-web/node_modules/is-potential-custom-element-name/README.md
+- Cluster 209: planner-solid/node_modules/isexe/README.md, planner-web/node_modules/isexe/README.md
+- Cluster 210: planner-solid/node_modules/js-tokens/CHANGELOG.md, planner-web/node_modules/js-tokens/CHANGELOG.md
+- Cluster 211: planner-solid/node_modules/js-tokens/README.md, planner-web/node_modules/js-tokens/README.md
+- Cluster 212: planner-solid/node_modules/jsdom/README.md, planner-web/node_modules/jsdom/README.md
+- Cluster 213: planner-solid/node_modules/jsdom/node_modules/parse5/README.md, planner-solid/node_modules/parse5/README.md, planner-web/node_modules/parse5/README.md
+- Cluster 214: planner-solid/node_modules/jsesc/README.md, planner-web/node_modules/jsesc/README.md
+- Cluster 215: planner-solid/node_modules/json5/LICENSE.md, planner-web/node_modules/json5/LICENSE.md
+- Cluster 216: planner-solid/node_modules/json5/README.md, planner-web/node_modules/json5/README.md
+- Cluster 217: planner-solid/node_modules/lazystream/node_modules/safe-buffer/README.md, planner-solid/node_modules/safe-buffer/README.md
+- Cluster 218: planner-solid/node_modules/lazystream/node_modules/string_decoder/README.md, planner-solid/node_modules/string_decoder/README.md
+- Cluster 219: planner-solid/node_modules/listhen/README.md, planner-web/node_modules/jose/README.md
+- Cluster 220: planner-solid/node_modules/listhen/node_modules/cookie-es/README.md, planner-solid/node_modules/nitropack/node_modules/h3/node_modules/cookie-es/README.md, planner-solid/node_modules/unstorage/node_modules/cookie-es/README.md
+- Cluster 221: planner-solid/node_modules/listhen/node_modules/pathe/README.md, planner-solid/node_modules/untun/node_modules/pathe/README.md
+- Cluster 222: planner-solid/node_modules/listhen/node_modules/std-env/README.md, planner-web/node_modules/std-env/README.md
+- Cluster 223: planner-solid/node_modules/lodash/README.md, planner-web/node_modules/lodash/README.md
+- Cluster 224: planner-solid/node_modules/lru-cache/README.md, planner-web/node_modules/lru-cache/README.md
+- Cluster 225: planner-solid/node_modules/lz-string/README.md, planner-web/node_modules/lz-string/README.md
+- Cluster 226: planner-solid/node_modules/magic-string/README.md, planner-web/node_modules/levn/README.md, planner-web/node_modules/magic-string/README.md
+- Cluster 227: planner-solid/node_modules/mdast-util-to-hast/readme.md, planner-web/node_modules/mdast-util-to-hast/readme.md
+- Cluster 228: planner-solid/node_modules/mdn-data/README.md, planner-web/node_modules/mdn-data/README.md
+- Cluster 229: planner-solid/node_modules/micromark-util-character/readme.md, planner-web/node_modules/micromark-util-character/readme.md
+- Cluster 230: planner-solid/node_modules/micromark-util-encode/readme.md, planner-web/node_modules/micromark-util-encode/readme.md
+- Cluster 231: planner-solid/node_modules/micromark-util-symbol/readme.md, planner-web/node_modules/micromark-util-symbol/readme.md
+- Cluster 232: planner-solid/node_modules/micromark-util-types/readme.md, planner-web/node_modules/micromark-util-types/readme.md, planner-web/node_modules/micromark/readme.md
+- Cluster 233: planner-solid/node_modules/micromatch/README.md, planner-web/node_modules/@jridgewell/sourcemap-codec/README.md
+- Cluster 234: planner-solid/node_modules/mime-types/README.md, planner-solid/node_modules/ufo/README.md
+- Cluster 235: planner-solid/node_modules/min-indent/readme.md, planner-web/node_modules/min-indent/readme.md
+- Cluster 236: planner-solid/node_modules/ms/readme.md, planner-web/node_modules/ms/readme.md
+- Cluster 237: planner-solid/node_modules/node-releases/README.md, planner-web/node_modules/node-releases/README.md
+- Cluster 238: planner-solid/node_modules/obug/README.md, planner-web/node_modules/obug/README.md
+- Cluster 239: planner-solid/node_modules/on-finished/README.md, planner-solid/node_modules/playwright/lib/agents/playwright-test-planner.agent.md, planner-web/node_modules/playwright/lib/agents/playwright-test-planner.agent.md
+- Cluster 240: planner-solid/node_modules/open/readme.md, planner-solid/node_modules/tar/README.md, planner-solid/node_modules/unstorage/node_modules/crossws/README.md, planner-web/node_modules/d3-timer/README.md
+- Cluster 241: planner-solid/node_modules/path-key/readme.md, planner-web/node_modules/path-key/readme.md
+- Cluster 242: planner-solid/node_modules/pathe/README.md, planner-web/node_modules/pathe/README.md
+- Cluster 243: planner-solid/node_modules/picocolors/README.md, planner-web/node_modules/picocolors/README.md
+- Cluster 244: planner-solid/node_modules/playwright-core/README.md, planner-web/node_modules/playwright-core/README.md
+- Cluster 245: planner-solid/node_modules/playwright/lib/agents/playwright-test-coverage.prompt.md, planner-web/node_modules/playwright/lib/agents/playwright-test-coverage.prompt.md
+- Cluster 246: planner-solid/node_modules/playwright/lib/agents/playwright-test-generate.prompt.md, planner-web/node_modules/playwright/lib/agents/playwright-test-generate.prompt.md
+- Cluster 247: planner-solid/node_modules/playwright/lib/agents/playwright-test-generator.agent.md, planner-web/node_modules/playwright/lib/agents/playwright-test-generator.agent.md
+- Cluster 248: planner-solid/node_modules/playwright/lib/agents/playwright-test-heal.prompt.md, planner-web/node_modules/playwright/lib/agents/playwright-test-heal.prompt.md
+- Cluster 249: planner-solid/node_modules/playwright/lib/agents/playwright-test-healer.agent.md, planner-web/node_modules/playwright/lib/agents/playwright-test-healer.agent.md
+- Cluster 250: planner-solid/node_modules/playwright/lib/agents/playwright-test-plan.prompt.md, planner-web/node_modules/playwright/lib/agents/playwright-test-plan.prompt.md
+- Cluster 251: planner-solid/node_modules/postcss/README.md, planner-web/node_modules/postcss/README.md
+- Cluster 252: planner-solid/node_modules/pretty-format/README.md, planner-web/node_modules/pretty-format/README.md
+- Cluster 253: planner-solid/node_modules/pretty-format/node_modules/ansi-regex/readme.md, planner-solid/node_modules/string-width-cjs/node_modules/ansi-regex/readme.md, planner-solid/node_modules/strip-ansi-cjs/node_modules/ansi-regex/readme.md, planner-solid/node_modules/wrap-ansi-cjs/node_modules/ansi-regex/readme.md, planner-web/node_modules/ansi-regex/readme.md
+- Cluster 254: planner-solid/node_modules/pretty-format/node_modules/ansi-styles/readme.md, planner-web/node_modules/pretty-format/node_modules/ansi-styles/readme.md
+- Cluster 255: planner-solid/node_modules/property-information/readme.md, planner-web/node_modules/property-information/readme.md
+- Cluster 256: planner-solid/node_modules/punycode/README.md, planner-web/node_modules/punycode/README.md
+- Cluster 257: planner-solid/node_modules/quansync/LICENSE.md, planner-solid/node_modules/util-deprecate/README.md, planner-web/node_modules/fast-levenshtein/LICENSE.md
+- Cluster 258: planner-solid/node_modules/react-is/README.md, planner-web/node_modules/react-is/README.md
+- Cluster 259: planner-solid/node_modules/redent/readme.md, planner-web/node_modules/redent/readme.md
+- Cluster 260: planner-solid/node_modules/require-from-string/readme.md, planner-web/node_modules/require-from-string/readme.md
+- Cluster 261: planner-solid/node_modules/resolve-from/readme.md, planner-web/node_modules/import-fresh/readme.md
+- Cluster 262: planner-solid/node_modules/saxes/README.md, planner-web/node_modules/saxes/README.md
+- Cluster 263: planner-solid/node_modules/semver/README.md, planner-web/node_modules/semver/README.md
+- Cluster 264: planner-solid/node_modules/shebang-command/readme.md, planner-web/node_modules/shebang-command/readme.md
+- Cluster 265: planner-solid/node_modules/shebang-regex/readme.md, planner-web/node_modules/shebang-regex/readme.md
+- Cluster 266: planner-solid/node_modules/siginfo/README.md, planner-web/node_modules/siginfo/README.md
+- Cluster 267: planner-solid/node_modules/source-map-js/README.md, planner-solid/node_modules/source-map-support/node_modules/source-map/README.md, planner-web/node_modules/source-map-js/README.md
+- Cluster 268: planner-solid/node_modules/stackback/README.md, planner-web/node_modules/stackback/README.md
+- Cluster 269: planner-solid/node_modules/string-width-cjs/node_modules/emoji-regex/README.md, planner-solid/node_modules/wrap-ansi-cjs/node_modules/emoji-regex/README.md
+- Cluster 270: planner-solid/node_modules/string-width-cjs/node_modules/strip-ansi/readme.md, planner-solid/node_modules/strip-ansi-cjs/readme.md, planner-solid/node_modules/wrap-ansi-cjs/node_modules/strip-ansi/readme.md
+- Cluster 271: planner-solid/node_modules/string-width-cjs/readme.md, planner-solid/node_modules/wrap-ansi-cjs/node_modules/string-width/readme.md
+- Cluster 272: planner-solid/node_modules/stringify-entities/readme.md, planner-web/node_modules/stringify-entities/readme.md
+- Cluster 273: planner-solid/node_modules/strip-indent/readme.md, planner-web/node_modules/strip-indent/readme.md
+- Cluster 274: planner-solid/node_modules/symbol-tree/README.md, planner-web/node_modules/symbol-tree/README.md
+- Cluster 275: planner-solid/node_modules/tar/node_modules/yallist/README.md, planner-solid/node_modules/yallist/README.md, planner-web/node_modules/yallist/README.md
+- Cluster 276: planner-solid/node_modules/terracotta/README.md, planner-web/node_modules/@types/node/README.md
+- Cluster 277: planner-solid/node_modules/tinybench/README.md, planner-web/node_modules/tinybench/README.md
+- Cluster 278: planner-solid/node_modules/tinyexec/README.md, planner-web/node_modules/tinyexec/README.md
+- Cluster 279: planner-solid/node_modules/tinyglobby/README.md, planner-web/node_modules/tinyglobby/README.md
+- Cluster 280: planner-solid/node_modules/tinyrainbow/README.md, planner-web/node_modules/tinyrainbow/README.md
+- Cluster 281: planner-solid/node_modules/tldts-core/README.md, planner-web/node_modules/tldts-core/README.md
+- Cluster 282: planner-solid/node_modules/tough-cookie/README.md, planner-web/node_modules/tough-cookie/README.md
+- Cluster 283: planner-solid/node_modules/trim-lines/readme.md, planner-web/node_modules/trim-lines/readme.md
+- Cluster 284: planner-solid/node_modules/unimport/README.md, planner-solid/node_modules/unimport/node_modules/unplugin/README.md
+- Cluster 285: planner-solid/node_modules/unist-util-position/readme.md, planner-web/node_modules/unist-util-position/readme.md
+- Cluster 286: planner-solid/node_modules/unist-util-stringify-position/readme.md, planner-web/node_modules/unist-util-stringify-position/readme.md
+- Cluster 287: planner-solid/node_modules/unist-util-visit-parents/readme.md, planner-web/node_modules/unist-util-visit-parents/readme.md
+- Cluster 288: planner-solid/node_modules/unist-util-visit/readme.md, planner-web/node_modules/micromark-util-subtokenize/readme.md, planner-web/node_modules/unist-util-visit/readme.md
+- Cluster 289: planner-solid/node_modules/update-browserslist-db/README.md, planner-web/node_modules/update-browserslist-db/README.md
+- Cluster 290: planner-solid/node_modules/vfile-message/readme.md, planner-web/node_modules/vfile-message/readme.md
+- Cluster 291: planner-solid/node_modules/vfile/readme.md, planner-web/node_modules/vfile/readme.md
+- Cluster 292: planner-solid/node_modules/vite/README.md, planner-web/node_modules/vite/README.md
+- Cluster 293: planner-solid/node_modules/w3c-xmlserializer/README.md, planner-web/node_modules/w3c-xmlserializer/README.md
+- Cluster 294: planner-solid/node_modules/which/CHANGELOG.md, planner-web/node_modules/which/CHANGELOG.md
+- Cluster 295: planner-solid/node_modules/which/README.md, planner-web/node_modules/which/README.md
+- Cluster 296: planner-solid/node_modules/why-is-node-running/README.md, planner-web/node_modules/why-is-node-running/README.md
+- Cluster 297: planner-solid/node_modules/wrap-ansi-cjs/node_modules/ansi-styles/readme.md, planner-web/node_modules/ansi-styles/readme.md
+- Cluster 298: planner-solid/node_modules/xml-name-validator/README.md, planner-web/node_modules/xml-name-validator/README.md
+- Cluster 299: planner-solid/node_modules/xmlchars/README.md, planner-web/node_modules/xmlchars/README.md
+- Cluster 300: planner-solid/node_modules/zwitch/readme.md, planner-web/node_modules/zwitch/readme.md
+- Cluster 301: planner-web/node_modules/@types/d3-axis/README.md, planner-web/node_modules/@types/d3-drag/README.md
+- Cluster 302: planner-web/node_modules/@types/d3-brush/README.md, planner-web/node_modules/@types/d3-hierarchy/README.md
+- Cluster 303: planner-web/node_modules/@types/d3-dispatch/README.md, planner-web/node_modules/@types/d3-random/README.md
+- Cluster 304: planner-web/node_modules/@types/d3-ease/README.md, planner-web/node_modules/@types/d3-path/README.md
+- Cluster 305: planner-web/node_modules/@types/d3-force/README.md, planner-web/node_modules/@types/d3-timer/README.md
+- Cluster 306: planner-web/node_modules/@typescript-eslint/eslint-plugin/README.md, planner-web/node_modules/@typescript-eslint/project-service/README.md
+- Cluster 307: planner-web/node_modules/d3-polygon/README.md, planner-web/node_modules/safer-buffer/Readme.md
+- Cluster 308: planner-web/node_modules/d3-scale/README.md, planner-web/node_modules/d3-time-format/README.md
+- Cluster 309: planner-web/node_modules/eslint-scope/README.md, planner-web/node_modules/optionator/README.md
+- Cluster 310: planner-web/node_modules/html-url-attributes/readme.md, planner-web/node_modules/mdast-util-to-string/readme.md
+- Cluster 311: planner-web/node_modules/micromark-util-decode-string/readme.md, planner-web/node_modules/micromark-util-sanitize-uri/readme.md
+- Cluster 312: planner-web/node_modules/undici-types/README.md, planner-web/node_modules/undici/types/README.md
+- Cluster 313: planner-web/node_modules/undici/docs/docs/api/BalancedPool.md, planner-web/node_modules/undici/docs/docs/api/Pool.md
+
+## Suggested centralization
+Move low‑score/orphan files into `/docs` and generate `SUMMARY.md`. This script is dry‑run only.

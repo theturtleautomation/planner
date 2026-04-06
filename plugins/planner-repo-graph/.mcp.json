@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "planner-repo-graph": {
+      "type": "stdio",
+      "command": "bash",
+      "args": [
+        "-lc",
+        "REPO_ROOT=\"$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)\"; exec \"$REPO_ROOT/scripts/repo-graph-mcp.sh\" run"
+      ]
+    }
+  }
+}

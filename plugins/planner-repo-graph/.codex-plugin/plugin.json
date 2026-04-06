@@ -1,0 +1,38 @@
+{
+  "name": "planner-repo-graph",
+  "version": "0.1.0",
+  "description": "Repo-local graph-backed repo-understanding MCP wiring for Planner.",
+  "author": {
+    "name": "The Turtle Automation",
+    "url": "https://github.com/theturtleautomation"
+  },
+  "homepage": "https://github.com/theturtleautomation/planner",
+  "repository": "https://github.com/theturtleautomation/planner",
+  "license": "MIT",
+  "keywords": [
+    "planner",
+    "repo-graph",
+    "graph",
+    "mcp",
+    "retrieval"
+  ],
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Planner Repo Graph",
+    "shortDescription": "Repo-local graph-backed repo understanding for this Planner repo",
+    "longDescription": "Provides repo-local graph build/query MCP wiring and broker commands for token-bounded repo understanding in Planner.",
+    "developerName": "The Turtle Automation",
+    "category": "Coding",
+    "capabilities": [
+      "Interactive",
+      "Read"
+    ],
+    "websiteURL": "https://github.com/theturtleautomation/planner",
+    "defaultPrompt": [
+      "Use the repo graph to understand this Planner repo",
+      "Query cross-file relationships in the current repo",
+      "Build bounded graph context before broad repo-understanding work"
+    ],
+    "screenshots": []
+  }
+}
