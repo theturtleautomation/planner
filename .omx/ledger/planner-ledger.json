@@ -1,0 +1,4648 @@
+{
+  "schema_version": 1,
+  "project": {
+    "id": "planner",
+    "title": "Planner",
+    "canonical_ledger": ".omx/ledger/planner-ledger.json",
+    "readable_surface": ".omx/ledger/current-status.md",
+    "project_skill": ".codex/skills/project-ledger/SKILL.md"
+  },
+  "coverage": {
+    "mode": "seeded",
+    "summary": "V1 bootstraps the ledger from active planner artifacts and the current Socratic workstream instead of attempting full repo-wide backfill.",
+    "included_workstreams": [
+      "Planner project tracking library",
+      "Socratic project picture workspace"
+    ],
+    "explicitly_not_required": [
+      "perfect repo-wide historical backfill",
+      "full automation"
+    ]
+  },
+  "object_kinds": [
+    {
+      "id": "initiative",
+      "label": "Initiative",
+      "description": "Planner-wide strategic thread or system-level improvement lane."
+    },
+    {
+      "id": "workstream",
+      "label": "Workstream",
+      "description": "A coherent product or implementation stream that owns multiple slices or follow-ons."
+    },
+    {
+      "id": "slice",
+      "label": "Slice",
+      "description": "A bounded feature/spec slice that can move through deep-interview, planning, execution, and verification."
+    },
+    {
+      "id": "plan",
+      "label": "Plan",
+      "description": "A PRD/test-spec or equivalent approved planning artifact."
+    },
+    {
+      "id": "implementation",
+      "label": "Implementation",
+      "description": "A realized code/documentation change set grounded in a plan."
+    },
+    {
+      "id": "review",
+      "label": "Review",
+      "description": "A review/report artifact that evaluates current state, drift, or readiness."
+    },
+    {
+      "id": "deferred_item",
+      "label": "Deferred item",
+      "description": "A still-live concern that is not yet in the active slice but must remain linked and visible."
+    },
+    {
+      "id": "decision",
+      "label": "Decision",
+      "description": "A durable decision that constrains later planning or implementation."
+    },
+    {
+      "id": "risk",
+      "label": "Risk",
+      "description": "An ongoing risk or tracking concern that needs visibility in the ledger."
+    },
+    {
+      "id": "governance_artifact",
+      "label": "Governance artifact",
+      "description": "A root governance or control artifact that anchors planner-wide workflow, planning, or coordination."
+    }
+  ],
+  "statuses": [
+    {
+      "id": "active",
+      "label": "Active"
+    },
+    {
+      "id": "draft",
+      "label": "Draft"
+    },
+    {
+      "id": "ready_for_implementation",
+      "label": "Ready for implementation"
+    },
+    {
+      "id": "in_progress",
+      "label": "In progress"
+    },
+    {
+      "id": "implemented",
+      "label": "Implemented"
+    },
+    {
+      "id": "complete",
+      "label": "Complete"
+    },
+    {
+      "id": "deferred",
+      "label": "Deferred"
+    }
+  ],
+  "routing_states": [
+    {
+      "id": "needs_deep_interview",
+      "label": "Needs $deep-interview",
+      "description": "Intent/boundary clarification is the next valid move."
+    },
+    {
+      "id": "ready_for_ralplan",
+      "label": "Ready for $ralplan",
+      "description": "Requirements are clear enough for consensus planning."
+    },
+    {
+      "id": "ready_for_ralph",
+      "label": "Ready for $ralph",
+      "description": "An approved plan exists and execution can proceed."
+    },
+    {
+      "id": "needs_testing",
+      "label": "Needs testing",
+      "description": "Implementation exists but verification or regression proof is next."
+    },
+    {
+      "id": "needs_analysis",
+      "label": "Needs analysis",
+      "description": "The concern is still too broad or cross-cutting and needs analysis before scoping."
+    },
+    {
+      "id": "monitoring",
+      "label": "Monitoring / watch",
+      "description": "Keep visible, but do not advance immediately."
+    },
+    {
+      "id": "complete",
+      "label": "Complete",
+      "description": "No next workflow step is currently required."
+    }
+  ],
+  "items": [
+    {
+      "id": "initiative:planner-ledger",
+      "kind": "initiative",
+      "title": "Planner project tracking library",
+      "status": "active",
+      "routing_state": "ready_for_ralplan",
+      "summary": "Planner-wide OMX-linked ledger initiative with root governance, converged cross-family truth, repo-graph-coupled automation, and a developing confidence-tier trust model. Graph output remains evidence, not blueprint truth.",
+      "artifacts": [
+        ".omx/specs/deep-interview-socratic-project-tracking-library.md",
+        ".omx/plans/prd-socratic-project-tracking-library.md",
+        ".omx/plans/test-spec-socratic-project-tracking-library.md",
+        ".omx/ledger/planner-ledger.json",
+        ".omx/ledger/README.md",
+        ".omx/ledger/current-status.md",
+        ".codex/skills/project-ledger/SKILL.md",
+        "scripts/project-ledger.mjs",
+        "docs/planner-ledger-population-analysis-and-pass-plan.md",
+        ".omx/plans/prd-planner-ledger-population-analysis.md",
+        ".omx/plans/test-spec-planner-ledger-population-analysis.md",
+        ".omx/plans/prd-planner-ledger-population-pass-1-root-governance.md",
+        ".omx/plans/test-spec-planner-ledger-population-pass-1-root-governance.md",
+        ".omx/plans/prd-planner-ledger-population-pass-2-socratic.md",
+        ".omx/plans/test-spec-planner-ledger-population-pass-2-socratic.md",
+        ".omx/plans/prd-planner-ledger-population-pass-3-import-builder-blueprint.md",
+        ".omx/plans/test-spec-planner-ledger-population-pass-3-import-builder-blueprint.md",
+        ".omx/plans/prd-planner-ledger-population-pass-4-design-system-ui-reset-audits.md",
+        ".omx/plans/test-spec-planner-ledger-population-pass-4-design-system-ui-reset-audits.md",
+        ".omx/plans/prd-planner-ledger-population-pass-5-solidstart-family.md",
+        ".omx/plans/test-spec-planner-ledger-population-pass-5-solidstart-family.md",
+        ".omx/plans/prd-planner-ledger-population-pass-6-solidstart-cross-family-convergence.md",
+        ".omx/plans/test-spec-planner-ledger-population-pass-6-solidstart-cross-family-convergence.md",
+        ".omx/plans/prd-planner-ledger-population-pass-7-superseded-trailer-cleanup.md",
+        ".omx/plans/test-spec-planner-ledger-population-pass-7-superseded-trailer-cleanup.md",
+        ".omx/plans/prd-planner-ledger-omx-automation-lane.md",
+        ".omx/plans/test-spec-planner-ledger-omx-automation-lane.md",
+        ".omx/plans/prd-combined-ledger-automation-graphify-omx-integration-pass.md",
+        ".omx/plans/test-spec-combined-ledger-automation-graphify-omx-integration-pass.md",
+        ".omx/plans/prd-repo-graph-coupled-routing-heuristics-and-operator-trust-pass.md",
+        ".omx/plans/test-spec-repo-graph-coupled-routing-heuristics-and-operator-trust-pass.md"
+      ],
+      "links": {
+        "constrained_by_decision": [
+          "decision:ledger-is-canonical"
+        ],
+        "at_risk_because": [
+          "risk:artifact-sprawl",
+          "risk:ledger-staleness"
+        ],
+        "children": [
+          "slice:planner-ledger-population-analysis",
+          "plan:planner-ledger-population-analysis",
+          "slice:planner-ledger-population-pass-1-root-governance",
+          "plan:planner-ledger-population-pass-1-root-governance",
+          "slice:planner-ledger-population-pass-2-socratic",
+          "plan:planner-ledger-population-pass-2-socratic",
+          "slice:planner-ledger-population-pass-3-import-builder-blueprint",
+          "plan:planner-ledger-population-pass-3-import-builder-blueprint",
+          "slice:planner-ledger-population-pass-4-design-system-ui-reset-audits",
+          "plan:planner-ledger-population-pass-4-design-system-ui-reset-audits",
+          "slice:planner-ledger-population-pass-5-solidstart-family",
+          "plan:planner-ledger-population-pass-5-solidstart-family",
+          "slice:planner-ledger-population-pass-6-solidstart-cross-family-convergence",
+          "plan:planner-ledger-population-pass-6-solidstart-cross-family-convergence",
+          "slice:planner-ledger-population-pass-7-superseded-trailer-cleanup",
+          "plan:planner-ledger-population-pass-7-superseded-trailer-cleanup",
+          "slice:planner-ledger-omx-automation-lane",
+          "plan:planner-ledger-omx-automation-lane",
+          "plan:combined-ledger-automation-graphify-omx-integration-pass",
+          "slice:combined-ledger-automation-graphify-omx-integration-pass",
+          "plan:repo-graph-coupled-routing-heuristics-and-operator-trust-pass",
+          "slice:repo-graph-coupled-routing-heuristics-and-operator-trust-pass"
+        ],
+        "informed_by": [
+          "governance:readme",
+          "governance:agents",
+          "governance:claude",
+          "governance:project-skill-config",
+          "governance:session-start-doc-index",
+          "governance:project-plan",
+          "governance:ledger-surfaces"
+        ]
+      },
+      "tags": [
+        "planner-wide",
+        "omx",
+        "tracking"
+      ]
+    },
+    {
+      "id": "governance:readme",
+      "kind": "governance_artifact",
+      "title": "Repository README",
+      "status": "active",
+      "routing_state": "monitoring",
+      "summary": "Top-level repository overview that anchors planner-wide context and links into active parent lanes.",
+      "artifacts": [
+        "README.md"
+      ],
+      "links": {
+        "informs": [
+          "initiative:planner-ledger",
+          "initiative:planner-solidstart-platform-direction",
+          "initiative:import-existing-project-program",
+          "workstream:socratic-project-picture"
+        ]
+      },
+      "tags": [
+        "governance",
+        "root",
+        "readme"
+      ]
+    },
+    {
+      "id": "governance:agents",
+      "kind": "governance_artifact",
+      "title": "Workspace operating instructions (AGENTS.md)",
+      "status": "active",
+      "routing_state": "monitoring",
+      "summary": "Top-level operating contract that constrains planner-wide execution and orchestration behavior.",
+      "artifacts": [
+        "AGENTS.md"
+      ],
+      "links": {
+        "informs": [
+          "initiative:planner-ledger",
+          "initiative:planner-solidstart-platform-direction",
+          "initiative:import-existing-project-program",
+          "workstream:socratic-project-picture"
+        ]
+      },
+      "tags": [
+        "governance",
+        "root",
+        "instructions"
+      ]
+    },
+    {
+      "id": "governance:claude",
+      "kind": "governance_artifact",
+      "title": "Workspace companion instructions (CLAUDE.md)",
+      "status": "active",
+      "routing_state": "monitoring",
+      "summary": "Companion repo guidance that participates in planner-wide workflow and planning grounding.",
+      "artifacts": [
+        "CLAUDE.md"
+      ],
+      "links": {
+        "informs": [
+          "initiative:planner-ledger",
+          "initiative:planner-solidstart-platform-direction",
+          "initiative:import-existing-project-program",
+          "workstream:socratic-project-picture"
+        ]
+      },
+      "tags": [
+        "governance",
+        "root",
+        "instructions"
+      ]
+    },
+    {
+      "id": "governance:project-skill-config",
+      "kind": "governance_artifact",
+      "title": "Project skill configuration",
+      "status": "active",
+      "routing_state": "monitoring",
+      "summary": "Defines planner bootstrap, always-load docs, backlog/tracker, and status model for project-wide work.",
+      "artifacts": [
+        ".codex/project-skill-config.md"
+      ],
+      "links": {
+        "informs": [
+          "initiative:planner-ledger",
+          "initiative:planner-solidstart-platform-direction",
+          "initiative:import-existing-project-program"
+        ]
+      },
+      "tags": [
+        "governance",
+        "root",
+        "skill-config"
+      ]
+    },
+    {
+      "id": "governance:session-start-doc-index",
+      "kind": "governance_artifact",
+      "title": "Session start and documentation index",
+      "status": "active",
+      "routing_state": "monitoring",
+      "summary": "Canonical bootstrap/index surface that enumerates durable planning families and required docs.",
+      "artifacts": [
+        "docs/session-start-and-doc-index.md"
+      ],
+      "links": {
+        "informs": [
+          "initiative:planner-ledger",
+          "initiative:planner-solidstart-platform-direction",
+          "initiative:import-existing-project-program",
+          "workstream:socratic-project-picture"
+        ]
+      },
+      "tags": [
+        "governance",
+        "root",
+        "index"
+      ]
+    },
+    {
+      "id": "governance:project-plan",
+      "kind": "governance_artifact",
+      "title": "Top-level project plan",
+      "status": "active",
+      "routing_state": "monitoring",
+      "summary": "Top-level planner coordination surface that exposes the current active planning spine and high-level work families.",
+      "artifacts": [
+        "docs/project-plan.md"
+      ],
+      "links": {
+        "children": [
+          "initiative:planner-ledger",
+          "initiative:planner-solidstart-platform-direction",
+          "initiative:import-existing-project-program",
+          "workstream:socratic-project-picture"
+        ]
+      },
+      "tags": [
+        "governance",
+        "root",
+        "project-plan"
+      ]
+    },
+    {
+      "id": "governance:ledger-surfaces",
+      "kind": "governance_artifact",
+      "title": "Canonical ledger surfaces",
+      "status": "active",
+      "routing_state": "monitoring",
+      "summary": "The canonical planner ledger JSON, readable surface, and maintenance protocol for project-wide tracking truth.",
+      "artifacts": [
+        ".omx/ledger/planner-ledger.json",
+        ".omx/ledger/current-status.md",
+        ".omx/ledger/README.md"
+      ],
+      "links": {
+        "children": [
+          "initiative:planner-ledger"
+        ]
+      },
+      "tags": [
+        "governance",
+        "root",
+        "ledger"
+      ]
+    },
+    {
+      "id": "initiative:planner-solidstart-platform-direction",
+      "kind": "initiative",
+      "title": "Planner SolidStart platform direction",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Convergence center for the full SolidStart tree and the cleaner cross-family truth spanning import, Socratic, UI-reset, design-system, blueprint/knowledge, builder, and audit surfaces.",
+      "artifacts": [
+        "docs/project-plan.md",
+        "docs/planner-solidstart-platform-direction-spec.md",
+        "docs/planner-solidstart-phase-00-shell-sessions-and-socratic-anchor-spec.md",
+        "docs/planner-solidstart-phase-01-projects-and-guided-work-entry-spec.md",
+        "docs/planner-solidstart-phase-02-project-advanced-surfaces-spec.md",
+        "docs/planner-solidstart-phase-03-project-review-and-build-readiness-spec.md",
+        "docs/planner-solidstart-phase-04-project-build-path-and-automation-handoff-spec.md",
+        "docs/planner-solidstart-phase-05-project-runs-and-activity-spec.md",
+        "docs/planner-solidstart-phase-06-project-build-execution-and-run-detail-spec.md",
+        "docs/planner-solidstart-phase-07-project-outputs-and-artifacts-spec.md",
+        "docs/planner-solidstart-phase-08-events-timeline-and-snapshots-spec.md",
+        "docs/planner-solidstart-phase-09-admin-operations-route-spec.md",
+        "docs/planner-solidstart-phase-10-knowledge-inventory-route-spec.md",
+        "docs/planner-solidstart-phase-11-blueprint-graph-route-spec.md",
+        "docs/planner-solidstart-phase-12-discovery-triage-route-spec.md",
+        "docs/planner-solidstart-phase-13-route-family-closeout-spec.md",
+        "docs/planner-solidstart-phase-14-project-import-review-route-spec.md",
+        "docs/planner-solidstart-phase-15-project-import-history-and-restore-route-spec.md",
+        "docs/planner-solidstart-phase-16-project-import-comparison-and-selection-summary-spec.md",
+        "docs/planner-solidstart-phase-17-workflow-closeout-and-react-retirement-spec.md",
+        "docs/planner-solidstart-phase-18-prompt-bank-conformance-and-closeout-remediation-spec.md",
+        "docs/planner-solidstart-phase-19-typography-alignment-and-visual-consistency-remediation-spec.md",
+        "docs/planner-solidstart-phase-20-project-surfaces-local-app-and-primitive-hardening-spec.md",
+        "docs/planner-solidstart-phase-21-session-startup-truth-and-status-clarity-spec.md",
+        "docs/planner-solidstart-phase-22-session-workspace-master-detail-density-and-autosave-spec.md",
+        "docs/planner-solidstart-phase-23-session-live-artifact-split-spec.md",
+        "docs/planner-solidstart-phase-24-socratic-runtime-contract-reset-spec.md",
+        "docs/planner-solidstart-phase-25-socratic-runtime-verification-hardening-remediation-spec.md",
+        "docs/planner-solidstart-phase-26-socratic-runtime-truth-completion-remediation-spec.md",
+        "docs/planner-solidstart-phase-27-new-session-startup-truth-remediation-spec.md",
+        "docs/planner-solidstart-phase-28-session-entry-and-startup-product-flow-spec.md",
+        "docs/planner-solidstart-phase-29-work-entry-summary-truth-and-workflow-continuity-spec.md",
+        "docs/planner-solidstart-phase-30-project-workspace-route-family-decomposition-spec.md",
+        "docs/planner-solidstart-phase-31-session-workspace-route-family-decomposition-spec.md",
+        "docs/planner-solidstart-phase-32-work-entry-ia-and-session-route-topology-spec.md",
+        "docs/planner-solidstart-phase-33-session-workspace-interaction-and-artifact-refinement-spec.md",
+        "docs/planner-solidstart-phase-34-session-question-bank-workspace-reset-spec.md",
+        "docs/planner-solidstart-phase-35-backendless-mock-route-coverage-spec.md",
+        "docs/planner-solidstart-phase-35-1-shared-frontend-mock-foundation-spec.md",
+        "docs/planner-solidstart-phase-35-2-work-entry-and-queue-routes-frontend-mock-spec.md",
+        "docs/planner-solidstart-phase-35-3-session-workspace-frontend-mock-spec.md",
+        "docs/planner-solidstart-phase-35-4-project-workspace-frontend-mock-spec.md",
+        "docs/planner-solidstart-phase-35-5-import-review-frontend-mock-spec.md",
+        "docs/planner-solidstart-phase-35-6-knowledge-and-blueprint-frontend-mock-spec.md",
+        "docs/planner-solidstart-phase-35-7-events-discovery-and-admin-frontend-mock-spec.md",
+        "docs/planner-solidstart-phase-35-8-backendless-mock-closeout-remediation-spec.md",
+        "docs/planner-solidstart-phase-35-9-backendless-mock-residual-cleanup-spec.md",
+        "docs/planner-solidstart-phase-35-10-builder-frontend-mock-runtime-alignment-spec.md",
+        "docs/planner-solidstart-phase-36-home-project-directory-consolidation-spec.md",
+        "docs/planner-solidstart-phase-36-1-frontend-mock-vite-shell-duplication-remediation-spec.md",
+        "docs/planner-solidstart-phase-36-2-home-route-canonicality-remediation-spec.md",
+        "docs/planner-solidstart-phase-37-session-workspace-command-rail-hierarchy-spec.md",
+        "docs/planner-solidstart-phase-37-1-session-command-rail-narrow-width-and-focus-continuity-spec.md",
+        "docs/planner-solidstart-phase-37-2-session-command-rail-canonical-runtime-proof-spec.md",
+        "docs/planner-solidstart-phase-37-3-canonical-static-runtime-parity-remediation-spec.md",
+        "docs/planner-solidstart-phase-37-4-session-question-chrome-reduction-spec.md",
+        "docs/planner-solidstart-phase-37-5-session-header-signal-consolidation-spec.md",
+        "docs/planner-solidstart-phase-38-socratic-multimodal-command-desk-spec.md",
+        "docs/planner-solidstart-phase-38-1-socratic-prompt-contract-and-transport-widening-spec.md",
+        "docs/planner-solidstart-phase-38-2-socratic-multimodal-planner-and-adjudication-spec.md",
+        "docs/planner-solidstart-phase-38-3-session-command-desk-ultra-wide-layout-spec.md",
+        "docs/planner-solidstart-phase-39-session-commit-continuity-and-prompt-bank-merge-spec.md",
+        "docs/planner-solidstart-phase-40-project-only-entry-and-stale-draft-hardening-spec.md"
+      ],
+      "links": {
+        "informed_by": [
+          "governance:readme",
+          "governance:agents",
+          "governance:claude",
+          "governance:project-skill-config",
+          "governance:session-start-doc-index",
+          "governance:project-plan",
+          "initiative:planner-design-system",
+          "initiative:planner-ui-reset",
+          "initiative:planning-audit-remediation",
+          "initiative:import-existing-project-program",
+          "workstream:import-existing-project-history-and-reconciliation",
+          "initiative:blueprint-knowledge-program",
+          "workstream:socratic-project-picture"
+        ],
+        "children": [
+          "slice:planner-solidstart-phase-00-shell-sessions-and-socratic-anchor",
+          "slice:planner-solidstart-phase-01-projects-and-guided-work-entry",
+          "slice:planner-solidstart-phase-02-project-advanced-surfaces",
+          "slice:planner-solidstart-phase-03-project-review-and-build-readiness",
+          "slice:planner-solidstart-phase-04-project-build-path-and-automation-handoff",
+          "slice:planner-solidstart-phase-05-project-runs-and-activity",
+          "slice:planner-solidstart-phase-06-project-build-execution-and-run-detail",
+          "slice:planner-solidstart-phase-07-project-outputs-and-artifacts",
+          "slice:planner-solidstart-phase-08-events-timeline-and-snapshots",
+          "slice:planner-solidstart-phase-09-admin-operations-route",
+          "slice:planner-solidstart-phase-10-knowledge-inventory-route",
+          "slice:planner-solidstart-phase-11-blueprint-graph-route",
+          "slice:planner-solidstart-phase-12-discovery-triage-route",
+          "slice:planner-solidstart-phase-13-route-family-closeout",
+          "slice:planner-solidstart-phase-14-project-import-review-route",
+          "slice:planner-solidstart-phase-15-project-import-history-and-restore-route",
+          "slice:planner-solidstart-phase-16-project-import-comparison-and-selection-summary",
+          "slice:planner-solidstart-phase-17-workflow-closeout-and-react-retirement",
+          "slice:planner-solidstart-phase-18-prompt-bank-conformance-and-closeout-remediation",
+          "slice:planner-solidstart-phase-19-typography-alignment-and-visual-consistency-remediation",
+          "slice:planner-solidstart-phase-20-project-surfaces-local-app-and-primitive-hardening",
+          "slice:planner-solidstart-phase-21-session-startup-truth-and-status-clarity",
+          "slice:planner-solidstart-phase-22-session-workspace-master-detail-density-and-autosave",
+          "slice:planner-solidstart-phase-23-session-live-artifact-split",
+          "slice:planner-solidstart-phase-24-socratic-runtime-contract-reset",
+          "slice:planner-solidstart-phase-35-backendless-mock-route-coverage",
+          "slice:planner-solidstart-phase-40-project-only-entry-and-stale-draft-hardening"
+        ]
+      },
+      "tags": [
+        "planner",
+        "solidstart",
+        "platform"
+      ]
+    },
+    {
+      "id": "initiative:planner-design-system",
+      "kind": "initiative",
+      "title": "Planner design system",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Design-system family now converges its canonical token/hierarchy work with SolidStart typography, command-rail, and command-desk truth.",
+      "artifacts": [
+        "docs/planner-design-system-command-center-plan.md",
+        "docs/planner-design-system-phase-1-tonal-foundation-spec.md",
+        "docs/planner-design-system-phase-2-editorial-typography-and-cta-spec.md",
+        "docs/planner-design-system-phase-3-overlay-depth-and-restrained-glass-spec.md",
+        "docs/planner-design-system-phase-4-utility-route-consistency-spec.md",
+        "docs/planner-design-system-phase-5-route-hierarchy-and-operational-density-spec.md",
+        "docs/planner-design-system-phase-6-operational-surfaces-and-event-density-spec.md",
+        "docs/planner-design-system-phase-7-knowledge-inventory-and-context-spec.md",
+        "docs/planner-design-system-phase-8-blueprint-command-chrome-and-inspector-spec.md"
+      ],
+      "links": {
+        "children": [
+          "plan:planner-design-system-command-center",
+          "slice:planner-design-system-phase-1-tonal-foundation",
+          "slice:planner-design-system-phase-2-editorial-typography-and-cta",
+          "slice:planner-design-system-phase-3-overlay-depth-and-restrained-glass",
+          "slice:planner-design-system-phase-4-utility-route-consistency",
+          "slice:planner-design-system-phase-5-route-hierarchy-and-operational-density",
+          "slice:planner-design-system-phase-6-operational-surfaces-and-event-density",
+          "slice:planner-design-system-phase-7-knowledge-inventory-and-context",
+          "slice:planner-design-system-phase-8-blueprint-command-chrome-and-inspector",
+          "slice:planner-solidstart-phase-19-typography-alignment-and-visual-consistency-remediation",
+          "slice:planner-solidstart-phase-37-session-workspace-command-rail-hierarchy",
+          "slice:planner-solidstart-phase-37-4-session-question-chrome-reduction",
+          "slice:planner-solidstart-phase-37-5-session-header-signal-consolidation",
+          "slice:planner-solidstart-phase-38-socratic-multimodal-command-desk",
+          "slice:planner-solidstart-phase-38-3-session-command-desk-ultra-wide-layout"
+        ],
+        "superseded_by": [
+          "slice:planner-ledger-population-pass-6-solidstart-cross-family-convergence"
+        ]
+      },
+      "tags": [
+        "design-system"
+      ]
+    },
+    {
+      "id": "initiative:planner-ui-reset",
+      "kind": "initiative",
+      "title": "Planner UI reset",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "UI-reset family now converges its route-by-route reset intent with SolidStart shell, route, and session-workspace truth.",
+      "artifacts": [
+        "docs/planner-ui-reset-route-by-route-spec-queue.md",
+        "docs/planner-ui-reset-phase-00-shell-navigation-and-auth-spec.md",
+        "docs/planner-ui-reset-phase-01-home-hub-spec.md",
+        "docs/planner-ui-reset-phase-02-projects-directory-spec.md",
+        "docs/planner-ui-reset-phase-03-project-workspace-spec.md",
+        "docs/planner-ui-reset-phase-04-sessions-queue-spec.md",
+        "docs/planner-ui-reset-phase-06-knowledge-workspace-spec.md",
+        "docs/planner-ui-reset-phase-07-blueprint-workspace-spec.md",
+        "docs/planner-ui-reset-phase-08-discovery-review-workspace-spec.md",
+        "docs/planner-ui-reset-phase-09-events-timeline-workspace-spec.md",
+        "docs/planner-ui-reset-phase-10-admin-operations-workspace-spec.md",
+        "docs/planner-ui-reset-phase-14-socratic-pro-max-redesign-spec.md"
+      ],
+      "links": {
+        "children": [
+          "plan:planner-ui-reset-route-by-route-queue",
+          "slice:planner-ui-reset-phase-00-shell-navigation-and-auth",
+          "slice:planner-ui-reset-phase-01-home-hub",
+          "slice:planner-ui-reset-phase-02-projects-directory",
+          "slice:planner-ui-reset-phase-03-project-workspace",
+          "slice:planner-ui-reset-phase-04-sessions-queue",
+          "slice:planner-ui-reset-phase-06-knowledge-workspace",
+          "slice:planner-ui-reset-phase-07-blueprint-workspace",
+          "slice:planner-ui-reset-phase-08-discovery-review-workspace",
+          "slice:planner-ui-reset-phase-09-events-timeline-workspace",
+          "slice:planner-ui-reset-phase-10-admin-operations-workspace",
+          "slice:planner-ui-reset-phase-14-socratic-pro-max-redesign",
+          "slice:planner-solidstart-phase-00-shell-sessions-and-socratic-anchor",
+          "slice:planner-solidstart-phase-01-projects-and-guided-work-entry",
+          "slice:planner-solidstart-phase-08-events-timeline-and-snapshots",
+          "slice:planner-solidstart-phase-09-admin-operations-route",
+          "slice:planner-solidstart-phase-10-knowledge-inventory-route",
+          "slice:planner-solidstart-phase-11-blueprint-graph-route",
+          "slice:planner-solidstart-phase-12-discovery-triage-route",
+          "slice:planner-solidstart-phase-31-session-workspace-route-family-decomposition",
+          "slice:planner-solidstart-phase-38-socratic-multimodal-command-desk"
+        ],
+        "superseded_by": [
+          "slice:planner-ledger-population-pass-6-solidstart-cross-family-convergence"
+        ]
+      },
+      "tags": [
+        "ui-reset"
+      ]
+    },
+    {
+      "id": "initiative:planning-audit-remediation",
+      "kind": "initiative",
+      "title": "Planning audit remediation",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Audit/remediation family now converges its closeout/remediation surfaces with SolidStart verification, cleanup, and parity truth.",
+      "artifacts": [
+        "docs/planning-status-audit-remediation-spec.md",
+        "docs/planner-ui-reset-tranche-audit-remediation-spec.md",
+        "docs/planner-ui-reset-residual-corrections-spec.md",
+        "docs/planner-ui-reset-audit-evidence-closeout-spec.md"
+      ],
+      "links": {
+        "children": [
+          "review:planning-status-audit-remediation",
+          "review:planner-ui-reset-tranche-audit-remediation",
+          "review:planner-ui-reset-residual-corrections",
+          "review:planner-ui-reset-audit-evidence-closeout",
+          "slice:planner-solidstart-phase-19-typography-alignment-and-visual-consistency-remediation",
+          "slice:planner-solidstart-phase-25-socratic-runtime-verification-hardening-remediation",
+          "slice:planner-solidstart-phase-26-socratic-runtime-truth-completion-remediation",
+          "slice:planner-solidstart-phase-27-new-session-startup-truth-remediation",
+          "slice:planner-solidstart-phase-35-8-backendless-mock-closeout-remediation",
+          "slice:planner-solidstart-phase-35-9-backendless-mock-residual-cleanup",
+          "slice:planner-solidstart-phase-36-1-frontend-mock-vite-shell-duplication-remediation",
+          "slice:planner-solidstart-phase-36-2-home-route-canonicality-remediation",
+          "slice:planner-solidstart-phase-37-3-canonical-static-runtime-parity-remediation"
+        ],
+        "superseded_by": [
+          "slice:planner-ledger-population-pass-6-solidstart-cross-family-convergence"
+        ]
+      },
+      "tags": [
+        "audit",
+        "remediation"
+      ]
+    },
+    {
+      "id": "initiative:import-existing-project-program",
+      "kind": "initiative",
+      "title": "Import existing project program",
+      "status": "active",
+      "routing_state": "monitoring",
+      "summary": "Import program now converges with SolidStart import route truth across review, history/restore, and comparison surfaces.",
+      "artifacts": [
+        "docs/import-existing-project-plan.md",
+        "docs/project-plan.md"
+      ],
+      "links": {
+        "informed_by": [
+          "governance:readme",
+          "governance:agents",
+          "governance:claude",
+          "governance:project-skill-config",
+          "governance:session-start-doc-index",
+          "governance:project-plan"
+        ],
+        "children": [
+          "workstream:import-existing-project-history-and-reconciliation",
+          "slice:planner-solidstart-phase-14-project-import-review-route",
+          "slice:planner-solidstart-phase-15-project-import-history-and-restore-route",
+          "slice:planner-solidstart-phase-16-project-import-comparison-and-selection-summary",
+          "slice:planner-solidstart-phase-35-5-import-review-frontend-mock"
+        ],
+        "superseded_by": [
+          "slice:planner-ledger-population-pass-6-solidstart-cross-family-convergence"
+        ]
+      },
+      "tags": [
+        "import",
+        "planner",
+        "program"
+      ]
+    },
+    {
+      "id": "workstream:import-existing-project-history-and-reconciliation",
+      "kind": "workstream",
+      "title": "Import existing project history and reconciliation",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Import history/reconciliation now converges the canonical import slices with SolidStart route truth for review, restore, and comparison flows.",
+      "artifacts": [
+        "docs/import-existing-project-plan.md",
+        "docs/import-existing-project-phase-1-domain-skeleton-spec.md",
+        "docs/import-existing-project-phase-2-github-acquisition-spec.md",
+        "docs/import-existing-project-phase-3-analysis-draft-and-socratic-handoff-spec.md",
+        "docs/import-existing-project-phase-4-review-apply-spec.md",
+        "docs/import-existing-project-phase-5-local-provider-spec.md",
+        "docs/import-existing-project-phase-6-reimport-and-lifecycle-cleanup-spec.md",
+        "docs/import-existing-project-phase-7-history-and-draft-diff-spec.md",
+        "docs/import-existing-project-phase-8-canonical-reconciliation-spec.md",
+        "docs/import-existing-project-phase-9-historical-restore-spec.md",
+        "docs/import-existing-project-phase-10-historical-review-draft-restore-spec.md",
+        "docs/import-existing-project-phase-11-selective-apply-merge-controls-spec.md",
+        "docs/import-existing-project-phase-12-historical-applied-restore-for-review-spec.md",
+        "docs/import-existing-project-phase-13-historical-entry-comparison-spec.md",
+        "docs/import-existing-project-phase-14-arbitrary-history-comparison-spec.md",
+        "docs/import-existing-project-phase-15-selection-aware-history-comparison-spec.md",
+        "docs/import-existing-project-phase-16-history-selection-summary-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:import-existing-project-program"
+        ],
+        "children": [
+          "slice:import-existing-project-phase-1-domain-skeleton",
+          "slice:import-existing-project-phase-2-github-acquisition",
+          "slice:import-existing-project-phase-3-analysis-draft-and-socratic-handoff",
+          "slice:import-existing-project-phase-4-review-apply",
+          "slice:import-existing-project-phase-5-local-provider",
+          "slice:import-existing-project-phase-6-reimport-and-lifecycle-cleanup",
+          "slice:import-existing-project-phase-7-history-and-draft-diff",
+          "slice:import-existing-project-phase-8-canonical-reconciliation",
+          "slice:import-existing-project-phase-9-historical-restore",
+          "slice:import-existing-project-phase-10-historical-review-draft-restore",
+          "slice:import-existing-project-phase-11-selective-apply-merge-controls",
+          "slice:import-existing-project-phase-12-historical-applied-restore-for-review",
+          "slice:import-existing-project-phase-13-historical-entry-comparison",
+          "slice:import-existing-project-phase-14-arbitrary-history-comparison",
+          "slice:import-existing-project-phase-15-selection-aware-history-comparison",
+          "slice:import-existing-project-phase-16-history-selection-summary",
+          "slice:planner-solidstart-phase-15-project-import-history-and-restore-route",
+          "slice:planner-solidstart-phase-16-project-import-comparison-and-selection-summary",
+          "slice:planner-solidstart-phase-35-5-import-review-frontend-mock"
+        ],
+        "superseded_by": [
+          "slice:planner-ledger-population-pass-6-solidstart-cross-family-convergence"
+        ]
+      },
+      "tags": [
+        "import",
+        "history",
+        "reconciliation"
+      ]
+    },
+    {
+      "id": "workstream:socratic-project-picture",
+      "kind": "workstream",
+      "title": "Socratic project picture workspace",
+      "status": "active",
+      "routing_state": "needs_deep_interview",
+      "summary": "Active Socratic workstream now converges its project-picture lineage with SolidStart shell, runtime, multimodal, and continuity truth.",
+      "artifacts": [
+        ".omx/plans/prd-planner-ledger-population-pass-2-socratic.md",
+        ".omx/plans/test-spec-planner-ledger-population-pass-2-socratic.md",
+        ".omx/specs/socratic-deferred-items/index.md",
+        "docs/socratic-current-state-vs-thesis-review.md",
+        "docs/socratic-project-picture-and-convergence-workspace-spec.md",
+        "docs/socratic-project-picture-mvp-path-and-gap-analysis-spec.md"
+      ],
+      "links": {
+        "children": [
+          "slice:socratic-first-reveal",
+          "slice:socratic-area-workspace",
+          "slice:socratic-autonomy-boundary",
+          "slice:socratic-drifted-items-alignment",
+          "slice:socratic-seed-handling",
+          "slice:planner-solidstart-phase-00-shell-sessions-and-socratic-anchor",
+          "slice:planner-solidstart-phase-18-prompt-bank-conformance-and-closeout-remediation",
+          "slice:planner-solidstart-phase-24-socratic-runtime-contract-reset",
+          "slice:planner-solidstart-phase-25-socratic-runtime-verification-hardening-remediation",
+          "slice:planner-solidstart-phase-26-socratic-runtime-truth-completion-remediation",
+          "slice:planner-solidstart-phase-38-socratic-multimodal-command-desk",
+          "slice:planner-solidstart-phase-39-session-commit-continuity-and-prompt-bank-merge",
+          "slice:planner-solidstart-phase-40-project-only-entry-and-stale-draft-hardening"
+        ],
+        "follow_on": [
+          "deferred_item:hidden-truth-model",
+          "deferred_item:whole-project-recoverability",
+          "deferred_item:overlay-reorientation",
+          "deferred_item:provenance-change-inspection",
+          "deferred_item:preview-hierarchy-refinement"
+        ],
+        "reviewed_by": [
+          "review:socratic-current-state-vs-thesis"
+        ],
+        "informed_by": [
+          "governance:readme",
+          "governance:agents",
+          "governance:claude",
+          "governance:session-start-doc-index",
+          "governance:project-plan"
+        ],
+        "superseded_by": [
+          "slice:planner-ledger-population-pass-6-solidstart-cross-family-convergence"
+        ]
+      },
+      "tags": [
+        "socratic",
+        "workspace",
+        "active"
+      ],
+      "automation": {
+        "routing": {
+          "state": "applied",
+          "confidence": "medium",
+          "approval_required": false,
+          "recommended_routing_state": "needs_deep_interview",
+          "reason": "repo-graph evidence + linked item routing state (docs/socratic-current-state-vs-thesis-review.md)",
+          "provenance": {
+            "source": "repo-graph",
+            "query": "docs/socratic-current-state-vs-thesis-review.md",
+            "matches": [
+              {
+                "id": "file:docs/socratic-current-state-vs-thesis-review.md",
+                "label": "docs/socratic-current-state-vs-thesis-review.md",
+                "source_file": "docs/socratic-current-state-vs-thesis-review.md",
+                "community_id": 91
+              },
+              {
+                "id": "heading:docs/socratic-current-state-vs-thesis-review.md#1-purpose",
+                "label": "1. Purpose",
+                "source_file": "docs/socratic-current-state-vs-thesis-review.md",
+                "community_id": 91
+              },
+              {
+                "id": "heading:docs/socratic-current-state-vs-thesis-review.md#10-recommended-interpretation",
+                "label": "10. Recommended Interpretation",
+                "source_file": "docs/socratic-current-state-vs-thesis-review.md",
+                "community_id": 91
+              }
+            ],
+            "explanation": "Explain: docs/socratic-current-state-vs-thesis-review.md\nID: file:docs/socratic-current-state-vs-thesis-review.md\nKind: file\nSource file: docs/socratic-current-state-vs-thesis-review.md\nCommunity: 91\nWhy it matters: this file is directly connected to 27 graph neighbors\nCommunity sample: docs/socratic-current-state-vs-thesis-review.md, 1. Purpose, 10. Recommended Interpretation, 11. Deferred-but-Scopeable Later Analysis Flags, 2. Review Method\nGraph evidence:\n- 1. Purpose [contains]\n- 10. Recommended Interpretation [contains]\n- 11. Deferred-but-Scopeable Later Analysis Flags [contains]\n- 2. Review Method [contains]\n- 3. Current-State Summary [contains]\n- 4.1 First visible project-picture hierarchy [contains]"
+          },
+          "last_evaluated_at": "2026-04-06T21:09:38.554Z"
+        }
+      }
+    },
+    {
+      "id": "workstream:builder-fusion-runtime-sync",
+      "kind": "workstream",
+      "title": "Builder fusion runtime sync",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Builder runtime-sync workstream now converges its helper/runtime diagnosis slices with SolidStart mock-runtime and builder-alignment truth.",
+      "artifacts": [
+        "docs/builder-fusion-project-management-and-runtime-sync-spec.md",
+        "docs/builder-fusion-phase-01-api-grounded-skill-and-existing-project-contract-spec.md",
+        "docs/builder-fusion-phase-02-existing-project-helper-contract-spec.md",
+        "docs/builder-fusion-phase-03-sync-verification-workflow-spec.md",
+        "docs/builder-fusion-phase-04-project-visibility-diagnosis-and-remediation-spec.md",
+        "docs/builder-fusion-phase-05-branch-surface-visibility-reconciliation-spec.md"
+      ],
+      "links": {
+        "children": [
+          "slice:builder-fusion-phase-01-api-grounded-skill-and-existing-project-contract",
+          "slice:builder-fusion-phase-02-existing-project-helper-contract",
+          "slice:builder-fusion-phase-03-sync-verification-workflow",
+          "slice:builder-fusion-phase-04-project-visibility-diagnosis-and-remediation",
+          "slice:builder-fusion-phase-05-branch-surface-visibility-reconciliation",
+          "slice:planner-solidstart-phase-35-backendless-mock-route-coverage",
+          "slice:planner-solidstart-phase-35-10-builder-frontend-mock-runtime-alignment",
+          "slice:planner-solidstart-phase-36-home-project-directory-consolidation"
+        ],
+        "superseded_by": [
+          "slice:planner-ledger-population-pass-6-solidstart-cross-family-convergence"
+        ]
+      },
+      "tags": [
+        "builder",
+        "fusion",
+        "runtime-sync"
+      ]
+    },
+    {
+      "id": "initiative:blueprint-knowledge-program",
+      "kind": "initiative",
+      "title": "Blueprint knowledge program",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Blueprint/knowledge family now converges its canonical planning surfaces with SolidStart knowledge, blueprint, and frontend-mock truth.",
+      "artifacts": [
+        "docs/blueprint-project-root-codegraph-integration.md",
+        "docs/knowledge-library-project-scope-plan.md",
+        "docs/blueprint-research/BLUEPRINT_DEEP_DIVE.md",
+        "docs/blueprint-research/architecture_tools_research.md",
+        "docs/blueprint-research/DEFERRED_RUST_FEATURES.md"
+      ],
+      "links": {
+        "children": [
+          "implementation:blueprint-project-root-codegraph-integration",
+          "plan:knowledge-library-project-scope",
+          "review:blueprint-deep-dive",
+          "review:blueprint-architecture-tools",
+          "review:blueprint-deferred-rust-features",
+          "slice:planner-solidstart-phase-10-knowledge-inventory-route",
+          "slice:planner-solidstart-phase-11-blueprint-graph-route",
+          "slice:planner-solidstart-phase-35-6-knowledge-and-blueprint-frontend-mock"
+        ],
+        "superseded_by": [
+          "slice:planner-ledger-population-pass-6-solidstart-cross-family-convergence"
+        ]
+      },
+      "tags": [
+        "blueprint",
+        "knowledge"
+      ]
+    },
+    {
+      "id": "plan:planner-ledger-first-slice",
+      "kind": "plan",
+      "title": "Planner project tracking library PRD",
+      "status": "complete",
+      "routing_state": "complete",
+      "summary": "Approved planning artifacts for the first planner-wide ledger slice.",
+      "artifacts": [
+        ".omx/plans/prd-socratic-project-tracking-library.md",
+        ".omx/plans/test-spec-socratic-project-tracking-library.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-ledger"
+        ]
+      },
+      "tags": [
+        "plan",
+        "approved"
+      ]
+    },
+    {
+      "id": "plan:planner-ledger-population-analysis",
+      "kind": "plan",
+      "title": "Planner ledger population pass 1 planning follow-on",
+      "status": "complete",
+      "routing_state": "complete",
+      "summary": "Population-analysis planning artifacts completed; the first execution pass is now defined and queued.",
+      "artifacts": [
+        "docs/planner-ledger-population-analysis-and-pass-plan.md",
+        ".omx/plans/prd-planner-ledger-population-analysis.md",
+        ".omx/plans/test-spec-planner-ledger-population-analysis.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-ledger"
+        ],
+        "informed_by": [
+          "slice:planner-ledger-population-analysis"
+        ]
+      },
+      "tags": [
+        "ledger",
+        "population-pass",
+        "next"
+      ]
+    },
+    {
+      "id": "plan:planner-ledger-population-pass-1-root-governance",
+      "kind": "plan",
+      "title": "Planner ledger population pass 1 root governance and planning spine",
+      "status": "complete",
+      "routing_state": "complete",
+      "summary": "Approved and executed planning artifacts for Pass 1 root governance/control population.",
+      "artifacts": [
+        ".omx/plans/prd-planner-ledger-population-pass-1-root-governance.md",
+        ".omx/plans/test-spec-planner-ledger-population-pass-1-root-governance.md",
+        ".omx/specs/deep-interview-planner-ledger-population-pass-1-root-governance.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-ledger"
+        ],
+        "informed_by": [
+          "slice:planner-ledger-population-analysis"
+        ]
+      },
+      "tags": [
+        "ledger",
+        "population-pass",
+        "plan"
+      ]
+    },
+    {
+      "id": "plan:planner-ledger-population-pass-2-socratic",
+      "kind": "plan",
+      "title": "Planner Ledger Population Pass 2 — Socratic Family",
+      "status": "complete",
+      "routing_state": "complete",
+      "summary": "Approved and executed planning artifacts for the Socratic-only deep population pass.",
+      "artifacts": [
+        ".omx/plans/prd-planner-ledger-population-pass-2-socratic.md",
+        ".omx/plans/test-spec-planner-ledger-population-pass-2-socratic.md",
+        ".omx/specs/deep-interview-planner-ledger-population-pass-2-socratic.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-ledger"
+        ],
+        "informed_by": [
+          "slice:planner-ledger-population-pass-2-socratic"
+        ],
+        "superseded_by": [
+          "slice:planner-ledger-population-pass-6-solidstart-cross-family-convergence"
+        ]
+      },
+      "tags": [
+        "ledger",
+        "population-pass",
+        "plan",
+        "socratic"
+      ]
+    },
+    {
+      "id": "plan:planner-ledger-population-pass-3-import-builder-blueprint",
+      "kind": "plan",
+      "title": "Planner Ledger Population Pass 3 — Import Builder Blueprint",
+      "status": "complete",
+      "routing_state": "complete",
+      "summary": "Approved and executed planning artifacts for the combined import / builder / blueprint+knowledge deep family pass.",
+      "artifacts": [
+        ".omx/plans/prd-planner-ledger-population-pass-3-import-builder-blueprint.md",
+        ".omx/plans/test-spec-planner-ledger-population-pass-3-import-builder-blueprint.md",
+        ".omx/specs/deep-interview-planner-ledger-population-pass-3-import-builder-blueprint.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-ledger"
+        ],
+        "informed_by": [
+          "slice:planner-ledger-population-pass-3-import-builder-blueprint"
+        ],
+        "superseded_by": [
+          "slice:planner-ledger-population-pass-6-solidstart-cross-family-convergence"
+        ]
+      },
+      "tags": [
+        "ledger",
+        "population-pass",
+        "plan"
+      ]
+    },
+    {
+      "id": "plan:planner-ledger-population-pass-4-design-system-ui-reset-audits",
+      "kind": "plan",
+      "title": "Planner Ledger Population Pass 4 — Design System UI Reset Audits",
+      "status": "complete",
+      "routing_state": "complete",
+      "summary": "Approved and executed planning artifacts for the combined design-system, UI-reset, and audit/remediation deep family pass.",
+      "artifacts": [
+        ".omx/plans/prd-planner-ledger-population-pass-4-design-system-ui-reset-audits.md",
+        ".omx/plans/test-spec-planner-ledger-population-pass-4-design-system-ui-reset-audits.md",
+        ".omx/specs/deep-interview-planner-ledger-population-pass-4-design-system-ui-reset-audits.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-ledger"
+        ],
+        "superseded_by": [
+          "slice:planner-ledger-population-pass-6-solidstart-cross-family-convergence"
+        ]
+      },
+      "tags": [
+        "ledger",
+        "population-pass",
+        "plan"
+      ]
+    },
+    {
+      "id": "slice:planner-ledger-population-analysis",
+      "kind": "slice",
+      "title": "Planner ledger population analysis",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Analysis slice that inventories planner artifact families, defines full-model mapping/linkage rules, and proposes a multi-pass population strategy before automation.",
+      "artifacts": [
+        "docs/planner-ledger-population-analysis-and-pass-plan.md",
+        ".omx/plans/prd-planner-ledger-population-analysis.md",
+        ".omx/plans/test-spec-planner-ledger-population-analysis.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-ledger"
+        ],
+        "follow_on": [
+          "plan:planner-ledger-population-pass-1-root-governance"
+        ]
+      },
+      "tags": [
+        "ledger",
+        "analysis",
+        "implemented"
+      ]
+    },
+    {
+      "id": "slice:planner-ledger-population-pass-1-root-governance",
+      "kind": "slice",
+      "title": "Planner ledger population pass 1 root governance and planning spine",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Implemented the first real ledger population pass across root governance/control artifacts and the first parent initiative/workstream layer they organize.",
+      "artifacts": [
+        ".omx/specs/deep-interview-planner-ledger-population-pass-1-root-governance.md",
+        ".omx/plans/prd-planner-ledger-population-pass-1-root-governance.md",
+        ".omx/plans/test-spec-planner-ledger-population-pass-1-root-governance.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-ledger"
+        ],
+        "follow_on": [
+          "plan:planner-ledger-population-pass-3-import-builder-blueprint",
+          "plan:planner-ledger-population-pass-4-design-system-ui-reset-audits"
+        ],
+        "informed_by": [
+          "governance:project-plan",
+          "governance:session-start-doc-index",
+          "governance:ledger-surfaces"
+        ]
+      },
+      "tags": [
+        "ledger",
+        "population-pass",
+        "implemented"
+      ]
+    },
+    {
+      "id": "slice:planner-ledger-population-pass-2-socratic",
+      "kind": "slice",
+      "title": "Planner ledger population pass 2 socratic family",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Implemented the Socratic-only deep population pass, strengthening family links, deferred-item visibility, and canonical relation usage.",
+      "artifacts": [
+        ".omx/specs/deep-interview-planner-ledger-population-pass-2-socratic.md",
+        ".omx/plans/prd-planner-ledger-population-pass-2-socratic.md",
+        ".omx/plans/test-spec-planner-ledger-population-pass-2-socratic.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-ledger"
+        ],
+        "follow_on": [
+          "plan:planner-ledger-population-pass-3-import-builder-blueprint",
+          "plan:planner-ledger-population-pass-4-design-system-ui-reset-audits"
+        ]
+      },
+      "tags": [
+        "ledger",
+        "population-pass",
+        "implemented",
+        "socratic"
+      ]
+    },
+    {
+      "id": "slice:planner-ledger-population-pass-3-import-builder-blueprint",
+      "kind": "slice",
+      "title": "Planner ledger population pass 3 import builder blueprint",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Implemented the combined import-existing-project, builder fusion, and blueprint/knowledge deep family population pass.",
+      "artifacts": [
+        ".omx/specs/deep-interview-planner-ledger-population-pass-3-import-builder-blueprint.md",
+        ".omx/plans/prd-planner-ledger-population-pass-3-import-builder-blueprint.md",
+        ".omx/plans/test-spec-planner-ledger-population-pass-3-import-builder-blueprint.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-ledger"
+        ],
+        "follow_on": [
+          "plan:planner-ledger-population-pass-4-design-system-ui-reset-audits"
+        ]
+      },
+      "tags": [
+        "ledger",
+        "population-pass",
+        "implemented"
+      ]
+    },
+    {
+      "id": "slice:planner-ledger-population-pass-4-design-system-ui-reset-audits",
+      "kind": "slice",
+      "title": "Planner ledger population pass 4 design system ui reset audits",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Implemented the combined design-system, UI-reset, and audit/remediation deep family population pass.",
+      "artifacts": [
+        ".omx/specs/deep-interview-planner-ledger-population-pass-4-design-system-ui-reset-audits.md",
+        ".omx/plans/prd-planner-ledger-population-pass-4-design-system-ui-reset-audits.md",
+        ".omx/plans/test-spec-planner-ledger-population-pass-4-design-system-ui-reset-audits.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-ledger"
+        ]
+      },
+      "tags": [
+        "ledger",
+        "population-pass",
+        "implemented"
+      ]
+    },
+    {
+      "id": "plan:planner-design-system-command-center",
+      "kind": "plan",
+      "title": "Planner design system command center plan",
+      "status": "draft",
+      "routing_state": "ready_for_ralplan",
+      "summary": "Parent planning surface for the planner design system family.",
+      "artifacts": [
+        "docs/planner-design-system-command-center-plan.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-design-system"
+        ]
+      },
+      "tags": [
+        "design-system",
+        "plan"
+      ]
+    },
+    {
+      "id": "plan:planner-ui-reset-route-by-route-queue",
+      "kind": "plan",
+      "title": "Planner UI reset route-by-route queue",
+      "status": "draft",
+      "routing_state": "ready_for_ralplan",
+      "summary": "Parent planning surface for the UI-reset family.",
+      "artifacts": [
+        "docs/planner-ui-reset-route-by-route-spec-queue.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-ui-reset"
+        ]
+      },
+      "tags": [
+        "ui-reset",
+        "plan"
+      ]
+    },
+    {
+      "id": "review:planning-status-audit-remediation",
+      "kind": "review",
+      "title": "Planning status audit remediation",
+      "status": "complete",
+      "routing_state": "monitoring",
+      "summary": "Planning status audit remediation review/remediation artifact.",
+      "artifacts": [
+        "docs/planning-status-audit-remediation-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planning-audit-remediation"
+        ]
+      },
+      "tags": [
+        "audit",
+        "review"
+      ]
+    },
+    {
+      "id": "review:planner-ui-reset-tranche-audit-remediation",
+      "kind": "review",
+      "title": "Planner UI reset tranche audit remediation",
+      "status": "complete",
+      "routing_state": "monitoring",
+      "summary": "Planner UI reset tranche audit remediation review/remediation artifact.",
+      "artifacts": [
+        "docs/planner-ui-reset-tranche-audit-remediation-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planning-audit-remediation"
+        ]
+      },
+      "tags": [
+        "audit",
+        "review"
+      ]
+    },
+    {
+      "id": "review:planner-ui-reset-residual-corrections",
+      "kind": "review",
+      "title": "Planner UI reset residual corrections",
+      "status": "complete",
+      "routing_state": "monitoring",
+      "summary": "Planner UI reset residual corrections review/remediation artifact.",
+      "artifacts": [
+        "docs/planner-ui-reset-residual-corrections-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planning-audit-remediation"
+        ]
+      },
+      "tags": [
+        "audit",
+        "review"
+      ]
+    },
+    {
+      "id": "review:planner-ui-reset-audit-evidence-closeout",
+      "kind": "review",
+      "title": "Planner UI reset audit evidence closeout",
+      "status": "complete",
+      "routing_state": "monitoring",
+      "summary": "Planner UI reset audit evidence closeout review/remediation artifact.",
+      "artifacts": [
+        "docs/planner-ui-reset-audit-evidence-closeout-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planning-audit-remediation"
+        ]
+      },
+      "tags": [
+        "audit",
+        "review"
+      ]
+    },
+    {
+      "id": "review:socratic-current-state-vs-thesis",
+      "kind": "review",
+      "title": "Socratic current state vs thesis review",
+      "status": "complete",
+      "routing_state": "monitoring",
+      "summary": "Grounded review artifact comparing current Socratic implementation against the broad thesis and MVP cut, informing the active deferred Socratic concerns.",
+      "artifacts": [
+        "docs/socratic-current-state-vs-thesis-review.md",
+        ".omx/plans/prd-socratic-current-state-vs-thesis-review.md",
+        ".omx/plans/test-spec-socratic-current-state-vs-thesis-review.md"
+      ],
+      "links": {
+        "review_of": [
+          "workstream:socratic-project-picture"
+        ],
+        "informs": [
+          "deferred_item:hidden-truth-model",
+          "deferred_item:whole-project-recoverability",
+          "deferred_item:overlay-reorientation",
+          "deferred_item:provenance-change-inspection",
+          "deferred_item:preview-hierarchy-refinement"
+        ]
+      },
+      "tags": [
+        "review",
+        "socratic"
+      ]
+    },
+    {
+      "id": "slice:socratic-first-reveal",
+      "kind": "slice",
+      "title": "Socratic first reveal screen",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Project-picture-first reveal slice for the Socratic workspace.",
+      "artifacts": [
+        ".omx/plans/prd-socratic-project-picture-first-reveal-screen.md",
+        ".omx/plans/test-spec-socratic-project-picture-first-reveal-screen.md"
+      ],
+      "links": {
+        "parent": [
+          "workstream:socratic-project-picture"
+        ]
+      },
+      "tags": [
+        "implemented",
+        "mvp"
+      ]
+    },
+    {
+      "id": "slice:socratic-area-workspace",
+      "kind": "slice",
+      "title": "Socratic area workspace and shaping contract",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Object-first area workspace slice for deeper local shaping.",
+      "artifacts": [
+        ".omx/plans/prd-socratic-area-workspace-and-shaping-contract.md",
+        ".omx/plans/test-spec-socratic-area-workspace-and-shaping-contract.md"
+      ],
+      "links": {
+        "parent": [
+          "workstream:socratic-project-picture"
+        ]
+      },
+      "tags": [
+        "implemented",
+        "mvp"
+      ]
+    },
+    {
+      "id": "slice:socratic-autonomy-boundary",
+      "kind": "slice",
+      "title": "Socratic convergence autonomy boundary",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Trust boundary slice for low-risk updates and local pending revisions.",
+      "artifacts": [
+        ".omx/plans/prd-socratic-convergence-autonomy-boundary.md",
+        ".omx/plans/test-spec-socratic-convergence-autonomy-boundary.md"
+      ],
+      "links": {
+        "parent": [
+          "workstream:socratic-project-picture"
+        ]
+      },
+      "tags": [
+        "implemented",
+        "mvp"
+      ]
+    },
+    {
+      "id": "slice:socratic-drifted-items-alignment",
+      "kind": "slice",
+      "title": "Socratic drifted items alignment",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Route-local alignment slice that reduced prompt-driven drift and demoted support surfaces in deeper modes.",
+      "artifacts": [
+        ".omx/plans/prd-socratic-drifted-items-alignment.md",
+        ".omx/plans/test-spec-socratic-drifted-items-alignment.md"
+      ],
+      "links": {
+        "parent": [
+          "workstream:socratic-project-picture"
+        ]
+      },
+      "tags": [
+        "implemented",
+        "alignment"
+      ]
+    },
+    {
+      "id": "slice:socratic-seed-handling",
+      "kind": "slice",
+      "title": "Socratic seed handling",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "First bounded seed loop: explicit seed marking, quiet resurfacing, and explicit promote or dismiss action.",
+      "artifacts": [
+        ".omx/specs/deep-interview-socratic-seed-handling.md",
+        ".omx/plans/prd-socratic-seed-handling.md",
+        ".omx/plans/test-spec-socratic-seed-handling.md"
+      ],
+      "links": {
+        "parent": [
+          "workstream:socratic-project-picture"
+        ],
+        "implemented_by": [
+          "implementation:socratic-seed-handling-route"
+        ],
+        "constrained_by_decision": [
+          "decision:seed-loop-bounded"
+        ]
+      },
+      "tags": [
+        "implemented",
+        "seed"
+      ]
+    },
+    {
+      "id": "implementation:socratic-seed-handling-route",
+      "kind": "implementation",
+      "title": "Seed handling route implementation",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Route-local implementation of the seed-handling slice in planner-solid with e2e coverage.",
+      "artifacts": [
+        "planner-solid/src/routes/sessions/session-workspace-screen.tsx",
+        "planner-solid/src/app.css",
+        "planner-solid/e2e/phase-35-frontend-mock.spec.ts",
+        "planner-solid/e2e/phase-37-canonical-static-runtime.spec.ts"
+      ],
+      "links": {
+        "parent": [
+          "slice:socratic-seed-handling"
+        ],
+        "implementation_for": [
+          "slice:socratic-seed-handling"
+        ]
+      },
+      "tags": [
+        "implementation",
+        "verified"
+      ]
+    },
+    {
+      "id": "slice:planner-design-system-phase-1-tonal-foundation",
+      "kind": "slice",
+      "title": "Planner Design System Phase 1 Tonal Foundation",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner Design System Phase 1 Tonal Foundation design-system slice.",
+      "artifacts": [
+        "docs/planner-design-system-phase-1-tonal-foundation-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-design-system"
+        ]
+      },
+      "tags": [
+        "design-system",
+        "implemented"
+      ]
+    },
+    {
+      "id": "slice:planner-design-system-phase-2-editorial-typography-and-cta",
+      "kind": "slice",
+      "title": "Planner Design System Phase 2 Editorial Typography And CTA",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner Design System Phase 2 Editorial Typography And CTA design-system slice.",
+      "artifacts": [
+        "docs/planner-design-system-phase-2-editorial-typography-and-cta-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-design-system"
+        ]
+      },
+      "tags": [
+        "design-system",
+        "implemented"
+      ]
+    },
+    {
+      "id": "slice:planner-design-system-phase-3-overlay-depth-and-restrained-glass",
+      "kind": "slice",
+      "title": "Planner Design System Phase 3 Overlay Depth And Restrained Glass",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner Design System Phase 3 Overlay Depth And Restrained Glass design-system slice.",
+      "artifacts": [
+        "docs/planner-design-system-phase-3-overlay-depth-and-restrained-glass-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-design-system"
+        ]
+      },
+      "tags": [
+        "design-system",
+        "implemented"
+      ]
+    },
+    {
+      "id": "slice:planner-design-system-phase-4-utility-route-consistency",
+      "kind": "slice",
+      "title": "Planner Design System Phase 4 Utility Route Consistency",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner Design System Phase 4 Utility Route Consistency design-system slice.",
+      "artifacts": [
+        "docs/planner-design-system-phase-4-utility-route-consistency-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-design-system"
+        ]
+      },
+      "tags": [
+        "design-system",
+        "implemented"
+      ]
+    },
+    {
+      "id": "slice:planner-design-system-phase-5-route-hierarchy-and-operational-density",
+      "kind": "slice",
+      "title": "Planner Design System Phase 5 Route Hierarchy And Operational Density",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner Design System Phase 5 Route Hierarchy And Operational Density design-system slice.",
+      "artifacts": [
+        "docs/planner-design-system-phase-5-route-hierarchy-and-operational-density-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-design-system"
+        ]
+      },
+      "tags": [
+        "design-system",
+        "implemented"
+      ]
+    },
+    {
+      "id": "slice:planner-design-system-phase-6-operational-surfaces-and-event-density",
+      "kind": "slice",
+      "title": "Planner Design System Phase 6 Operational Surfaces And Event Density",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner Design System Phase 6 Operational Surfaces And Event Density design-system slice.",
+      "artifacts": [
+        "docs/planner-design-system-phase-6-operational-surfaces-and-event-density-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-design-system"
+        ]
+      },
+      "tags": [
+        "design-system",
+        "implemented"
+      ]
+    },
+    {
+      "id": "slice:planner-design-system-phase-7-knowledge-inventory-and-context",
+      "kind": "slice",
+      "title": "Planner Design System Phase 7 Knowledge Inventory And Context",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner Design System Phase 7 Knowledge Inventory And Context design-system slice.",
+      "artifacts": [
+        "docs/planner-design-system-phase-7-knowledge-inventory-and-context-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-design-system"
+        ]
+      },
+      "tags": [
+        "design-system",
+        "implemented"
+      ]
+    },
+    {
+      "id": "slice:planner-design-system-phase-8-blueprint-command-chrome-and-inspector",
+      "kind": "slice",
+      "title": "Planner Design System Phase 8 Blueprint Command Chrome And Inspector",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner Design System Phase 8 Blueprint Command Chrome And Inspector design-system slice.",
+      "artifacts": [
+        "docs/planner-design-system-phase-8-blueprint-command-chrome-and-inspector-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-design-system"
+        ]
+      },
+      "tags": [
+        "design-system",
+        "implemented"
+      ]
+    },
+    {
+      "id": "slice:planner-ui-reset-phase-00-shell-navigation-and-auth",
+      "kind": "slice",
+      "title": "Planner UI Reset Phase 00 Shell Navigation And Auth",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner UI Reset Phase 00 Shell Navigation And Auth UI-reset slice.",
+      "artifacts": [
+        "docs/planner-ui-reset-phase-00-shell-navigation-and-auth-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-ui-reset"
+        ]
+      },
+      "tags": [
+        "ui-reset",
+        "implemented"
+      ]
+    },
+    {
+      "id": "slice:planner-ui-reset-phase-01-home-hub",
+      "kind": "slice",
+      "title": "Planner UI Reset Phase 01 Home Hub",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner UI Reset Phase 01 Home Hub UI-reset slice.",
+      "artifacts": [
+        "docs/planner-ui-reset-phase-01-home-hub-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-ui-reset"
+        ]
+      },
+      "tags": [
+        "ui-reset",
+        "implemented"
+      ]
+    },
+    {
+      "id": "slice:planner-ui-reset-phase-02-projects-directory",
+      "kind": "slice",
+      "title": "Planner UI Reset Phase 02 Projects Directory",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner UI Reset Phase 02 Projects Directory UI-reset slice.",
+      "artifacts": [
+        "docs/planner-ui-reset-phase-02-projects-directory-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-ui-reset"
+        ]
+      },
+      "tags": [
+        "ui-reset",
+        "implemented"
+      ]
+    },
+    {
+      "id": "slice:planner-ui-reset-phase-03-project-workspace",
+      "kind": "slice",
+      "title": "Planner UI Reset Phase 03 Project Workspace",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner UI Reset Phase 03 Project Workspace UI-reset slice.",
+      "artifacts": [
+        "docs/planner-ui-reset-phase-03-project-workspace-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-ui-reset"
+        ]
+      },
+      "tags": [
+        "ui-reset",
+        "implemented"
+      ]
+    },
+    {
+      "id": "slice:planner-ui-reset-phase-04-sessions-queue",
+      "kind": "slice",
+      "title": "Planner UI Reset Phase 04 Sessions Queue",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner UI Reset Phase 04 Sessions Queue UI-reset slice.",
+      "artifacts": [
+        "docs/planner-ui-reset-phase-04-sessions-queue-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-ui-reset"
+        ]
+      },
+      "tags": [
+        "ui-reset",
+        "implemented"
+      ]
+    },
+    {
+      "id": "slice:planner-ui-reset-phase-06-knowledge-workspace",
+      "kind": "slice",
+      "title": "Planner UI Reset Phase 06 Knowledge Workspace",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner UI Reset Phase 06 Knowledge Workspace UI-reset slice.",
+      "artifacts": [
+        "docs/planner-ui-reset-phase-06-knowledge-workspace-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-ui-reset"
+        ]
+      },
+      "tags": [
+        "ui-reset",
+        "implemented"
+      ]
+    },
+    {
+      "id": "slice:planner-ui-reset-phase-07-blueprint-workspace",
+      "kind": "slice",
+      "title": "Planner UI Reset Phase 07 Blueprint Workspace",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner UI Reset Phase 07 Blueprint Workspace UI-reset slice.",
+      "artifacts": [
+        "docs/planner-ui-reset-phase-07-blueprint-workspace-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-ui-reset"
+        ]
+      },
+      "tags": [
+        "ui-reset",
+        "implemented"
+      ]
+    },
+    {
+      "id": "slice:planner-ui-reset-phase-08-discovery-review-workspace",
+      "kind": "slice",
+      "title": "Planner UI Reset Phase 08 Discovery Review Workspace",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner UI Reset Phase 08 Discovery Review Workspace UI-reset slice.",
+      "artifacts": [
+        "docs/planner-ui-reset-phase-08-discovery-review-workspace-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-ui-reset"
+        ]
+      },
+      "tags": [
+        "ui-reset",
+        "implemented"
+      ]
+    },
+    {
+      "id": "slice:planner-ui-reset-phase-09-events-timeline-workspace",
+      "kind": "slice",
+      "title": "Planner UI Reset Phase 09 Events Timeline Workspace",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner UI Reset Phase 09 Events Timeline Workspace UI-reset slice.",
+      "artifacts": [
+        "docs/planner-ui-reset-phase-09-events-timeline-workspace-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-ui-reset"
+        ]
+      },
+      "tags": [
+        "ui-reset",
+        "implemented"
+      ]
+    },
+    {
+      "id": "slice:planner-ui-reset-phase-10-admin-operations-workspace",
+      "kind": "slice",
+      "title": "Planner UI Reset Phase 10 Admin Operations Workspace",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner UI Reset Phase 10 Admin Operations Workspace UI-reset slice.",
+      "artifacts": [
+        "docs/planner-ui-reset-phase-10-admin-operations-workspace-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-ui-reset"
+        ]
+      },
+      "tags": [
+        "ui-reset",
+        "implemented"
+      ]
+    },
+    {
+      "id": "slice:planner-ui-reset-phase-14-socratic-pro-max-redesign",
+      "kind": "slice",
+      "title": "Planner UI Reset Phase 14 Socratic Pro Max Redesign",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner UI Reset Phase 14 Socratic Pro Max Redesign UI-reset slice.",
+      "artifacts": [
+        "docs/planner-ui-reset-phase-14-socratic-pro-max-redesign-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-ui-reset"
+        ]
+      },
+      "tags": [
+        "ui-reset",
+        "implemented"
+      ]
+    },
+    {
+      "id": "slice:import-existing-project-phase-1-domain-skeleton",
+      "kind": "slice",
+      "title": "Import Existing Project Phase 1 Domain Skeleton",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Import Existing Project Phase 1 Domain Skeleton implemented import slice.",
+      "artifacts": [
+        "docs/import-existing-project-phase-1-domain-skeleton-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "workstream:import-existing-project-history-and-reconciliation"
+        ]
+      },
+      "tags": [
+        "import",
+        "implemented"
+      ]
+    },
+    {
+      "id": "slice:import-existing-project-phase-2-github-acquisition",
+      "kind": "slice",
+      "title": "Import Existing Project Phase 2 GitHub Acquisition",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Import Existing Project Phase 2 GitHub Acquisition implemented import slice.",
+      "artifacts": [
+        "docs/import-existing-project-phase-2-github-acquisition-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "workstream:import-existing-project-history-and-reconciliation"
+        ]
+      },
+      "tags": [
+        "import",
+        "implemented"
+      ]
+    },
+    {
+      "id": "slice:import-existing-project-phase-3-analysis-draft-and-socratic-handoff",
+      "kind": "slice",
+      "title": "Import Existing Project Phase 3 Analysis Draft And Socratic Handoff",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Import Existing Project Phase 3 Analysis Draft And Socratic Handoff implemented import slice.",
+      "artifacts": [
+        "docs/import-existing-project-phase-3-analysis-draft-and-socratic-handoff-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "workstream:import-existing-project-history-and-reconciliation"
+        ]
+      },
+      "tags": [
+        "import",
+        "implemented"
+      ]
+    },
+    {
+      "id": "slice:import-existing-project-phase-4-review-apply",
+      "kind": "slice",
+      "title": "Import Existing Project Phase 4 Review Apply",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Import Existing Project Phase 4 Review Apply implemented import slice.",
+      "artifacts": [
+        "docs/import-existing-project-phase-4-review-apply-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "workstream:import-existing-project-history-and-reconciliation"
+        ]
+      },
+      "tags": [
+        "import",
+        "implemented"
+      ]
+    },
+    {
+      "id": "slice:import-existing-project-phase-5-local-provider",
+      "kind": "slice",
+      "title": "Import Existing Project Phase 5 Local Provider",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Import Existing Project Phase 5 Local Provider implemented import slice.",
+      "artifacts": [
+        "docs/import-existing-project-phase-5-local-provider-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "workstream:import-existing-project-history-and-reconciliation"
+        ]
+      },
+      "tags": [
+        "import",
+        "implemented"
+      ]
+    },
+    {
+      "id": "slice:import-existing-project-phase-6-reimport-and-lifecycle-cleanup",
+      "kind": "slice",
+      "title": "Import Existing Project Phase 6 Reimport And Lifecycle Cleanup",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Import Existing Project Phase 6 Reimport And Lifecycle Cleanup implemented import slice.",
+      "artifacts": [
+        "docs/import-existing-project-phase-6-reimport-and-lifecycle-cleanup-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "workstream:import-existing-project-history-and-reconciliation"
+        ]
+      },
+      "tags": [
+        "import",
+        "implemented"
+      ]
+    },
+    {
+      "id": "slice:import-existing-project-phase-7-history-and-draft-diff",
+      "kind": "slice",
+      "title": "Import Existing Project Phase 7 History And Draft Diff",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Import Existing Project Phase 7 History And Draft Diff implemented import slice.",
+      "artifacts": [
+        "docs/import-existing-project-phase-7-history-and-draft-diff-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "workstream:import-existing-project-history-and-reconciliation"
+        ]
+      },
+      "tags": [
+        "import",
+        "implemented"
+      ]
+    },
+    {
+      "id": "slice:import-existing-project-phase-8-canonical-reconciliation",
+      "kind": "slice",
+      "title": "Import Existing Project Phase 8 Canonical Reconciliation",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Import Existing Project Phase 8 Canonical Reconciliation implemented import slice.",
+      "artifacts": [
+        "docs/import-existing-project-phase-8-canonical-reconciliation-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "workstream:import-existing-project-history-and-reconciliation"
+        ]
+      },
+      "tags": [
+        "import",
+        "implemented"
+      ]
+    },
+    {
+      "id": "slice:import-existing-project-phase-9-historical-restore",
+      "kind": "slice",
+      "title": "Import Existing Project Phase 9 Historical Restore",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Import Existing Project Phase 9 Historical Restore implemented import slice.",
+      "artifacts": [
+        "docs/import-existing-project-phase-9-historical-restore-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "workstream:import-existing-project-history-and-reconciliation"
+        ]
+      },
+      "tags": [
+        "import",
+        "implemented"
+      ]
+    },
+    {
+      "id": "slice:import-existing-project-phase-10-historical-review-draft-restore",
+      "kind": "slice",
+      "title": "Import Existing Project Phase 10 Historical Review Draft Restore",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Import Existing Project Phase 10 Historical Review Draft Restore implemented import slice.",
+      "artifacts": [
+        "docs/import-existing-project-phase-10-historical-review-draft-restore-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "workstream:import-existing-project-history-and-reconciliation"
+        ]
+      },
+      "tags": [
+        "import",
+        "implemented"
+      ]
+    },
+    {
+      "id": "slice:import-existing-project-phase-11-selective-apply-merge-controls",
+      "kind": "slice",
+      "title": "Import Existing Project Phase 11 Selective Apply Merge Controls",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Import Existing Project Phase 11 Selective Apply Merge Controls implemented import slice.",
+      "artifacts": [
+        "docs/import-existing-project-phase-11-selective-apply-merge-controls-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "workstream:import-existing-project-history-and-reconciliation"
+        ]
+      },
+      "tags": [
+        "import",
+        "implemented"
+      ]
+    },
+    {
+      "id": "slice:import-existing-project-phase-12-historical-applied-restore-for-review",
+      "kind": "slice",
+      "title": "Import Existing Project Phase 12 Historical Applied Restore For Review",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Import Existing Project Phase 12 Historical Applied Restore For Review implemented import slice.",
+      "artifacts": [
+        "docs/import-existing-project-phase-12-historical-applied-restore-for-review-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "workstream:import-existing-project-history-and-reconciliation"
+        ]
+      },
+      "tags": [
+        "import",
+        "implemented"
+      ]
+    },
+    {
+      "id": "slice:import-existing-project-phase-13-historical-entry-comparison",
+      "kind": "slice",
+      "title": "Import Existing Project Phase 13 Historical Entry Comparison",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Import Existing Project Phase 13 Historical Entry Comparison implemented import slice.",
+      "artifacts": [
+        "docs/import-existing-project-phase-13-historical-entry-comparison-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "workstream:import-existing-project-history-and-reconciliation"
+        ]
+      },
+      "tags": [
+        "import",
+        "implemented"
+      ]
+    },
+    {
+      "id": "slice:import-existing-project-phase-14-arbitrary-history-comparison",
+      "kind": "slice",
+      "title": "Import Existing Project Phase 14 Arbitrary History Comparison",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Import Existing Project Phase 14 Arbitrary History Comparison implemented import slice.",
+      "artifacts": [
+        "docs/import-existing-project-phase-14-arbitrary-history-comparison-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "workstream:import-existing-project-history-and-reconciliation"
+        ]
+      },
+      "tags": [
+        "import",
+        "implemented"
+      ]
+    },
+    {
+      "id": "slice:import-existing-project-phase-15-selection-aware-history-comparison",
+      "kind": "slice",
+      "title": "Import Existing Project Phase 15 Selection-Aware History Comparison",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Import Existing Project Phase 15 Selection-Aware History Comparison implemented import slice.",
+      "artifacts": [
+        "docs/import-existing-project-phase-15-selection-aware-history-comparison-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "workstream:import-existing-project-history-and-reconciliation"
+        ]
+      },
+      "tags": [
+        "import",
+        "implemented"
+      ]
+    },
+    {
+      "id": "slice:import-existing-project-phase-16-history-selection-summary",
+      "kind": "slice",
+      "title": "Import Existing Project Phase 16 History Selection Summary",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Import Existing Project Phase 16 History Selection Summary implemented import slice.",
+      "artifacts": [
+        "docs/import-existing-project-phase-16-history-selection-summary-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "workstream:import-existing-project-history-and-reconciliation"
+        ]
+      },
+      "tags": [
+        "import",
+        "implemented"
+      ]
+    },
+    {
+      "id": "slice:builder-fusion-phase-01-api-grounded-skill-and-existing-project-contract",
+      "kind": "slice",
+      "title": "Builder Fusion Phase 01 API-Grounded Skill And Existing Project Contract",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Builder Fusion Phase 01 API-Grounded Skill And Existing Project Contract implemented builder slice.",
+      "artifacts": [
+        "docs/builder-fusion-phase-01-api-grounded-skill-and-existing-project-contract-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "workstream:builder-fusion-runtime-sync"
+        ]
+      },
+      "tags": [
+        "builder",
+        "implemented"
+      ]
+    },
+    {
+      "id": "slice:builder-fusion-phase-02-existing-project-helper-contract",
+      "kind": "slice",
+      "title": "Builder Fusion Phase 02 Existing Project Helper Contract",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Builder Fusion Phase 02 Existing Project Helper Contract implemented builder slice.",
+      "artifacts": [
+        "docs/builder-fusion-phase-02-existing-project-helper-contract-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "workstream:builder-fusion-runtime-sync"
+        ]
+      },
+      "tags": [
+        "builder",
+        "implemented"
+      ]
+    },
+    {
+      "id": "slice:builder-fusion-phase-03-sync-verification-workflow",
+      "kind": "slice",
+      "title": "Builder Fusion Phase 03 Sync Verification Workflow",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Builder Fusion Phase 03 Sync Verification Workflow implemented builder slice.",
+      "artifacts": [
+        "docs/builder-fusion-phase-03-sync-verification-workflow-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "workstream:builder-fusion-runtime-sync"
+        ]
+      },
+      "tags": [
+        "builder",
+        "implemented"
+      ]
+    },
+    {
+      "id": "slice:builder-fusion-phase-04-project-visibility-diagnosis-and-remediation",
+      "kind": "slice",
+      "title": "Builder Fusion Phase 04 Project Visibility Diagnosis And Remediation",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Builder Fusion Phase 04 Project Visibility Diagnosis And Remediation implemented builder slice.",
+      "artifacts": [
+        "docs/builder-fusion-phase-04-project-visibility-diagnosis-and-remediation-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "workstream:builder-fusion-runtime-sync"
+        ]
+      },
+      "tags": [
+        "builder",
+        "implemented"
+      ]
+    },
+    {
+      "id": "slice:builder-fusion-phase-05-branch-surface-visibility-reconciliation",
+      "kind": "slice",
+      "title": "Builder Fusion Phase 05 Branch Surface Visibility Reconciliation",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Builder Fusion Phase 05 Branch Surface Visibility Reconciliation implemented builder slice.",
+      "artifacts": [
+        "docs/builder-fusion-phase-05-branch-surface-visibility-reconciliation-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "workstream:builder-fusion-runtime-sync"
+        ]
+      },
+      "tags": [
+        "builder",
+        "implemented"
+      ]
+    },
+    {
+      "id": "implementation:blueprint-project-root-codegraph-integration",
+      "kind": "implementation",
+      "title": "Blueprint project root and codegraph integration",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Implemented blueprint integration that adds project roots, contains edges, and imported edge proposal workflow.",
+      "artifacts": [
+        "docs/blueprint-project-root-codegraph-integration.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:blueprint-knowledge-program"
+        ]
+      },
+      "tags": [
+        "blueprint",
+        "implemented"
+      ]
+    },
+    {
+      "id": "plan:knowledge-library-project-scope",
+      "kind": "plan",
+      "title": "Knowledge library project scope plan",
+      "status": "draft",
+      "routing_state": "ready_for_ralplan",
+      "summary": "Project-scoped knowledge hub planning surface for the knowledge family.",
+      "artifacts": [
+        "docs/knowledge-library-project-scope-plan.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:blueprint-knowledge-program"
+        ]
+      },
+      "tags": [
+        "knowledge",
+        "plan"
+      ]
+    },
+    {
+      "id": "review:blueprint-deep-dive",
+      "kind": "review",
+      "title": "Blueprint deep dive",
+      "status": "complete",
+      "routing_state": "monitoring",
+      "summary": "Reference/deep-dive blueprint research artifact kept visible for the blueprint family.",
+      "artifacts": [
+        "docs/blueprint-research/BLUEPRINT_DEEP_DIVE.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:blueprint-knowledge-program"
+        ]
+      },
+      "tags": [
+        "blueprint",
+        "research"
+      ]
+    },
+    {
+      "id": "review:blueprint-architecture-tools",
+      "kind": "review",
+      "title": "Blueprint architecture tools research",
+      "status": "complete",
+      "routing_state": "monitoring",
+      "summary": "Reference research on architecture tools relevant to the blueprint family.",
+      "artifacts": [
+        "docs/blueprint-research/architecture_tools_research.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:blueprint-knowledge-program"
+        ]
+      },
+      "tags": [
+        "blueprint",
+        "research"
+      ]
+    },
+    {
+      "id": "review:blueprint-deferred-rust-features",
+      "kind": "review",
+      "title": "Blueprint deferred rust features",
+      "status": "complete",
+      "routing_state": "monitoring",
+      "summary": "Reference research on deferred Rust features relevant to blueprint planning.",
+      "artifacts": [
+        "docs/blueprint-research/DEFERRED_RUST_FEATURES.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:blueprint-knowledge-program"
+        ]
+      },
+      "tags": [
+        "blueprint",
+        "research"
+      ]
+    },
+    {
+      "id": "deferred_item:hidden-truth-model",
+      "kind": "deferred_item",
+      "title": "Hidden truth-model / blueprint relationship",
+      "status": "draft",
+      "routing_state": "needs_deep_interview",
+      "summary": "Scopeable-now deferred item for defining the minimum truthful relationship between hidden blueprint truth and the visible project picture.",
+      "artifacts": [
+        ".omx/specs/socratic-deferred-items/hidden-truth-model-relationship.md"
+      ],
+      "links": {
+        "parent": [
+          "workstream:socratic-project-picture"
+        ],
+        "informed_by": [
+          "review:socratic-current-state-vs-thesis"
+        ]
+      },
+      "tags": [
+        "deferred",
+        "scopeable-now"
+      ]
+    },
+    {
+      "id": "deferred_item:whole-project-recoverability",
+      "kind": "deferred_item",
+      "title": "Whole-project recoverability beyond same-route shell",
+      "status": "draft",
+      "routing_state": "needs_deep_interview",
+      "summary": "Scopeable-now deferred item for the minimal reorientation and return contract beyond the current same-route shell.",
+      "artifacts": [
+        ".omx/specs/socratic-deferred-items/whole-project-recoverability.md"
+      ],
+      "links": {
+        "parent": [
+          "workstream:socratic-project-picture"
+        ],
+        "informed_by": [
+          "review:socratic-current-state-vs-thesis"
+        ]
+      },
+      "tags": [
+        "deferred",
+        "scopeable-now"
+      ]
+    },
+    {
+      "id": "deferred_item:overlay-reorientation",
+      "kind": "deferred_item",
+      "title": "Richer overlay / reorientation model",
+      "status": "deferred",
+      "routing_state": "needs_analysis",
+      "summary": "Not yet scopeable because multiple overlay families are still bundled together.",
+      "artifacts": [
+        ".omx/specs/socratic-deferred-items/overlay-reorientation-model.md"
+      ],
+      "links": {
+        "parent": [
+          "workstream:socratic-project-picture"
+        ],
+        "informed_by": [
+          "review:socratic-current-state-vs-thesis"
+        ]
+      },
+      "tags": [
+        "deferred",
+        "needs-analysis"
+      ]
+    },
+    {
+      "id": "deferred_item:provenance-change-inspection",
+      "kind": "deferred_item",
+      "title": "Provenance / change-inspection UX",
+      "status": "deferred",
+      "routing_state": "needs_deep_interview",
+      "summary": "Still needs its first user question narrowed before it becomes scopeable.",
+      "artifacts": [
+        ".omx/specs/socratic-deferred-items/provenance-change-inspection.md"
+      ],
+      "links": {
+        "parent": [
+          "workstream:socratic-project-picture"
+        ],
+        "informed_by": [
+          "review:socratic-current-state-vs-thesis"
+        ]
+      },
+      "tags": [
+        "deferred",
+        "needs-clarity"
+      ]
+    },
+    {
+      "id": "deferred_item:preview-hierarchy-refinement",
+      "kind": "deferred_item",
+      "title": "Preview hierarchy refinement",
+      "status": "draft",
+      "routing_state": "needs_deep_interview",
+      "summary": "Low-severity scopeable-now concern for reducing remaining dashboard weight in preview mode.",
+      "artifacts": [
+        ".omx/specs/socratic-deferred-items/preview-hierarchy-refinement.md"
+      ],
+      "links": {
+        "parent": [
+          "workstream:socratic-project-picture"
+        ],
+        "informed_by": [
+          "review:socratic-current-state-vs-thesis"
+        ]
+      },
+      "tags": [
+        "deferred",
+        "scopeable-now",
+        "low-severity"
+      ]
+    },
+    {
+      "id": "deferred_item:branch-work-queue",
+      "kind": "deferred_item",
+      "title": "Branch-management / generalized work-queue systems",
+      "status": "deferred",
+      "routing_state": "monitoring",
+      "summary": "Intentionally deferred and not justified above more central thesis gaps. Still visible in the Socratic family but not promoted in Pass 2.",
+      "artifacts": [
+        ".omx/specs/socratic-deferred-items/branch-management-work-queue.md"
+      ],
+      "links": {
+        "parent": [
+          "workstream:socratic-project-picture"
+        ]
+      },
+      "tags": [
+        "deferred",
+        "watch"
+      ]
+    },
+    {
+      "id": "deferred_item:multimodal-capture",
+      "kind": "deferred_item",
+      "title": "Multimodal / media-heavy capture",
+      "status": "deferred",
+      "routing_state": "monitoring",
+      "summary": "Intentionally deferred until more central truth/reorientation concerns are clarified. Still visible in the Socratic family but not promoted in Pass 2.",
+      "artifacts": [
+        ".omx/specs/socratic-deferred-items/multimodal-media-capture.md"
+      ],
+      "links": {
+        "parent": [
+          "workstream:socratic-project-picture"
+        ]
+      },
+      "tags": [
+        "deferred",
+        "watch"
+      ]
+    },
+    {
+      "id": "decision:ledger-is-canonical",
+      "kind": "decision",
+      "title": "Planner project tracking uses a canonical OMX-linked ledger",
+      "status": "complete",
+      "routing_state": "complete",
+      "summary": "The first tracking slice must be a canonical planner-wide ledger with lifecycle/routing states, not a docs-only library.",
+      "artifacts": [
+        ".omx/specs/deep-interview-socratic-project-tracking-library.md",
+        ".omx/plans/prd-socratic-project-tracking-library.md"
+      ],
+      "links": {
+        "supports": [
+          "initiative:planner-ledger"
+        ]
+      },
+      "tags": [
+        "decision",
+        "ledger"
+      ]
+    },
+    {
+      "id": "decision:seed-loop-bounded",
+      "kind": "decision",
+      "title": "Seed handling starts as a narrow explicit loop",
+      "status": "complete",
+      "routing_state": "complete",
+      "summary": "The first seed slice uses explicit seed marking, quiet contextual resurfacing, and explicit promote/dismiss actions with adjacent feature families excluded.",
+      "artifacts": [
+        ".omx/specs/deep-interview-socratic-seed-handling.md",
+        ".omx/plans/prd-socratic-seed-handling.md"
+      ],
+      "links": {
+        "decision_for": [
+          "slice:socratic-seed-handling"
+        ]
+      },
+      "tags": [
+        "decision",
+        "seed"
+      ]
+    },
+    {
+      "id": "risk:artifact-sprawl",
+      "kind": "risk",
+      "title": "Artifact sprawl and orphaned follow-ons",
+      "status": "active",
+      "routing_state": "ready_for_ralplan",
+      "summary": "Slices, reviews, deferred items, and follow-on plans can become fragmented without a canonical linkage spine.",
+      "artifacts": [
+        ".omx/plans/prd-planner-ledger-population-pass-1-root-governance.md",
+        ".omx/specs/deep-interview-socratic-project-tracking-library.md",
+        "docs/planner-ledger-population-analysis-and-pass-plan.md",
+        "docs/socratic-current-state-vs-thesis-review.md"
+      ],
+      "links": {
+        "risk_for": [
+          "initiative:planner-ledger"
+        ]
+      },
+      "tags": [
+        "risk",
+        "tracking"
+      ]
+    },
+    {
+      "id": "risk:ledger-staleness",
+      "kind": "risk",
+      "title": "Ledger staleness if update discipline is weak",
+      "status": "active",
+      "routing_state": "monitoring",
+      "summary": "A canonical ledger only stays useful if new durable artifacts are linked and state transitions stay maintained.",
+      "artifacts": [
+        ".omx/ledger/README.md"
+      ],
+      "links": {
+        "mitigated_by": [
+          "initiative:planner-ledger"
+        ]
+      },
+      "tags": [
+        "risk",
+        "maintenance"
+      ]
+    },
+    {
+      "id": "plan:planner-ledger-population-pass-5-solidstart-family",
+      "kind": "plan",
+      "title": "Planner Ledger Population Pass 5 — SolidStart Family",
+      "status": "complete",
+      "routing_state": "complete",
+      "summary": "Approved and executed planning artifacts for the full SolidStart family deep population pass.",
+      "artifacts": [
+        ".omx/plans/prd-planner-ledger-population-pass-5-solidstart-family.md",
+        ".omx/plans/test-spec-planner-ledger-population-pass-5-solidstart-family.md",
+        ".omx/specs/deep-interview-planner-ledger-population-pass-5-solidstart-family.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-ledger"
+        ],
+        "superseded_by": [
+          "slice:planner-ledger-population-pass-6-solidstart-cross-family-convergence"
+        ]
+      },
+      "tags": [
+        "ledger",
+        "population-pass",
+        "plan"
+      ]
+    },
+    {
+      "id": "slice:planner-ledger-population-pass-5-solidstart-family",
+      "kind": "slice",
+      "title": "Planner ledger population pass 5 solidstart family",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Implemented the full SolidStart family deep population pass while keeping overlap link-only and automation deferred.",
+      "artifacts": [
+        ".omx/specs/deep-interview-planner-ledger-population-pass-5-solidstart-family.md",
+        ".omx/plans/prd-planner-ledger-population-pass-5-solidstart-family.md",
+        ".omx/plans/test-spec-planner-ledger-population-pass-5-solidstart-family.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-ledger"
+        ],
+        "follow_on": [
+          "plan:planner-ledger-population-pass-6-solidstart-cross-family-convergence"
+        ],
+        "informed_by": [
+          "initiative:planner-solidstart-platform-direction"
+        ]
+      },
+      "tags": [
+        "ledger",
+        "population-pass",
+        "implemented"
+      ]
+    },
+    {
+      "id": "plan:planner-ledger-population-pass-6-solidstart-cross-family-convergence",
+      "kind": "plan",
+      "title": "Planner Ledger Population Pass 6 — SolidStart Cross-Family Convergence",
+      "status": "complete",
+      "routing_state": "complete",
+      "summary": "Approved and executed planning artifacts for the broad SolidStart cross-family convergence pass.",
+      "artifacts": [
+        ".omx/plans/prd-planner-ledger-population-pass-6-solidstart-cross-family-convergence.md",
+        ".omx/plans/test-spec-planner-ledger-population-pass-6-solidstart-cross-family-convergence.md",
+        ".omx/specs/deep-interview-planner-ledger-population-pass-6-solidstart-cross-family-convergence.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-ledger"
+        ]
+      },
+      "tags": [
+        "ledger",
+        "population-pass",
+        "plan",
+        "convergence"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-00-shell-sessions-and-socratic-anchor",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 00 Shell, Sessions, And Socratic Anchor",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 00 Shell, Sessions, And Socratic Anchor SolidStart phase slice.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-00-shell-sessions-and-socratic-anchor-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-solidstart-platform-direction"
+        ],
+        "informed_by": [
+          "slice:planner-ui-reset-phase-00-shell-navigation-and-auth",
+          "slice:planner-ui-reset-phase-04-sessions-queue",
+          "workstream:socratic-project-picture"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-00"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-01-projects-and-guided-work-entry",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 01 Projects And Guided Work Entry",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 01 Projects And Guided Work Entry SolidStart phase slice.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-01-projects-and-guided-work-entry-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-solidstart-platform-direction"
+        ],
+        "informed_by": [
+          "slice:planner-solidstart-phase-00-shell-sessions-and-socratic-anchor",
+          "slice:planner-ui-reset-phase-02-projects-directory",
+          "slice:planner-ui-reset-phase-03-project-workspace"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-01"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-02-project-advanced-surfaces",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 02 Project Advanced Surfaces",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 02 Project Advanced Surfaces SolidStart phase slice.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-02-project-advanced-surfaces-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-solidstart-platform-direction"
+        ],
+        "informed_by": [
+          "slice:planner-solidstart-phase-01-projects-and-guided-work-entry",
+          "slice:planner-ui-reset-phase-06-knowledge-workspace",
+          "slice:planner-ui-reset-phase-07-blueprint-workspace"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-02"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-03-project-review-and-build-readiness",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 03 Project Review And Build Readiness",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 03 Project Review And Build Readiness SolidStart phase slice.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-03-project-review-and-build-readiness-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-solidstart-platform-direction"
+        ],
+        "informed_by": [
+          "slice:planner-solidstart-phase-02-project-advanced-surfaces",
+          "slice:planner-ui-reset-phase-08-discovery-review-workspace"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-03"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-04-project-build-path-and-automation-handoff",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 04 Project Build Path And Automation Handoff",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 04 Project Build Path And Automation Handoff SolidStart phase slice.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-04-project-build-path-and-automation-handoff-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-solidstart-platform-direction"
+        ],
+        "informed_by": [
+          "slice:planner-solidstart-phase-03-project-review-and-build-readiness"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-04"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-05-project-runs-and-activity",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 05 Project Runs And Activity",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 05 Project Runs And Activity SolidStart phase slice.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-05-project-runs-and-activity-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-solidstart-platform-direction"
+        ],
+        "informed_by": [
+          "slice:planner-solidstart-phase-04-project-build-path-and-automation-handoff",
+          "slice:planner-ui-reset-phase-09-events-timeline-workspace"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-05"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-06-project-build-execution-and-run-detail",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 06 Project Build Execution And Run Detail",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 06 Project Build Execution And Run Detail SolidStart phase slice.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-06-project-build-execution-and-run-detail-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-solidstart-platform-direction"
+        ],
+        "informed_by": [
+          "slice:planner-solidstart-phase-05-project-runs-and-activity",
+          "slice:planner-solidstart-phase-04-project-build-path-and-automation-handoff"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-06"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-07-project-outputs-and-artifacts",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 07 Project Outputs And Artifacts",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 07 Project Outputs And Artifacts SolidStart phase slice.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-07-project-outputs-and-artifacts-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-solidstart-platform-direction"
+        ],
+        "informed_by": [
+          "slice:planner-solidstart-phase-06-project-build-execution-and-run-detail",
+          "slice:planner-solidstart-phase-04-project-build-path-and-automation-handoff"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-07"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-08-events-timeline-and-snapshots",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 08 Events Timeline And Snapshots",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 08 Events Timeline And Snapshots SolidStart phase slice.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-08-events-timeline-and-snapshots-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-solidstart-platform-direction"
+        ],
+        "informed_by": [
+          "slice:planner-ui-reset-phase-09-events-timeline-workspace",
+          "slice:planner-solidstart-phase-07-project-outputs-and-artifacts"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-08"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-09-admin-operations-route",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 09 Admin Operations Route",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 09 Admin Operations Route SolidStart phase slice.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-09-admin-operations-route-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-solidstart-platform-direction"
+        ],
+        "informed_by": [
+          "slice:planner-ui-reset-phase-10-admin-operations-workspace",
+          "slice:planner-solidstart-phase-08-events-timeline-and-snapshots"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-09"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-10-knowledge-inventory-route",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 10 Knowledge Inventory Route",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 10 Knowledge Inventory Route SolidStart phase slice.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-10-knowledge-inventory-route-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-solidstart-platform-direction"
+        ],
+        "informed_by": [
+          "slice:planner-ui-reset-phase-06-knowledge-workspace",
+          "slice:planner-solidstart-phase-09-admin-operations-route",
+          "initiative:blueprint-knowledge-program"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-10"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-11-blueprint-graph-route",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 11 Blueprint Graph Route",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 11 Blueprint Graph Route SolidStart phase slice.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-11-blueprint-graph-route-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-solidstart-platform-direction"
+        ],
+        "informed_by": [
+          "slice:planner-ui-reset-phase-07-blueprint-workspace",
+          "slice:planner-solidstart-phase-10-knowledge-inventory-route",
+          "initiative:blueprint-knowledge-program"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-11"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-12-discovery-triage-route",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 12 Discovery Triage Route",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 12 Discovery Triage Route SolidStart phase slice.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-12-discovery-triage-route-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-solidstart-platform-direction"
+        ],
+        "informed_by": [
+          "slice:planner-ui-reset-phase-08-discovery-review-workspace",
+          "slice:planner-solidstart-phase-11-blueprint-graph-route"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-12"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-13-route-family-closeout",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 13 Route Family Closeout",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 13 Route Family Closeout SolidStart phase slice.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-13-route-family-closeout-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-solidstart-platform-direction"
+        ],
+        "informed_by": [
+          "slice:planner-solidstart-phase-12-discovery-triage-route",
+          "slice:planner-solidstart-phase-00-shell-sessions-and-socratic-anchor"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-13"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-14-project-import-review-route",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 14 Project Import Review Route",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 14 Project Import Review Route SolidStart phase slice.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-14-project-import-review-route-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-solidstart-platform-direction"
+        ],
+        "informed_by": [
+          "workstream:import-existing-project-history-and-reconciliation",
+          "slice:planner-solidstart-phase-13-route-family-closeout",
+          "initiative:import-existing-project-program"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-14"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-15-project-import-history-and-restore-route",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 15 Project Import History And Restore Route",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 15 Project Import History And Restore Route SolidStart phase slice.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-15-project-import-history-and-restore-route-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-solidstart-platform-direction"
+        ],
+        "informed_by": [
+          "slice:import-existing-project-phase-9-historical-restore",
+          "slice:import-existing-project-phase-10-historical-review-draft-restore",
+          "slice:planner-solidstart-phase-14-project-import-review-route",
+          "slice:planner-solidstart-phase-16-project-import-comparison-and-selection-summary",
+          "initiative:import-existing-project-program",
+          "workstream:import-existing-project-history-and-reconciliation"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-15"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-16-project-import-comparison-and-selection-summary",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 16 Project Import Comparison And Selection Summary",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 16 Project Import Comparison And Selection Summary SolidStart phase slice.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-16-project-import-comparison-and-selection-summary-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-solidstart-platform-direction"
+        ],
+        "informed_by": [
+          "slice:import-existing-project-phase-13-historical-entry-comparison",
+          "slice:import-existing-project-phase-14-arbitrary-history-comparison",
+          "slice:import-existing-project-phase-15-selection-aware-history-comparison",
+          "slice:import-existing-project-phase-16-history-selection-summary",
+          "slice:planner-solidstart-phase-15-project-import-history-and-restore-route",
+          "initiative:import-existing-project-program",
+          "workstream:import-existing-project-history-and-reconciliation"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-16"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-17-workflow-closeout-and-react-retirement",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 17 Workflow Closeout And React Retirement",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 17 Workflow Closeout And React Retirement SolidStart phase slice.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-17-workflow-closeout-and-react-retirement-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-solidstart-platform-direction"
+        ],
+        "informed_by": [
+          "slice:planner-solidstart-phase-00-shell-sessions-and-socratic-anchor",
+          "slice:planner-solidstart-phase-16-project-import-comparison-and-selection-summary"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-17"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-18-prompt-bank-conformance-and-closeout-remediation",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 18 Prompt-Bank Conformance And Closeout Remediation",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 18 Prompt-Bank Conformance And Closeout Remediation SolidStart phase slice.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-18-prompt-bank-conformance-and-closeout-remediation-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-solidstart-platform-direction"
+        ],
+        "informed_by": [
+          "slice:planner-solidstart-phase-00-shell-sessions-and-socratic-anchor",
+          "slice:planner-solidstart-phase-17-workflow-closeout-and-react-retirement",
+          "initiative:import-existing-project-program",
+          "workstream:socratic-project-picture"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-18"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-19-typography-alignment-and-visual-consistency-remediation",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 19 Typography, Alignment, And Visual Consistency Remediation",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 19 Typography, Alignment, And Visual Consistency Remediation SolidStart phase slice.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-19-typography-alignment-and-visual-consistency-remediation-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-solidstart-platform-direction"
+        ],
+        "informed_by": [
+          "slice:planner-solidstart-phase-18-prompt-bank-conformance-and-closeout-remediation",
+          "plan:planner-ui-reset-route-by-route-queue",
+          "slice:planner-ui-reset-phase-02-projects-directory",
+          "slice:planner-ui-reset-phase-04-sessions-queue",
+          "slice:planner-ui-reset-phase-06-knowledge-workspace",
+          "slice:planner-ui-reset-phase-08-discovery-review-workspace",
+          "slice:planner-ui-reset-phase-09-events-timeline-workspace",
+          "slice:planner-ui-reset-phase-10-admin-operations-workspace",
+          "slice:planner-design-system-phase-2-editorial-typography-and-cta",
+          "initiative:import-existing-project-program",
+          "initiative:planner-design-system"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-19"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-20-project-surfaces-local-app-and-primitive-hardening",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 20 Project Surfaces Local-App And Primitive Hardening",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 20 Project Surfaces Local-App And Primitive Hardening SolidStart phase slice.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-20-project-surfaces-local-app-and-primitive-hardening-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-solidstart-platform-direction"
+        ],
+        "informed_by": [
+          "slice:planner-solidstart-phase-03-project-review-and-build-readiness",
+          "slice:planner-solidstart-phase-14-project-import-review-route",
+          "slice:planner-solidstart-phase-19-typography-alignment-and-visual-consistency-remediation",
+          "initiative:import-existing-project-program"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-20"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-21-session-startup-truth-and-status-clarity",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 21 Session Startup Truth And Status Clarity",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 21 Session Startup Truth And Status Clarity SolidStart parent slice for a nested subfamily cluster.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-21-session-startup-truth-and-status-clarity-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-solidstart-platform-direction"
+        ],
+        "children": [
+          "slice:planner-solidstart-phase-27-new-session-startup-truth-remediation",
+          "slice:planner-solidstart-phase-28-session-entry-and-startup-product-flow"
+        ],
+        "informed_by": [
+          "slice:planner-solidstart-phase-17-workflow-closeout-and-react-retirement",
+          "slice:planner-solidstart-phase-18-prompt-bank-conformance-and-closeout-remediation",
+          "initiative:import-existing-project-program"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-21"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-22-session-workspace-master-detail-density-and-autosave",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 22 Session Workspace Master-Detail Density And Autosave",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 22 Session Workspace Master-Detail Density And Autosave SolidStart phase slice.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-22-session-workspace-master-detail-density-and-autosave-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-solidstart-platform-direction"
+        ],
+        "informed_by": [
+          "slice:planner-solidstart-phase-21-session-startup-truth-and-status-clarity",
+          "initiative:import-existing-project-program"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-22"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-23-session-live-artifact-split",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 23 Session Live Artifact Split",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 23 Session Live Artifact Split SolidStart phase slice.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-23-session-live-artifact-split-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-solidstart-platform-direction"
+        ],
+        "informed_by": [
+          "slice:planner-solidstart-phase-22-session-workspace-master-detail-density-and-autosave",
+          "initiative:import-existing-project-program"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-23"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-24-socratic-runtime-contract-reset",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 24 Socratic Runtime Contract Reset",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 24 Socratic Runtime Contract Reset SolidStart parent slice for a nested subfamily cluster.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-24-socratic-runtime-contract-reset-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-solidstart-platform-direction"
+        ],
+        "children": [
+          "slice:planner-solidstart-phase-25-socratic-runtime-verification-hardening-remediation",
+          "slice:planner-solidstart-phase-26-socratic-runtime-truth-completion-remediation"
+        ],
+        "informed_by": [
+          "slice:planner-solidstart-phase-18-prompt-bank-conformance-and-closeout-remediation",
+          "slice:planner-solidstart-phase-21-session-startup-truth-and-status-clarity",
+          "slice:planner-solidstart-phase-23-session-live-artifact-split",
+          "initiative:import-existing-project-program",
+          "workstream:socratic-project-picture"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-24"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-25-socratic-runtime-verification-hardening-remediation",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 25 Socratic Runtime Verification Hardening Remediation",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 25 Socratic Runtime Verification Hardening Remediation SolidStart phase slice.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-25-socratic-runtime-verification-hardening-remediation-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "slice:planner-solidstart-phase-24-socratic-runtime-contract-reset"
+        ],
+        "informed_by": [
+          "slice:planner-solidstart-phase-18-prompt-bank-conformance-and-closeout-remediation",
+          "slice:planner-solidstart-phase-21-session-startup-truth-and-status-clarity",
+          "slice:planner-solidstart-phase-23-session-live-artifact-split",
+          "initiative:import-existing-project-program",
+          "workstream:socratic-project-picture"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-25"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-26-socratic-runtime-truth-completion-remediation",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 26 Socratic Runtime Truth Completion Remediation",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 26 Socratic Runtime Truth Completion Remediation SolidStart phase slice.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-26-socratic-runtime-truth-completion-remediation-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "slice:planner-solidstart-phase-24-socratic-runtime-contract-reset"
+        ],
+        "informed_by": [
+          "slice:planner-solidstart-phase-21-session-startup-truth-and-status-clarity",
+          "slice:planner-solidstart-phase-25-socratic-runtime-verification-hardening-remediation",
+          "initiative:import-existing-project-program",
+          "workstream:socratic-project-picture"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-26"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-27-new-session-startup-truth-remediation",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 27 New Session Startup Truth Remediation",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 27 New Session Startup Truth Remediation SolidStart phase slice.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-27-new-session-startup-truth-remediation-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "slice:planner-solidstart-phase-21-session-startup-truth-and-status-clarity"
+        ],
+        "informed_by": [
+          "slice:planner-solidstart-phase-26-socratic-runtime-truth-completion-remediation",
+          "initiative:import-existing-project-program"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-27"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-28-session-entry-and-startup-product-flow",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 28 Session Entry And Startup Product Flow",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 28 Session Entry And Startup Product Flow SolidStart parent slice for a nested subfamily cluster.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-28-session-entry-and-startup-product-flow-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "slice:planner-solidstart-phase-21-session-startup-truth-and-status-clarity"
+        ],
+        "children": [
+          "slice:planner-solidstart-phase-29-work-entry-summary-truth-and-workflow-continuity"
+        ],
+        "informed_by": [
+          "slice:planner-solidstart-phase-26-socratic-runtime-truth-completion-remediation",
+          "slice:planner-solidstart-phase-27-new-session-startup-truth-remediation",
+          "initiative:import-existing-project-program"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-28"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-29-work-entry-summary-truth-and-workflow-continuity",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 29 Work Entry Summary Truth And Workflow Continuity",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 29 Work Entry Summary Truth And Workflow Continuity SolidStart parent slice for a nested subfamily cluster.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-29-work-entry-summary-truth-and-workflow-continuity-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "slice:planner-solidstart-phase-28-session-entry-and-startup-product-flow"
+        ],
+        "children": [
+          "slice:planner-solidstart-phase-30-project-workspace-route-family-decomposition"
+        ],
+        "informed_by": [
+          "slice:planner-solidstart-phase-01-projects-and-guided-work-entry",
+          "slice:planner-solidstart-phase-17-workflow-closeout-and-react-retirement",
+          "slice:planner-solidstart-phase-20-project-surfaces-local-app-and-primitive-hardening",
+          "slice:planner-solidstart-phase-21-session-startup-truth-and-status-clarity",
+          "initiative:import-existing-project-program"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-29"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-30-project-workspace-route-family-decomposition",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 30 Project Workspace Route Family Decomposition",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 30 Project Workspace Route Family Decomposition SolidStart parent slice for a nested subfamily cluster.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-30-project-workspace-route-family-decomposition-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "slice:planner-solidstart-phase-29-work-entry-summary-truth-and-workflow-continuity"
+        ],
+        "children": [
+          "slice:planner-solidstart-phase-31-session-workspace-route-family-decomposition"
+        ],
+        "informed_by": [
+          "slice:planner-solidstart-phase-20-project-surfaces-local-app-and-primitive-hardening",
+          "slice:planner-solidstart-phase-01-projects-and-guided-work-entry",
+          "initiative:import-existing-project-program"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-30"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-31-session-workspace-route-family-decomposition",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 31 Session Workspace Route Family Decomposition",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 31 Session Workspace Route Family Decomposition SolidStart parent slice for a nested subfamily cluster.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-31-session-workspace-route-family-decomposition-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "slice:planner-solidstart-phase-30-project-workspace-route-family-decomposition"
+        ],
+        "children": [
+          "slice:planner-solidstart-phase-32-work-entry-ia-and-session-route-topology",
+          "slice:planner-solidstart-phase-33-session-workspace-interaction-and-artifact-refinement",
+          "slice:planner-solidstart-phase-34-session-question-bank-workspace-reset",
+          "slice:planner-solidstart-phase-37-session-workspace-command-rail-hierarchy",
+          "slice:planner-solidstart-phase-38-socratic-multimodal-command-desk",
+          "slice:planner-solidstart-phase-39-session-commit-continuity-and-prompt-bank-merge"
+        ],
+        "informed_by": [
+          "slice:planner-solidstart-phase-22-session-workspace-master-detail-density-and-autosave",
+          "slice:planner-solidstart-phase-23-session-live-artifact-split",
+          "slice:planner-solidstart-phase-29-work-entry-summary-truth-and-workflow-continuity",
+          "initiative:import-existing-project-program"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-31"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-32-work-entry-ia-and-session-route-topology",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 32 Work Entry IA And Session Route Topology",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 32 Work Entry IA And Session Route Topology SolidStart phase slice.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-32-work-entry-ia-and-session-route-topology-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "slice:planner-solidstart-phase-31-session-workspace-route-family-decomposition"
+        ],
+        "informed_by": [
+          "slice:planner-solidstart-phase-01-projects-and-guided-work-entry",
+          "slice:planner-solidstart-phase-17-workflow-closeout-and-react-retirement",
+          "slice:planner-solidstart-phase-29-work-entry-summary-truth-and-workflow-continuity",
+          "initiative:import-existing-project-program"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-32"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-33-session-workspace-interaction-and-artifact-refinement",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 33 Session Workspace Interaction And Artifact Refinement",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 33 Session Workspace Interaction And Artifact Refinement SolidStart phase slice.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-33-session-workspace-interaction-and-artifact-refinement-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "slice:planner-solidstart-phase-31-session-workspace-route-family-decomposition"
+        ],
+        "informed_by": [
+          "slice:planner-solidstart-phase-22-session-workspace-master-detail-density-and-autosave",
+          "slice:planner-solidstart-phase-23-session-live-artifact-split",
+          "slice:planner-solidstart-phase-29-work-entry-summary-truth-and-workflow-continuity",
+          "initiative:import-existing-project-program"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-33"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-34-session-question-bank-workspace-reset",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 34 Session Question-Bank Workspace Reset",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 34 Session Question-Bank Workspace Reset SolidStart phase slice.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-34-session-question-bank-workspace-reset-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "slice:planner-solidstart-phase-31-session-workspace-route-family-decomposition"
+        ],
+        "informed_by": [
+          "slice:planner-solidstart-phase-22-session-workspace-master-detail-density-and-autosave",
+          "slice:planner-solidstart-phase-23-session-live-artifact-split",
+          "slice:planner-solidstart-phase-33-session-workspace-interaction-and-artifact-refinement",
+          "initiative:import-existing-project-program"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-34"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-35-1-shared-frontend-mock-foundation",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 35.1 Shared Frontend Mock Foundation",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 35.1 Shared Frontend Mock Foundation SolidStart phase slice.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-35-1-shared-frontend-mock-foundation-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "slice:planner-solidstart-phase-35-backendless-mock-route-coverage"
+        ],
+        "informed_by": [
+          "slice:planner-solidstart-phase-31-session-workspace-route-family-decomposition",
+          "initiative:import-existing-project-program"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-35",
+        "subphase"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-35-10-builder-frontend-mock-runtime-alignment",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 35.10 Builder Frontend Mock Runtime Alignment",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 35.10 Builder Frontend Mock Runtime Alignment SolidStart parent slice for a nested subfamily cluster.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-35-10-builder-frontend-mock-runtime-alignment-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "slice:planner-solidstart-phase-35-backendless-mock-route-coverage"
+        ],
+        "children": [
+          "slice:planner-solidstart-phase-36-home-project-directory-consolidation"
+        ],
+        "informed_by": [
+          "workstream:builder-fusion-runtime-sync",
+          "initiative:import-existing-project-program"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-35",
+        "subphase"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-35-2-work-entry-and-queue-routes-frontend-mock",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 35.2 Work-Entry And Queue Routes Frontend Mock",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 35.2 Work-Entry And Queue Routes Frontend Mock SolidStart phase slice.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-35-2-work-entry-and-queue-routes-frontend-mock-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "slice:planner-solidstart-phase-35-backendless-mock-route-coverage"
+        ],
+        "informed_by": [
+          "slice:planner-solidstart-phase-32-work-entry-ia-and-session-route-topology",
+          "slice:planner-solidstart-phase-29-work-entry-summary-truth-and-workflow-continuity",
+          "initiative:import-existing-project-program"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-35",
+        "subphase"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-35-3-session-workspace-frontend-mock",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 35.3 Session Workspace Frontend Mock",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 35.3 Session Workspace Frontend Mock SolidStart phase slice.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-35-3-session-workspace-frontend-mock-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "slice:planner-solidstart-phase-35-backendless-mock-route-coverage"
+        ],
+        "informed_by": [
+          "slice:planner-solidstart-phase-34-session-question-bank-workspace-reset",
+          "slice:planner-solidstart-phase-28-session-entry-and-startup-product-flow",
+          "slice:planner-solidstart-phase-26-socratic-runtime-truth-completion-remediation",
+          "initiative:import-existing-project-program"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-35",
+        "subphase"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-35-4-project-workspace-frontend-mock",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 35.4 Project Workspace Frontend Mock",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 35.4 Project Workspace Frontend Mock SolidStart phase slice.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-35-4-project-workspace-frontend-mock-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "slice:planner-solidstart-phase-35-backendless-mock-route-coverage"
+        ],
+        "informed_by": [
+          "slice:planner-solidstart-phase-30-project-workspace-route-family-decomposition",
+          "slice:planner-solidstart-phase-29-work-entry-summary-truth-and-workflow-continuity",
+          "initiative:import-existing-project-program"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-35",
+        "subphase"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-35-5-import-review-frontend-mock",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 35.5 Import Review Frontend Mock",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 35.5 Import Review Frontend Mock SolidStart phase slice.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-35-5-import-review-frontend-mock-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "slice:planner-solidstart-phase-35-backendless-mock-route-coverage"
+        ],
+        "informed_by": [
+          "slice:planner-solidstart-phase-14-project-import-review-route",
+          "slice:planner-solidstart-phase-15-project-import-history-and-restore-route",
+          "slice:planner-solidstart-phase-16-project-import-comparison-and-selection-summary",
+          "initiative:import-existing-project-program",
+          "workstream:import-existing-project-history-and-reconciliation"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-35",
+        "subphase"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-35-6-knowledge-and-blueprint-frontend-mock",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 35.6 Knowledge And Blueprint Frontend Mock",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 35.6 Knowledge And Blueprint Frontend Mock SolidStart phase slice.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-35-6-knowledge-and-blueprint-frontend-mock-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "slice:planner-solidstart-phase-35-backendless-mock-route-coverage"
+        ],
+        "informed_by": [
+          "slice:planner-solidstart-phase-10-knowledge-inventory-route",
+          "slice:planner-solidstart-phase-11-blueprint-graph-route",
+          "initiative:import-existing-project-program",
+          "initiative:blueprint-knowledge-program"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-35",
+        "subphase"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-35-7-events-discovery-and-admin-frontend-mock",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 35.7 Events, Discovery, And Admin Frontend Mock",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 35.7 Events, Discovery, And Admin Frontend Mock SolidStart phase slice.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-35-7-events-discovery-and-admin-frontend-mock-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "slice:planner-solidstart-phase-35-backendless-mock-route-coverage"
+        ],
+        "informed_by": [
+          "slice:planner-solidstart-phase-08-events-timeline-and-snapshots",
+          "slice:planner-solidstart-phase-09-admin-operations-route",
+          "slice:planner-solidstart-phase-12-discovery-triage-route",
+          "initiative:import-existing-project-program",
+          "initiative:planning-audit-remediation",
+          "slice:planner-ui-reset-phase-08-discovery-review-workspace",
+          "slice:planner-ui-reset-phase-09-events-timeline-workspace",
+          "slice:planner-ui-reset-phase-10-admin-operations-workspace"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-35",
+        "subphase"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-35-8-backendless-mock-closeout-remediation",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 35.8 Backendless Mock Closeout Remediation",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 35.8 Backendless Mock Closeout Remediation SolidStart phase slice.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-35-8-backendless-mock-closeout-remediation-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "slice:planner-solidstart-phase-35-backendless-mock-route-coverage"
+        ],
+        "informed_by": [
+          "initiative:import-existing-project-program"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-35",
+        "subphase"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-35-9-backendless-mock-residual-cleanup",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 35.9 Backendless Mock Residual Cleanup",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 35.9 Backendless Mock Residual Cleanup SolidStart phase slice.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-35-9-backendless-mock-residual-cleanup-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "slice:planner-solidstart-phase-35-backendless-mock-route-coverage"
+        ],
+        "informed_by": [
+          "initiative:import-existing-project-program",
+          "governance:readme"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-35",
+        "subphase"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-35-backendless-mock-route-coverage",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 35 Backendless Mock Route Coverage",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 35 Backendless Mock Route Coverage SolidStart parent slice for a nested subfamily cluster.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-35-backendless-mock-route-coverage-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-solidstart-platform-direction"
+        ],
+        "children": [
+          "slice:planner-solidstart-phase-35-1-shared-frontend-mock-foundation",
+          "slice:planner-solidstart-phase-35-2-work-entry-and-queue-routes-frontend-mock",
+          "slice:planner-solidstart-phase-35-3-session-workspace-frontend-mock",
+          "slice:planner-solidstart-phase-35-4-project-workspace-frontend-mock",
+          "slice:planner-solidstart-phase-35-5-import-review-frontend-mock",
+          "slice:planner-solidstart-phase-35-6-knowledge-and-blueprint-frontend-mock",
+          "slice:planner-solidstart-phase-35-7-events-discovery-and-admin-frontend-mock",
+          "slice:planner-solidstart-phase-35-8-backendless-mock-closeout-remediation",
+          "slice:planner-solidstart-phase-35-9-backendless-mock-residual-cleanup",
+          "slice:planner-solidstart-phase-35-10-builder-frontend-mock-runtime-alignment"
+        ],
+        "informed_by": [
+          "slice:planner-solidstart-phase-32-work-entry-ia-and-session-route-topology",
+          "slice:planner-solidstart-phase-34-session-question-bank-workspace-reset",
+          "slice:planner-solidstart-phase-35-8-backendless-mock-closeout-remediation",
+          "slice:planner-solidstart-phase-35-9-backendless-mock-residual-cleanup",
+          "slice:planner-solidstart-phase-35-10-builder-frontend-mock-runtime-alignment",
+          "workstream:builder-fusion-runtime-sync",
+          "initiative:import-existing-project-program"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-35"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-36-1-frontend-mock-vite-shell-duplication-remediation",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 36.1 Frontend Mock Vite Shell Duplication Remediation",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 36.1 Frontend Mock Vite Shell Duplication Remediation SolidStart phase slice.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-36-1-frontend-mock-vite-shell-duplication-remediation-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "slice:planner-solidstart-phase-36-home-project-directory-consolidation"
+        ],
+        "informed_by": [
+          "slice:planner-solidstart-phase-35-10-builder-frontend-mock-runtime-alignment",
+          "initiative:import-existing-project-program"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-36",
+        "subphase"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-36-2-home-route-canonicality-remediation",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 36.2 Home Route Canonicality Remediation",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 36.2 Home Route Canonicality Remediation SolidStart phase slice.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-36-2-home-route-canonicality-remediation-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "slice:planner-solidstart-phase-36-home-project-directory-consolidation"
+        ],
+        "informed_by": [
+          "slice:planner-solidstart-phase-36-1-frontend-mock-vite-shell-duplication-remediation",
+          "slice:planner-solidstart-phase-35-10-builder-frontend-mock-runtime-alignment",
+          "initiative:import-existing-project-program"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-36",
+        "subphase"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-36-home-project-directory-consolidation",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 36 Home Project Directory Consolidation",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 36 Home Project Directory Consolidation SolidStart parent slice for a nested subfamily cluster.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-36-home-project-directory-consolidation-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "slice:planner-solidstart-phase-35-10-builder-frontend-mock-runtime-alignment"
+        ],
+        "children": [
+          "slice:planner-solidstart-phase-36-1-frontend-mock-vite-shell-duplication-remediation",
+          "slice:planner-solidstart-phase-36-2-home-route-canonicality-remediation"
+        ],
+        "informed_by": [
+          "initiative:planner-solidstart-platform-direction",
+          "slice:planner-solidstart-phase-01-projects-and-guided-work-entry",
+          "slice:planner-solidstart-phase-29-work-entry-summary-truth-and-workflow-continuity",
+          "slice:planner-solidstart-phase-32-work-entry-ia-and-session-route-topology",
+          "initiative:import-existing-project-program"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-36"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-37-1-session-command-rail-narrow-width-and-focus-continuity",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 37.1 Session Command Rail Narrow-Width And Focus Continuity",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 37.1 Session Command Rail Narrow-Width And Focus Continuity SolidStart phase slice.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-37-1-session-command-rail-narrow-width-and-focus-continuity-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "slice:planner-solidstart-phase-37-session-workspace-command-rail-hierarchy"
+        ],
+        "informed_by": [
+          "slice:planner-solidstart-phase-31-session-workspace-route-family-decomposition",
+          "slice:planner-solidstart-phase-34-session-question-bank-workspace-reset",
+          "slice:planner-solidstart-phase-35-3-session-workspace-frontend-mock",
+          "initiative:import-existing-project-program"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-37",
+        "subphase"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-37-2-session-command-rail-canonical-runtime-proof",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 37.2 Session Command Rail Canonical Runtime Proof",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 37.2 Session Command Rail Canonical Runtime Proof SolidStart phase slice.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-37-2-session-command-rail-canonical-runtime-proof-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "slice:planner-solidstart-phase-37-session-workspace-command-rail-hierarchy"
+        ],
+        "informed_by": [
+          "slice:planner-solidstart-phase-35-3-session-workspace-frontend-mock",
+          "slice:planner-solidstart-phase-35-10-builder-frontend-mock-runtime-alignment",
+          "initiative:import-existing-project-program"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-37",
+        "subphase"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-37-3-canonical-static-runtime-parity-remediation",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 37.3 Canonical Static Runtime Parity Remediation",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 37.3 Canonical Static Runtime Parity Remediation SolidStart phase slice.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-37-3-canonical-static-runtime-parity-remediation-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "slice:planner-solidstart-phase-37-session-workspace-command-rail-hierarchy"
+        ],
+        "informed_by": [
+          "slice:planner-solidstart-phase-37-2-session-command-rail-canonical-runtime-proof",
+          "slice:planner-solidstart-phase-35-10-builder-frontend-mock-runtime-alignment",
+          "initiative:import-existing-project-program"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-37",
+        "subphase"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-37-4-session-question-chrome-reduction",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 37.4 Session Question Chrome Reduction",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 37.4 Session Question Chrome Reduction SolidStart phase slice.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-37-4-session-question-chrome-reduction-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "slice:planner-solidstart-phase-37-session-workspace-command-rail-hierarchy"
+        ],
+        "informed_by": [
+          "slice:planner-solidstart-phase-33-session-workspace-interaction-and-artifact-refinement",
+          "slice:planner-solidstart-phase-34-session-question-bank-workspace-reset",
+          "slice:planner-solidstart-phase-37-1-session-command-rail-narrow-width-and-focus-continuity",
+          "slice:planner-solidstart-phase-37-2-session-command-rail-canonical-runtime-proof",
+          "initiative:import-existing-project-program"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-37",
+        "subphase"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-37-5-session-header-signal-consolidation",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 37.5 Session Header Signal Consolidation",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 37.5 Session Header Signal Consolidation SolidStart phase slice.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-37-5-session-header-signal-consolidation-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "slice:planner-solidstart-phase-37-session-workspace-command-rail-hierarchy"
+        ],
+        "informed_by": [
+          "slice:planner-solidstart-phase-37-1-session-command-rail-narrow-width-and-focus-continuity",
+          "slice:planner-solidstart-phase-37-2-session-command-rail-canonical-runtime-proof",
+          "slice:planner-solidstart-phase-37-4-session-question-chrome-reduction",
+          "initiative:import-existing-project-program"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-37",
+        "subphase"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-37-session-workspace-command-rail-hierarchy",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 37 Session Workspace Command Rail Hierarchy",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 37 Session Workspace Command Rail Hierarchy SolidStart parent slice for a nested subfamily cluster.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-37-session-workspace-command-rail-hierarchy-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "slice:planner-solidstart-phase-31-session-workspace-route-family-decomposition"
+        ],
+        "children": [
+          "slice:planner-solidstart-phase-37-1-session-command-rail-narrow-width-and-focus-continuity",
+          "slice:planner-solidstart-phase-37-2-session-command-rail-canonical-runtime-proof",
+          "slice:planner-solidstart-phase-37-3-canonical-static-runtime-parity-remediation",
+          "slice:planner-solidstart-phase-37-4-session-question-chrome-reduction",
+          "slice:planner-solidstart-phase-37-5-session-header-signal-consolidation"
+        ],
+        "informed_by": [
+          "slice:planner-solidstart-phase-34-session-question-bank-workspace-reset",
+          "slice:planner-solidstart-phase-35-3-session-workspace-frontend-mock",
+          "slice:planner-solidstart-phase-29-work-entry-summary-truth-and-workflow-continuity",
+          "slice:planner-design-system-phase-4-utility-route-consistency",
+          "initiative:import-existing-project-program",
+          "initiative:planner-design-system"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-37"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-38-1-socratic-prompt-contract-and-transport-widening",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 38.1 Socratic Prompt Contract And Transport Widening",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 38.1 Socratic Prompt Contract And Transport Widening SolidStart phase slice.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-38-1-socratic-prompt-contract-and-transport-widening-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "slice:planner-solidstart-phase-38-socratic-multimodal-command-desk"
+        ],
+        "informed_by": [
+          "slice:planner-solidstart-phase-18-prompt-bank-conformance-and-closeout-remediation",
+          "slice:planner-solidstart-phase-34-session-question-bank-workspace-reset",
+          "initiative:import-existing-project-program"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-38",
+        "subphase"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-38-2-socratic-multimodal-planner-and-adjudication",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 38.2 Socratic Multimodal Planner And Adjudication",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 38.2 Socratic Multimodal Planner And Adjudication SolidStart phase slice.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-38-2-socratic-multimodal-planner-and-adjudication-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "slice:planner-solidstart-phase-38-socratic-multimodal-command-desk"
+        ],
+        "informed_by": [
+          "slice:planner-solidstart-phase-38-1-socratic-prompt-contract-and-transport-widening",
+          "initiative:import-existing-project-program"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-38",
+        "subphase"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-38-3-session-command-desk-ultra-wide-layout",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 38.3 Session Command Desk Ultra-Wide Layout",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 38.3 Session Command Desk Ultra-Wide Layout SolidStart phase slice.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-38-3-session-command-desk-ultra-wide-layout-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "slice:planner-solidstart-phase-38-socratic-multimodal-command-desk"
+        ],
+        "informed_by": [
+          "slice:planner-solidstart-phase-37-session-workspace-command-rail-hierarchy",
+          "slice:planner-solidstart-phase-37-5-session-header-signal-consolidation",
+          "slice:planner-design-system-phase-5-route-hierarchy-and-operational-density",
+          "slice:planner-design-system-phase-6-operational-surfaces-and-event-density",
+          "initiative:import-existing-project-program"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-38",
+        "subphase"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-38-socratic-multimodal-command-desk",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 38 Socratic Multimodal Command Desk",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 38 Socratic Multimodal Command Desk SolidStart parent slice for a nested subfamily cluster.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-38-socratic-multimodal-command-desk-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "slice:planner-solidstart-phase-31-session-workspace-route-family-decomposition"
+        ],
+        "children": [
+          "slice:planner-solidstart-phase-38-1-socratic-prompt-contract-and-transport-widening",
+          "slice:planner-solidstart-phase-38-2-socratic-multimodal-planner-and-adjudication",
+          "slice:planner-solidstart-phase-38-3-session-command-desk-ultra-wide-layout"
+        ],
+        "informed_by": [
+          "slice:planner-solidstart-phase-34-session-question-bank-workspace-reset",
+          "slice:planner-solidstart-phase-37-session-workspace-command-rail-hierarchy",
+          "slice:planner-solidstart-phase-37-5-session-header-signal-consolidation",
+          "slice:planner-solidstart-phase-18-prompt-bank-conformance-and-closeout-remediation",
+          "initiative:import-existing-project-program",
+          "workstream:socratic-project-picture",
+          "initiative:planner-design-system"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-38"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-39-session-commit-continuity-and-prompt-bank-merge",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 39 Session Commit Continuity And Prompt-Bank Merge",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 39 Session Commit Continuity And Prompt-Bank Merge SolidStart phase slice.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-39-session-commit-continuity-and-prompt-bank-merge-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "slice:planner-solidstart-phase-31-session-workspace-route-family-decomposition"
+        ],
+        "informed_by": [
+          "slice:planner-solidstart-phase-18-prompt-bank-conformance-and-closeout-remediation",
+          "slice:planner-solidstart-phase-38-socratic-multimodal-command-desk",
+          "slice:planner-solidstart-phase-38-3-session-command-desk-ultra-wide-layout",
+          "initiative:import-existing-project-program",
+          "workstream:socratic-project-picture"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-39"
+      ]
+    },
+    {
+      "id": "slice:planner-solidstart-phase-40-project-only-entry-and-stale-draft-hardening",
+      "kind": "slice",
+      "title": "Planner SolidStart Phase 40 Project-Only Entry And Stale-Draft Hardening",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Planner SolidStart Phase 40 Project-Only Entry And Stale-Draft Hardening SolidStart phase slice.",
+      "artifacts": [
+        "docs/planner-solidstart-phase-40-project-only-entry-and-stale-draft-hardening-spec.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-solidstart-platform-direction"
+        ],
+        "informed_by": [
+          "slice:planner-solidstart-phase-39-session-commit-continuity-and-prompt-bank-merge",
+          "initiative:import-existing-project-program",
+          "workstream:socratic-project-picture"
+        ]
+      },
+      "tags": [
+        "solidstart",
+        "phase",
+        "phase-40"
+      ]
+    },
+    {
+      "id": "slice:planner-ledger-population-pass-6-solidstart-cross-family-convergence",
+      "kind": "slice",
+      "title": "Planner ledger population pass 6 solidstart cross-family convergence",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Implemented the broad SolidStart cross-family convergence pass, materially rewriting overlapping family truth while leaving visible superseded trailers.",
+      "artifacts": [
+        ".omx/specs/deep-interview-planner-ledger-population-pass-6-solidstart-cross-family-convergence.md",
+        ".omx/plans/prd-planner-ledger-population-pass-6-solidstart-cross-family-convergence.md",
+        ".omx/plans/test-spec-planner-ledger-population-pass-6-solidstart-cross-family-convergence.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-ledger"
+        ],
+        "supersedes": [
+          "initiative:import-existing-project-program",
+          "workstream:import-existing-project-history-and-reconciliation",
+          "workstream:socratic-project-picture",
+          "initiative:planner-ui-reset",
+          "initiative:planner-design-system",
+          "initiative:blueprint-knowledge-program",
+          "workstream:builder-fusion-runtime-sync",
+          "initiative:planning-audit-remediation",
+          "plan:planner-ledger-population-pass-2-socratic",
+          "plan:planner-ledger-population-pass-3-import-builder-blueprint",
+          "plan:planner-ledger-population-pass-4-design-system-ui-reset-audits",
+          "plan:planner-ledger-population-pass-5-solidstart-family"
+        ],
+        "informed_by": [
+          "initiative:planner-solidstart-platform-direction"
+        ]
+      },
+      "tags": [
+        "ledger",
+        "population-pass",
+        "implemented",
+        "convergence"
+      ]
+    },
+    {
+      "id": "plan:planner-ledger-population-pass-7-superseded-trailer-cleanup",
+      "kind": "plan",
+      "title": "Planner Ledger Population Pass 7 — Superseded Trailer Cleanup",
+      "status": "complete",
+      "routing_state": "complete",
+      "summary": "Approved and executed planning artifacts for the superseded-trailer cleanup pass.",
+      "artifacts": [
+        ".omx/plans/prd-planner-ledger-population-pass-7-superseded-trailer-cleanup.md",
+        ".omx/plans/test-spec-planner-ledger-population-pass-7-superseded-trailer-cleanup.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-ledger"
+        ]
+      },
+      "tags": [
+        "ledger",
+        "population-pass",
+        "plan",
+        "cleanup"
+      ]
+    },
+    {
+      "id": "slice:planner-ledger-population-pass-7-superseded-trailer-cleanup",
+      "kind": "slice",
+      "title": "Planner ledger population pass 7 superseded trailer cleanup",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Implemented the superseded-trailer cleanup pass, removing temporary prose suffixes while preserving structured supersession history.",
+      "artifacts": [
+        ".omx/plans/prd-planner-ledger-population-pass-7-superseded-trailer-cleanup.md",
+        ".omx/plans/test-spec-planner-ledger-population-pass-7-superseded-trailer-cleanup.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-ledger"
+        ],
+        "informed_by": [
+          "slice:planner-ledger-population-pass-6-solidstart-cross-family-convergence"
+        ]
+      },
+      "tags": [
+        "ledger",
+        "population-pass",
+        "implemented",
+        "cleanup"
+      ]
+    },
+    {
+      "id": "slice:planner-ledger-omx-automation-lane",
+      "kind": "slice",
+      "title": "Planner ledger omx automation lane",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Implemented direct-mutation OMX automation for planner-ledger maintenance and next-mode/routing-state updates, with Graphify coupling deferred.",
+      "artifacts": [
+        ".omx/plans/prd-planner-ledger-omx-automation-lane.md",
+        ".omx/plans/test-spec-planner-ledger-omx-automation-lane.md",
+        ".omx/specs/deep-interview-planner-ledger-omx-automation-lane.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-ledger"
+        ]
+      },
+      "tags": [
+        "ledger",
+        "automation",
+        "implemented"
+      ]
+    },
+    {
+      "id": "plan:planner-ledger-omx-automation-lane",
+      "kind": "plan",
+      "title": "Planner Ledger OMX Automation Lane",
+      "status": "complete",
+      "routing_state": "complete",
+      "summary": "Approved and executed planning artifacts for the direct-mutation planner-ledger OMX automation slice.",
+      "artifacts": [
+        ".omx/plans/prd-planner-ledger-omx-automation-lane.md",
+        ".omx/plans/test-spec-planner-ledger-omx-automation-lane.md",
+        ".omx/specs/deep-interview-planner-ledger-omx-automation-lane.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-ledger"
+        ]
+      },
+      "tags": [
+        "ledger",
+        "automation",
+        "plan"
+      ]
+    },
+    {
+      "id": "plan:combined-ledger-automation-graphify-omx-integration-pass",
+      "kind": "plan",
+      "title": "Combined Ledger Automation Graphify OMX Integration Pass",
+      "status": "complete",
+      "routing_state": "complete",
+      "summary": "Approved and executed planning artifacts for coupling repo-graph evidence directly into planner-ledger automation/routing.",
+      "artifacts": [
+        ".omx/plans/prd-combined-ledger-automation-graphify-omx-integration-pass.md",
+        ".omx/plans/test-spec-combined-ledger-automation-graphify-omx-integration-pass.md",
+        ".omx/specs/deep-interview-combined-ledger-automation-graphify-omx-integration-pass.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-ledger"
+        ]
+      },
+      "tags": [
+        "ledger",
+        "repo-graph",
+        "automation",
+        "plan"
+      ]
+    },
+    {
+      "id": "slice:combined-ledger-automation-graphify-omx-integration-pass",
+      "kind": "slice",
+      "title": "Combined ledger automation graphify omx integration pass",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Implemented repo-graph evidence coupling for planner-ledger automation/routing with inspectable routing provenance.",
+      "artifacts": [
+        ".omx/plans/prd-combined-ledger-automation-graphify-omx-integration-pass.md",
+        ".omx/plans/test-spec-combined-ledger-automation-graphify-omx-integration-pass.md",
+        ".omx/specs/deep-interview-combined-ledger-automation-graphify-omx-integration-pass.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-ledger"
+        ]
+      },
+      "tags": [
+        "ledger",
+        "repo-graph",
+        "automation",
+        "implemented"
+      ]
+    },
+    {
+      "id": "plan:repo-graph-coupled-routing-heuristics-and-operator-trust-pass",
+      "kind": "plan",
+      "title": "Repo-Graph-Coupled Routing Heuristics And Operator Trust Pass",
+      "status": "complete",
+      "routing_state": "complete",
+      "summary": "Approved and executed planning artifacts for the 3-tier repo-graph routing trust model pass.",
+      "artifacts": [
+        ".omx/plans/prd-repo-graph-coupled-routing-heuristics-and-operator-trust-pass.md",
+        ".omx/plans/test-spec-repo-graph-coupled-routing-heuristics-and-operator-trust-pass.md",
+        ".omx/specs/deep-interview-repo-graph-coupled-routing-heuristics-and-operator-trust-pass.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-ledger"
+        ]
+      },
+      "tags": [
+        "ledger",
+        "repo-graph",
+        "trust",
+        "plan"
+      ]
+    },
+    {
+      "id": "slice:repo-graph-coupled-routing-heuristics-and-operator-trust-pass",
+      "kind": "slice",
+      "title": "Repo-graph-coupled routing heuristics and operator trust pass",
+      "status": "implemented",
+      "routing_state": "complete",
+      "summary": "Implemented a 3-tier trust model for graph-coupled routing with durable confidence/provenance and approval-gated provisional recommendations.",
+      "artifacts": [
+        ".omx/plans/prd-repo-graph-coupled-routing-heuristics-and-operator-trust-pass.md",
+        ".omx/plans/test-spec-repo-graph-coupled-routing-heuristics-and-operator-trust-pass.md",
+        ".omx/specs/deep-interview-repo-graph-coupled-routing-heuristics-and-operator-trust-pass.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-ledger"
+        ]
+      },
+      "tags": [
+        "ledger",
+        "repo-graph",
+        "trust",
+        "implemented"
+      ]
+    }
+  ]
+}

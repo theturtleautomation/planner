@@ -4,7 +4,21 @@
   "scripts": {
     "build": "npm run build --prefix planner-solid",
     "dev": "npm run dev --prefix planner-solid",
+    "project:status": "node scripts/project-ledger.mjs --summary",
+    "project:ledger:validate": "node scripts/project-ledger.mjs --validate",
+    "project:ledger:refresh": "node scripts/project-ledger.mjs --render",
+    "project:ledger:auto": "node scripts/project-ledger.mjs --auto",
+    "repo-graph:status": "bash scripts/repo-graph-status.sh",
+    "repo-graph:build": "bash scripts/repo-graph.sh build",
+    "repo-graph:update": "bash scripts/repo-graph.sh update",
+    "repo-graph:cluster": "bash scripts/repo-graph.sh cluster-only",
+    "repo-graph:post-refresh": "bash scripts/repo-graph.sh post-execution-refresh",
+    "repo-graph:query": "bash scripts/repo-graph.sh query",
+    "repo-graph:mcp": "bash scripts/repo-graph-mcp.sh",
+    "repo-graph:mcp:status": "bash scripts/repo-graph-mcp.sh status",
+    "repo-graph:mcp:ensure": "bash scripts/repo-graph-mcp.sh ensure",
     "test": "npm run test --prefix planner-solid",
+    "test:ledger": "node --test scripts/project-ledger.test.mjs",
     "lint": "npm run lint --prefix planner-solid"
   }
 }

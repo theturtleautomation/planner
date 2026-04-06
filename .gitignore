@@ -6,3 +6,11 @@ node_modules
 .DS_Store
 .env
 .codex/builder-fusion-project.json
+.omx/*
+!.omx/ledger/
+.omx/ledger/*
+!.omx/ledger/README.md
+!.omx/ledger/planner-ledger.json
+!.omx/ledger/current-status.md
+!.omx/ledger/automation-trace.json
+!.omx/ledger/automation-report.md

@@ -1,0 +1,148 @@
+{
+  "generated_at": "2026-04-06T21:40:46.033Z",
+  "mode": "apply",
+  "change_count": 0,
+  "changes": [],
+  "item_evidence": {
+    "initiative:planner-ledger": {
+      "query": ".codex/skills/project-ledger/SKILL.md",
+      "matched": true,
+      "matches": [
+        {
+          "id": "file:.codex/skills/project-ledger/SKILL.md",
+          "label": ".codex/skills/project-ledger/SKILL.md",
+          "source_file": ".codex/skills/project-ledger/SKILL.md",
+          "community_id": 287
+        },
+        {
+          "id": "heading:.codex/skills/project-ledger/SKILL.md#canonical-sources",
+          "label": "Canonical Sources",
+          "source_file": ".codex/skills/project-ledger/SKILL.md",
+          "community_id": 287
+        },
+        {
+          "id": "heading:.codex/skills/project-ledger/SKILL.md#commands",
+          "label": "Commands",
+          "source_file": ".codex/skills/project-ledger/SKILL.md",
+          "community_id": 287
+        }
+      ],
+      "explanation": "Explain: .codex/skills/project-ledger/SKILL.md\nID: file:.codex/skills/project-ledger/SKILL.md\nKind: file\nSource file: .codex/skills/project-ledger/SKILL.md\nCommunity: 287\nWhy it matters: this file is directly connected to 7 graph neighbors\nCommunity sample: .codex/skills/project-ledger/SKILL.md, Canonical Sources, Commands, Output Expectations, Project Ledger\nGraph evidence:\n- Canonical Sources [contains]\n- Commands [contains]\n- Output Expectations [contains]\n- Project Ledger [contains]\n- Refuse To [contains]\n- Use When [contains]"
+    },
+    "initiative:import-existing-project-program": {
+      "query": "docs/import-existing-project-plan.md",
+      "matched": true,
+      "matches": [
+        {
+          "id": "file:docs/import-existing-project-plan.md",
+          "label": "docs/import-existing-project-plan.md",
+          "source_file": "docs/import-existing-project-plan.md",
+          "community_id": 40
+        },
+        {
+          "id": "heading:docs/import-existing-project-plan.md#analysis-quality",
+          "label": "Analysis quality",
+          "source_file": "docs/import-existing-project-plan.md",
+          "community_id": 40
+        },
+        {
+          "id": "heading:docs/import-existing-project-plan.md#auth",
+          "label": "Auth",
+          "source_file": "docs/import-existing-project-plan.md",
+          "community_id": 40
+        }
+      ],
+      "explanation": "Explain: docs/import-existing-project-plan.md\nID: file:docs/import-existing-project-plan.md\nKind: file\nSource file: docs/import-existing-project-plan.md\nCommunity: 40\nWhy it matters: this file is directly connected to 41 graph neighbors\nCommunity sample: docs/import-existing-project-plan.md, Analysis quality, Auth, Blueprint and project scoping are already strong enough for imported projects, Branch selection\nGraph evidence:\n- Analysis quality [contains]\n- Auth [contains]\n- Blueprint and project scoping are already strong enough for imported projects [contains]\n- Branch selection [contains]\n- Cleanup [contains]\n- Clone location and storage [contains]"
+    },
+    "workstream:socratic-project-picture": {
+      "query": "docs/socratic-current-state-vs-thesis-review.md",
+      "matched": true,
+      "matches": [
+        {
+          "id": "file:docs/socratic-current-state-vs-thesis-review.md",
+          "label": "docs/socratic-current-state-vs-thesis-review.md",
+          "source_file": "docs/socratic-current-state-vs-thesis-review.md",
+          "community_id": 91
+        },
+        {
+          "id": "heading:docs/socratic-current-state-vs-thesis-review.md#1-purpose",
+          "label": "1. Purpose",
+          "source_file": "docs/socratic-current-state-vs-thesis-review.md",
+          "community_id": 91
+        },
+        {
+          "id": "heading:docs/socratic-current-state-vs-thesis-review.md#10-recommended-interpretation",
+          "label": "10. Recommended Interpretation",
+          "source_file": "docs/socratic-current-state-vs-thesis-review.md",
+          "community_id": 91
+        }
+      ],
+      "explanation": "Explain: docs/socratic-current-state-vs-thesis-review.md\nID: file:docs/socratic-current-state-vs-thesis-review.md\nKind: file\nSource file: docs/socratic-current-state-vs-thesis-review.md\nCommunity: 91\nWhy it matters: this file is directly connected to 27 graph neighbors\nCommunity sample: docs/socratic-current-state-vs-thesis-review.md, 1. Purpose, 10. Recommended Interpretation, 11. Deferred-but-Scopeable Later Analysis Flags, 2. Review Method\nGraph evidence:\n- 1. Purpose [contains]\n- 10. Recommended Interpretation [contains]\n- 11. Deferred-but-Scopeable Later Analysis Flags [contains]\n- 2. Review Method [contains]\n- 3. Current-State Summary [contains]\n- 4.1 First visible project-picture hierarchy [contains]"
+    },
+    "risk:artifact-sprawl": {
+      "query": "docs/planner-ledger-population-analysis-and-pass-plan.md",
+      "matched": true,
+      "matches": [
+        {
+          "id": "file:docs/planner-ledger-population-analysis-and-pass-plan.md",
+          "label": "docs/planner-ledger-population-analysis-and-pass-plan.md",
+          "source_file": "docs/planner-ledger-population-analysis-and-pass-plan.md",
+          "community_id": 61
+        },
+        {
+          "id": "heading:docs/planner-ledger-population-analysis-and-pass-plan.md#1-purpose",
+          "label": "1. Purpose",
+          "source_file": "docs/planner-ledger-population-analysis-and-pass-plan.md",
+          "community_id": 61
+        },
+        {
+          "id": "heading:docs/planner-ledger-population-analysis-and-pass-plan.md#10-automation-remains-later",
+          "label": "10. Automation Remains Later",
+          "source_file": "docs/planner-ledger-population-analysis-and-pass-plan.md",
+          "community_id": 61
+        }
+      ],
+      "explanation": "Explain: docs/planner-ledger-population-analysis-and-pass-plan.md\nID: file:docs/planner-ledger-population-analysis-and-pass-plan.md\nKind: file\nSource file: docs/planner-ledger-population-analysis-and-pass-plan.md\nCommunity: 61\nWhy it matters: this file is directly connected to 33 graph neighbors\nCommunity sample: docs/planner-ledger-population-analysis-and-pass-plan.md, 1. Purpose, 10. Automation Remains Later, 2.1 Current repo-grounded evidence, 2.2 Major doc-family counts from repo scan\nGraph evidence:\n- 1. Purpose [contains]\n- 10. Automation Remains Later [contains]\n- 2.1 Current repo-grounded evidence [contains]\n- 2.2 Major doc-family counts from repo scan [contains]\n- 2. Evidence Base [contains]\n- 3. What Full-Model Coverage Means [contains]"
+    },
+    "risk:ledger-staleness": {
+      "query": "Ledger staleness if update discipline is weak",
+      "matched": false,
+      "matches": [],
+      "explanation": null
+    }
+  },
+  "history": [
+    {
+      "generated_at": "2026-04-06T21:40:46.033Z",
+      "mode": "apply",
+      "change_count": 0,
+      "confidence": {
+        "high": 0,
+        "medium": 0,
+        "low": 0
+      },
+      "states": {
+        "applied": 0,
+        "skipped": 0,
+        "provisional": 0
+      },
+      "changed_items": []
+    },
+    {
+      "generated_at": "2026-04-06T21:37:40.470Z",
+      "mode": "apply",
+      "change_count": 0,
+      "confidence": {
+        "high": 0,
+        "medium": 0,
+        "low": 0
+      },
+      "states": {
+        "applied": 0,
+        "skipped": 0,
+        "provisional": 0
+      },
+      "changed_items": []
+    }
+  ]
+}
