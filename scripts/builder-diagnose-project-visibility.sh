@@ -81,8 +81,9 @@ current_user_id="$(builder_repo_detect_current_user_id)"
 current_space_name="$(builder_repo_detect_current_space_name)"
 
 org_tree_json="$(builder_repo_fetch_org_tree_json "$space_id" 2>/dev/null || printf '{"projects":[],"branches":[],"users":[]}\n')"
+space_projects_json="$(builder_repo_fetch_space_projects_json "$space_id" 2>/dev/null || printf '{"projects":[]}\n')"
 user_projects_json="$(builder_repo_fetch_user_projects_json "$space_id" "$current_user_id" 2>/dev/null || printf '{"projects":[]}\n')"
-merged_projects_json="$(builder_repo_merge_project_surfaces_json "$org_tree_json" "$user_projects_json")"
+merged_projects_json="$(builder_repo_merge_project_surfaces_json "$org_tree_json" "$space_projects_json" "$user_projects_json")"
 direct_read_json="$(builder_repo_fetch_direct_project_json "$space_id" "$effective_project_id")"
 direct_read_with_user_json="$(builder_repo_fetch_direct_project_json "$space_id" "$effective_project_id" "$current_user_id")"
 branch_surface_json="$(builder_repo_fetch_project_branches_json "$space_id" "$effective_project_id")"
@@ -99,6 +100,7 @@ jq -cn \
   --argjson cliConfig "$cli_config_json" \
   --argjson devTools "$dev_tools_json" \
   --argjson orgTree "$org_tree_json" \
+  --argjson spaceList "$space_projects_json" \
   --argjson userList "$user_projects_json" \
   --argjson mergedProjects "$merged_projects_json" \
   --argjson directRead "$direct_read_json" \
@@ -125,6 +127,7 @@ jq -cn \
     currentSpaceId;
     currentUserId;
     orgProjects;
+    spaceProjects;
     userProjects;
     mergedProjects;
     exactVisible;
@@ -138,9 +141,20 @@ jq -cn \
       "auth_context_mismatch"
     elif ((candidateMatches | map(select(.id != (saved.id // ""))) | length) > 0) then
       "saved_project_stale"
-    elif exactVisible and (((orgProjects | length) != (userProjects | length)) or (([orgProjects[] | select(.id == (saved.id // ""))] | length) != ([userProjects[] | select(.id == (saved.id // ""))] | length))) then
+    elif exactVisible and (
+      (([orgProjects[] | select(.id == (saved.id // ""))] | length) != ([spaceProjects[] | select(.id == (saved.id // ""))] | length))
+      or (([orgProjects[] | select(.id == (saved.id // ""))] | length) != ([userProjects[] | select(.id == (saved.id // ""))] | length))
+      or (([spaceProjects[] | select(.id == (saved.id // ""))] | length) != ([userProjects[] | select(.id == (saved.id // ""))] | length))
+    ) then
       "api_surface_mismatch"
-    elif (((orgProjects | length) != (userProjects | length)) and ((orgProjects | length) > 0 or (userProjects | length) > 0)) then
+    elif (
+      (
+        ((orgProjects | length) != (spaceProjects | length))
+        or ((orgProjects | length) != (userProjects | length))
+        or ((spaceProjects | length) != (userProjects | length))
+      )
+      and ((orgProjects | length) > 0 or (spaceProjects | length) > 0 or (userProjects | length) > 0)
+    ) then
       "api_surface_mismatch"
     elif (((mergedProjects | length) > 0) and ((saved.id // "") != "") and (exactVisible | not)) then
       "saved_project_stale"
@@ -166,6 +180,7 @@ jq -cn \
       "undetermined"
     end;
   ($orgTree.projects // []) as $orgProjects
+  | ($spaceList.projects // []) as $spaceProjects
   | ($userList.projects // []) as $userProjects
   | $mergedProjects as $merged
   | (candidate_matches($merged; $savedProject)) as $candidateMatches
@@ -177,6 +192,7 @@ jq -cn \
       $spaceId;
       $currentUserId;
       $orgProjects;
+      $spaceProjects;
       $userProjects;
       $merged;
       $exactVisible;
@@ -239,6 +255,10 @@ jq -cn \
           projectCount: ($userProjects | length),
           response: body_or_raw($userList)
         },
+        bareProjectList: {
+          projectCount: ($spaceProjects | length),
+          response: body_or_raw($spaceList)
+        },
         mergedVisibleProjects: {
           projectCount: ($merged | length),
           projects: $merged
@@ -272,12 +292,20 @@ jq -cn \
         (if (($savedProject.spaceId // "") == "") then "saved_project_missing_space_context" else empty end),
         (if (($savedProject.userId // "") == "") then "saved_project_missing_user_context" else empty end),
         (if (($orgProjects | length) == 0) then "org_tree_empty" else empty end),
+        (if (($spaceProjects | length) == 0) then "bare_project_list_empty" else empty end),
         (if (($userProjects | length) == 0) then "user_project_list_empty" else empty end),
         (if (($directRead.httpCode // 0) == 404) then "direct_project_read_404" else empty end),
         (if (($directReadWithUser.httpCode // 0) == 404) then "direct_project_read_with_user_404" else empty end),
         (if (branch_count($branchRead) > 0) then "branch_surface_visible" else empty end),
         (if (branch_count($branchReadWithUser) > 0) then "branch_surface_visible_with_user" else empty end),
         (if (([ $candidateMatches[] | select(.id != ($savedProject.id // "")) ] | length) > 0) then "alternate_project_candidate_visible" else empty end),
-        (if (((($orgProjects | length) != ($userProjects | length)) and (($orgProjects | length) > 0 or ($userProjects | length) > 0))) then "project_read_surfaces_disagree" else empty end)
+        (if (
+          (
+            (($orgProjects | length) != ($spaceProjects | length))
+            or (($orgProjects | length) != ($userProjects | length))
+            or (($spaceProjects | length) != ($userProjects | length))
+          )
+          and (($orgProjects | length) > 0 or ($spaceProjects | length) > 0 or ($userProjects | length) > 0)
+        ) then "project_read_surfaces_disagree" else empty end)
       ]
     }'

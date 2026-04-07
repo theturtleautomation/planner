@@ -1,4 +1,5 @@
 import {
+  buildPromptAnswer,
   buildPromptAnswers,
   buildSessionExportFilename,
   countAnsweredPromptItems,
@@ -72,6 +73,24 @@ describe("workspace helpers", () => {
     });
   });
 
+  it("builds one prompt answer for immediate commit semantics", () => {
+    expect(
+      buildPromptAnswer("item-1", {
+        selectedOptionId: "web",
+        customText: "Start on the web.",
+      }),
+    ).toEqual({
+      item_id: "item-1",
+      selected_option_id: "web",
+      custom_text: "Start on the web.",
+    });
+
+    expect(buildPromptAnswer("item-2", undefined)).toEqual({
+      item_id: "item-2",
+      skipped: true,
+    });
+  });
+
   it("builds a stable session export filename from the visible title", () => {
     expect(
       buildSessionExportFilename({
@@ -137,6 +156,51 @@ describe("workspace helpers", () => {
         },
       ),
     ).toBe(2);
+  });
+
+  it("treats structured payload drafts as real content", () => {
+    const restored = draftEntryFromSavedDraft({
+      prompt_id: "prompt-2",
+      item_id: "item-structured",
+      selected_option_id: null,
+      custom_text: null,
+      structured_payload: {
+        ordered_option_ids: ["path-a", "path-b"],
+        field_values: { rationale: "Prioritize the primary path first." },
+      },
+      skipped: false,
+      updated_at: "2026-03-25T00:00:00Z",
+    });
+
+    expect(draftHasContent(restored)).toBe(true);
+    expect(
+      buildPromptAnswers(
+        {
+          prompt_id: "prompt-2",
+          title: "Tradeoff",
+          kind: "question_batch",
+          items: [
+            {
+              item_id: "item-structured",
+              kind: "discovery",
+              text: "Which path should we take?",
+              options: [],
+              required: true,
+            },
+          ],
+          allow_partial_submit: true,
+        },
+        {
+          "item-structured": restored!,
+        },
+      )[0],
+    ).toMatchObject({
+      item_id: "item-structured",
+      structured_payload: {
+        ordered_option_ids: ["path-a", "path-b"],
+        field_values: { rationale: "Prioritize the primary path first." },
+      },
+    });
   });
 
   it("builds truthful artifact projection text and tracks processed prompt items", () => {

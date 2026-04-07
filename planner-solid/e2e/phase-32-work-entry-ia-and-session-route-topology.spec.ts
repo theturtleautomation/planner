@@ -64,91 +64,29 @@ async function mockWorkEntry(page) {
   });
 }
 
-test("phase 32 keeps project-first entry primary while framing direct sessions as a detour", async ({ page }) => {
+test("phase 32 keeps project-first entry as the only visible new-work path", async ({ page }) => {
   await mockWorkEntry(page);
 
   await page.goto("/");
   await expect(page.locator(`a.btn.btn-primary[href="/projects/personal-calendar"]`)).toBeVisible();
-  await expect(page.getByRole("link", { name: "Direct session" }).first()).toBeVisible();
-  await expect(page.getByText(/focused detour/i)).toBeVisible();
+  await expect(page.getByRole("link", { name: "Direct session" }).first()).toHaveCount(0);
 
   await page.goto("/sessions");
   await expect(page.getByRole("heading", { name: "Current work queue" })).toBeVisible();
-  await expect(page.getByText(/primary container for ongoing work/i)).toBeVisible();
+  await expect(page.getByText(/new work should always start from a project/i)).toBeVisible();
   await expect(page.getByRole("link", { name: "New project" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Direct session" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Direct session" })).toHaveCount(0);
 });
 
-test("phase 32 frames /sessions/new as direct-session entry and preserves a project-first escape hatch", async ({ page }) => {
+test("phase 32 redirects /sessions/new into project creation", async ({ page }) => {
   await page.goto("/sessions/new");
 
-  await expect(page.getByRole("heading", { name: "Start a focused direct session" })).toBeVisible();
-  await expect(page.getByText(/Projects remain the primary home for ongoing work/i)).toBeVisible();
-  await expect(page.getByRole("button", { name: "Start direct session" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Start with a project instead" })).toBeVisible();
-
-  await page.getByRole("link", { name: "Start with a project instead" }).click();
   await expect(page).toHaveURL("/projects/new");
-  await expect(page.getByRole("heading", { name: "Create the primary container for the next analysis." })).toBeVisible();
+  await expect(page.getByText(/projects are required for all new work/i)).toHaveCount(0);
 });
 
-test("phase 32 keeps direct-session entry usable without changing the retained route set", async ({ page }) => {
-  await page.route("**/api/sessions", async route => {
-    if (route.request().method() !== "POST") {
-      await route.fallback();
-      return;
-    }
-
-    await route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({
-        session: session({
-          id: "session-direct",
-          title: "Direct session",
-          project_id: null,
-          project_slug: null,
-          project_name: null,
-          project_description: "One-off planning brief",
-        }),
-      }),
-    });
-  });
-
-  await page.route("**/api/sessions/session-direct", async route => {
-    await route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({
-        session: session({
-          id: "session-direct",
-          title: "Direct session",
-          project_id: null,
-          project_slug: null,
-          project_name: null,
-          project_description: "One-off planning brief",
-        }),
-      }),
-    });
-  });
-
-  await page.route("**/api/sessions/session-direct/prompt-bank", async route => {
-    await route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({
-        session_id: "session-direct",
-        active_thread_id: null,
-        banked_threads: [],
-        queued_threads: [],
-        build_ready: false,
-        build_readiness_message: null,
-        initial_bank_complete: false,
-      }),
-    });
-  });
-
+test("phase 32 no longer offers projectless direct-session creation", async ({ page }) => {
   await page.goto("/sessions/new");
-  await page.locator("textarea").fill("One-off planning brief");
-  await page.getByRole("button", { name: "Start direct session" }).click();
-
-  await expect(page).toHaveURL("/sessions/session-direct");
-  await expect(page.getByRole("link", { name: "Back to sessions" })).toBeVisible();
+  await expect(page).toHaveURL("/projects/new");
+  await expect(page.getByRole("button", { name: /create project/i })).toBeVisible();
 });

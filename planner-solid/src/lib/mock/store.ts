@@ -22,6 +22,7 @@ import type {
   PromptBankResponse,
   ProposedEdgesResponse,
   ProposedNodesResponse,
+  SavedPromptAnswerDraft,
   SavePromptDraftsResponse,
   Session,
   SessionEventsResponse,
@@ -146,6 +147,7 @@ function buildSessionPromptBank(sessionId: string): PromptBankResponse {
             {
               item_id: `item-${sessionId}-1`,
               kind: "discovery",
+              target_dimension: "goal",
               text: "What is the main user flow this first version needs to support?",
               required: true,
               options: [
@@ -164,6 +166,7 @@ function buildSessionPromptBank(sessionId: string): PromptBankResponse {
             {
               item_id: `item-${sessionId}-2`,
               kind: "verification",
+              target_dimension: "out_of_scope",
               text: "What should the first shipped scope avoid?",
               required: true,
               options: [
@@ -592,7 +595,15 @@ export function saveMockPromptDrafts(
   const savedAt = nowIso();
 
   for (const answer of payload.answers) {
-    const hasContent = Boolean(answer.selected_option_id || answer.custom_text?.trim());
+    const structuredPayload = answer.structured_payload;
+    const hasContent = Boolean(
+      answer.selected_option_id
+        || answer.custom_text?.trim()
+        || structuredPayload?.ordered_option_ids?.length
+        || Object.keys(structuredPayload?.field_values ?? {}).length
+        || structuredPayload?.scalar_value !== undefined
+        || structuredPayload?.selected_path?.trim(),
+    );
     if (!hasContent || answer.skipped) {
       if (savedDrafts[answer.item_id]) {
         delete savedDrafts[answer.item_id];
@@ -601,7 +612,7 @@ export function saveMockPromptDrafts(
       continue;
     }
 
-    savedDrafts[answer.item_id] = {
+    const savedDraft: SavedPromptAnswerDraft = {
       prompt_id: payload.promptId,
       item_id: answer.item_id,
       selected_option_id: answer.selected_option_id ?? null,
@@ -609,6 +620,10 @@ export function saveMockPromptDrafts(
       skipped: false,
       updated_at: savedAt,
     };
+    if (structuredPayload) {
+      savedDraft.structured_payload = structuredPayload;
+    }
+    savedDrafts[answer.item_id] = savedDraft;
     savedCount += 1;
   }
 
@@ -651,12 +666,48 @@ export function completeMockSessionPrompt(
   sessionId: string,
   promptId: string,
   answers: PromptAnswer[],
-): void {
+): PromptBankResponse | null {
   const state = ensureState();
   saveMockPromptDrafts(sessionId, { promptId, answers });
   const activeSession = findSession(state, sessionId);
   if (!activeSession) {
     throw new Error(`Mock session not found: ${sessionId}`);
+  }
+
+  const promptBank = state.promptBanks[sessionId];
+  if (sessionId === "session-11" && promptId === "prompt-session-11-workflow" && promptBank) {
+    const workflowThread = promptBank.banked_threads.find(thread => thread.category_id === "workflow");
+    if (workflowThread) {
+      const nextItems = workflowThread.prompt.items.filter(item => item.item_id !== "item-session-11-1");
+      const nextBank: PromptBankResponse = {
+        ...promptBank,
+        active_thread_id: "workflow",
+        banked_threads: promptBank.banked_threads.map(thread =>
+          thread.category_id === "workflow"
+            ? {
+                ...thread,
+                question_count: nextItems.length,
+                prompt: {
+                  ...thread.prompt,
+                  prompt_id: "prompt-session-11-workflow-next",
+                  items: nextItems,
+                },
+              }
+            : thread,
+        ),
+        saved_drafts: {},
+      };
+      state.promptBanks[sessionId] = nextBank;
+      Object.assign(activeSession, {
+        intake_phase: "interviewing" as const,
+        can_resume_live: true,
+        has_checkpoint: true,
+        resume_status: "interview_attached" as const,
+        workspace_status: awaitingWorkspaceStatus(),
+        last_activity_at: nowIso(),
+      });
+      return cloneState(nextBank);
+    }
   }
 
   Object.assign(activeSession, {
@@ -667,6 +718,7 @@ export function completeMockSessionPrompt(
     workspace_status: completeWorkspaceStatus(),
     last_activity_at: nowIso(),
   });
+  return null;
 }
 
 export function getMockProjectImportReview(projectRef: string): ProjectImportResponse | null {

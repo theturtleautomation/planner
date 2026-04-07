@@ -7,6 +7,12 @@
 **Related Planning:** [Builder Local Workflow](/home/thetu/planner/docs/builder-local-workflow.md), [Project Plan](/home/thetu/planner/docs/project-plan.md)  
 **Source Review:** 2026-04-01 inspection of the implemented Builder wrapper surface in `scripts/`, the shared Builder helper behavior in `/home/thetu/.codex/skills/builder-workflow/scripts/`, and the current Builder planning thread in `docs/project-plan.md`
 
+> Planning sync update (2026-04-02): this verification slice remains valid, but
+> it now verifies the latest saved or explicitly targeted project rather than
+> implying one long-lived canonical remote Fusion project as the default repo
+> posture. Planner’s default Builder strategy is now fresh project creation plus
+> a local creation ledger.
+
 ## 1. Purpose
 
 Add a repo-native Builder Fusion sync-verification workflow so Planner can
@@ -24,7 +30,7 @@ Planner now has:
 
 - committed Builder config files
 - config inspection and validation helpers
-- saved Fusion project state in `.codex/builder-fusion-project.json`
+- latest saved Fusion project state in `.codex/builder-fusion-project.json`
 - existing-project list/get/update helpers
 - a visibility diagnosis helper for blocked auth contexts
 
@@ -45,10 +51,11 @@ and mental reconciliation across multiple outputs.
 A repo user should be able to run one read-only command and learn:
 
 1. which Builder config file/profile is active
-2. which Fusion project the repo considers canonical
+2. which latest saved or explicitly targeted Fusion project is in scope for the
+   verification run
 3. whether the current auth context can see that project
 4. whether the remote project's runtime command, URL, and effective profile
-   match local intent
+   match local intent for the project in scope
 5. whether the result is "in sync", "drifted", or "blocked by visibility/auth"
 
 ## 4. Scope
@@ -58,7 +65,7 @@ A repo user should be able to run one read-only command and learn:
 - a repo-native `builder-verify-sync.sh` helper
 - read-only comparison of:
   - resolved Builder config
-  - saved Fusion project state
+  - latest saved Fusion project state
   - remote Fusion project settings when visible
 - explicit classification of visibility/auth-blocked states
 - clear human-readable output plus machine-readable summary
@@ -134,10 +141,11 @@ Required direction:
 1. the repo exposes a single read-only Builder sync verification command
 2. the command clearly reports the active config contract and saved project
    identity
-3. when the remote project is visible, the command reports whether command,
-   URL, and effective profile are aligned or drifted
-4. when the remote project is not visible, the command reports a truthful
-   blocked state instead of a misleading generic error
+3. when the remote project in scope is visible, the command reports whether
+   command, URL, and effective profile are aligned or drifted
+4. when the remote project in scope is not visible, the command reports a
+   truthful blocked or partial-visibility state instead of a misleading
+   generic error
 5. the workflow is documented for both default frontend-mock and alternate
    server-backed Builder config paths
 
@@ -154,8 +162,8 @@ Implemented in:
 Delivered behavior:
 
 - adds one repo-native read-only verification command for Builder Fusion sync
-- compares the active config contract, saved Fusion project state, and visible
-  remote project settings when possible
+- compares the active config contract, latest saved Fusion project state, and
+  visible remote project settings when possible
 - reports `visibility_blocked` truthfully when the current auth context cannot
   see the saved remote project
 - exposes matching `make builder-verify-sync` and

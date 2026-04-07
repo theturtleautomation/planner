@@ -166,11 +166,6 @@ export default function HomePage() {
                       initialName={firstParam(searchParams.name)}
                       titlePlaceholder="Project title"
                       descriptionPlaceholder="What are you shaping, testing, or trying to make real?"
-                      secondaryAction={
-                        <A class="btn btn-subtle" href={withFrontendMockSearch("/sessions/new")}>
-                          Direct session
-                        </A>
-                      }
                     />
                   </div>
                 )}
@@ -180,11 +175,6 @@ export default function HomePage() {
                   class="inline-form home-entry-form"
                   titlePlaceholder="Project title"
                   descriptionPlaceholder="What are you shaping, testing, or trying to make real?"
-                  secondaryAction={
-                    <A class="btn btn-subtle" href={withFrontendMockSearch("/sessions/new")}>
-                      Direct session
-                    </A>
-                  }
                 />
               </Match>
             </Switch>

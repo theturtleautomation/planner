@@ -18,7 +18,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use uuid::Uuid;
 
-use planner_schemas::{PromptAnswer, PromptBankEntry, PromptEnvelope, SocraticCategorySnapshot};
+use planner_schemas::{
+    PromptAnswer, PromptBankEntry, PromptEnvelope, SocraticCategorySnapshot,
+    SocraticRevisionKind,
+};
 
 use crate::auth::{auth_middleware, Claims};
 use crate::import::{
@@ -141,6 +144,14 @@ pub struct QueuedPromptThread {
     pub summary: String,
     pub question_count: usize,
     pub status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revision_kind: Option<SocraticRevisionKind>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revision_area_id: Option<String>,
+    #[serde(default)]
+    pub revision_conflict: bool,
+    #[serde(default)]
+    pub low_risk_update: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -3578,6 +3589,10 @@ pub(crate) fn prompt_bank_response_from_parts(
                     summary: node.summary.clone(),
                     question_count: node.item_count_hint.max(1) as usize,
                     status: category_status_label(&node.status).to_string(),
+                    revision_kind: node.revision_kind.clone(),
+                    revision_area_id: node.revision_area_id.clone(),
+                    revision_conflict: node.revision_conflict,
+                    low_risk_update: node.low_risk_update,
                 })
                 .collect::<Vec<_>>()
         })
@@ -6829,6 +6844,52 @@ mod tests {
     use std::sync::Arc;
     use tower::ServiceExt;
     use uuid::Uuid;
+
+    #[test]
+    fn prompt_bank_response_includes_typed_revision_metadata_from_snapshot() {
+        let snapshot = planner_schemas::SocraticCategorySnapshot {
+            revision: "rev-1".into(),
+            root_category_ids: vec!["root-discovery".into()],
+            nodes: vec![
+                planner_schemas::SocraticCategoryNode {
+                    category_id: "north-star-revision".into(),
+                    parent_category_id: Some("root-discovery".into()),
+                    title: "North-star revision".into(),
+                    summary: "Promote a different primary goal.".into(),
+                    status: planner_schemas::SocraticCategoryStatus::Blocked,
+                    depth: 1,
+                    mapped_dimensions: Vec::new(),
+                    has_children: false,
+                    has_prompt_ready: true,
+                    item_count_hint: 1,
+                    revision_kind: Some(planner_schemas::SocraticRevisionKind::NorthStar),
+                    revision_area_id: Some("transformation".into()),
+                    revision_conflict: true,
+                    low_risk_update: false,
+                },
+            ],
+            active_category_path: Vec::new(),
+            newly_available_category_ids: Vec::new(),
+            build_ready: false,
+            build_readiness_message: "Still converging".into(),
+        };
+
+        let response = prompt_bank_response_from_parts(
+            "session-1",
+            &HashMap::new(),
+            Some(&snapshot),
+            &[],
+            None,
+            false,
+        );
+
+        let queued = &response.queued_threads;
+        assert_eq!(queued.len(), 1);
+        assert_eq!(queued[0].revision_kind, Some(planner_schemas::SocraticRevisionKind::NorthStar));
+        assert_eq!(queued[0].revision_area_id.as_deref(), Some("transformation"));
+        assert!(queued[0].revision_conflict);
+        assert!(!queued[0].low_risk_update);
+    }
 
     struct ImmediateSuccessImportAcquirer;
 

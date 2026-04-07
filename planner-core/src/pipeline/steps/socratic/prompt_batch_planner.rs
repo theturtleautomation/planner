@@ -396,7 +396,7 @@ async fn build_prompt_item(
                     direct_effect: None,
                 },
             ],
-            response_mode: PromptResponseMode::SingleSelectWithCustomText,
+            response_mode: PromptResponseMode::BinaryWithRationale,
             required: false,
             priority,
             dependency_item_ids: Vec::new(),
@@ -415,7 +415,7 @@ async fn build_prompt_item(
                     heading
                 ),
                 options: draft_section_options(),
-                response_mode: PromptResponseMode::SingleSelectWithCustomText,
+                response_mode: PromptResponseMode::SingleSelectWithOptionalText,
                 required: false,
                 priority,
                 dependency_item_ids: Vec::new(),
@@ -460,7 +460,7 @@ async fn build_prompt_item(
                         }),
                     },
                 ],
-                response_mode: PromptResponseMode::SingleSelectWithCustomText,
+                response_mode: PromptResponseMode::SingleSelectWithOptionalText,
                 required: false,
                 priority,
                 dependency_item_ids: Vec::new(),
@@ -510,7 +510,7 @@ async fn build_prompt_item(
                         }),
                     },
                 ],
-                response_mode: PromptResponseMode::SingleSelectWithCustomText,
+                response_mode: PromptResponseMode::SingleSelectWithOptionalText,
                 required: false,
                 priority,
                 dependency_item_ids: Vec::new(),
@@ -532,6 +532,7 @@ async fn build_prompt_item(
         candidate.rationale.as_str(),
     )
     .await?;
+    let has_generated_options = !generated.quick_options.is_empty();
 
     Ok(PromptItem {
         item_id,
@@ -550,11 +551,30 @@ async fn build_prompt_item(
                 direct_effect: None,
             })
             .collect(),
-        response_mode: PromptResponseMode::SingleSelectWithCustomText,
+        response_mode: response_mode_for_candidate(candidate, has_generated_options),
         required: !generated.allow_skip,
         priority,
         dependency_item_ids: Vec::new(),
     })
+}
+
+fn response_mode_for_candidate(
+    candidate: &PromptCandidate,
+    has_generated_options: bool,
+) -> PromptResponseMode {
+    match (&candidate.kind, &candidate.source) {
+        (PromptItemKind::Contradiction, _) => PromptResponseMode::BinaryWithRationale,
+        (_, PromptCandidateSource::DraftSection { .. }) => {
+            PromptResponseMode::SingleSelectWithOptionalText
+        }
+        (_, PromptCandidateSource::DraftGap | PromptCandidateSource::DraftVerification { .. }) => {
+            PromptResponseMode::SingleSelectWithOptionalText
+        }
+        (_, PromptCandidateSource::CoreQuestion) if has_generated_options => {
+            PromptResponseMode::SingleSelectWithOptionalText
+        }
+        (_, PromptCandidateSource::CoreQuestion) => PromptResponseMode::ShortText,
+    }
 }
 
 fn prompt_header(kind: PromptKind) -> (String, Option<String>) {
@@ -908,6 +928,40 @@ mod tests {
         assert_ne!(
             deterministic_item_id(&old_candidate),
             deterministic_item_id(&new_candidate)
+        );
+    }
+
+    #[test]
+    fn response_mode_matrix_selects_more_than_one_mode() {
+        let contradiction = PromptCandidate {
+            kind: PromptItemKind::Contradiction,
+            target_dimension: Some(Dimension::Auth),
+            contradiction: None,
+            rationale: "Resolve contradiction".into(),
+            score: 10.0,
+            source: PromptCandidateSource::CoreQuestion,
+        };
+        let guided = PromptCandidate {
+            kind: PromptItemKind::Discovery,
+            target_dimension: Some(Dimension::Goal),
+            contradiction: None,
+            rationale: "Discover goal".into(),
+            score: 1.0,
+            source: PromptCandidateSource::CoreQuestion,
+        };
+        let freeform = guided.clone();
+
+        assert_eq!(
+            response_mode_for_candidate(&contradiction, true),
+            PromptResponseMode::BinaryWithRationale
+        );
+        assert_eq!(
+            response_mode_for_candidate(&guided, true),
+            PromptResponseMode::SingleSelectWithOptionalText
+        );
+        assert_eq!(
+            response_mode_for_candidate(&freeform, false),
+            PromptResponseMode::ShortText
         );
     }
 }

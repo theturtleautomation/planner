@@ -7,6 +7,13 @@
 **Related Planning:** [Builder Local Workflow](/home/thetu/planner/docs/builder-local-workflow.md), [Project Plan](/home/thetu/planner/docs/project-plan.md)  
 **Source Review:** 2026-04-01 and 2026-04-02 live repo diagnosis output, direct authenticated API probes from the repo auth context, and authenticated Builder web-app network evidence showing `projects/branches?projectId=...&apiKey=...`
 
+> Planning sync update (2026-04-02): this visibility slice still describes the
+> correct diagnosis model for a latest saved or explicitly targeted Fusion
+> project. It should not be read as a recommendation that Planner preserve one
+> long-lived remote Builder project by default. Planner now creates fresh
+> projects by default and uses this slice only when reasoning about a specific
+> project after creation.
+
 ## 1. Purpose
 
 Reconcile Builder Fusion project visibility across the branch surface and the
@@ -106,10 +113,11 @@ Required direction:
 
 Required direction:
 
-- do not recreate the saved project while branch truth exists for that same
-  project ID
-- treat the saved project as a live remote Builder project with partial
-  visibility, not as stale or deleted by default
+- when reasoning about one specific saved or explicitly targeted project, do
+  not classify it as deleted or stale by default while branch truth exists for
+  that same project ID
+- treat that project as a live remote Builder project with partial visibility,
+  not as stale or deleted by default
 
 ## 6. Touched Surfaces
 

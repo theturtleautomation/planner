@@ -22,6 +22,7 @@ import {
 import {
   emptyPromptBankGraph,
   mergePromptBankGraph,
+  resolvePromptBankContinuity,
   revealPromptBankWorkspace,
   type PromptBankGraph,
 } from "~/lib/prompt-bank";
@@ -47,6 +48,7 @@ import type {
   Session,
 } from "~/lib/types";
 import {
+  buildPromptAnswer,
   buildPromptAnswers,
   buildSessionExportFilename,
   countProcessedPromptItems,
@@ -267,45 +269,74 @@ export function useSessionWorkspaceController(): SessionWorkspaceController {
     }
   };
 
-  const mergeServerDrafts = (nextBank: PromptBankResponse) => {
-    const nextGraph = mergePromptBankGraph(nextBank, untrack(promptBankGraph));
-    const visibleItemIds = new Set(Object.keys(nextGraph.questionsById));
+  const applyPromptBankUpdate = (nextBank: PromptBankResponse) => {
+    const previousGraph = untrack(promptBankGraph);
+    const previousActiveItemId = untrack(activeItemId);
+    const nextGraphBase = mergePromptBankGraph(nextBank, previousGraph);
+    const visibleItemIds = new Set(Object.keys(nextGraphBase.questionsById));
     const serverDrafts = Object.fromEntries(
       Object.entries(nextBank.saved_drafts ?? {})
         .map(([itemId, draft]) => [itemId, draftEntryFromSavedDraft(draft)])
         .filter((entry): entry is [string, DraftEntry] => !!entry[1]),
     );
+    const nextProcessedByItemId = Object.keys(nextGraphBase.questionsById).reduce<Record<string, boolean>>((next, itemId) => {
+      if (processedByItemId()[itemId]) {
+        next[itemId] = true;
+      }
+      return next;
+    }, {});
+    const continuity = resolvePromptBankContinuity(
+      nextGraphBase,
+      previousGraph,
+      previousActiveItemId,
+      nextProcessedByItemId,
+    );
+    const nextGraph = {
+      ...nextGraphBase,
+      activeThreadId: continuity.activeThreadId,
+    };
 
-    setPromptBankGraph(nextGraph);
-    setDraftsByQuestionId(previous => {
-      const next: Record<string, DraftEntry> = {};
-      for (const itemId of visibleItemIds) {
-        const existing = previous[itemId];
-        if (draftHasContent(existing)) {
-          next[itemId] = existing;
-          continue;
+    if (draftSaveTimer !== undefined) {
+      window.clearTimeout(draftSaveTimer);
+      draftSaveTimer = undefined;
+    }
+
+    batch(() => {
+      setPromptBankGraph(nextGraph);
+      setDraftsByQuestionId(previous => {
+        const next: Record<string, DraftEntry> = {};
+        for (const itemId of visibleItemIds) {
+          const existing = previous[itemId];
+          if (draftHasContent(existing)) {
+            next[itemId] = existing;
+            continue;
+          }
+          const saved = serverDrafts[itemId];
+          if (saved) next[itemId] = saved;
         }
-        const saved = serverDrafts[itemId];
-        if (saved) next[itemId] = saved;
+        return next;
+      });
+      setProcessedByItemId(nextProcessedByItemId);
+      setActiveItemId(continuity.activeItemId);
+      if (continuity.invalidated) {
+        setActionNotice("Planner updated the next questions after your last answer.");
       }
-      return next;
-    });
-    setProcessedByItemId(previous => {
-      const next: Record<string, boolean> = {};
-      for (const itemId of visibleItemIds) {
-        if (previous[itemId]) {
-          next[itemId] = true;
-        }
-      }
-      return next;
     });
   };
+
+  const isPromptStillCurrent = (promptId: string) =>
+    Object.values(promptBankGraph().promptsByThreadId).some(prompt => prompt.prompt_id === promptId);
 
   const persistDraftsForPrompt = async (
     prompt: PromptBankThread["prompt"],
     override?: { itemId: string; draft: DraftEntry | undefined },
   ) => {
     if (!params.sessionId) return false;
+    if (!isPromptStillCurrent(prompt.prompt_id)) {
+      setDraftSaveState("idle");
+      setDraftSaveMessage(null);
+      return true;
+    }
 
     const answers = buildPromptAnswers(prompt, promptDraftsWithOverride(prompt, override));
     const signature = JSON.stringify(answers);
@@ -326,8 +357,14 @@ export function useSessionWorkspaceController(): SessionWorkspaceController {
       setDraftSaveMessage(response.saved_count > 0 ? "Draft saved" : "Draft cleared");
       return true;
     } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to save drafts.";
+      if (message.includes("prompt_stale") || message.includes("no longer current")) {
+        setDraftSaveState("idle");
+        setDraftSaveMessage(null);
+        return true;
+      }
       setDraftSaveState("error");
-      setDraftSaveMessage(error instanceof Error ? error.message : "Unable to save drafts.");
+      setDraftSaveMessage(message);
       return false;
     }
   };
@@ -362,7 +399,11 @@ export function useSessionWorkspaceController(): SessionWorkspaceController {
     return orderedTasks.slice(currentIndex + 1).find(task => !nextProcessedByItemId[task.itemId]) ?? null;
   };
 
-  const submitThread = async (thread: PromptBankThread) => {
+  const submitCommittedAnswer = async (
+    thread: PromptBankThread,
+    itemId: string,
+    draft: DraftEntry | undefined,
+  ) => {
     if (!socket || socket.readyState !== SESSION_TRANSPORT_OPEN) {
       setSubmitError("Live interview connection is not ready.");
       return false;
@@ -374,10 +415,7 @@ export function useSessionWorkspaceController(): SessionWorkspaceController {
     const message: ClientPromptResponseMessage = {
       type: "prompt_response",
       prompt_id: thread.prompt.prompt_id,
-      answers: buildPromptAnswers(
-        thread.prompt,
-        promptDrafts(thread.prompt.items.map(item => item.item_id)),
-      ),
+      answers: [buildPromptAnswer(itemId, draft)],
       submitted_at: new Date().toISOString(),
       client_context: {
         viewport_class: viewportClass(),
@@ -421,11 +459,15 @@ export function useSessionWorkspaceController(): SessionWorkspaceController {
       setSubmitError("Could not save the latest draft changes before continuing.");
       return;
     }
+    const submitted = await submitCommittedAnswer(thread, item.item_id, currentDraft);
+    if (!submitted) {
+      return;
+    }
+
     const nextProcessedByItemId = {
       ...processedByItemId(),
       [item.item_id]: true,
     };
-    const threadProcessed = thread.prompt.items.every(candidate => nextProcessedByItemId[candidate.item_id]);
     const nextTask = findNextTask(thread.category_id, item.item_id, nextProcessedByItemId);
     batch(() => {
       setSubmitError(null);
@@ -440,10 +482,6 @@ export function useSessionWorkspaceController(): SessionWorkspaceController {
       if (isCollapsedLayout()) {
         setSurfaceTab("artifact");
       }
-    }
-
-    if (threadProcessed) {
-      void submitThread(thread);
     }
   };
 
@@ -581,7 +619,7 @@ export function useSessionWorkspaceController(): SessionWorkspaceController {
   createEffect(() => {
     const bank = promptBank();
     if (bank) {
-      mergeServerDrafts(bank);
+      applyPromptBankUpdate(bank);
     }
   });
 
@@ -642,20 +680,20 @@ export function useSessionWorkspaceController(): SessionWorkspaceController {
       try {
         const payload = JSON.parse(event.data) as { type?: string; bank?: PromptBankResponse };
         if (payload.type === "prompt_bank" && payload.bank) {
-          mergeServerDrafts(payload.bank);
-          setPromptBankGraph(previous => mergePromptBankGraph(payload.bank as PromptBankResponse, previous));
-          void refetchSession();
+          applyPromptBankUpdate(payload.bank);
           setSubmittingThreadId(null);
           return;
         }
-        if (
-          payload.type === "converged"
-          || payload.type === "planner_event"
-          || payload.type === "pipeline_complete"
-          || payload.type === "error"
-        ) {
+        if (payload.type === "planner_event") {
+          return;
+        }
+        if (payload.type === "converged" || payload.type === "pipeline_complete") {
           await refetchSession();
-          await refetchPromptBank();
+          setSubmittingThreadId(null);
+          return;
+        }
+        if (payload.type === "error") {
+          await Promise.all([refetchSession(), refetchPromptBank()]);
           setSubmittingThreadId(null);
         }
       } catch {

@@ -1595,8 +1595,10 @@ const tools = toolDeclarations.length > 0 ? [{ functionDeclarations: toolDeclara
 
     #[test]
     fn find_gemini_package_root_supports_bundled_installs() {
-        let temp_root =
-            std::env::temp_dir().join(format!("planner-gemini-bundle-test-{}", uuid::Uuid::new_v4()));
+        let temp_root = std::env::temp_dir().join(format!(
+            "planner-gemini-bundle-test-{}",
+            uuid::Uuid::new_v4()
+        ));
         let binary = temp_root.join("bin/gemini");
         let package_root = temp_root.join("lib/node_modules/@google/gemini-cli");
         let bundle_file = package_root.join("bundle/chunk-TEST.js");

@@ -29,6 +29,12 @@ export interface PromptBankGraph {
   initialBankComplete: boolean;
 }
 
+export interface PromptBankContinuityResolution {
+  activeThreadId: string | null;
+  activeItemId: string | null;
+  invalidated: boolean;
+}
+
 export function emptyPromptBankGraph(): PromptBankGraph {
   return {
     activeThreadId: null,
@@ -101,4 +107,41 @@ export function revealPromptBankWorkspace(
 ): boolean {
   return (bank.initialBankComplete && bank.threadOrder.length > 0)
     || bank.buildReady;
+}
+
+
+export function resolvePromptBankContinuity(
+  nextGraph: PromptBankGraph,
+  previousGraph: PromptBankGraph,
+  previousActiveItemId: string | null,
+  processedByItemId: Record<string, boolean | undefined>,
+): PromptBankContinuityResolution {
+  const preservedThreadId = previousGraph.activeThreadId && nextGraph.threadsById[previousGraph.activeThreadId]
+    ? previousGraph.activeThreadId
+    : nextGraph.activeThreadId && nextGraph.threadsById[nextGraph.activeThreadId]
+      ? nextGraph.activeThreadId
+      : nextGraph.threadOrder[0] ?? null;
+
+  if (!preservedThreadId) {
+    return {
+      activeThreadId: null,
+      activeItemId: null,
+      invalidated: Boolean(previousActiveItemId || previousGraph.activeThreadId),
+    };
+  }
+
+  const preservedItemId = previousActiveItemId
+    && nextGraph.questionsById[previousActiveItemId]?.threadId === preservedThreadId
+      ? previousActiveItemId
+      : null;
+
+  const fallbackItemId = nextGraph.questionIdsByThreadId[preservedThreadId]?.find(
+    itemId => !processedByItemId[itemId],
+  ) ?? nextGraph.questionIdsByThreadId[preservedThreadId]?.[0] ?? null;
+
+  return {
+    activeThreadId: preservedThreadId,
+    activeItemId: preservedItemId ?? fallbackItemId,
+    invalidated: Boolean(previousActiveItemId) && preservedItemId === null,
+  };
 }

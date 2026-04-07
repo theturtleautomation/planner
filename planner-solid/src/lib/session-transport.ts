@@ -62,8 +62,12 @@ class MockSessionTransport implements SessionTransport {
     }
 
     if (payload.type === "prompt_response") {
-      completeMockSessionPrompt(this.sessionId, payload.prompt_id, payload.answers);
-      this.emit({ type: "converged" });
+      const nextBank = completeMockSessionPrompt(this.sessionId, payload.prompt_id, payload.answers);
+      if (nextBank) {
+        this.emit({ type: "prompt_bank", bank: nextBank });
+      } else {
+        this.emit({ type: "converged" });
+      }
     }
   }
 

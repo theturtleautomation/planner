@@ -15,48 +15,65 @@ Builder/Fusion improvement plan, preserves the boundary between Fusion, CMS,
 and DSI, and defines the tranche order for implementation. It does not pretend
 that the entire capability set should land in one implementation pass.
 
+> Planning sync update (2026-04-02): Planner now treats Builder Fusion
+> projects as fire-and-forget remote workspaces. The repo creates fresh
+> projects by default, stores the latest created project in
+> `.codex/builder-fusion-project.json`, and records the durable local source of
+> truth for created names/settings in
+> `.codex/builder-fusion-project-history.jsonl`. Existing-project get/update/
+> verify helpers remain supported, but they are follow-on utilities for the
+> latest saved project or an explicit project ID override, not the default repo
+> strategy.
+
 ## Problem
 
 Planner now has a truthful local Builder workflow and a local full-pipeline
-mock mode, but the repo-local Builder tooling is still incomplete in one
-critical area:
+mock mode, but the parent Builder planning model is now out of sync with the
+repo's actual operating posture:
 
 - the repo can launch Builder Fusion locally
-- the repo can create a Fusion project and persist a local state file
+- the repo can create fresh Fusion projects and persist both a latest-project
+  state file and a local append-only creation ledger
 - the repo can connect or index a repo through Builder CLI wrappers
 - the repo can sync a Builder CMS `project` content entry
-- the repo cannot treat an **existing Fusion project** as a first-class managed
-  object
+- the repo can inspect, update, and verify an explicitly targeted existing
+  Fusion project when Builder visibility allows
+- but this parent spec still frames long-lived existing-project management as
+  the default desired end state
 
-That gap creates repeated operator confusion:
+That planning drift creates repeated operator confusion:
 
 - the local launch wrapper can inject `PLANNER_LLM_MOCK=full_pipeline`, but the
   current tooling cannot prove or update whether the remote Fusion project is
   configured consistently
-- the saved Fusion project ID can exist locally, but the repo still lacks a
-  first-class way to update that existing remote project’s runtime settings
+- the latest saved Fusion project ID can exist locally, but the parent plan
+  still overstates one long-lived remote project as the normal path
 - Builder CMS sync can succeed while the Fusion project remains out of date,
   which makes “sync” ambiguous
-- repo users can create or reuse Fusion projects, but they cannot reliably
-  inspect, update, profile-switch, or verify an existing project from the repo
+- repo users can create fresh Fusion projects with local tracking, but the
+  parent plan still points them toward canonical-project reuse and future
+  ensure-project behavior
 - connection and indexing commands still behave like one-off Builder CLI tasks
   instead of part of a persistent repo-managed workflow
 
-The result is that Builder capability is present, but not yet operationally
-complete.
+The result is that Builder capability is present and usable, but the parent
+planning artifact is no longer describing the repo's actual default strategy.
 
 ## User Outcome
 
 A repo user working on Planner with Builder should be able to:
 
-1. identify the canonical Fusion project for this repo
-2. inspect the remote project’s runtime settings from the repo
-3. update the remote Fusion project’s runtime command, URL, and environment
-   without creating a new project
-4. apply named runtime profiles such as `live`, `mock-socratic`, and
-   `mock-full-pipeline`
-5. verify whether local repo state, saved Fusion state, runtime configuration,
-   and Builder-side project settings are actually aligned
+1. create a fresh Builder Fusion project from the repo with a trackable,
+   distinguishable name
+2. keep a durable local record of which project was created and which config/
+   settings were used at creation time
+3. use the latest saved project for immediate repo-local follow-on commands
+   such as inspection, dry-run update, or sync verification
+4. inspect or update an explicitly targeted existing Fusion project when that
+   narrower workflow is useful, without treating it as the default posture
+5. verify whether local repo state, latest saved state, runtime configuration,
+   and visible Builder-side project settings are actually aligned for the
+   project in scope
 6. understand whether a command is acting on Fusion project settings, Builder
    CMS content, or Builder DSI instead of mixing those surfaces together
 
@@ -64,13 +81,15 @@ A repo user working on Planner with Builder should be able to:
 
 ### In Scope
 
+- fresh-by-default Builder Fusion project creation
+- durable local tracking of latest-created and historically created Fusion
+  projects
 - repo-native Builder Fusion project inspection helpers
 - repo-native Builder Fusion project update helpers
-- remote Fusion environment-variable management
-- profile-based runtime configuration for existing Fusion projects
-- a single “ensure project” workflow that reuses existing saved project state
-  when present
-- a single “verify sync” workflow that reports local-vs-remote alignment
+- remote Fusion environment-variable management where Builder visibility allows
+- profile-based runtime configuration for explicitly targeted existing projects
+- a single “verify sync” workflow that reports local-vs-remote alignment for
+  the latest saved or explicitly targeted project
 - explicit repo documentation that separates Fusion project config, CMS sync,
   and DSI capabilities
 - CLI/API fallback implementation inside the Builder skill when MCP coverage is
@@ -98,20 +117,22 @@ A repo user working on Planner with Builder should be able to:
   - `make builder-connect-repo-dryrun`
   - `make builder-index-repo`
   - `make builder-sync-project`
-- `.codex/builder-fusion-project.json` persists the locally chosen Fusion
-  project ID and URL
+- `.codex/builder-fusion-project.json` persists the latest created Fusion
+  project identity for immediate follow-on commands
+- `.codex/builder-fusion-project-history.jsonl` records the durable local
+  history of created project identities plus the exact create-time settings
 - local Builder runtime mock mode now supports:
   - `phase26_live`
   - `full_pipeline`
 
 ### What is still missing
 
-- no repo-native `get-project` helper for an existing Fusion project
-- no repo-native `update-project` helper for an existing Fusion project
-- no repo-native remote env-var helper for Fusion project settings
-- no profile abstraction that can be applied locally and remotely
-- no single verification command that answers “is Builder actually in sync?”
-- no durable planning artifact for the full capability expansion itself
+- the parent planning doc still overstates existing-project management as the
+  primary goal
+- the parent planning doc still implies `builder-ensure-project` style reuse as
+  a likely future default even though the repo now prefers fresh creation
+- the child Builder specs need planning-sync notes so they are read as retained
+  helper capabilities, not as the default repo strategy
 
 ## Capability Model
 
@@ -119,15 +140,21 @@ The capability expansion should preserve the existing Builder surface split.
 
 ### Fusion Project Management
 
-This tranche owns:
+This capability thread now owns two layers:
 
-- saved Fusion project identity
-- runtime command
-- runtime URL
-- install command
-- branch/main branch metadata
-- remote environment variables
-- sync verification between local repo intent and remote Fusion settings
+- default repo posture:
+  - fresh Fusion project creation
+  - trackable generated names
+  - local latest-project state
+  - append-only local creation history
+- follow-on targeted project management:
+  - runtime command
+  - runtime URL
+  - install command
+  - branch/main branch metadata
+  - remote environment variables
+  - sync verification between local repo intent and an explicitly targeted
+    visible remote Fusion project
 
 ### Builder CMS Project Sync
 
@@ -160,9 +187,10 @@ Current child-slice state:
 
 - Phase 01 is implemented for Builder skill/reference hardening
 - Phase 02 is implemented for existing Fusion-project helpers with narrow
-  internal-endpoint acceptance
+  internal-endpoint acceptance, but those helpers are no longer the default
+  repo posture
 - Phase 03 is implemented for repo-native sync verification across local
-  config, saved project state, and visible remote Fusion settings
+  config, latest saved project state, and visible remote Fusion settings
 - Phase 04 is implemented for multi-surface visibility diagnosis, richer saved
   project context persistence on future create flows, and truthful
   classification of blocked states
@@ -189,7 +217,21 @@ Current child-slice state:
   - `builder-verify-sync` must return a partial visibility state instead of
     pretending full remote settings comparison is possible
 
-### Tranche 1: Fusion Project Read/Update
+### Tranche 1: Local Tracking And Fresh Creation
+
+Keep the repo's default Builder workflow centered on fresh project creation and
+durable local tracking.
+
+This tranche must preserve:
+
+- fresh-by-default create behavior
+- generated trackable names/branch names
+- `.codex/builder-fusion-project.json` as the latest-project pointer
+- `.codex/builder-fusion-project-history.jsonl` as the durable local ledger of
+  created names/settings
+- truthful docs that describe remote cleanup as manual and external
+
+### Tranche 2: Explicit Existing-Project Read/Update
 
 Add repo-native helpers for an existing Fusion project:
 
@@ -199,14 +241,16 @@ Add repo-native helpers for an existing Fusion project:
 
 This tranche must:
 
-- reuse `.codex/builder-fusion-project.json` when available
+- default to the latest saved project only as a convenience, not as a claim
+  that Planner prefers one long-lived canonical remote project
 - avoid creating a new Fusion project during read/update flows
 - support explicit project ID override when local state is stale
 - expose the currently effective remote runtime command and URL
-- support updating the existing saved Fusion project’s runtime command, runtime
-  URL, and other project settings without forcing project recreation
+- support updating an explicitly targeted existing Fusion project’s runtime
+  command, runtime URL, and other project settings without forcing project
+  recreation
 
-### Tranche 2: Remote Environment And Profiles
+### Tranche 3: Remote Environment And Profiles
 
 Add:
 
@@ -222,26 +266,29 @@ This tranche must make `PLANNER_LLM_MOCK=full_pipeline` a first-class Fusion
 project setting when the mock-full-pipeline profile is applied, rather than a
 local launch-only convention.
 
-### Tranche 3: Ensure And Verify Workflows
+### Tranche 4: Verify Workflows
 
 Add:
 
-- `builder-ensure-project.sh`
 - `builder-verify-sync.sh`
 
 This tranche must let a repo user answer, in one command:
 
-- which Fusion project is canonical for this repo
-- whether local saved state matches remote project state
+- which latest saved or explicitly targeted Fusion project is in scope
+- whether local saved state matches visible remote project state
 - whether the remote runtime command and env vars match the selected profile
 - whether CMS sync metadata points at the same runtime/proxy values
 
-### Tranche 4: Safer Connection, Indexing, And Handoff
+`builder-ensure-project.sh` is no longer a default planned direction. A future
+ensure-style helper should be promoted only if Planner explicitly decides it
+still wants that behavior despite duplicate-project and visibility risks.
+
+### Tranche 5: Safer Connection, Indexing, And Handoff
 
 Tighten the existing Builder wrappers so they:
 
-- prefer reuse of known Fusion project state instead of accidental project
-  creation
+- make fresh project creation versus targeted existing-project mutation explicit
+  in command output
 - classify plan-limit failures such as enterprise-only indexing clearly
 - print the exact Builder project/branch URL and active runtime profile after
   successful operations
@@ -262,9 +309,12 @@ Primary repo surface:
 
 ### State Files
 
-- `.codex/builder-fusion-project.json` remains the repo-local source for the
-  selected Fusion project identity
-- the state file must not silently drift from the project being updated
+- `.codex/builder-fusion-project.json` is the repo-local pointer to the latest
+  created Fusion project used for immediate follow-on commands
+- `.codex/builder-fusion-project-history.jsonl` is the durable local ledger for
+  created project identities and create-time settings
+- the latest-project pointer must not silently drift from the project being
+  updated or verified in a follow-on command
 
 ### Shared Skill Scripts
 
@@ -288,33 +338,45 @@ must own any Planner-specific safety logic around:
 This parent capability plan is satisfied only when all of the following are
 true:
 
-1. a repo user can inspect the saved Fusion project and its effective remote
-   runtime settings without using manual curl or package-internals inspection
-2. a repo user can update an existing Fusion project’s runtime command, runtime
-   URL, and environment variables from the repo without creating a new project
-3. a repo user can apply a named `mock-full-pipeline` profile that persists the
-   mock runtime setting remotely for the existing Fusion project
-4. the repo exposes a single verification command that reports whether Fusion
-   project settings, local state, and CMS sync metadata agree
-5. Builder workflow docs explicitly distinguish Fusion project config, CMS
-   project sync, and DSI behavior
-6. failure modes like missing auth, stale saved project IDs, and plan-gated
-   indexing are reported as explicit operator-facing states rather than
-   ambiguous command failures
+1. a repo user can create a fresh Builder Fusion project with a trackable name
+   and durable local record of the exact settings used
+2. a repo user can inspect the latest saved or explicitly targeted Fusion
+   project and its effective remote runtime settings without using manual curl
+   or package-internals inspection
+3. a repo user can update an explicitly targeted existing Fusion project’s
+   runtime command, runtime URL, and environment variables from the repo when
+   Builder visibility allows
+4. a repo user can apply a named `mock-full-pipeline` profile that persists the
+   mock runtime setting remotely for an explicitly targeted visible Fusion
+   project
+5. the repo exposes a single verification command that reports whether Fusion
+   project settings, local state, and CMS sync metadata agree for the project
+   currently in scope
+6. Builder workflow docs explicitly distinguish Fusion project config, CMS
+   project sync, DSI behavior, and the repo’s fire-and-forget remote-project
+   posture
+7. failure modes like missing auth, stale saved project IDs, visibility gaps,
+   and plan-gated indexing are reported as explicit operator-facing states
+   rather than ambiguous command failures
 
 ## Verification Plan
 
-Implementation slices promoted from this parent spec must include proof for:
+Implementation slices promoted from this parent spec must include proof for the
+relevant subset of:
 
 - authenticated Builder CLI status
-- readback of the target Fusion project before update
-- update of remote runtime command and/or env var for a known project ID
-- update of the existing saved Fusion project referenced by
-  `.codex/builder-fusion-project.json`, not just a newly created disposable
-  project
-- readback after update showing the persisted change
-- application of at least one named profile, including `mock-full-pipeline`
-- verification command output demonstrating aligned and drifted states
+- fresh project creation with the expected generated naming/tracking contract
+- local ledger persistence in `.codex/builder-fusion-project-history.jsonl`
+- readback of the target Fusion project before update when the slice involves
+  explicit existing-project mutation
+- update of remote runtime command and/or env var for a known project ID when
+  Builder visibility allows
+- readback after update showing the persisted change when the slice claims live
+  remote mutation support
+- application of at least one named profile, including `mock-full-pipeline`,
+  when the slice claims remote profile support
+- verification command output demonstrating aligned, drifted, and
+  visibility-partial states where relevant
 - documentation examples that match the implemented commands
 
 ## Rollback And Fallback
@@ -324,6 +386,8 @@ Implementation slices promoted from this parent spec must include proof for:
   tranche rather than claiming remote config management is complete
 - local Builder launch must remain functional even if remote project update
   helpers are unavailable
+- fresh project creation and local history tracking must remain functional even
+  if existing-project readback stays partially blocked
 - CMS sync must remain independently usable and must not be blocked by Fusion
   project update failures
 
@@ -335,8 +399,10 @@ Implementation slices promoted from this parent spec must include proof for:
   stored only in a broader setup object
 - whether Builder exposes last-indexed commit or similar sync metadata without
   enterprise-only features
-- whether `builder-create-project` should eventually evolve into
-  `builder-ensure-project`, or remain a lower-level primitive beneath it
+- whether Planner should keep existing-project update helpers as a maintained
+  secondary path if Builder never exposes reliable metadata readback
+- whether a repo-local history inspection helper should be promoted as the next
+  bounded Builder implementation slice
 
 ## Readiness Judgment
 
@@ -346,9 +412,9 @@ planning artifact for follow-on bounded implementation slices.
 
 The current honest next move is now narrower:
 
-- either verify live remote update from a Builder auth context that can
-  actually see the saved Fusion project, or
-- explicitly decide whether Planner wants a future `builder-ensure-project`
-  slice despite the duplicate-project risk when visibility is blocked
+- synchronize the child Builder specs so they stop implying long-lived
+  existing-project management as the default repo strategy, and
+- decide whether Planner wants a small repo-local history inspection helper for
+  `.codex/builder-fusion-project-history.jsonl`
 
-No additional child slice is currently promoted automatically beyond Phase 03.
+No additional child slice is currently promoted automatically beyond Phase 05.

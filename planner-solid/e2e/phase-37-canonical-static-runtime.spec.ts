@@ -50,7 +50,7 @@ async function answerActiveQuestion(page: Page, answer: string) {
 }
 
 async function ensureMultipleLiveThreads(page: Page) {
-  const railButtons = page.locator(".session-thread-rail-button");
+  const constraintArea = page.locator(".session-project-area-card").filter({ hasText: "Constraints" }).first();
   const seedAnswers = [
     "Create a timer, edit intervals, and run a guided workout end to end.",
     "Success means one workout can be configured and completed without confusion or missed prompts.",
@@ -58,13 +58,11 @@ async function ensureMultipleLiveThreads(page: Page) {
   ];
 
   for (const answer of seedAnswers) {
-    if ((await railButtons.count()) > 1) return;
+    if (await constraintArea.isVisible()) return;
     await answerActiveQuestion(page, answer);
   }
 
-  await expect.poll(async () => await railButtons.count(), {
-    message: "expected the canonical runtime to expose multiple live threads after progressing the initial interview",
-  }).toBeGreaterThan(1);
+  await expect(constraintArea).toBeVisible();
 }
 
 test("phase 37.3 canonical static runtime mounts the home route without hydration crash", async ({ page }) => {
@@ -87,59 +85,66 @@ test("phase 37.3 canonical static runtime mounts a session route without hydrati
 
   await page.goto(`/sessions/${sessionId}`);
   await expect(page.locator(".app-shell")).toBeVisible();
-  await expect(page.getByRole("heading", { name: sessionTitle })).toBeVisible();
-  await expect(page.getByText("Question-bank workspace")).toBeVisible();
+  await expect(page.locator("h1.session-question-title")).toHaveText(sessionTitle);
+  await expect(page.getByText("Current project shape")).toBeVisible();
   await expect(page.locator(".session-question-actions-trigger")).toHaveText("Actions");
 
   expect(failures.pageErrors).toEqual([]);
   expect(failures.consoleErrors).toEqual([]);
 });
 
-test("phase 37.2 canonical runtime keeps the command rail truthful as queued work becomes live", async ({ page, request }) => {
+test("phase 37.2 canonical runtime keeps the project picture primary as additional work becomes live", async ({ page, request }) => {
   const { sessionId, sessionTitle } = await createWaitingSession(
     request,
     "Build a CLI workout timer that guides one person through interval training.",
   );
   const failures = trackClientBootstrapFailures(page);
+  const seedText = "Maybe guided cooldowns should adapt to how hard the last interval felt.";
 
   await page.setViewportSize({ width: 1280, height: 960 });
   await page.goto(`/sessions/${sessionId}`);
 
   await expect(page.locator(".app-shell")).toBeVisible();
-  await expect(page.getByRole("heading", { name: sessionTitle })).toBeVisible();
+  await expect(page.locator("h1.session-question-title")).toHaveText(sessionTitle);
   await expect(page.locator(".session-question-header")).toBeVisible();
-  await expect(page.locator(".session-question-summary-strip")).toHaveCount(0);
-  await expect(page.locator(".session-question-jumpbar")).toHaveCount(0);
-  await expect(page.locator(".session-question-shell > .session-question-rail")).toHaveCount(1);
-  await expect(page.locator(".session-thread-workspace")).toHaveCount(1);
-  await expect(page.locator(".session-question-current-badge")).toHaveCount(0);
-  await expect(page.locator(".session-question-state-badge")).toHaveCount(0);
-  await expect(page.getByText("Drafts autosave. Cmd/Ctrl+Enter commits.")).toBeVisible();
-  await expect(page.getByText("Draft saves automatically. Press Cmd+Enter to commit and advance.")).toHaveCount(0);
-  await expect(page.locator(".session-question-progress-line")).toHaveCount(0);
-  await expect(page.locator(".session-question-actions-trigger")).toHaveText("Actions");
-  await expect(page.locator(".session-queued-panel")).toHaveCount(0);
-  if ((await page.locator(".session-question-queued-disclosure").count()) > 0) {
-    await expect(page.locator(".session-question-queued-disclosure")).toBeVisible();
-  }
+  await expect(page.locator(".session-project-picture")).toHaveCount(1);
+  await expect(page.locator(".session-area-workspace")).toHaveCount(1);
+  await expect(page.locator(".session-area-preview")).toHaveCount(1);
+  await expect(page.getByText("Current project shape")).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Type your answer" })).toHaveCount(0);
 
   await ensureMultipleLiveThreads(page);
 
-  const railButtons = page.locator(".session-thread-rail-button");
-  const initialUrl = page.url();
-  const initialHeading = (await page.locator(".session-thread-section-title").textContent())?.trim();
-  const nextThreadTitle = (await railButtons.nth(1).locator(".session-thread-rail-title").textContent())?.trim();
-
-  expect(initialHeading).toBeTruthy();
-  expect(nextThreadTitle).toBeTruthy();
-  expect(nextThreadTitle).not.toBe(initialHeading);
-
-  await railButtons.nth(1).click();
-  await expect(page).toHaveURL(initialUrl);
-  await expect(page.locator(".session-thread-section-title")).toHaveText(nextThreadTitle ?? "");
+  await expect(page.locator(".session-project-area-card")).toHaveCount(5);
+  await expect(page.locator(".session-project-area-card").filter({ hasText: "Constraints" }).first()).toBeVisible();
+  await expect(page.locator(".session-area-workspace")).toHaveCount(1);
+  await page.locator(".session-area-workspace").getByRole("button", { name: /Go deeper in/i }).click();
+  await expect(page.locator(".session-area-shaping")).toBeVisible();
+  await expect(page.locator(".session-area-shaping-object")).toHaveCount(3);
+  await expect(page.locator(".session-project-area-freshness").first()).toBeVisible();
+  const revisionCards = page.locator(".session-area-revision-card");
+  if ((await revisionCards.count()) > 0) {
+    await expect(revisionCards.first()).toContainText(/revision/i);
+    await expect(page.getByText(/pending revision|conflict/i).first()).toBeVisible();
+  }
+  const areaCapture = page.getByPlaceholder(/Capture something local to/);
+  await areaCapture.fill(seedText);
+  await page.getByRole("button", { name: "Save as seed" }).click();
+  await expect(areaCapture).toHaveValue("");
+  await expect(page.getByText("1 seed resting quietly for later.")).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Type your answer" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Discuss in composer" }).click();
+  await expect(page.getByText("Resurfaced seed")).toBeVisible();
+  await expect(page.getByText(seedText)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Promote into active work" })).toBeVisible();
+  await expect(page.getByText("Area context")).toBeVisible();
+  await expect(page.locator(".session-project-support")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Open composer" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Back to shaping" })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Type your answer" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Open composer" }).click();
   await expect(page.getByRole("textbox", { name: "Type your answer" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Commit and next" })).toBeVisible();
-  await expect(page.locator(".session-thread-section-title")).toHaveText(nextThreadTitle ?? "");
 
   expect(failures.pageErrors).toEqual([]);
   expect(failures.consoleErrors).toEqual([]);

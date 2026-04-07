@@ -77,6 +77,7 @@ fn benchmark_response(prompt: &PromptEnvelope) -> PromptResponse {
                 item_id: item.item_id.clone(),
                 selected_option_id: Some(format!("opt-set-{index}")),
                 custom_text: None,
+                structured_payload: None,
                 skipped: false,
             })
             .collect(),

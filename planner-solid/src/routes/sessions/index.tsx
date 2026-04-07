@@ -32,15 +32,12 @@ export default function SessionsPage() {
               <h1 class="page-title">Current work queue</h1>
               <p class="page-copy">
                 Reopen work already in motion here. Projects remain the primary container for
-                ongoing work, and direct sessions stay available only as a focused detour.
+                ongoing work from here; new work should always start from a project.
               </p>
             </div>
             <div class="page-actions">
               <A class="btn btn-primary" href={withFrontendMockSearch("/projects/new")}>
                 New project
-              </A>
-              <A class="btn btn-subtle" href={withFrontendMockSearch("/sessions/new")}>
-                Direct session
               </A>
             </div>
           </div>
@@ -52,7 +49,7 @@ export default function SessionsPage() {
               <div class="eyebrow">Queue</div>
               <h2 class="section-title">All sessions</h2>
               <p class="section-copy">
-                Open active work directly. New long-lived work should start as a project.
+                Open active work directly. New work should start from a project.
               </p>
             </div>
           </div>

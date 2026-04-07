@@ -145,10 +145,29 @@ project is blocked or only partially visible when readback fails, including
 the current auth context and evidence from both the metadata read surfaces and
 the Builder branch surface.
 
+Planner's repo-native Builder create flow now treats Fusion projects as
+fire-and-forget remote workspaces:
+
+- `make builder-create-project` and `make builder-server-create-project`
+  create a fresh project by default instead of reusing the previously saved
+  one
+- the latest created project is written to
+  `.codex/builder-fusion-project.json`
+- every create also appends a durable local record to
+  `.codex/builder-fusion-project-history.jsonl` so the repo keeps accurate
+  trackable names and the exact config/settings used at creation time
+- old remote Builder projects are expected to be cleaned up manually when no
+  longer useful
+
 Current Builder-specific caveat:
 
-- a saved Fusion project may be `branch_visible_only`, meaning Builder's branch
-  surface still exposes the project while metadata surfaces do not
+- Builder's metadata surfaces can disagree; the repo now checks `org-tree`, the
+  bare authenticated `projects?apiKey=...` list, the user-scoped
+  `projects?apiKey=...&userId=...` list, direct project read, and the branch
+  surface
+- a saved Fusion project may still be `branch_visible_only`, meaning Builder's
+  branch surface still exposes the project while all modeled metadata surfaces
+  do not
 - in that case `make builder-get-project` returns a partial result and
   `make builder-verify-sync` reports `visibility_partial` instead of pretending
   the project is fully unreadable or fully in sync

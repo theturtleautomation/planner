@@ -93,7 +93,7 @@ builder-validate-config: ## Validate the canonical Builder UI-review config cont
 builder-launch: ## Launch the canonical Builder UI-review project against frontend mock mode
 	./scripts/builder-launch.sh $(ARGS)
 
-builder-create-project: ## Create the canonical Builder UI-review Fusion project non-interactively
+builder-create-project: ## Create a fresh Builder UI-review Fusion project and record local history
 	./scripts/builder-create-project.sh $(ARGS)
 
 builder-connect-repo: ## Connect this repo to Builder Fusion
@@ -135,7 +135,7 @@ builder-server-validate-config: ## Validate the alternate server-backed Builder 
 builder-server-launch: ## Launch Builder Fusion against the server-backed integration runtime
 	BUILDER_PROJECT_CONFIG_PATH=./builder.server.config.json ./scripts/builder-launch.sh $(ARGS)
 
-builder-server-create-project: ## Create a server-backed integration Fusion project explicitly
+builder-server-create-project: ## Create a fresh server-backed Builder Fusion project and record local history
 	BUILDER_PROJECT_CONFIG_PATH=./builder.server.config.json ./scripts/builder-create-project.sh $(ARGS)
 
 builder-server-update-project: ## Sync the saved Fusion project to the server-backed integration config explicitly

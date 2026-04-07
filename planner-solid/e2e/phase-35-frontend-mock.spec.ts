@@ -15,6 +15,7 @@ test("phase 35 frontend mock runtime drives Builder-targeted shell navigation an
 
   await expect(primaryNav.getByRole("link", { name: "Projects" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Create project" })).toBeVisible();
+  await expect(page.getByRole("link", { name: /direct session/i })).toHaveCount(0);
   await page.getByLabel("Project title").fill("Home directory pilot");
   await page.getByLabel("Description").fill("Moved the project directory onto the home route.");
   await page.getByRole("button", { name: "Create project" }).click();
@@ -28,12 +29,11 @@ test("phase 35 frontend mock runtime drives Builder-targeted shell navigation an
   await primaryNav.getByRole("link", { name: "Sessions" }).first().click();
   await expect(page).toHaveURL(/\/sessions(\?mockScenario=default)?$/);
   await expect(page.getByRole("heading", { name: "Current work queue", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: /direct session/i })).toHaveCount(0);
 
   await page.getByRole("link", { name: "Calendar intake" }).first().click();
   await expect(page).toHaveURL(/\/sessions\/session-1(\?mockScenario=default)?$/);
   await expect(page.getByRole("heading", { name: "Calendar intake", exact: true })).toBeVisible();
-  await expect(page.getByText("Every banked question is available from the start.")).toHaveCount(0);
-  await expect(page.locator(".session-question-progress-line")).toHaveCount(0);
   await expect(page.locator(".session-question-status-row")).toBeVisible();
   await expect(page.locator(".session-question-actions-trigger")).toHaveText("Actions");
 
@@ -71,47 +71,104 @@ test("phase 35 frontend mock runtime drives Builder-targeted shell navigation an
   await expect(page.getByRole("button", { name: "Create project" })).toBeVisible();
 });
 
-test("phase 37 session command rail keeps thread switching local in frontend mock mode", async ({ page }) => {
+test("phase 37 session workspace keeps the project picture primary while area shaping stays local in frontend mock mode", async ({ page }) => {
   await page.goto("/sessions/session-11?mockScenario=session-workspace");
+  const areaCards = page.locator(".session-project-area-card");
+  const areaWorkspace = page.locator(".session-area-workspace");
 
   await expect(page.getByRole("heading", { name: "Session workspace mock", exact: true })).toBeVisible();
-  await expect(page.locator(".session-question-progress-line")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: /Workflow/ })).toBeVisible();
-  await expect(page.getByRole("button", { name: /Scope/ })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Workflow", exact: true })).toBeVisible();
-  await expect(page.getByText("Confirm the main workflow shape.")).toBeVisible();
-  await expect(page.locator(".session-question-current-badge")).toHaveCount(0);
-  await expect(page.locator(".session-question-state-badge")).toHaveCount(0);
-  await expect(page.getByText("Drafts autosave. Cmd/Ctrl+Enter commits.")).toBeVisible();
-  await expect(page.getByText("Draft saves automatically. Press Cmd+Enter to commit and advance.")).toHaveCount(0);
-  await expect(page.locator(".session-question-progress-line")).toHaveCount(0);
-  await expect(page.locator(".session-question-actions-trigger")).toHaveText("Actions");
-
-  await page.getByRole("button", { name: /Scope/ }).click();
-  await expect(page).toHaveURL(/\/sessions\/session-11\?mockScenario=session-workspace$/);
-  await expect(page.getByRole("heading", { name: "Scope", exact: true })).toBeVisible();
-  await expect(page.getByText("Define the release boundaries before delivery handoff.")).toBeVisible();
-  await expect(page.getByText("Which planning output needs to feel complete in v1?")).toBeVisible();
+  await expect(page.getByText("Current project shape")).toBeVisible();
+  await expect(areaCards).toHaveCount(5);
+  await expect(page.getByRole("heading", { name: "Transformation", exact: true })).toBeVisible();
+  await expect(page.locator(".session-area-preview-dominant")).toBeVisible();
+  await expect(page.locator(".session-area-preview-dominant .session-area-pressure-summary")).toHaveText("Confirm the main workflow shape.");
+  await expect(areaWorkspace.getByRole("button", { name: "Go deeper in Transformation" })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Type your answer" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Commit and next" })).toHaveCount(0);
+  await expect(page.locator(".session-area-preview-secondary")).toHaveCount(1);
+  await expect(page.locator(".session-area-preview-secondary-title")).toHaveText("Scope");
 });
 
-test("phase 37.1 session command rail collapses into a thread sheet below desktop widths", async ({ page }) => {
+test("phase 37.1 project picture remains primary below desktop widths", async ({ page }) => {
   await page.setViewportSize({ width: 840, height: 900 });
   await page.goto("/sessions/session-11?mockScenario=session-workspace");
 
-  await expect(page.getByRole("button", { name: /Threads.*Workflow/ })).toBeVisible();
-  await expect(page.locator(".session-question-shell > .session-question-rail")).toHaveCount(0);
+  await expect(page.getByText("Current project shape")).toBeVisible();
+  await expect(page.locator(".session-area-preview")).toBeVisible();
+  await expect(page.locator(".session-area-preview-dominant .session-area-pressure-summary")).toHaveText("Confirm the main workflow shape.");
+});
 
-  await page.getByRole("button", { name: /Threads.*Workflow/ }).click();
-  await expect(page.getByRole("dialog", { name: "Session threads" })).toBeVisible();
-  await expect(page.getByRole("button", { name: /Scope/ })).toBeVisible();
 
-  await page.getByRole("button", { name: /Scope/ }).click();
-  await expect(page.getByRole("dialog", { name: "Session threads" })).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "Scope", exact: true })).toBeFocused();
-  await expect(page.getByText("Define the release boundaries before delivery handoff.")).toBeVisible();
+test("phase 38.3 session workspace keeps the project picture primary on ultra-wide viewports", async ({ page }) => {
+  await page.setViewportSize({ width: 1680, height: 1050 });
+  await page.goto("/sessions/session-11?mockScenario=session-workspace");
 
-  await page.getByRole("button", { name: /Threads.*Scope/ }).click();
-  await page.getByRole("button", { name: "Close" }).click();
-  await expect(page.getByRole("dialog", { name: "Session threads" })).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "Scope", exact: true })).toBeVisible();
+  await expect(page.locator(".session-project-shell")).toHaveCount(1);
+  await expect(page.locator(".session-project-primary")).toHaveCount(1);
+  await expect(page.locator(".session-project-support")).toHaveCount(1);
+  await expect(page.getByText("Current project shape")).toBeVisible();
+  await expect(page.getByText("Next move")).toBeVisible();
+  await expect(page.locator(".session-area-preview")).toHaveCount(1);
+  await expect(page.getByRole("textbox", { name: "Type your answer" })).toHaveCount(0);
+
+  await page.setViewportSize({ width: 1280, height: 960 });
+  await expect(page.locator(".session-project-support")).toBeVisible();
+  await expect(page.locator(".session-area-workspace")).toHaveCount(1);
+});
+
+
+test("phase 39 commit and next preserves workspace continuity as prompt-bank updates land", async ({ page }) => {
+  await page.goto("/sessions/session-11?mockScenario=session-workspace");
+
+  const initialUrl = page.url();
+  const seedText = "Maybe habit streaks matter more than total volume.";
+  await page.locator(".session-area-workspace").getByRole("button", { name: "Go deeper in Transformation" }).click();
+  await expect(page.locator(".session-area-shaping")).toBeVisible();
+  await expect(page.locator(".session-area-shaping-object")).toHaveCount(3);
+  await expect(page.locator(".session-area-pressure-point.is-dominant")).toBeVisible();
+  await expect(page.locator(".session-area-shaping .session-area-pressure-point, .session-area-shaping .session-area-preview-secondary")).toHaveCount(2);
+  await expect(page.getByText("Pending revisions")).toBeVisible();
+  await expect(page.locator(".session-area-revision-kind")).toHaveText("North-star revision");
+  await expect(page.getByText("conflict", { exact: true })).toBeVisible();
+  const areaCapture = page.getByPlaceholder("Capture something local to Transformation");
+  await areaCapture.fill(seedText);
+  await page.getByRole("button", { name: "Save as seed" }).click();
+  await expect(areaCapture).toHaveValue("");
+  await expect(page.getByText("1 seed resting quietly for later.")).toBeVisible();
+  await expect(page.getByText("Next move")).toHaveCount(0);
+  await expect(page.locator(".session-project-support")).toHaveCount(0);
+  await expect(page.getByRole("textbox", { name: "Type your answer" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Discuss in composer" }).click();
+  await expect(page.getByText("Resurfaced seed")).toBeVisible();
+  await expect(page.getByText(seedText)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Promote into active work" })).toBeVisible();
+  await page.getByRole("button", { name: "Dismiss for now" }).click();
+  await expect(page.getByText(seedText)).toHaveCount(0);
+  await page.getByRole("button", { name: "Back to shaping" }).click();
+  await expect(page.getByText("Resurfaced seed")).toBeVisible();
+  await page.getByRole("button", { name: "Promote into active work" }).click();
+  await expect(areaCapture).toHaveValue(seedText);
+  await expect(page.getByText("Resurfaced seed")).toHaveCount(0);
+  await page.getByRole("button", { name: "Discuss in composer" }).click();
+  await expect(page.getByText("Pending revisions still in context")).toBeVisible();
+  await expect(page.getByText("Area context")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Open composer" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Back to shaping" })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Type your answer" })).toHaveCount(0);
+  await expect(page.locator(".session-project-support")).toHaveCount(0);
+  await page.getByRole("button", { name: "Open composer" }).click();
+  await expect(page.getByRole("textbox", { name: "Type your answer" })).toBeVisible();
+  await page.getByRole("textbox", { name: "Type your answer" }).fill("Weekly planning should feel effortless.");
+  await page.getByRole("button", { name: "Commit and next" }).click();
+
+  await expect(page).toHaveURL(initialUrl);
+  await expect(page.locator(".session-project-picture")).toHaveCount(1);
+  await expect(page.locator(".session-area-workspace")).toHaveCount(1);
+  await expect(page.locator(".session-area-preview")).toHaveCount(0);
+  await expect(page.locator(".session-area-shaping")).toHaveCount(0);
+  await expect(page.locator(".session-question-loading")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Transformation", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Back to shaping" })).toBeVisible();
+  await expect(page.locator(".session-project-area-card")).toHaveCount(5);
+  await expect(page.getByText(/prompt draft save rejected because the prompt is no longer current/i)).toHaveCount(0);
 });

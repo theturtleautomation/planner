@@ -6,14 +6,23 @@
 **Prerequisite:** [Builder Fusion Phase 01 API-Grounded Skill And Existing Project Contract Spec](/home/thetu/planner/docs/builder-fusion-phase-01-api-grounded-skill-and-existing-project-contract-spec.md)  
 **Related Planning:** [Builder Local Workflow](/home/thetu/planner/docs/builder-local-workflow.md), [Project Plan](/home/thetu/planner/docs/project-plan.md)  
 
+> Planning sync update (2026-04-02): this implemented slice remains the repo’s
+> helper contract for inspecting or updating an explicitly targeted existing
+> Builder Fusion project. It is no longer the default Planner Builder strategy.
+> Planner now creates fresh Fusion projects by default and uses
+> `.codex/builder-fusion-project.json` only as the latest-project pointer for
+> immediate follow-on commands, with `.codex/builder-fusion-project-history.jsonl`
+> as the durable local source of truth for created project identities/settings.
+
 ## Purpose
 
 Split the deferred existing-project helper implementation into its own bounded
 child slice so Planner can decide on the internal-endpoint risk explicitly,
 without reopening the already-completed Builder skill/reference hardening work.
 
-This spec is specifically about helper behavior for the canonical saved Fusion
-project, not about general Builder skill guidance.
+This spec is specifically about helper behavior for an explicitly targeted or
+latest-saved Fusion project, not about the repo’s default creation posture or
+general Builder skill guidance.
 
 ## Problem
 
@@ -22,7 +31,7 @@ Planner now has:
 - a truthful local Builder workflow
 - a completed Builder skill/reference layer that distinguishes documented
   Builder APIs from internal Fusion-project fallbacks
-- a saved canonical Fusion project identity in
+- a latest-saved Fusion project identity in
   `.codex/builder-fusion-project.json`
 
 But it still lacks repo-native helper flows for the most important operational
@@ -46,11 +55,12 @@ remaining blocker is not conceptual confusion. It is implementation risk:
 
 A repo user working on Planner with Builder should be able to:
 
-1. inspect the canonical saved Fusion project without creating a new project
-2. update the saved Fusion project's runtime command and URL from the repo
-3. manage the saved Fusion project's environment variables from the repo
-4. apply a named runtime profile to the saved Fusion project
-5. verify whether the saved Fusion project matches local Planner intent
+1. inspect an explicitly targeted or latest-saved Fusion project without
+   creating a new project
+2. update that project's runtime command and URL from the repo
+3. manage that project's environment variables from the repo
+4. apply a named runtime profile to that project
+5. verify whether that project matches local Planner intent
 6. see clearly when a helper is using documented Builder semantics versus an
    internal fallback transport
 
@@ -73,7 +83,7 @@ A repo user working on Planner with Builder should be able to:
 - broad CMS model/content work
 - Builder DSI changes
 - enterprise-only indexing remediation
-- broad deployment automation outside the canonical Planner Fusion project
+- broad deployment automation outside targeted Builder Fusion project helpers
 
 ## Preconditions
 
@@ -86,8 +96,8 @@ helper slice.
 
 That acceptance is bounded:
 
-- only existing Fusion-project helper behavior for the canonical saved project
-  is in scope
+- only existing Fusion-project helper behavior for an explicitly targeted or
+  latest-saved project is in scope
 - helper output must continue to call the transport an internal fallback, not a
   documented Builder API
 - the repo is not treating internal endpoints as a generally stable Builder
@@ -106,14 +116,15 @@ Planner accepts the current internal-endpoint risk for implementing:
 
 under the following guardrails:
 
-1. helpers must default to the saved project identity in
-   `.codex/builder-fusion-project.json`
+1. helpers may default to the latest saved project identity in
+   `.codex/builder-fusion-project.json` as a convenience
 2. helpers must not recreate a project during read/update flows
 3. helpers must support explicit project ID override for stale local state
 4. helpers must print that they are using documented settings semantics plus an
    internal fallback transport
 5. helpers must keep destructive or ambiguous behavior out of the normal path
-6. helper output must warn before mutating the canonical saved project
+6. helper output must warn before mutating the latest saved or explicitly
+   targeted project
 
 ## Proposed Helper Surface
 

@@ -1,4 +1,4 @@
-import { emptyPromptBankGraph, mergePromptBankGraph, revealPromptBankWorkspace } from "./prompt-bank";
+import { emptyPromptBankGraph, mergePromptBankGraph, resolvePromptBankContinuity, revealPromptBankWorkspace } from "./prompt-bank";
 import type { PromptBankResponse } from "./types";
 
 const baseResponse = (overrides: Partial<PromptBankResponse> = {}): PromptBankResponse => ({
@@ -107,6 +107,137 @@ describe("prompt bank graph helpers", () => {
     expect(graph.activeThreadId).toBe("queue-first");
   });
 
+
+  it("preserves the active thread and item when they still exist after a bank update", () => {
+    const previous = mergePromptBankGraph(
+      baseResponse({
+        active_thread_id: "verify-platform",
+        banked_threads: [{
+          category_id: "verify-platform",
+          title: "Verify Platform",
+          summary: "Confirm the first delivery surface.",
+          question_count: 2,
+          prompt: {
+            prompt_id: "prompt-verify-platform",
+            title: "Verify Platform",
+            kind: "verification_batch",
+            origin_category_id: "verify-platform",
+            items: [
+              {
+                item_id: "platform-choice",
+                kind: "verification",
+                text: "Should this ship as a web app first?",
+                options: [],
+                required: true,
+              },
+              {
+                item_id: "scope-next",
+                kind: "verification",
+                text: "What should the first shipped scope avoid?",
+                options: [],
+                required: true,
+              },
+            ],
+            allow_partial_submit: true,
+          },
+        }],
+      }),
+    );
+
+    const next = mergePromptBankGraph(
+      baseResponse({
+        active_thread_id: "some-other-thread",
+        banked_threads: previous.threadOrder.map(threadId => previous.threadsById[threadId]),
+      }),
+      previous,
+    );
+
+    const resolution = resolvePromptBankContinuity(next, previous, "scope-next", {
+      "platform-choice": true,
+    });
+
+    expect(resolution).toEqual({
+      activeThreadId: "verify-platform",
+      activeItemId: "scope-next",
+      invalidated: false,
+    });
+  });
+
+  it("hands off to the next valid item when the active item is superseded", () => {
+    const previous = mergePromptBankGraph(
+      baseResponse({
+        active_thread_id: "verify-platform",
+        banked_threads: [{
+          category_id: "verify-platform",
+          title: "Verify Platform",
+          summary: "Confirm the first delivery surface.",
+          question_count: 2,
+          prompt: {
+            prompt_id: "prompt-verify-platform",
+            title: "Verify Platform",
+            kind: "verification_batch",
+            origin_category_id: "verify-platform",
+            items: [
+              {
+                item_id: "platform-choice",
+                kind: "verification",
+                text: "Should this ship as a web app first?",
+                options: [],
+                required: true,
+              },
+              {
+                item_id: "scope-next",
+                kind: "verification",
+                text: "What should the first shipped scope avoid?",
+                options: [],
+                required: true,
+              },
+            ],
+            allow_partial_submit: true,
+          },
+        }],
+      }),
+    );
+
+    const next = mergePromptBankGraph(
+      baseResponse({
+        active_thread_id: "verify-platform",
+        banked_threads: [{
+          category_id: "verify-platform",
+          title: "Verify Platform",
+          summary: "Confirm the first delivery surface.",
+          question_count: 1,
+          prompt: {
+            prompt_id: "prompt-verify-platform-next",
+            title: "Verify Platform",
+            kind: "verification_batch",
+            origin_category_id: "verify-platform",
+            items: [
+              {
+                item_id: "scope-next",
+                kind: "verification",
+                text: "What should the first shipped scope avoid?",
+                options: [],
+                required: true,
+              },
+            ],
+            allow_partial_submit: true,
+          },
+        }],
+      }),
+      previous,
+    );
+
+    const resolution = resolvePromptBankContinuity(next, previous, "platform-choice", {
+      "platform-choice": true,
+    });
+
+    expect(resolution).toEqual({
+      activeThreadId: "verify-platform",
+      activeItemId: "scope-next",
+      invalidated: true,
+    });
+  });
   it("holds first reveal until the prompt bank is complete or build ready", () => {
     const assembling = mergePromptBankGraph(
       baseResponse({

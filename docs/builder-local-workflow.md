@@ -140,11 +140,14 @@ make builder-launch
 This uses [builder.config.json](/home/thetu/planner/builder.config.json), which
 now points at the frontend mock runtime on `3000`.
 
-If you want to recreate the canonical Builder UI-review project:
+If you want a fresh Builder UI-review project:
 
 ```bash
 make builder-create-project
 ```
+
+Planner now treats Fusion projects as disposable remote workspaces. The repo
+creates a fresh project by default instead of reusing the previously saved one.
 
 If you want to sync the saved Builder project back to the canonical UI-review
 runtime settings:
@@ -470,7 +473,8 @@ make builder-diagnose-project-visibility
 The diagnosis output now proves:
 
 - the current Builder CLI/env user and space
-- whether `org-tree` and `projects?apiKey=...&userId=...` disagree
+- whether `org-tree`, bare `projects?apiKey=...`, and
+  `projects?apiKey=...&userId=...` disagree
 - whether direct project read fails with and without `userId`
 - whether the Builder branch surface returns live branches for the saved
   project ID
@@ -487,19 +491,22 @@ automatically so this diagnosis is more precise going forward.
 
 The existing-project helper targets use documented Builder Project settings
 semantics with an internal fallback transport. They are intended to operate on
-the saved project in `.codex/builder-fusion-project.json`, warn before remote
-mutation, and avoid recreating a project during read/update flows.
+the latest saved project in `.codex/builder-fusion-project.json`, warn before
+remote mutation, and avoid recreating a project during read/update flows.
 
-If Builder does not return the saved Fusion project in the current project-list
-query, the outcome now depends on the other Builder surfaces:
+If Builder does not return the saved Fusion project on every metadata list
+surface, the outcome now depends on which read surfaces still expose it:
 
+- if the bare authenticated `projects?apiKey=...` list still returns the
+  project, `make builder-get-project` returns the full metadata payload and
+  `make builder-verify-sync` can still compare remote settings
+- if all metadata surfaces miss the project but the branch surface succeeds,
+  `make builder-get-project` returns `status: partial` and the repo reports the
+  project as `branch_visible_only`
 - if the branch surface also fails, `make builder-get-project` returns a
   truthful `not_found` payload
-- if the branch surface succeeds, `make builder-get-project` returns
-  `status: partial` and the repo reports the project as `branch_visible_only`
-- in both cases, `make builder-update-project` still blocks live mutation when
-  metadata settings remain unreadable, while still supporting `--dryrun` for
-  payload inspection
+- when metadata settings remain unreadable, `make builder-update-project`
+  still blocks live mutation while supporting `--dryrun` for payload inspection
 
 Do not validate `api.builder.io` behavior by opening an API URL directly in a
 browser tab. Builder serves the web-app shell there, and the in-page runtime
@@ -520,22 +527,45 @@ make builder-code ARGS="--url https://www.figma.com/design/... --prompt 'Impleme
 make builder-figma-publish ARGS="--spaceId c302669d31c74e7fa80574973c437cfa --dryrun --yes"
 ```
 
-`make builder-create-project` persists the chosen Fusion project in:
+`make builder-create-project` now does two local persistence steps:
 
 ```text
 .codex/builder-fusion-project.json
 ```
 
-That avoids duplicate project creation when Builder's project list API is not
-returning reliable results for this auth context.
+That file tracks the latest created Fusion project for repo-local follow-on
+commands such as `get`, `update`, and `verify-sync`.
 
-The repo wrapper now creates Fusion projects with Planner-specific defaults:
+It also appends an immutable local ledger entry to:
+
+```text
+.codex/builder-fusion-project-history.jsonl
+```
+
+Each history row records the created project's identity plus the exact repo
+config file, workflow/profile, command, server URL, and expected runtime
+profile used at creation time.
+
+This repo now treats remote Builder projects as fire-and-forget:
+
+- create a fresh project when starting new Codex-side Builder work
+- use the latest saved project for any immediate follow-on commands
+- rely on the local history file, not Builder metadata readback, as the durable
+  source of which named project was created with which settings
+- delete old Builder projects manually on the Builder side when they are no
+  longer useful
+
+The repo wrapper now creates fresh Fusion projects with Planner-specific
+defaults:
 
 - `needSetup: false`
 - `settings.installCommand = npm install --prefix planner-solid`
 - `settings.setupDependencies` includes `node`, `npm`, `pnpm`, and `rust`
 - `settings.devServerCommand` and `settings.devServerUrl` inherit from the
   selected Builder config file
+- default generated project name:
+  `<repo>-<planner-profile>-<utc-timestamp>`
+- default generated branch name matches the generated project name
 - default config: frontend mock runtime on `3000`
 - alternate config: server-backed runtime on `4174`
 - `settings.mainBranchName = main`

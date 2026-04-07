@@ -130,6 +130,7 @@ function promptBank(
             {
               item_id: firstItemId,
               kind: "discovery",
+              target_dimension: "goal",
               text: "What is the main user flow this first version needs to support?",
               required: true,
               options: [
@@ -148,6 +149,7 @@ function promptBank(
             {
               item_id: `item-${sessionId}-2`,
               kind: "verification",
+              target_dimension: "out_of_scope",
               text: "What should the first shipped scope avoid?",
               required: true,
               options: [
@@ -701,6 +703,7 @@ export function createScenarioState(scenarioKey: MockScenarioKey): MockState {
                   {
                     item_id: "item-session-11-1",
                     kind: "discovery",
+                    target_dimension: "goal",
                     text: "What is the main user flow this first version needs to support?",
                     required: true,
                     options: [
@@ -719,6 +722,7 @@ export function createScenarioState(scenarioKey: MockScenarioKey): MockState {
                   {
                     item_id: "item-session-11-2",
                     kind: "verification",
+                    target_dimension: "out_of_scope",
                     text: "What should the first shipped scope avoid?",
                     required: true,
                     options: [
@@ -731,6 +735,41 @@ export function createScenarioState(scenarioKey: MockScenarioKey): MockState {
                         option_id: "option-session-11-avoid-collab",
                         label: "Avoid collaboration features",
                         semantic_value: "avoid-collaboration-features",
+                      },
+                    ],
+                  },
+                ],
+              },
+            },
+            {
+              category_id: "actors",
+              title: "Actors",
+              summary: "Name the first people who need to trust and use this flow.",
+              question_count: 1,
+              prompt: {
+                prompt_id: "prompt-session-11-actors",
+                title: "Actors",
+                kind: "question_batch",
+                instructions: "Clarify who the first release is truly for.",
+                origin_category_id: "actors",
+                allow_partial_submit: true,
+                items: [
+                  {
+                    item_id: "item-session-11-actors-1",
+                    kind: "discovery",
+                    target_dimension: "stakeholders",
+                    text: "Who needs to trust this first version immediately?",
+                    required: true,
+                    options: [
+                      {
+                        option_id: "option-session-11-owner",
+                        label: "The individual planning their week",
+                        semantic_value: "individual-planner",
+                      },
+                      {
+                        option_id: "option-session-11-manager",
+                        label: "A manager reviewing team plans",
+                        semantic_value: "manager-reviewer",
                       },
                     ],
                   },
@@ -753,6 +792,7 @@ export function createScenarioState(scenarioKey: MockScenarioKey): MockState {
                   {
                     item_id: "item-session-11-3",
                     kind: "discovery",
+                    target_dimension: "success_criteria",
                     text: "Which planning output needs to feel complete in v1?",
                     required: true,
                     options: [
@@ -771,6 +811,7 @@ export function createScenarioState(scenarioKey: MockScenarioKey): MockState {
                   {
                     item_id: "item-session-11-4",
                     kind: "verification",
+                    target_dimension: "out_of_scope",
                     text: "What belongs after the first release?",
                     required: true,
                     options: [
@@ -788,6 +829,18 @@ export function createScenarioState(scenarioKey: MockScenarioKey): MockState {
                   },
                 ],
               },
+            },
+          ],
+          queued_threads: [
+            {
+              category_id: "north-star-revision",
+              title: "North-star revision",
+              summary: "Promote manager review as the primary goal for the first release.",
+              question_count: 1,
+              status: "queued",
+              revision_kind: "north_star",
+              revision_area_id: "transformation",
+              revision_conflict: true,
             },
           ],
           saved_drafts: {

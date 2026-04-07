@@ -199,18 +199,18 @@ async function mockProjectWorkspace(page, sessions) {
   });
 }
 
-test("phase 29 makes project-first entry primary while keeping direct session entry available", async ({ page }) => {
+test("phase 29 keeps project-first entry as the only visible new-work path", async ({ page }) => {
   await mockWorkEntry(page, [
     session(),
   ]);
 
   await page.goto("/");
   await expect(page.getByRole("link", { name: "Open project" })).toBeVisible();
-  await expect(page.getByRole("link", { name: /direct session/i }).first()).toBeVisible();
+  await expect(page.getByRole("link", { name: /direct session/i }).first()).toHaveCount(0);
 
   await page.goto("/sessions");
   await expect(page.getByRole("link", { name: "New project" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Direct session" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Direct session" })).toHaveCount(0);
   const firstRow = page.locator(".queue-row").first();
   await expect(firstRow).toContainText("Ready to start");
   await expect(firstRow).not.toContainText("waiting");

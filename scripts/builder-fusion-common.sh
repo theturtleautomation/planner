@@ -62,6 +62,14 @@ builder_repo_fetch_org_tree_json() {
     "https://api.builder.io/projects/org-tree?apiKey=${space_id}"
 }
 
+builder_repo_fetch_space_projects_json() {
+  local space_id="$1"
+
+  curl -fsS \
+    -H "Authorization: Bearer $BUILDER_PRIVATE_API_KEY" \
+    "https://api.builder.io/projects?apiKey=${space_id}"
+}
+
 builder_repo_fetch_user_projects_json() {
   local space_id="$1"
   local user_id="$2"
@@ -164,13 +172,16 @@ builder_repo_fetch_project_branches_json() {
 
 builder_repo_merge_project_surfaces_json() {
   local org_tree_json="$1"
-  local user_projects_json="$2"
+  local space_projects_json="$2"
+  local user_projects_json="$3"
 
   jq -cn \
     --argjson orgTree "$org_tree_json" \
+    --argjson spaceList "$space_projects_json" \
     --argjson userList "$user_projects_json" '
     [
       (($orgTree.projects // [])[]),
+      (($spaceList.projects // [])[]),
       (($userList.projects // [])[])
     ]
     | unique_by(.id)

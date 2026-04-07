@@ -739,6 +739,10 @@ async fn tier2_session_prompt_bank_reports_banked_and_queued_threads_truthfully(
                     has_children: false,
                     has_prompt_ready: true,
                     item_count_hint: 1,
+                    revision_kind: None,
+                    revision_area_id: None,
+                    revision_conflict: false,
+                    low_risk_update: false,
                 },
                 planner_schemas::SocraticCategoryNode {
                     category_id: "explore-user-flows".into(),
@@ -753,6 +757,10 @@ async fn tier2_session_prompt_bank_reports_banked_and_queued_threads_truthfully(
                     has_children: false,
                     has_prompt_ready: true,
                     item_count_hint: 2,
+                    revision_kind: None,
+                    revision_area_id: None,
+                    revision_conflict: false,
+                    low_risk_update: false,
                 },
             ],
             active_category_path: vec![planner_schemas::SocraticCategoryPathEntry {

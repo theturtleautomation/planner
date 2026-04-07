@@ -69,13 +69,20 @@ pub fn answer_to_input_text(answer: &PromptAnswer, item: &PromptItem) -> Option<
         .map(str::trim)
         .filter(|text| !text.is_empty())
         .map(str::to_string);
+    let structured = structured_payload_to_input_text(answer, item);
 
-    match (selected, custom) {
-        (Some(selected), Some(custom)) => Some(format!("{selected}\n{custom}")),
-        (Some(selected), None) => Some(selected),
-        (None, Some(custom)) => Some(custom),
-        (None, None) => None,
+    let mut parts = Vec::new();
+    if let Some(selected) = selected {
+        parts.push(selected);
     }
+    if let Some(custom) = custom {
+        parts.push(custom);
+    }
+    if let Some(structured) = structured {
+        parts.push(structured);
+    }
+
+    (!parts.is_empty()).then(|| parts.join("\n"))
 }
 
 fn answer_has_payload(answer: &PromptAnswer) -> bool {
@@ -97,13 +104,86 @@ fn answer_has_payload(answer: &PromptAnswer) -> bool {
         .as_deref()
         .map(str::trim)
         .is_some_and(|value| !value.is_empty())
+        || answer
+            .structured_payload
+            .as_ref()
+            .is_some_and(structured_payload_has_content)
+}
+
+fn structured_payload_has_content(payload: &planner_schemas::PromptStructuredAnswer) -> bool {
+    !payload.ordered_option_ids.is_empty()
+        || !payload.field_values.is_empty()
+        || payload.scalar_value.is_some()
+        || payload
+            .selected_path
+            .as_deref()
+            .map(str::trim)
+            .is_some_and(|value| !value.is_empty())
+}
+
+fn structured_payload_to_input_text(
+    answer: &PromptAnswer,
+    item: &PromptItem,
+) -> Option<String> {
+    let payload = answer.structured_payload.as_ref()?;
+    if !structured_payload_has_content(payload) {
+        return None;
+    }
+
+    let mut parts = Vec::new();
+
+    if !payload.ordered_option_ids.is_empty() {
+        let values = payload
+            .ordered_option_ids
+            .iter()
+            .map(|option_id| {
+                item.options
+                    .iter()
+                    .find(|option| option.option_id == *option_id)
+                    .map(|option| option.semantic_value.clone())
+                    .unwrap_or_else(|| option_id.clone())
+            })
+            .collect::<Vec<_>>()
+            .join(" > ");
+        parts.push(values);
+    }
+
+    if let Some(path) = payload
+        .selected_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        let selected = item
+            .options
+            .iter()
+            .find(|option| option.option_id == path)
+            .map(|option| option.semantic_value.clone())
+            .unwrap_or_else(|| path.to_string());
+        parts.push(selected);
+    }
+
+    parts.extend(payload.field_values.iter().map(|(key, value)| {
+        if key == "rationale" {
+            value.clone()
+        } else {
+            format!("{key}: {value}")
+        }
+    }));
+
+    if let Some(value) = payload.scalar_value {
+        parts.push(value.to_string());
+    }
+
+    (!parts.is_empty()).then(|| parts.join("\n"))
 }
 
 #[cfg(test)]
 mod tests {
     use planner_schemas::{
         Dimension, PromptAnswer, PromptEnvelope, PromptItem, PromptItemKind, PromptKind,
-        PromptOption, PromptPreferredLayout, PromptResponse, PromptResponseMode, PromptUiHints,
+        PromptOption, PromptPreferredLayout, PromptResponse, PromptResponseMode,
+        PromptStructuredAnswer, PromptUiHints,
     };
 
     use super::*;
@@ -174,12 +254,14 @@ mod tests {
                     item_id: "item-b".into(),
                     selected_option_id: Some("opt-b".into()),
                     custom_text: None,
+                    structured_payload: None,
                     skipped: false,
                 },
                 PromptAnswer {
                     item_id: "item-a".into(),
                     selected_option_id: Some("opt-a".into()),
                     custom_text: None,
+                    structured_payload: None,
                     skipped: false,
                 },
             ],
@@ -202,6 +284,7 @@ mod tests {
                 item_id: "item-a".into(),
                 selected_option_id: Some("opt-a".into()),
                 custom_text: None,
+                structured_payload: None,
                 skipped: false,
             }],
             submitted_at: "2026-03-08T00:00:01Z".into(),
@@ -219,6 +302,7 @@ mod tests {
             item_id: "item-a".into(),
             selected_option_id: Some("opt-a".into()),
             custom_text: Some("extra detail".into()),
+            structured_payload: None,
             skipped: false,
         };
         let text = answer_to_input_text(&answer, &prompt.items[0]);
@@ -232,10 +316,34 @@ mod tests {
             item_id: "item-a".into(),
             selected_option_id: None,
             custom_text: None,
+            structured_payload: None,
             skipped: true,
         };
         let text = answer_to_input_text(&answer, &prompt.items[0]);
         assert_eq!(text.as_deref(), Some("skip"));
+    }
+
+    #[test]
+    fn answer_to_input_text_uses_structured_payload_when_present() {
+        let prompt = test_prompt();
+        let answer = PromptAnswer {
+            item_id: "item-a".into(),
+            selected_option_id: None,
+            custom_text: None,
+            structured_payload: Some(PromptStructuredAnswer {
+                ordered_option_ids: vec!["opt-a".into()],
+                field_values: [("detail".into(), "Need SSO".into())].into_iter().collect(),
+                scalar_value: Some(0.8),
+                selected_path: Some("path-a".into()),
+            }),
+            skipped: false,
+        };
+
+        let text = answer_to_input_text(&answer, &prompt.items[0]);
+        assert_eq!(
+            text.as_deref(),
+            Some("semantic-a\npath-a\ndetail: Need SSO\n0.8")
+        );
     }
 
     #[test]

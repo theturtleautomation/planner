@@ -397,14 +397,42 @@ export interface PromptOption {
   option_id: string;
   label: string;
   semantic_value: string;
+  direct_effect?: {
+    type: string;
+    [key: string]: unknown;
+  } | null;
+}
+
+export type PromptResponseMode =
+  | "single_select_with_custom_text"
+  | "single_select_with_optional_text"
+  | "binary_with_rationale"
+  | "short_text"
+  | "long_text"
+  | "ranked_choice"
+  | "split_fields"
+  | "confidence_scale"
+  | "importance_scale"
+  | "comparison_choice_with_rationale";
+
+export type PromptPreferredLayout = "cards" | "review" | "command_desk";
+
+export interface PromptUiHints {
+  preferred_layout: PromptPreferredLayout;
+  show_draft_sidebar: boolean;
 }
 
 export interface PromptItem {
   item_id: string;
   kind: "discovery" | "verification" | "contradiction" | "draft_section";
+  target_dimension?: string | null;
+  section_ref?: string | null;
   text: string;
   options: PromptOption[];
+  response_mode?: PromptResponseMode;
   required: boolean;
+  priority?: number;
+  dependency_item_ids?: string[];
 }
 
 export interface PromptEnvelope {
@@ -413,8 +441,21 @@ export interface PromptEnvelope {
   kind: "question_batch" | "verification_batch" | "contradiction_batch" | "draft_review";
   instructions?: string | null;
   origin_category_id?: string | null;
+  category_path?: Array<{ category_id: string; title: string }>;
   items: PromptItem[];
+  draft_snapshot?: unknown | null;
+  required_item_ids?: string[];
   allow_partial_submit: boolean;
+  ui_hints?: PromptUiHints;
+  based_on_turn?: number;
+  created_at?: string;
+}
+
+export interface PromptStructuredAnswer {
+  ordered_option_ids?: string[];
+  field_values?: Record<string, string>;
+  scalar_value?: number | null;
+  selected_path?: string | null;
 }
 
 export interface SavedPromptAnswerDraft {
@@ -422,6 +463,7 @@ export interface SavedPromptAnswerDraft {
   item_id: string;
   selected_option_id?: string | null;
   custom_text?: string | null;
+  structured_payload?: PromptStructuredAnswer | null;
   skipped: boolean;
   updated_at: string;
 }
@@ -440,6 +482,10 @@ export interface QueuedPromptThread {
   summary: string;
   question_count: number;
   status: string;
+  revision_kind?: "area_identity" | "major_relationship" | "north_star" | "direction_promotion" | null;
+  revision_area_id?: "transformation" | "actors" | "constraints" | "approach" | "pressure" | null;
+  revision_conflict?: boolean;
+  low_risk_update?: boolean;
 }
 
 export interface PromptBankResponse {
@@ -584,6 +630,7 @@ export interface PromptAnswer {
   item_id: string;
   selected_option_id?: string | null;
   custom_text?: string | null;
+  structured_payload?: PromptStructuredAnswer | null;
   skipped?: boolean;
 }
 

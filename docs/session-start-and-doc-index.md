@@ -25,7 +25,10 @@ Every substantial planning, implementation, or review session should begin here.
 ### Project overview and planning
 
 - [README.md](/home/thetu/planner/README.md)
+- [.omx/ledger/current-status.md](/home/thetu/planner/.omx/ledger/current-status.md)
+- [.omx/ledger/README.md](/home/thetu/planner/.omx/ledger/README.md)
 - [project-plan.md](/home/thetu/planner/docs/project-plan.md)
+- [planner-ledger-population-analysis-and-pass-plan.md](/home/thetu/planner/docs/planner-ledger-population-analysis-and-pass-plan.md)
 - [import-existing-project-plan.md](/home/thetu/planner/docs/import-existing-project-plan.md)
 - [session-workflow-webui-plan.md](/home/thetu/planner/docs/session-workflow-webui-plan.md)
 
@@ -69,6 +72,12 @@ Read these when the task touches the relevant area.
 - [socratic-initial-prompt-bank-and-dynamic-hydration-spec.md](/home/thetu/planner/docs/socratic-initial-prompt-bank-and-dynamic-hydration-spec.md)
 - [socratic-lobby-local-first-browser-architecture-review.md](/home/thetu/planner/docs/socratic-lobby-local-first-browser-architecture-review.md)
 - [socratic-solidstart-greenfield-platform-spec.md](/home/thetu/planner/docs/socratic-solidstart-greenfield-platform-spec.md)
+- [socratic-project-picture-and-convergence-workspace-spec.md](/home/thetu/planner/docs/socratic-project-picture-and-convergence-workspace-spec.md)
+- [socratic-project-picture-mvp-path-and-gap-analysis-spec.md](/home/thetu/planner/docs/socratic-project-picture-mvp-path-and-gap-analysis-spec.md)
+- [socratic-project-picture-first-reveal-screen-spec.md](/home/thetu/planner/docs/socratic-project-picture-first-reveal-screen-spec.md)
+- [socratic-area-workspace-and-shaping-contract-spec.md](/home/thetu/planner/docs/socratic-area-workspace-and-shaping-contract-spec.md)
+- [socratic-convergence-autonomy-boundary-spec.md](/home/thetu/planner/docs/socratic-convergence-autonomy-boundary-spec.md)
+- [socratic-project-picture-mvp-slice-spec.md](/home/thetu/planner/docs/socratic-project-picture-mvp-slice-spec.md)
 - [planner-solidstart-platform-direction-spec.md](/home/thetu/planner/docs/planner-solidstart-platform-direction-spec.md)
 - [planner-solidstart-phase-00-shell-sessions-and-socratic-anchor-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-00-shell-sessions-and-socratic-anchor-spec.md)
 - [planner-solidstart-phase-01-projects-and-guided-work-entry-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-01-projects-and-guided-work-entry-spec.md)
@@ -125,6 +134,12 @@ Read these when the task touches the relevant area.
 - [planner-solidstart-phase-37-3-canonical-static-runtime-parity-remediation-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-37-3-canonical-static-runtime-parity-remediation-spec.md)
 - [planner-solidstart-phase-37-4-session-question-chrome-reduction-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-37-4-session-question-chrome-reduction-spec.md)
 - [planner-solidstart-phase-37-5-session-header-signal-consolidation-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-37-5-session-header-signal-consolidation-spec.md)
+- [planner-solidstart-phase-38-socratic-multimodal-command-desk-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-38-socratic-multimodal-command-desk-spec.md)
+- [planner-solidstart-phase-38-1-socratic-prompt-contract-and-transport-widening-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-38-1-socratic-prompt-contract-and-transport-widening-spec.md)
+- [planner-solidstart-phase-38-2-socratic-multimodal-planner-and-adjudication-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-38-2-socratic-multimodal-planner-and-adjudication-spec.md)
+- [planner-solidstart-phase-38-3-session-command-desk-ultra-wide-layout-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-38-3-session-command-desk-ultra-wide-layout-spec.md)
+- [planner-solidstart-phase-39-session-commit-continuity-and-prompt-bank-merge-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-39-session-commit-continuity-and-prompt-bank-merge-spec.md)
+- [planner-solidstart-phase-40-project-only-entry-and-stale-draft-hardening-spec.md](/home/thetu/planner/docs/planner-solidstart-phase-40-project-only-entry-and-stale-draft-hardening-spec.md)
 - [socratic-lobby-document-chrome-and-scroll-de-escalation-spec.md](/home/thetu/planner/docs/socratic-lobby-document-chrome-and-scroll-de-escalation-spec.md)
 - [socratic-lobby-first-reveal-preload-gate-spec.md](/home/thetu/planner/docs/socratic-lobby-first-reveal-preload-gate-spec.md)
 - [planner-design-system-command-center-plan.md](/home/thetu/planner/docs/planner-design-system-command-center-plan.md)
@@ -209,6 +224,7 @@ Read these when the task touches the relevant area.
 ## Repo-Local Skills
 
 - [.codex/skills/project-bootstrap/SKILL.md](/home/thetu/planner/.codex/skills/project-bootstrap/SKILL.md)
+- [.codex/skills/project-ledger/SKILL.md](/home/thetu/planner/.codex/skills/project-ledger/SKILL.md)
 - [.codex/skills/spec-lifecycle/SKILL.md](/home/thetu/planner/.codex/skills/spec-lifecycle/SKILL.md)
 - [.codex/skills/delivery-cycle/SKILL.md](/home/thetu/planner/.codex/skills/delivery-cycle/SKILL.md)
 
@@ -219,3 +235,5 @@ Read these when the task touches the relevant area.
 ## Working Rule
 
 If planning artifacts and implementation reality diverge, update the docs or explicitly call out the drift instead of letting undocumented behavior accumulate.
+
+When durable planning, review, deferred-item, or implementation artifacts are created or change workflow stage, update the canonical ledger in `.omx/ledger/` in the same session.

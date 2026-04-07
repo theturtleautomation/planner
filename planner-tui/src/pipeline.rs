@@ -274,6 +274,7 @@ impl planner_core::pipeline::steps::socratic::SocraticIO for TuiSocraticIO {
                         item_id: first_item.item_id.clone(),
                         selected_option_id: None,
                         custom_text: (!trimmed.is_empty() && !is_skip).then_some(trimmed),
+                        structured_payload: None,
                         skipped: is_skip,
                     }],
                     submitted_at: chrono::Utc::now().to_rfc3339(),

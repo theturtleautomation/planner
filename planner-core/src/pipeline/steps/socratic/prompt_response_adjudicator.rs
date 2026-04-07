@@ -9,7 +9,8 @@ use std::collections::HashMap;
 
 use planner_schemas::{
     Contradiction, Dimension, PromptAnswer, PromptDirectEffect, PromptEnvelope, PromptItem,
-    PromptItemKind, PromptOption, PromptResponse, RequirementsBeliefState, SlotValue,
+    PromptItemKind, PromptOption, PromptResponse, PromptStructuredAnswer,
+    RequirementsBeliefState, SlotValue,
 };
 use serde::{Deserialize, Serialize};
 
@@ -95,8 +96,10 @@ struct BatchAdjudicationInputItem {
     item_id: String,
     question: String,
     target_dimension: Option<String>,
+    response_mode: String,
     selected_option: Option<String>,
     custom_text: Option<String>,
+    structured_answer: Option<PromptStructuredAnswer>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -141,8 +144,15 @@ pub async fn adjudicate_prompt_response(
         let direct_effect = selected_option.and_then(|option| option.direct_effect.clone());
         let custom_text = normalize_custom_text(answer);
 
-        let needs_interpretation =
-            !answer.skipped && (custom_text.is_some() || direct_effect.is_none());
+        let needs_interpretation = !answer.skipped
+            && match item.response_mode {
+                planner_schemas::PromptResponseMode::BinaryWithRationale
+                    if direct_effect.is_some() =>
+                {
+                    false
+                }
+                _ => custom_text.is_some() || direct_effect.is_none(),
+            };
         if needs_interpretation {
             interpreted_inputs.push(BatchAdjudicationInputItem {
                 item_id: item.item_id.clone(),
@@ -150,8 +160,13 @@ pub async fn adjudicate_prompt_response(
                 target_dimension: item.target_dimension.as_ref().map(|dimension| {
                     serde_json::to_string(dimension).unwrap_or_else(|_| dimension.label())
                 }),
+                response_mode: serde_json::to_string(&item.response_mode)
+                    .unwrap_or_else(|_| String::from("\"unknown\""))
+                    .trim_matches('"')
+                    .to_string(),
                 selected_option: selected_semantic_value.clone(),
                 custom_text: custom_text.clone(),
+                structured_answer: answer.structured_payload.clone(),
             });
         }
 
@@ -220,32 +235,85 @@ pub async fn adjudicate_prompt_response(
 }
 
 fn selected_option<'a>(item: &'a PromptItem, answer: &PromptAnswer) -> Option<&'a PromptOption> {
-    let selected_option_id = answer
-        .selected_option_id
-        .as_deref()
-        .map(str::trim)
-        .filter(|id| !id.is_empty())?;
+    let selected_option_id = selected_option_key(answer)?;
     item.options
         .iter()
         .find(|option| option.option_id == selected_option_id)
 }
 
 fn normalize_custom_text(answer: &PromptAnswer) -> Option<String> {
-    answer
+    let legacy = answer
         .custom_text
         .as_deref()
         .map(str::trim)
         .filter(|text| !text.is_empty())
-        .map(str::to_string)
+        .map(str::to_string);
+    if legacy.is_some() {
+        return legacy;
+    }
+
+    normalize_structured_text(answer.structured_payload.as_ref())
 }
 
 fn normalized_option_id(answer: &PromptAnswer) -> Option<String> {
+    selected_option_key(answer).map(str::to_string)
+}
+
+fn selected_option_key(answer: &PromptAnswer) -> Option<&str> {
     answer
         .selected_option_id
         .as_deref()
         .map(str::trim)
         .filter(|id| !id.is_empty())
-        .map(str::to_string)
+        .or_else(|| {
+            answer
+                .structured_payload
+                .as_ref()
+                .and_then(|payload| {
+                    payload
+                        .selected_path
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|id| !id.is_empty())
+                })
+        })
+        .or_else(|| {
+            answer
+                .structured_payload
+                .as_ref()
+                .and_then(|payload| payload.ordered_option_ids.first())
+                .map(String::as_str)
+                .map(str::trim)
+                .filter(|id| !id.is_empty())
+        })
+}
+
+fn normalize_structured_text(payload: Option<&PromptStructuredAnswer>) -> Option<String> {
+    let payload = payload?;
+    if let Some(rationale) = payload
+        .field_values
+        .get("rationale")
+        .map(String::as_str)
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+    {
+        return Some(rationale.to_string());
+    }
+
+    let mut parts = payload
+        .field_values
+        .iter()
+        .filter_map(|(key, value)| {
+            let value = value.trim();
+            (!value.is_empty()).then(|| format!("{key}: {value}"))
+        })
+        .collect::<Vec<_>>();
+
+    if let Some(value) = payload.scalar_value {
+        parts.push(value.to_string());
+    }
+
+    (!parts.is_empty()).then(|| parts.join("\n"))
 }
 
 fn apply_direct_effect(
@@ -470,7 +538,8 @@ mod tests {
     use async_trait::async_trait;
     use planner_schemas::{
         ComplexityTier, DomainClassification, ProjectType, PromptItemKind, PromptKind,
-        PromptOption, PromptPreferredLayout, PromptResponseMode, PromptUiHints,
+        PromptOption, PromptPreferredLayout, PromptResponseMode, PromptStructuredAnswer,
+        PromptUiHints,
     };
 
     use crate::llm::{CompletionResponse, LlmClient, LlmError};
@@ -584,6 +653,7 @@ mod tests {
                 item_id: "item-a".into(),
                 selected_option_id: Some("set-goal".into()),
                 custom_text: None,
+                structured_payload: None,
                 skipped: false,
             }],
             submitted_at: "2026-03-08T00:00:01Z".into(),
@@ -661,12 +731,14 @@ mod tests {
                     item_id: "item-b".into(),
                     selected_option_id: Some("free-text".into()),
                     custom_text: Some("custom goal".into()),
+                    structured_payload: None,
                     skipped: false,
                 },
                 PromptAnswer {
                     item_id: "item-a".into(),
                     selected_option_id: Some("set-goal".into()),
                     custom_text: None,
+                    structured_payload: None,
                     skipped: false,
                 },
             ],
@@ -755,12 +827,14 @@ mod tests {
                     item_id: "item-a".into(),
                     selected_option_id: Some("opt-a".into()),
                     custom_text: Some("goal detail".into()),
+                    structured_payload: None,
                     skipped: false,
                 },
                 PromptAnswer {
                     item_id: "item-b".into(),
                     selected_option_id: Some("opt-b".into()),
                     custom_text: Some("feature detail".into()),
+                    structured_payload: None,
                     skipped: false,
                 },
             ],
@@ -853,10 +927,100 @@ mod tests {
             item_id: "contradiction-auth".into(),
             selected_option_id: Some("keep-a".into()),
             custom_text: None,
+            structured_payload: None,
             skipped: false,
         };
 
         maybe_resolve_contradiction(&mut state, &item, &answer, Some("SSO required"));
         assert!(state.contradictions[0].resolved);
+    }
+
+    #[tokio::test]
+    async fn structured_binary_answer_applies_direct_effect_and_resolves_contradiction() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let router = LlmRouter::with_mock(Box::new(CountingMockClient {
+            calls: calls.clone(),
+            response_content: r#"{"items":[]}"#.into(),
+        }));
+
+        let mut state = make_state();
+        state.add_contradiction(Contradiction {
+            dimension_a: Dimension::Auth,
+            value_a: "SSO required".into(),
+            dimension_b: Dimension::Stakeholders,
+            value_b: "single-user tool".into(),
+            explanation: "Conflict".into(),
+            resolved: false,
+        });
+
+        let prompt = make_prompt(vec![PromptItem {
+            item_id: "contradiction-auth".into(),
+            kind: PromptItemKind::Contradiction,
+            target_dimension: Some(Dimension::Auth),
+            section_ref: None,
+            text: "Resolve contradiction".into(),
+            options: vec![
+                PromptOption {
+                    option_id: "keep-a".into(),
+                    label: "Keep SSO".into(),
+                    semantic_value: "SSO required".into(),
+                    direct_effect: Some(PromptDirectEffect::SetDimensionValue {
+                        dimension: Dimension::Auth,
+                        value: "SSO required".into(),
+                    }),
+                },
+                PromptOption {
+                    option_id: "keep-b".into(),
+                    label: "Keep single-user".into(),
+                    semantic_value: "single-user tool".into(),
+                    direct_effect: Some(PromptDirectEffect::SetDimensionValue {
+                        dimension: Dimension::Stakeholders,
+                        value: "single-user tool".into(),
+                    }),
+                },
+            ],
+            response_mode: PromptResponseMode::BinaryWithRationale,
+            required: false,
+            priority: 100,
+            dependency_item_ids: Vec::new(),
+        }]);
+
+        let response = PromptResponse {
+            prompt_id: prompt.prompt_id.clone(),
+            answers: vec![PromptAnswer {
+                item_id: "contradiction-auth".into(),
+                selected_option_id: None,
+                custom_text: None,
+                structured_payload: Some(PromptStructuredAnswer {
+                    ordered_option_ids: Vec::new(),
+                    field_values: [("rationale".into(), "Keep enterprise SSO.".into())]
+                        .into_iter()
+                        .collect(),
+                    scalar_value: None,
+                    selected_path: Some("keep-a".into()),
+                }),
+                skipped: false,
+            }],
+            submitted_at: "2026-03-08T00:00:01Z".into(),
+            client_context: None,
+        };
+
+        let adjudication = adjudicate_prompt_response(&router, &mut state, &prompt, &response)
+            .await
+            .expect("adjudication should succeed");
+
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        assert_eq!(
+            state
+                .filled
+                .get(&Dimension::Auth)
+                .map(|slot| slot.value.as_str()),
+            Some("SSO required")
+        );
+        assert!(state.contradictions[0].resolved);
+        assert_eq!(
+            adjudication.applied_answers[0].content,
+            "SSO required\nKeep enterprise SSO."
+        );
     }
 }

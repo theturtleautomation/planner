@@ -75,8 +75,9 @@ fi
 
 current_user_id="$(builder_repo_detect_current_user_id)"
 org_tree_json="$(builder_repo_fetch_org_tree_json "$space_id" 2>/dev/null || printf '{"projects":[],"branches":[],"users":[]}\n')"
+space_projects_json="$(builder_repo_fetch_space_projects_json "$space_id" 2>/dev/null || printf '{"projects":[]}\n')"
 user_projects_json="$(builder_repo_fetch_user_projects_json "$space_id" "$current_user_id" 2>/dev/null || printf '{"projects":[]}\n')"
-merged_projects_json="$(builder_repo_merge_project_surfaces_json "$org_tree_json" "$user_projects_json")"
+merged_projects_json="$(builder_repo_merge_project_surfaces_json "$org_tree_json" "$space_projects_json" "$user_projects_json")"
 branch_surface_json="$(builder_repo_fetch_project_branches_json "$space_id" "$effective_project_id")"
 branch_surface_with_user_json="$(builder_repo_fetch_project_branches_json "$space_id" "$effective_project_id" "$current_user_id")"
 
@@ -140,6 +141,7 @@ if [[ -z "$remote_project_json" ]]; then
           repoFullName: ($savedProject.repoFullName // null),
           visibleVia: {
             orgTree: false,
+            bareProjectList: false,
             userProjectList: false,
             branchSurface: (((($branchSurface.response.branches // []) | length) > 0) or ((($branchSurfaceWithUser.response.branches // []) | length) > 0))
           },
@@ -178,9 +180,11 @@ visible_via_json="$(
   jq -cn \
     --argjson remote "$remote_project_json" \
     --argjson orgTree "$org_tree_json" \
+    --argjson spaceList "$space_projects_json" \
     --argjson userList "$user_projects_json" '
     {
       orgTree: ([($orgTree.projects // [])[] | select(.id == $remote.id)] | length) > 0,
+      bareProjectList: ([($spaceList.projects // [])[] | select(.id == $remote.id)] | length) > 0,
       userProjectList: ([($userList.projects // [])[] | select(.id == $remote.id)] | length) > 0
     }'
 )"

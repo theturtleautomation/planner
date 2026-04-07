@@ -26,8 +26,8 @@ use uuid::Uuid;
 use planner_schemas::artifacts::socratic::{
     Contradiction, DomainClassification, PromptAnswer, PromptBankEntry, PromptEnvelope, PromptItem,
     PromptItemKind, PromptKind, PromptOption, PromptPreferredLayout, PromptResponseMode,
-    PromptUiHints, QuestionOutput, RequirementsBeliefState, SocraticCategorySnapshot,
-    SpeculativeDraft, UiCapabilities,
+    PromptStructuredAnswer, PromptUiHints, QuestionOutput, RequirementsBeliefState,
+    SocraticCategorySnapshot, SpeculativeDraft, UiCapabilities,
 };
 
 fn normalize_title(value: &str) -> Option<String> {
@@ -152,7 +152,7 @@ fn now_rfc3339() -> String {
     Utc::now().to_rfc3339()
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SavedPromptAnswerDraft {
     pub prompt_id: String,
     pub item_id: String,
@@ -160,6 +160,8 @@ pub struct SavedPromptAnswerDraft {
     pub selected_option_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub custom_text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub structured_payload: Option<PromptStructuredAnswer>,
     #[serde(default)]
     pub skipped: bool,
     pub updated_at: String,
@@ -1278,8 +1280,23 @@ impl Session {
                 .map(str::trim)
                 .filter(|value| !value.is_empty())
                 .map(str::to_string);
+            let structured_payload = answer
+                .structured_payload
+                .as_ref()
+                .filter(|payload| {
+                    !payload.ordered_option_ids.is_empty()
+                        || !payload.field_values.is_empty()
+                        || payload.scalar_value.is_some()
+                        || payload
+                            .selected_path
+                            .as_deref()
+                            .map(str::trim)
+                            .is_some_and(|value| !value.is_empty())
+                })
+                .cloned();
 
-            if selected_option_id.is_none() && custom_text.is_none() {
+            if selected_option_id.is_none() && custom_text.is_none() && structured_payload.is_none()
+            {
                 if self.saved_prompt_drafts.remove(&answer.item_id).is_some() {
                     cleared_count += 1;
                 }
@@ -1293,6 +1310,7 @@ impl Session {
                     item_id: answer.item_id.clone(),
                     selected_option_id,
                     custom_text,
+                    structured_payload,
                     skipped: answer.skipped,
                     updated_at: saved_at.clone(),
                 },
@@ -3065,6 +3083,10 @@ mod tests {
                             has_children: true,
                             has_prompt_ready: false,
                             item_count_hint: 1,
+                            revision_kind: None,
+                            revision_area_id: None,
+                            revision_conflict: false,
+                            low_risk_update: false,
                         },
                         planner_schemas::SocraticCategoryNode {
                             category_id: "root-discovery::dimension::security".into(),
@@ -3077,6 +3099,10 @@ mod tests {
                             has_children: false,
                             has_prompt_ready: true,
                             item_count_hint: 1,
+                            revision_kind: None,
+                            revision_area_id: None,
+                            revision_conflict: false,
+                            low_risk_update: false,
                         },
                     ],
                     active_category_path: vec![planner_schemas::SocraticCategoryPathEntry {

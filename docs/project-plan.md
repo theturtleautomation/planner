@@ -14,6 +14,12 @@ simple top-level view of:
 - the current active planning thread
 - the next expected move before implementation
 
+Canonical planner-wide routing and artifact status now lives in:
+
+- [.omx/ledger/current-status.md](/home/thetu/planner/.omx/ledger/current-status.md)
+- [.omx/ledger/planner-ledger.json](/home/thetu/planner/.omx/ledger/planner-ledger.json)
+- [planner-ledger-population-analysis-and-pass-plan.md](/home/thetu/planner/docs/planner-ledger-population-analysis-and-pass-plan.md)
+
 ## Current Planning Spine
 
 These are the main planning documents currently shaping the repo:
@@ -130,6 +136,18 @@ These are the main planning documents currently shaping the repo:
 - [Planner SolidStart Phase 37.1 Session Command Rail Narrow-Width And Focus Continuity Spec](/home/thetu/planner/docs/planner-solidstart-phase-37-1-session-command-rail-narrow-width-and-focus-continuity-spec.md)
 - [Planner SolidStart Phase 37.2 Session Command Rail Canonical Runtime Proof Spec](/home/thetu/planner/docs/planner-solidstart-phase-37-2-session-command-rail-canonical-runtime-proof-spec.md)
 - [Planner SolidStart Phase 37.3 Canonical Static Runtime Parity Remediation Spec](/home/thetu/planner/docs/planner-solidstart-phase-37-3-canonical-static-runtime-parity-remediation-spec.md)
+- [Planner SolidStart Phase 38 Socratic Multimodal Command Desk Spec](/home/thetu/planner/docs/planner-solidstart-phase-38-socratic-multimodal-command-desk-spec.md)
+- [Planner SolidStart Phase 38.1 Socratic Prompt Contract And Transport Widening Spec](/home/thetu/planner/docs/planner-solidstart-phase-38-1-socratic-prompt-contract-and-transport-widening-spec.md)
+- [Planner SolidStart Phase 38.2 Socratic Multimodal Planner And Adjudication Spec](/home/thetu/planner/docs/planner-solidstart-phase-38-2-socratic-multimodal-planner-and-adjudication-spec.md)
+- [Planner SolidStart Phase 38.3 Session Command Desk Ultra-Wide Layout Spec](/home/thetu/planner/docs/planner-solidstart-phase-38-3-session-command-desk-ultra-wide-layout-spec.md)
+- [Planner SolidStart Phase 39 Session Commit Continuity And Prompt-Bank Merge Spec](/home/thetu/planner/docs/planner-solidstart-phase-39-session-commit-continuity-and-prompt-bank-merge-spec.md)
+- [Planner SolidStart Phase 40 Project-Only Entry And Stale-Draft Hardening Spec](/home/thetu/planner/docs/planner-solidstart-phase-40-project-only-entry-and-stale-draft-hardening-spec.md)
+- [Socratic Project Picture And Convergence Workspace Spec](/home/thetu/planner/docs/socratic-project-picture-and-convergence-workspace-spec.md)
+- [Socratic Project Picture MVP Path And Gap Analysis Spec](/home/thetu/planner/docs/socratic-project-picture-mvp-path-and-gap-analysis-spec.md)
+- [Socratic Project Picture First-Reveal Screen Spec](/home/thetu/planner/docs/socratic-project-picture-first-reveal-screen-spec.md)
+- [Socratic Area Workspace And Shaping Contract Spec](/home/thetu/planner/docs/socratic-area-workspace-and-shaping-contract-spec.md)
+- [Socratic Convergence Autonomy Boundary Spec](/home/thetu/planner/docs/socratic-convergence-autonomy-boundary-spec.md)
+- [Socratic Project Picture MVP Slice Spec](/home/thetu/planner/docs/socratic-project-picture-mvp-slice-spec.md)
 - [Builder Phase C Documented Config Workflow Tightening Spec](/home/thetu/planner/docs/builder-phase-c-documented-config-workflow-tightening-spec.md)
 - [Builder Phase D Repo-Local DSI MCP Setup Spec](/home/thetu/planner/docs/builder-phase-d-repo-local-dsi-mcp-setup-spec.md)
 - [Planning Status Audit Remediation Spec](/home/thetu/planner/docs/planning-status-audit-remediation-spec.md)
@@ -654,11 +672,144 @@ Current planning state:
       - consolidates top-of-route notice/error messaging into one predictable
         feedback slot while keeping capability-driven actions and backend
         session behavior unchanged
+    - the next truthful planning follow-on is now
+      [Planner SolidStart Phase 38 Socratic Multimodal Command Desk Spec](/home/thetu/planner/docs/planner-solidstart-phase-38-socratic-multimodal-command-desk-spec.md),
+      which is draft and:
+      - records that the current Socratic contract is still effectively one
+        response mode centered on `selected_option_id + custom_text`
+      - records that the current session route still wastes 5K width around a
+        narrow active-thread editor instead of using width for concurrent
+        operational context
+      - reopens both the backend prompt/answer contract and the ultra-wide
+        route hierarchy as one bounded parent direction while preserving the
+        bank-first runtime truth from earlier phases
+      - keeps backward compatibility, responsive fallback, and phased delivery
+        order explicit so the next child slice can widen schema/transport
+        before broader UI claims
+    - the next child slices under that parent are now:
+      [Planner SolidStart Phase 38.1 Socratic Prompt Contract And Transport Widening Spec](/home/thetu/planner/docs/planner-solidstart-phase-38-1-socratic-prompt-contract-and-transport-widening-spec.md),
+      [Planner SolidStart Phase 38.2 Socratic Multimodal Planner And Adjudication Spec](/home/thetu/planner/docs/planner-solidstart-phase-38-2-socratic-multimodal-planner-and-adjudication-spec.md),
+      and
+      [Planner SolidStart Phase 38.3 Session Command Desk Ultra-Wide Layout Spec](/home/thetu/planner/docs/planner-solidstart-phase-38-3-session-command-desk-ultra-wide-layout-spec.md),
+      which keep the work bounded as:
+      - 38.1 contract and transport widening first
+      - 38.2 planner and adjudication enablement second
+      - 38.3 true 5K route hierarchy redesign third
+    - 38.1 is now implemented and:
+      - widens the Socratic prompt/answer transport contract with richer
+        response-mode vocabulary and a structured answer payload
+      - preserves backward compatibility for legacy prompt-response payloads
+        and saved drafts
+      - keeps the Solid transport and draft helpers aligned so structured
+        answers count as real content without reopening planner or route
+        hierarchy behavior
+    - 38.2 is now implemented and:
+      - makes the planner choose more than one response mode across current
+        Socratic prompt families instead of emitting one legacy mode
+      - teaches adjudication to interpret structured selections and rationale
+        fields for at least one real non-legacy flow
+      - keeps the slice bounded to planner and adjudication behavior without
+        claiming the 5K route redesign is done
+    - 38.3 is now implemented and:
+      - turns the session route into a true three-surface shell on ultra-wide
+        viewports instead of leaving 5K width unused around one narrow editor
+      - keeps the center answer canvas dominant while using the right rail for
+        live state, up-next context, and build-readiness support
+      - preserves the prior two-surface desktop layout and the narrow thread
+        sheet fallback instead of inventing a separate product model
+    - Phase 38 is now implemented end to end; no additional child slice is
+      currently promoted from this branch
+    - Phase 39 is now implemented and:
+      - changes `Commit and next` from whole-thread staging into immediate answer-level submission
+      - removes normal-happy-path prompt-bank refetch from live websocket progression so the route no longer observes transient empty-bank states as UI truth
+      - preserves focus continuity across prompt-bank updates and explains superseded work more calmly instead of collapsing the experience
+    - Phase 40 is now implemented and:
+      - removes projectless `Direct session` entry so all new work starts from a project
+      - redirects `/sessions/new` to project creation as a compatibility path instead of a live product lane
+      - hardens draft autosave so superseded prompts no longer surface `prompt_stale` during normal live progression
+    - the next new product follow-on is now
+      [Socratic Project Picture And Convergence Workspace Spec](/home/thetu/planner/docs/socratic-project-picture-and-convergence-workspace-spec.md),
+      which is draft and:
+      - reframes the future-state Socratic route from prompt-first workspace
+        handling toward a project-picture-first shaping surface
+      - keeps a hidden blueprint-like truth model underneath the product while
+        rejecting raw blueprint or raw graph UX as the primary user experience
+      - records the behavior-first convergence order, visible state grammar,
+        relationship model, autonomy boundary, and spatial-stability rules
+      - remains intentionally unpromoted because the first visual form, the
+        first bounded child slice, and the exact user-committed edit boundary
+        still need tightening before implementation
+    - the immediate planning follow-on under that brief is now
+      [Socratic Project Picture MVP Path And Gap Analysis Spec](/home/thetu/planner/docs/socratic-project-picture-mvp-path-and-gap-analysis-spec.md),
+      which is draft and:
+      - records the grounded MVP definition from the current repo state instead
+        of treating the parent brief as implementation-ready
+      - lists the minimum missing specs and the ordered outstanding questions
+        that still materially change the MVP
+      - distinguishes which gaps require direct product answers, which can be
+        resolved from repo context, and where targeted research is still useful
+      - now records that the bounded MVP execution slice has been implemented
+        and that any further work should be treated as explicit follow-on
+        scope rather than part of the first delivery lane
+    - the first bounded child spec under that branch is now
+      [Socratic Project Picture First-Reveal Screen Spec](/home/thetu/planner/docs/socratic-project-picture-first-reveal-screen-spec.md),
+      which is draft and:
+      - defines the first visible hierarchy of the new project-picture-first
+        route without spilling into the full area-workspace contract
+      - locks the first screen to a calm area-based picture built from
+        `Transformation`, `Actors`, `Constraints`, `Approach`, and `Pressure`
+      - keeps next-move support and global capture visible but subordinate to
+        the picture itself
+      - now serves as the first-reveal contract for the implemented MVP slice
+    - the second bounded child spec under that branch is now
+      [Socratic Area Workspace And Shaping Contract Spec](/home/thetu/planner/docs/socratic-area-workspace-and-shaping-contract-spec.md),
+      which is draft and:
+      - defines the area-entry experience as focused shaping rather than chat,
+        form fill, or a nested mini-map
+      - locks day-one area substructure to a small number of meaningful
+        pressure points, usually 2 to 4, with one visually dominant
+      - keeps `accept`, `edit inline`, and `discuss` as the dominant response
+        model while preserving object-first editing
+      - now serves as the area-entry contract for the implemented MVP slice
+    - the third bounded child spec under that branch is now
+      [Socratic Convergence Autonomy Boundary Spec](/home/thetu/planner/docs/socratic-convergence-autonomy-boundary-spec.md),
+      which is draft and:
+      - hard-cuts low-risk silent updates versus meaning-changing revisions
+      - keeps transparency local to the affected area through freshness cues
+        and in-area pending revisions
+      - makes pending revisions non-blocking by default while allowing direct
+        conflicts to escalate
+      - now serves as the trust-boundary contract for the implemented MVP slice
+    - the bounded execution artifact under that branch is now
+      [Socratic Project Picture MVP Slice Spec](/home/thetu/planner/docs/socratic-project-picture-mvp-slice-spec.md),
+      which is now implemented and:
+      - cuts one honest first build lane out of the parent brief and three
+        child specs
+      - reuses the current prompt-bank and continuity substrate instead of
+        reopening it
+      - limits the first build target to a project-picture first reveal, one
+        bounded area-entry contract, and the pending-revision trust boundary
+      - explicitly defers richer overlays, seed-system expansion, provenance,
+        and raw blueprint or graph-first product drift
+      - ships the project picture as the first visible session surface, keeps
+        the five MVP top-level areas visible, and reuses the existing prompt-
+        bank continuity substrate instead of reopening it
+      - intentionally keeps area cards as static summaries in this first pass
+        while the active shaping workspace stays centered on the current area
 - the bank-first runtime and saved-brief startup contracts from Phase 26 and
   Phase 28 remain locked dependencies across that series rather than becoming a
   new planning branch
 - the route-level child spec for the Socratic lobby is
   [Socratic SolidStart Greenfield Platform Spec](/home/thetu/planner/docs/socratic-solidstart-greenfield-platform-spec.md)
+- the next future-state child brief under that route-level direction is now
+  [Socratic Project Picture And Convergence Workspace Spec](/home/thetu/planner/docs/socratic-project-picture-and-convergence-workspace-spec.md),
+  which records the intended shift from question-bank-first interaction toward
+  a project-picture-first collaborative workspace without yet promoting a
+  bounded execution slice
+- the immediate working artifact under that brief is now
+  [Socratic Project Picture MVP Path And Gap Analysis Spec](/home/thetu/planner/docs/socratic-project-picture-mvp-path-and-gap-analysis-spec.md),
+  which logs the grounded MVP path, required child specs, and the recommended
+  method for working through the remaining product gaps
 - the route-level Socratic spec is fed by the already-selected product
   requirements in
   [Socratic Initial Prompt Bank And Dynamic Hydration Spec](/home/thetu/planner/docs/socratic-initial-prompt-bank-and-dynamic-hydration-spec.md)
@@ -1174,14 +1325,23 @@ Current planning state:
 - repo-local wrappers now exist for launch, create-project, list-projects,
   get-project, update-project, connect-repo, index-repo, and Builder CMS
   `project` content sync
+- the repo's Builder create workflow is now intentionally fire-and-forget:
+  fresh Fusion projects are created by default, the latest project is saved in
+  `.codex/builder-fusion-project.json`, and an append-only local ledger records
+  trackable names plus the exact create-time config/settings in
+  `.codex/builder-fusion-project-history.jsonl`
 - the existing-project helper slice now supports runtime command, runtime URL,
   env/profile, and saved-project dry-run updates without recreating the
   project
+- those existing-project helpers are now a secondary follow-on path for the
+  latest saved or explicitly targeted project, not the default Builder repo
+  strategy
 - the new verify-sync slice now adds one repo-native read-only verification
-  workflow for local config, saved project state, and visible remote Fusion
-  settings
-- updating an existing saved Fusion project is now explicitly included in the
-  parent capability spec as a required behavior, not an implied helper
+  workflow for local config, latest saved project state, and visible remote
+  Fusion settings
+- the parent Builder capability thread is now planning-synced so fresh create
+  plus local tracking is the default posture, while existing-project update
+  remains a supported but non-default follow-on helper path
 - the analyzed Builder docs establish documented Admin/Write APIs and
   documented Fusion Project settings semantics, but do not yet establish a
   clearly documented public Fusion project CRUD/settings API
@@ -1294,6 +1454,6 @@ Keep planning and implementation aligned to artifact state:
 
 The next move is:
 
-- treat the deferred session-workspace series as complete and start the next
-  planning thread with `spec-lifecycle` only after deciding what product or
-  workflow surface should move next
+- use the canonical ledger as the routing source of truth and plan the next
+  planner-ledger follow-on:
+  **Planner Ledger Population Pass 1 — Root Governance And Planning Spine**

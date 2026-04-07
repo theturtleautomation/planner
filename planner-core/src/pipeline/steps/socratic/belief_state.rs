@@ -477,4 +477,21 @@ mod tests {
         assert_eq!(result.filled_updates[0].dimension, "goal");
         assert!(!result.user_wants_to_stop);
     }
+
+    #[test]
+    fn parse_verifier_json_with_premature_array_close() {
+        let json = r#"{
+            "filled_updates": [{"dimension": "goal", "value": "Calendar app", "source_quote": "calendar app"}],{"dimension": "platform", "value": "Web app", "source_quote": "web app"}],
+            "uncertain_updates": [],
+            "out_of_scope": [],
+            "contradictions": [],
+            "expertise_level": "intermediate",
+            "user_wants_to_stop": false
+        }"#;
+
+        let result = parse_verifier_response(json).unwrap();
+        assert_eq!(result.filled_updates.len(), 2);
+        assert_eq!(result.filled_updates[0].dimension, "goal");
+        assert_eq!(result.filled_updates[1].dimension, "platform");
+    }
 }

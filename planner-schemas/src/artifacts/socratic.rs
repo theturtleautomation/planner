@@ -11,7 +11,7 @@
 //!
 //! Plus the `SocraticEvent` enum for streaming updates to TUI/Web.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use serde::{Deserialize, Serialize};
 
@@ -619,6 +619,23 @@ pub struct SocraticCategoryNode {
     pub has_children: bool,
     pub has_prompt_ready: bool,
     pub item_count_hint: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revision_kind: Option<SocraticRevisionKind>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revision_area_id: Option<String>,
+    #[serde(default)]
+    pub revision_conflict: bool,
+    #[serde(default)]
+    pub low_risk_update: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SocraticRevisionKind {
+    AreaIdentity,
+    MajorRelationship,
+    NorthStar,
+    DirectionPromotion,
 }
 
 /// Breadcrumb entry for the active category path.
@@ -662,6 +679,7 @@ pub struct PromptUiHints {
 pub enum PromptPreferredLayout {
     Cards,
     Review,
+    CommandDesk,
 }
 
 /// A single answerable item inside a prompt envelope.
@@ -707,6 +725,28 @@ pub enum PromptItemKind {
 #[serde(rename_all = "snake_case")]
 pub enum PromptResponseMode {
     SingleSelectWithCustomText,
+    SingleSelectWithOptionalText,
+    BinaryWithRationale,
+    ShortText,
+    LongText,
+    RankedChoice,
+    SplitFields,
+    ConfidenceScale,
+    ImportanceScale,
+    ComparisonChoiceWithRationale,
+}
+
+/// Structured answer payload for richer prompt modes.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PromptStructuredAnswer {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ordered_option_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub field_values: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scalar_value: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selected_path: Option<String>,
 }
 
 /// A selectable option for a prompt item.
@@ -761,6 +801,8 @@ pub struct PromptAnswer {
     pub selected_option_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub custom_text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub structured_payload: Option<PromptStructuredAnswer>,
     #[serde(default)]
     pub skipped: bool,
 }
@@ -1341,12 +1383,14 @@ mod tests {
                     item_id: "item-1".into(),
                     selected_option_id: Some("opt-1".into()),
                     custom_text: None,
+                    structured_payload: None,
                     skipped: false,
                 },
                 PromptAnswer {
                     item_id: "item-2".into(),
                     selected_option_id: None,
                     custom_text: Some("We might need this in Q2.".into()),
+                    structured_payload: None,
                     skipped: false,
                 },
             ],
@@ -1362,6 +1406,28 @@ mod tests {
         let decoded: PromptResponse =
             serde_json::from_str(&json).expect("prompt response should deserialize");
         assert_eq!(decoded, response);
+    }
+
+    #[test]
+    fn prompt_response_legacy_payload_still_deserializes() {
+        let json = r#"{
+            "prompt_id":"prompt-123",
+            "answers":[
+                {
+                    "item_id":"item-1",
+                    "selected_option_id":"opt-1",
+                    "custom_text":"legacy note",
+                    "skipped":false
+                }
+            ],
+            "submitted_at":"2026-03-08T00:00:10Z"
+        }"#;
+
+        let decoded: PromptResponse =
+            serde_json::from_str(json).expect("legacy prompt response should deserialize");
+        assert_eq!(decoded.answers[0].selected_option_id.as_deref(), Some("opt-1"));
+        assert_eq!(decoded.answers[0].custom_text.as_deref(), Some("legacy note"));
+        assert_eq!(decoded.answers[0].structured_payload, None);
     }
 
     #[test]

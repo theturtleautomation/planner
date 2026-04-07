@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 use planner_schemas::{
     Dimension, PromptItemKind, RequirementsBeliefState, SocraticCategoryNode,
     SocraticCategoryPathEntry, SocraticCategorySnapshot, SocraticCategoryStatus,
+    SocraticRevisionKind,
     SocraticWorkspaceGroup, SocraticWorkspaceItemPreview, SocraticWorkspaceSnapshot,
 };
 
@@ -375,11 +376,14 @@ fn flatten_nodes(
         .map(|builder| {
             let has_children = !builder.child_ids.is_empty();
             let has_prompt_ready = matches!(builder.kind, BuilderNodeKind::Leaf(_));
+            let summary = node_summary(state, builder);
+            let (revision_kind, revision_area_id, revision_conflict, low_risk_update) =
+                node_revision_metadata(builder, &summary);
             SocraticCategoryNode {
                 category_id: builder.category_id.clone(),
                 parent_category_id: builder.parent_category_id.clone(),
                 title: builder.title.clone(),
-                summary: node_summary(state, builder),
+                summary,
                 status: node_status(builder, active_path, current_visible_ids, builders),
                 depth: builder.depth,
                 mapped_dimensions: builder.mapped_dimensions.clone(),
@@ -390,6 +394,10 @@ fn flatten_nodes(
                 } else {
                     1
                 },
+                revision_kind,
+                revision_area_id,
+                revision_conflict,
+                low_risk_update,
             }
         })
         .collect::<Vec<_>>();
@@ -522,8 +530,105 @@ fn completed_placeholder_nodes(
             has_children: false,
             has_prompt_ready: false,
             item_count_hint: 0,
+            revision_kind: None,
+            revision_area_id: None,
+            revision_conflict: false,
+            low_risk_update: false,
         })
         .collect()
+}
+
+fn node_revision_metadata(
+    builder: &CategoryNodeBuilder,
+    summary: &str,
+) -> (
+    Option<SocraticRevisionKind>,
+    Option<String>,
+    bool,
+    bool,
+) {
+    let title = builder.title.to_lowercase();
+    let summary = summary.to_lowercase();
+    let text = format!("{title} {summary}");
+
+    let revision_kind = if text.contains("north-star")
+        || text.contains("north star")
+        || text.contains("primary goal")
+        || text.contains("project definition")
+        || text.contains("core transformation")
+    {
+        Some(SocraticRevisionKind::NorthStar)
+    } else if text.contains("relationship")
+        || text.contains("depends on")
+        || text.contains("guides")
+        || text.contains("shapes")
+        || text.contains("reverse")
+    {
+        Some(SocraticRevisionKind::MajorRelationship)
+    } else if text.contains("promote")
+        || text.contains("canonical")
+        || text.contains("direction change")
+        || text.contains("intended path")
+    {
+        Some(SocraticRevisionKind::DirectionPromotion)
+    } else if text.contains("rename")
+        || text.contains("reframe")
+        || text.contains("identity")
+    {
+        Some(SocraticRevisionKind::AreaIdentity)
+    } else {
+        None
+    };
+
+    let revision_area_id = revision_kind
+        .as_ref()
+        .map(|_| revision_area_id(builder));
+
+    let revision_conflict = text.contains("conflict")
+        || text.contains("contradiction")
+        || text.contains("tension")
+        || matches!(builder.kind, BuilderNodeKind::ContradictionPeer { .. });
+
+    (
+        revision_kind,
+        revision_area_id,
+        revision_conflict,
+        false,
+    )
+}
+
+fn revision_area_id(builder: &CategoryNodeBuilder) -> String {
+    if matches!(builder.kind, BuilderNodeKind::ContradictionPeer { .. }) {
+        return "pressure".into();
+    }
+
+    if builder.mapped_dimensions.iter().any(|dimension| {
+        matches!(dimension, Dimension::Stakeholders | Dimension::UserFlows)
+    }) {
+        return "actors".into();
+    }
+
+    if builder.mapped_dimensions.iter().any(|dimension| {
+        matches!(dimension, Dimension::Goal | Dimension::SuccessCriteria | Dimension::CoreFeatures)
+    }) {
+        return "transformation".into();
+    }
+
+    if builder.mapped_dimensions.iter().any(|dimension| {
+        matches!(
+            dimension,
+            Dimension::Auth
+                | Dimension::Security
+                | Dimension::Platform
+                | Dimension::Performance
+                | Dimension::Scalability
+                | Dimension::DataModel
+        )
+    }) {
+        return "constraints".into();
+    }
+
+    "approach".into()
 }
 
 fn build_readiness_message(state: &RequirementsBeliefState, build_ready: bool) -> String {
@@ -1103,6 +1208,10 @@ mod tests {
                     has_children: true,
                     has_prompt_ready: false,
                     item_count_hint: 1,
+                    revision_kind: None,
+                    revision_area_id: None,
+                    revision_conflict: false,
+                    low_risk_update: false,
                 },
                 SocraticCategoryNode {
                     category_id: "root-verification".into(),
@@ -1115,6 +1224,10 @@ mod tests {
                     has_children: true,
                     has_prompt_ready: false,
                     item_count_hint: 1,
+                    revision_kind: None,
+                    revision_area_id: None,
+                    revision_conflict: false,
+                    low_risk_update: false,
                 },
                 SocraticCategoryNode {
                     category_id: "root-discovery".into(),
@@ -1127,6 +1240,10 @@ mod tests {
                     has_children: true,
                     has_prompt_ready: false,
                     item_count_hint: 1,
+                    revision_kind: None,
+                    revision_area_id: None,
+                    revision_conflict: false,
+                    low_risk_update: false,
                 },
             ],
             active_category_path: Vec::new(),

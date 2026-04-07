@@ -3,21 +3,33 @@ import type { PromptAnswer, PromptEnvelope, PromptItem, SavedPromptAnswerDraft }
 export type DraftEntry = {
   selectedOptionId?: string | null;
   customText?: string;
+  structuredPayload?: PromptAnswer["structured_payload"];
 };
 
 export function draftEntryFromSavedDraft(
   draft: SavedPromptAnswerDraft | undefined,
 ): DraftEntry | undefined {
   if (!draft) return undefined;
-  return {
+  const entry: DraftEntry = {
     selectedOptionId: draft.selected_option_id ?? null,
     customText: draft.custom_text ?? "",
   };
+  if (draft.structured_payload) {
+    entry.structuredPayload = draft.structured_payload;
+  }
+  return entry;
 }
 
 export function draftHasContent(draft: DraftEntry | undefined): boolean {
   if (!draft) return false;
-  return Boolean(draft.selectedOptionId || draft.customText?.trim());
+  return Boolean(
+    draft.selectedOptionId
+      || draft.customText?.trim()
+      || draft.structuredPayload?.ordered_option_ids?.length
+      || Object.keys(draft.structuredPayload?.field_values ?? {}).length
+      || draft.structuredPayload?.scalar_value !== undefined
+      || draft.structuredPayload?.selected_path?.trim(),
+  );
 }
 
 export function countAnsweredPromptItems(
@@ -84,22 +96,33 @@ export function buildPromptAnswers(
   prompt: PromptEnvelope,
   promptDrafts: Record<string, DraftEntry> | undefined,
 ): PromptAnswer[] {
-  return prompt.items.map((item) => {
-    const draft = promptDrafts?.[item.item_id];
-    const text = draft?.customText?.trim();
-    const hasSelection = !!draft?.selectedOptionId;
-    const hasText = !!text;
+  return prompt.items.map((item) => buildPromptAnswer(item.item_id, promptDrafts?.[item.item_id]));
+}
 
-    if (!hasSelection && !hasText) {
-      return { item_id: item.item_id, skipped: true };
-    }
+export function buildPromptAnswer(itemId: string, draft: DraftEntry | undefined): PromptAnswer {
+  const text = draft?.customText?.trim();
+  const hasSelection = !!draft?.selectedOptionId;
+  const hasText = !!text;
+  const hasStructuredPayload = Boolean(
+    draft?.structuredPayload?.ordered_option_ids?.length
+      || Object.keys(draft?.structuredPayload?.field_values ?? {}).length
+      || draft?.structuredPayload?.scalar_value !== undefined
+      || draft?.structuredPayload?.selected_path?.trim(),
+  );
 
-    return {
-      item_id: item.item_id,
-      selected_option_id: draft?.selectedOptionId ?? null,
-      custom_text: text || null,
-    };
-  });
+  if (!hasSelection && !hasText && !hasStructuredPayload) {
+    return { item_id: itemId, skipped: true };
+  }
+
+  const answer: PromptAnswer = {
+    item_id: itemId,
+    selected_option_id: draft?.selectedOptionId ?? null,
+    custom_text: text || null,
+  };
+  if (draft?.structuredPayload) {
+    answer.structured_payload = draft.structuredPayload;
+  }
+  return answer;
 }
 
 export function buildSessionExportFilename(session: {

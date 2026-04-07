@@ -655,13 +655,77 @@ fn prompt_answer_to_input_text(
         .map(str::trim)
         .filter(|text| !text.is_empty())
         .map(str::to_string);
+    let structured = answer.structured_payload.as_ref().and_then(|payload| {
+        let mut parts = Vec::new();
 
-    match (selected, custom) {
-        (Some(selected), Some(custom)) => Some(format!("{selected}\n{custom}")),
-        (Some(selected), None) => Some(selected),
-        (None, Some(custom)) => Some(custom),
-        (None, None) => None,
+        if !payload.ordered_option_ids.is_empty() {
+            let ordered = payload
+                .ordered_option_ids
+                .iter()
+                .map(|option_id| {
+                    matched_item
+                        .and_then(|item| {
+                            item.options
+                                .iter()
+                                .find(|option| option.option_id == *option_id)
+                        })
+                        .map(|option| option.semantic_value.clone())
+                        .unwrap_or_else(|| option_id.clone())
+                })
+                .collect::<Vec<_>>()
+                .join(" > ");
+            parts.push(ordered);
+        }
+
+        if let Some(path) = payload
+            .selected_path
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            let selected = matched_item
+                .and_then(|item| {
+                    item.options
+                        .iter()
+                        .find(|option| option.option_id == path)
+                })
+                .map(|option| option.semantic_value.clone())
+                .unwrap_or_else(|| path.to_string());
+            parts.push(selected);
+        }
+
+        parts.extend(
+            payload
+                .field_values
+                .iter()
+                .map(|(key, value)| {
+                    if key == "rationale" {
+                        value.clone()
+                    } else {
+                        format!("{key}: {value}")
+                    }
+                }),
+        );
+
+        if let Some(value) = payload.scalar_value {
+            parts.push(value.to_string());
+        }
+
+        (!parts.is_empty()).then(|| parts.join("\n"))
+    });
+
+    let mut parts = Vec::new();
+    if let Some(selected) = selected {
+        parts.push(selected);
     }
+    if let Some(custom) = custom {
+        parts.push(custom);
+    }
+    if let Some(structured) = structured {
+        parts.push(structured);
+    }
+
+    (!parts.is_empty()).then(|| parts.join("\n"))
 }
 
 fn prompt_response_to_input(
@@ -1845,6 +1909,10 @@ mod tests {
                     has_children: true,
                     has_prompt_ready: false,
                     item_count_hint: 2,
+                    revision_kind: None,
+                    revision_area_id: None,
+                    revision_conflict: false,
+                    low_risk_update: false,
                 },
                 SocraticCategoryNode {
                     category_id: "root-discovery::dimension::security".into(),
@@ -1857,6 +1925,10 @@ mod tests {
                     has_children: true,
                     has_prompt_ready: false,
                     item_count_hint: 1,
+                    revision_kind: None,
+                    revision_area_id: None,
+                    revision_conflict: false,
+                    low_risk_update: false,
                 },
                 SocraticCategoryNode {
                     category_id: "root-discovery::dimension::security::auth".into(),
@@ -1869,6 +1941,10 @@ mod tests {
                     has_children: false,
                     has_prompt_ready: true,
                     item_count_hint: 1,
+                    revision_kind: None,
+                    revision_area_id: None,
+                    revision_conflict: false,
+                    low_risk_update: false,
                 },
             ],
             active_category_path: vec![
@@ -1985,6 +2061,7 @@ mod tests {
                     item_id,
                     selected_option_id: None,
                     custom_text: Some("hello world".into()),
+                    structured_payload: None,
                     skipped: false,
                 }],
                 submitted_at: "2026-03-08T00:00:00Z".into(),
@@ -2052,6 +2129,7 @@ mod tests {
                     item_id: "item-1".into(),
                     selected_option_id: None,
                     custom_text: Some("stale".into()),
+                    structured_payload: None,
                     skipped: false,
                 }],
                 submitted_at: "2026-03-08T00:00:00Z".into(),
@@ -2110,6 +2188,7 @@ mod tests {
                     item_id: "item-1".into(),
                     selected_option_id: Some("option-1".into()),
                     custom_text: None,
+                    structured_payload: None,
                     skipped: false,
                 }],
                 submitted_at: "2026-03-08T00:00:00Z".into(),
@@ -2383,8 +2462,16 @@ mod tests {
             prompt_id: prompt.prompt_id.clone(),
             answers: vec![PromptAnswer {
                 item_id: item.item_id.clone(),
-                selected_option_id: Some("option-1".into()),
-                custom_text: Some("plus contractors".into()),
+                selected_option_id: None,
+                custom_text: None,
+                structured_payload: Some(planner_schemas::PromptStructuredAnswer {
+                    ordered_option_ids: vec!["option-1".into()],
+                    field_values: [("audience".into(), "plus contractors".into())]
+                        .into_iter()
+                        .collect(),
+                    scalar_value: None,
+                    selected_path: None,
+                }),
                 skipped: false,
             }],
             submitted_at: "2026-03-08T00:00:00Z".into(),
@@ -2392,7 +2479,10 @@ mod tests {
         };
 
         let as_input = prompt_response_to_input(&response, Some(&prompt));
-        assert_eq!(as_input.as_deref(), Some("internal_team\nplus contractors"));
+        assert_eq!(
+            as_input.as_deref(),
+            Some("internal_team\naudience: plus contractors")
+        );
     }
 
     #[test]

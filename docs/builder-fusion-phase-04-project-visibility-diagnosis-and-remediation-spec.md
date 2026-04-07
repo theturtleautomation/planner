@@ -7,6 +7,13 @@
 **Related Planning:** [Builder Local Workflow](/home/thetu/planner/docs/builder-local-workflow.md), [Project Plan](/home/thetu/planner/docs/project-plan.md)  
 **Source Review:** 2026-04-01 inspection of the current repo Builder wrappers, the saved Fusion state file, the Builder/Fusion planning thread, and live visibility-diagnosis output from `builder-verify-sync` and `builder-diagnose-project-visibility`
 
+> Planning sync update (2026-04-02): this slice remains the diagnosis model for
+> the latest saved or explicitly targeted Fusion project, but it no longer
+> implies that Planner should prefer preserving one long-lived remote Builder
+> project. The default repo posture is now fresh creation plus local tracking;
+> this diagnosis workflow is the follow-on path when a specific project is being
+> inspected or verified.
+
 ## 1. Purpose
 
 Diagnose and, when possible, remediate the current Builder Fusion project
@@ -24,7 +31,7 @@ make the cause explicit and fix repo-side causes if they exist.
 
 Planner now has:
 
-- a canonical saved Fusion project state file in
+- a latest-saved Fusion project state file in
   `.codex/builder-fusion-project.json`
 - repo-native existing-project helpers
 - repo-native config inspection/validation helpers
@@ -55,7 +62,8 @@ as a settled platform truth.
 
 A repo user should be able to run a bounded diagnosis workflow and learn:
 
-1. whether the saved Fusion project ID is internally consistent with repo
+1. whether the latest saved or explicitly targeted Fusion project ID is
+   internally consistent with repo
    state
 2. whether the active Builder auth context matches the expected Builder user
    and space for that saved project
@@ -71,7 +79,7 @@ A repo user should be able to run a bounded diagnosis workflow and learn:
 
 ### In Scope
 
-- diagnosing the current `visibility_blocked` state for the saved Fusion
+- diagnosing the current `visibility_blocked` state for the latest saved Fusion
   project
 - explicit classification of likely causes:
   - stale saved project ID

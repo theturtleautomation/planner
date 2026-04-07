@@ -80,8 +80,9 @@ saved_state_json="$(builder_read_state_json "$state_file")"
 saved_project_id="$(jq -r '.id // ""' <<<"$saved_state_json")"
 current_user_id="$(builder_repo_detect_current_user_id)"
 org_tree_json="$(builder_repo_fetch_org_tree_json "$space_id" 2>/dev/null || printf '{"projects":[],"branches":[],"users":[]}\n')"
+space_projects_json="$(builder_repo_fetch_space_projects_json "$space_id" 2>/dev/null || printf '{"projects":[]}\n')"
 user_projects_json="$(builder_repo_fetch_user_projects_json "$space_id" "$current_user_id" 2>/dev/null || printf '{"projects":[]}\n')"
-merged_projects_json="$(builder_repo_merge_project_surfaces_json "$org_tree_json" "$user_projects_json")"
+merged_projects_json="$(builder_repo_merge_project_surfaces_json "$org_tree_json" "$space_projects_json" "$user_projects_json")"
 branch_surface_json="$(builder_repo_fetch_project_branches_json "$space_id" "$project_id" "$current_user_id")"
 
 jq -cn \
@@ -93,6 +94,7 @@ jq -cn \
   --arg projectName "$project_name" \
   --arg repoFullName "$repo_full_name" \
   --argjson orgTree "$org_tree_json" \
+  --argjson spaceList "$space_projects_json" \
   --argjson userList "$user_projects_json" \
   --argjson mergedProjects "$merged_projects_json" \
   --argjson branchSurface "$branch_surface_json" '
@@ -118,6 +120,7 @@ jq -cn \
         isSaved: ($projectId == $savedProjectId),
         visibleVia: {
           orgTree: false,
+          bareProjectList: false,
           userProjectList: false,
           branchSurface: true
         },
@@ -141,6 +144,7 @@ jq -cn \
           isSaved: (.id == $savedProjectId),
           visibleVia: {
             orgTree: ([($orgTree.projects // [])[] | select(.id == $project.id)] | length) > 0,
+            bareProjectList: ([($spaceList.projects // [])[] | select(.id == $project.id)] | length) > 0,
             userProjectList: ([($userList.projects // [])[] | select(.id == $project.id)] | length) > 0,
             branchSurface: false
           },
@@ -167,6 +171,7 @@ jq -cn \
     },
     surfaces: {
       orgTreeProjectCount: (($orgTree.projects // []) | length),
+      bareProjectListCount: (($spaceList.projects // []) | length),
       userProjectListCount: (($userList.projects // []) | length),
       mergedProjectCount: ($mergedProjects | length),
       branchSurfaceCount: (($branchSurface.response.branches // []) | length)

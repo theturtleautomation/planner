@@ -47,12 +47,66 @@ pub fn try_repair_json(raw: &str) -> Option<String> {
         }
     }
 
-    // 5. Attempt to close truncated JSON by balancing braces/brackets.
+    // 5. Repair a common LLM typo where an object array is closed too early
+    //    before the next object element, e.g. `..."}],{"dimension":...}]`.
+    if let Some(repaired) = try_repair_premature_array_close(&s) {
+        return Some(repaired);
+    }
+
+    // 6. Attempt to close truncated JSON by balancing braces/brackets.
     //    LLM responses can be truncated mid-stream when hitting output
     //    token limits, leaving valid JSON with missing closing delimiters.
     if let Some(start) = s.find('{') {
         if let Some(repaired) = try_close_truncated_json(&s[start..]) {
             return Some(repaired);
+        }
+    }
+
+    None
+}
+
+/// Attempt to repair a premature `]` before the next object element.
+///
+/// Example malformed shape:
+/// `{"filled_updates":[{"dimension":"goal"}],{"dimension":"platform"}]}`
+///
+/// The intended output is usually:
+/// `{"filled_updates":[{"dimension":"goal"},{"dimension":"platform"}]}`
+fn try_repair_premature_array_close(s: &str) -> Option<String> {
+    let bytes = s.as_bytes();
+    for (idx, ch) in s.char_indices() {
+        if ch != ']' {
+            continue;
+        }
+
+        let prev_non_ws = bytes[..idx]
+            .iter()
+            .rposition(|byte| !byte.is_ascii_whitespace())
+            .map(|pos| bytes[pos] as char);
+        if prev_non_ws != Some('}') {
+            continue;
+        }
+
+        let mut next_idx = idx + ch.len_utf8();
+        while next_idx < bytes.len() && bytes[next_idx].is_ascii_whitespace() {
+            next_idx += 1;
+        }
+        if next_idx >= bytes.len() || bytes[next_idx] != b',' {
+            continue;
+        }
+        next_idx += 1;
+        while next_idx < bytes.len() && bytes[next_idx].is_ascii_whitespace() {
+            next_idx += 1;
+        }
+        if next_idx >= bytes.len() || bytes[next_idx] != b'{' {
+            continue;
+        }
+
+        let mut candidate = String::with_capacity(s.len().saturating_sub(1));
+        candidate.push_str(&s[..idx]);
+        candidate.push_str(&s[idx + 1..]);
+        if serde_json::from_str::<serde_json::Value>(&candidate).is_ok() {
+            return Some(candidate);
         }
     }
 
@@ -382,6 +436,28 @@ mod tests {
         // The partial finding gets dropped since it's mid-string,
         // but the outer structure should be valid
         assert!(v["findings"].is_array());
+    }
+
+    #[test]
+    fn repair_premature_array_close_before_next_object() {
+        let raw = r#"{
+          "filled_updates": [
+            {"dimension": "goal", "value": "Calendar app", "source_quote": "calendar app"}],{"dimension": "platform", "value": "Web app", "source_quote": "web"}
+          ],
+          "uncertain_updates": [],
+          "out_of_scope": [],
+          "contradictions": [],
+          "expertise_level": "intermediate",
+          "user_wants_to_stop": false
+        }"#;
+        let result = try_repair_json(raw);
+        assert!(
+            result.is_some(),
+            "Should repair prematurely closed array before next object element"
+        );
+        let v: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
+        assert_eq!(v["filled_updates"].as_array().unwrap().len(), 2);
+        assert_eq!(v["filled_updates"][1]["dimension"], "platform");
     }
 
     #[test]
