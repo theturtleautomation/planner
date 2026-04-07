@@ -47,12 +47,12 @@ Use the repo-local graph-backed workflow when broad repo understanding needs cro
 2. Prefer `update` over `build` when you want Graphify-style freshness behavior without forcing unnecessary rebuilds.
 3. Use `cluster-only` when you only need current graph communities regrouped.
 4. Use `repo-graph` by default when the question is about connections, bridges, dependency paths, or broad repo context without one obvious file/symbol anchor.
-5. Keep `omx explore` or direct reads as the default when the task is already anchored to one concrete file, symbol, or error site.
-6. For broad repo-understanding tasks, run `./scripts/repo-graph.sh query "<question>"` before falling back to whole-file reads.
+5. Keep `omx explore` or direct reads as the default wrapper when the task is already anchored to one concrete file, symbol, or error site, but do not replace conceptual repo-understanding with grep/raw-shell sweeps by default.
+6. For broad repo-understanding tasks, run `./scripts/repo-graph.sh query "<question>"` before falling back to whole-file reads; reserve grep/raw shell for mechanical verification or exact literal checks.
 7. Use `path`, `explain`, `community`, and `god-nodes` when you need more specific graph interrogation after the first query pass; `query` should surface top matches first and keep supporting graph evidence visible.
 8. Prefer `community` when you want to inspect whether a cluster is coherent enough to trust; cohesion/sample metadata should help you decide whether the cluster is meaningful.
 9. If the answer needs exact file/symbol confirmation after the graph result, follow up with `omx explore` or direct file reads.
-10. If graph build/query fails or provides no useful signal, fall back to existing brownfield lookup surfaces.
+10. If graph build/query fails or provides no useful signal, fall back to existing brownfield lookup surfaces; use grep/raw shell only when the fallback need is mechanical verification or exact literal search rather than conceptual repo understanding.
 11. For OMX-driven completion flows, use `post-execution-refresh` with the actual changed-file list when you want a Ralph-first freshness update without enabling generic watch mode.
 
 ## Examples

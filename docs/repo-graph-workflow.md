@@ -47,15 +47,24 @@ Provide a repo-local, graph-backed repo-understanding path for Planner that can 
 
 - V1 focuses on **code and local repo docs**.
 - V1 defers **export/report** features.
+- Repo-graph now allowlists a **bounded canonical `.omx/*` subset** for planner fidelity:
+  - `.omx/plans/*.md`
+  - `.omx/specs/**/*.md`
+  - `.omx/ledger/*.md|*.json`
+- Generic `.omx/*` runtime/state/cache content remains excluded.
 - Repo graph output is **retrieval/evidence**, not automatic blueprint truth.
 - If repo-graph evidence is used to justify an automated ledger/routing mutation, that mutation should leave an inspectable why-trail.
 - The current trust model may distinguish high-confidence and medium-confidence auto-mutations from low-confidence non-mutations while preserving the same evidence-only boundary.
-- Trivial file/symbol lookups should stay on `omx explore` or direct reads.
+- Trivial file/symbol lookups may stay on `omx explore` or direct reads, but grep/raw shell should not be the default conceptual repo-understanding path; reserve it for mechanical verification or exact literal checks.
 - Build fidelity now tracks explicit manifest freshness so status/update can distinguish clean vs dirty graphs before forcing a rebuild.
+- Family-level report grouping should come from **canonical ledger family metadata/tags** first; analyzer-side heuristics are only a bounded fallback when metadata is missing.
+- The active family-fidelity analyzer path is the JS implementation:
+  - `scripts/repo-graph-family-fidelity.mjs`
+- Fallback grouping should use bounded tag-alias behavior only when canonical `family:*` tags are missing.
 
 ## Routing Intent
 
-For broad repo-understanding work spanning many files or asking for cross-file relationships, prefer the repo-graph workflow first when available. For simple anchored lookups, keep using `omx explore`.
+For broad repo-understanding work spanning many files or asking for cross-file relationships, prefer the repo-graph workflow first when available. For simple anchored lookups, keep using `omx explore`, but do not let conceptual repo-understanding devolve into grep/raw-shell habits by default.
 
 ## Enforcement Heuristics
 
@@ -70,6 +79,10 @@ Prefer `omx explore` or direct reads first when:
 - the question is a tiny lookup rather than a graph/context question
 - repo-graph returns weak or noisy signal for the current question
 
+Prefer grep/raw shell only when:
+- the need is mechanical verification or exact literal/procedural checking
+- exact stdout/stderr or shell composition is required rather than repo understanding
+
 ## Phase 1 Build Fidelity Notes
 
 - `build` forces a full graph rebuild.
@@ -83,6 +96,12 @@ Prefer `omx explore` or direct reads first when:
 - `path` prints a relation-aware hop-by-hop explanation instead of raw node IDs.
 - `explain` now includes a short “why it matters” summary plus graph evidence.
 - `community`, and `god-nodes` expose Graphify-style graph interrogation without broadening the corpus scope.
+- docs extraction may now promote repo-relative path references into explicit cross-file `references` edges when the target is a tracked repo file.
+- relationship reporting should surface representative repo-wide examples for:
+  - `doc↔doc`
+  - `code↔code`
+  - `doc↔code`
+- relationship evidence ranking should prefer **product-central** examples first while keeping lower-priority dense/system-level evidence available lower in the output
 
 ## Clustering Parity Notes
 

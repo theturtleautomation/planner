@@ -37,8 +37,12 @@ EXCLUDED_PREFIXES = (
     ".codex/cache",
     ".codex/log",
     ".codex/plugins",
-    ".omx",
 )
+CANONICAL_OMX_DIR_RULES = {
+    ".omx/plans": {".md"},
+    ".omx/specs": {".md"},
+    ".omx/ledger": {".md", ".json"},
+}
 STOP_WORDS = {
     "a",
     "an",
@@ -105,6 +109,13 @@ MANIFEST_FILENAME = "manifest.json"
 GRAPH_VERSION = 2
 MAX_COMMUNITY_FRACTION = 0.25
 MIN_SPLIT_SIZE = 10
+FILE_COMMUNITY_TARGET_FRACTION = 0.05
+FILE_COMMUNITY_RELATION_WEIGHTS = {
+    "imports": 3,
+    "contains_module": 3,
+    "references": 0.35,
+}
+FAMILY_AFFINITY_WEIGHT = 4.0
 
 TS_IMPORT_RE = re.compile(
     r"""(?:import\s+.+?\s+from\s+|export\s+.+?\s+from\s+|require\(|import\()['"]([^'"]+)['"]"""
@@ -118,6 +129,9 @@ RUST_MOD_RE = re.compile(r"""^\s*mod\s+(\w+)\s*;""", re.MULTILINE)
 MD_LINK_RE = re.compile(r"""\[[^\]]+\]\(([^)#]+)(?:#[^)]+)?\)""")
 HEADING_RE = re.compile(r"""^(#{1,6})\s+(.+)$""", re.MULTILINE)
 WORD_RE = re.compile(r"""[A-Za-z0-9_\-/.:]+""")
+PATH_REFERENCE_RE = re.compile(
+    r"""(?<![A-Za-z0-9_])((?:\.{1,2}/|/?)[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+\.(?:md|mdx|txt|rst|py|rs|ts|tsx|js|jsx|mjs|cjs|go|java|kt|swift|rb|php|sh|json))(?![A-Za-z0-9_])"""
+)
 SYMBOL_PATTERNS = {
     "python": re.compile(
         r"""^\s*(?:async\s+def|def|class)\s+([A-Za-z_][A-Za-z0-9_]*)""",
@@ -144,6 +158,8 @@ SYMBOL_PATTERNS = {
 def is_excluded_dir(path: Path) -> bool:
     parts = path.parts
     joined = "/".join(parts)
+    if joined == ".omx" or joined.startswith(".omx/"):
+        return not is_allowed_canonical_omx_dir(path)
     if joined in EXCLUDED_DIRS:
         return True
     if any(joined.startswith(prefix) for prefix in EXCLUDED_PREFIXES):
@@ -151,7 +167,34 @@ def is_excluded_dir(path: Path) -> bool:
     return any(part in EXCLUDED_DIRS for part in parts)
 
 
+def is_allowed_canonical_omx_dir(path: Path) -> bool:
+    joined = repo_relative_hint(path)
+    if joined == ".omx":
+        return True
+    for prefix in CANONICAL_OMX_DIR_RULES:
+        if joined == prefix or joined.startswith(f"{prefix}/") or prefix.startswith(f"{joined}/"):
+            return True
+    return False
+
+
+def repo_relative_hint(path: Path) -> str:
+    parts = path.parts
+    if ".omx" in parts:
+        return Path(*parts[parts.index(".omx") :]).as_posix()
+    return path.as_posix()
+
+
+def canonical_omx_category(path: Path) -> Optional[str]:
+    rel = repo_relative_hint(path)
+    for prefix, suffixes in CANONICAL_OMX_DIR_RULES.items():
+        if (rel == prefix or rel.startswith(f"{prefix}/")) and path.suffix.lower() in suffixes:
+            return "docs"
+    return None
+
+
 def classify_extension(path: Path) -> Optional[str]:
+    if canonical := canonical_omx_category(path):
+        return canonical
     suffix = path.suffix.lower()
     if suffix in CODE_EXTENSIONS:
         return "code"
@@ -347,9 +390,31 @@ def resolve_rust_module(path: Path, repo_root: Path, module_expr: str) -> Option
 def resolve_markdown_link(root: Path, parent: Path, link: str) -> Optional[Path]:
     if link.startswith(("http://", "https://", "mailto:")):
         return None
-    target = (parent / link).resolve() if not link.startswith("/") else (root / link.lstrip("/")).resolve()
-    if target.is_file():
-        return target
+    candidates = []
+    if link.startswith("/"):
+        candidates.append((root / link.lstrip("/")).resolve())
+    else:
+        candidates.append((parent / link).resolve())
+        candidates.append((root / link).resolve())
+    for target in candidates:
+        if target.is_file() and target.is_relative_to(root):
+            return target
+    return None
+
+
+def resolve_path_reference(root: Path, parent: Path, ref: str) -> Optional[Path]:
+    candidates = []
+    if ref.startswith("/"):
+        candidates.append((root / ref.lstrip("/")).resolve())
+    elif ref.startswith(("./", "../")):
+        candidates.append((parent / ref).resolve())
+        candidates.append((root / ref).resolve())
+    else:
+        candidates.append((root / ref).resolve())
+        candidates.append((parent / ref).resolve())
+    for target in candidates:
+        if target.is_file() and target.is_relative_to(root):
+            return target
     return None
 
 
@@ -436,6 +501,10 @@ def extract_file_graph(path: Path, root: Path, nodes: Dict[str, dict], edges: Di
             target = resolve_markdown_link(root, path.parent, match.group(1).strip())
             if target and should_include_file(target):
                 add_edge(edges, file_id, f"file:{safe_rel(target, root)}", "references")
+        for match in PATH_REFERENCE_RE.finditer(text):
+            target = resolve_path_reference(root, path.parent, match.group(1).strip())
+            if target and should_include_file(target):
+                add_edge(edges, file_id, f"file:{safe_rel(target, root)}", "references")
 
 
 def file_snapshot(root: Path, files: Sequence[Path]) -> List[dict]:
@@ -467,6 +536,28 @@ def connected_components(graph: dict) -> List[List[str]]:
             current = queue.popleft()
             component.append(current)
             for neighbor, _edge in adj.get(current, []):
+                if neighbor in seen:
+                    continue
+                seen.add(neighbor)
+                queue.append(neighbor)
+        components.append(sorted(component))
+    components.sort(key=lambda item: (-len(item), item[0] if item else ""))
+    return components
+
+
+def connected_components_from_adjacency(component_adj: Dict[str, Set[str]]) -> List[List[str]]:
+    seen: Set[str] = set()
+    components: List[List[str]] = []
+    for node_id in sorted(component_adj):
+        if node_id in seen:
+            continue
+        queue = deque([node_id])
+        seen.add(node_id)
+        component: List[str] = []
+        while queue:
+            current = queue.popleft()
+            component.append(current)
+            for neighbor in component_adj[current]:
                 if neighbor in seen:
                     continue
                 seen.add(neighbor)
@@ -626,6 +717,181 @@ def community_partition(graph: dict) -> List[List[str]]:
     return communities
 
 
+def file_node_ids(graph: dict) -> List[str]:
+    return sorted(
+        node["id"]
+        for node in graph.get("nodes", [])
+        if node.get("kind") == "file"
+    )
+
+
+def file_component_adjacency(graph: dict) -> Dict[str, Set[str]]:
+    files = set(file_node_ids(graph))
+    adj = defaultdict(set)
+    for node_id in files:
+        adj[node_id]
+    for edge in graph["edges"]:
+        source = edge["source"]
+        target = edge["target"]
+        if source in files and target in files:
+            adj[source].add(target)
+            adj[target].add(source)
+    return adj
+
+
+def weighted_file_component_adjacency(graph: dict) -> Dict[str, Counter]:
+    files = set(file_node_ids(graph))
+    adj = defaultdict(Counter)
+    for node_id in files:
+        adj[node_id]
+    for edge in graph["edges"]:
+        source = edge["source"]
+        target = edge["target"]
+        if source in files and target in files:
+            weight = FILE_COMMUNITY_RELATION_WEIGHTS.get(edge.get("relation"), 1)
+            adj[source][target] += weight
+            adj[target][source] += weight
+
+    family_memberships = load_family_memberships(Path(graph.get("root", ".")))
+    for family_id, family_files in family_memberships.items():
+        ranked_family_files = sorted(
+            [
+                f"file:{path}"
+                for path in family_files
+                if f"file:{path}" in files and (path.startswith("docs/") or path.startswith(".omx/"))
+            ]
+        )
+        for index, left in enumerate(ranked_family_files):
+            for right in ranked_family_files[index + 1 :]:
+                adj[left][right] += FAMILY_AFFINITY_WEIGHT
+                adj[right][left] += FAMILY_AFFINITY_WEIGHT
+    return adj
+
+
+def load_family_memberships(root: Path) -> Dict[str, Set[str]]:
+    ledger_path = root / ".omx" / "ledger" / "planner-ledger.json"
+    if not ledger_path.is_file():
+        return {}
+    try:
+        ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+    family_memberships: Dict[str, Set[str]] = defaultdict(set)
+    for item in ledger.get("items", []):
+        if item.get("kind") not in {"initiative", "workstream"}:
+            continue
+        family_tags = [tag for tag in item.get("tags", []) if isinstance(tag, str) and tag.startswith("family:")]
+        if not family_tags:
+            continue
+        for family_tag in family_tags:
+            family_id = family_tag.split(":", 1)[1]
+            for artifact in item.get("artifacts", []):
+                if isinstance(artifact, str):
+                    family_memberships[family_id].add(artifact)
+    return family_memberships
+
+
+def file_to_family_memberships(root: Path) -> Dict[str, Set[str]]:
+    file_memberships: Dict[str, Set[str]] = defaultdict(set)
+    for family_id, paths in load_family_memberships(root).items():
+        for path in paths:
+            file_memberships[path].add(family_id)
+    return file_memberships
+
+
+def file_community_partition(graph: dict) -> List[List[str]]:
+    weighted_adj = weighted_file_component_adjacency(graph)
+    if not weighted_adj:
+        return []
+    max_size = max(MIN_SPLIT_SIZE, int(len(weighted_adj) * FILE_COMMUNITY_TARGET_FRACTION))
+    communities = label_propagation_file_communities(graph, weighted_adj)
+    file_graph = {"edges": graph["edges"]}
+    split_communities: List[List[str]] = []
+    for community in communities:
+        if len(community) > max_size:
+            split_communities.extend(split_component(file_graph, sorted(community), max_size))
+        else:
+            split_communities.append(sorted(community))
+    communities = refine_file_communities_by_family(graph, split_communities)
+    communities = [community for community in communities if community]
+    communities.sort(key=lambda item: (-len(item), item[0] if item else ""))
+    return communities
+
+
+def label_propagation_file_communities(graph: dict, weighted_adj: Dict[str, Counter]) -> List[List[str]]:
+    labels = {node_id: node_id for node_id in weighted_adj}
+    node_order = sorted(weighted_adj)
+
+    for _ in range(20):
+        changed = 0
+        for node_id in node_order:
+            neighbor_weights = weighted_adj[node_id]
+            if not neighbor_weights:
+                continue
+            scores = Counter()
+            for neighbor, weight in neighbor_weights.items():
+                scores[labels[neighbor]] += weight
+            best_label = max(scores.items(), key=lambda item: (item[1], item[0]))[0]
+            if labels[node_id] != best_label:
+                labels[node_id] = best_label
+                changed += 1
+        if changed == 0:
+            break
+
+    groups = defaultdict(list)
+    for node_id, label in labels.items():
+        groups[label].append(node_id)
+    return [sorted(group) for group in groups.values()]
+
+
+def refine_file_communities_by_family(graph: dict, communities: Sequence[Sequence[str]]) -> List[List[str]]:
+    root = Path(graph.get("root", "."))
+    memberships = file_to_family_memberships(root)
+    refined: List[List[str]] = []
+
+    for community in communities:
+        family_groups: Dict[str, List[str]] = defaultdict(list)
+        unassigned: List[str] = []
+
+        for node_id in community:
+            path = node_id[5:] if node_id.startswith("file:") else ""
+            families = memberships.get(path)
+            if not families:
+                unassigned.append(node_id)
+                continue
+            for family_id in families:
+                family_groups[family_id].append(node_id)
+
+        tagged_count = sum(len(group) for group in family_groups.values())
+        dominant_share = 0 if tagged_count == 0 else max(len(group) for group in family_groups.values()) / tagged_count
+        if len(family_groups) <= 1 or tagged_count < 3 or dominant_share >= 0.8:
+            refined.append(sorted(community))
+            continue
+
+        for group in family_groups.values():
+            refined.append(sorted(set(group)))
+        if unassigned:
+            refined.append(sorted(unassigned))
+
+    return refined
+
+
+def file_community_cohesion(graph: dict, community_files: Sequence[str]) -> float:
+    files = list(community_files)
+    if len(files) <= 1:
+        return 1.0
+    file_set = set(files)
+    actual = 0
+    for edge in graph["edges"]:
+        if edge["source"] in file_set and edge["target"] in file_set:
+            actual += 1
+    possible = len(files) * (len(files) - 1) / 2
+    if possible == 0:
+        return 0.0
+    return round(actual / possible, 2)
+
+
 def community_cohesion(graph: dict, community_nodes: Sequence[str]) -> float:
     nodes = list(community_nodes)
     if len(nodes) <= 1:
@@ -643,22 +909,69 @@ def community_cohesion(graph: dict, community_nodes: Sequence[str]) -> float:
 
 def apply_community_metadata(graph: dict) -> dict:
     nodes = node_lookup(graph)
-    communities = []
     adj = adjacency(graph)
-    for community_id, component in enumerate(community_partition(graph)):
-        ranked = sorted(component, key=lambda node_id: len(adj.get(node_id, [])), reverse=True)
-        labels = [nodes[node_id].get("label", node_id) for node_id in ranked[:5]]
-        cohesion = community_cohesion(graph, component)
-        for node_id in component:
-            nodes[node_id]["community_id"] = community_id
+    communities = []
+    file_groups = file_community_partition(graph)
+    file_to_community: Dict[str, int] = {}
+
+    for community_id, file_component in enumerate(file_groups):
+        ranked_files = sorted(file_component, key=lambda node_id: len(adj.get(node_id, [])), reverse=True)
+        labels = [nodes[node_id].get("label", node_id) for node_id in ranked_files[:5]]
+        cohesion = file_community_cohesion(graph, file_component)
+        for file_node_id in file_component:
+            file_to_community[file_node_id] = community_id
+
         communities.append(
             {
                 "id": community_id,
-                "size": len(component),
+                "size": len(file_component),
+                "file_count": len(file_component),
                 "sample_labels": labels,
                 "cohesion": cohesion,
             }
         )
+
+    next_community_id = len(communities)
+    for node_id, node in nodes.items():
+        if node.get("kind") == "file":
+            community_id = file_to_community.get(node_id)
+            if community_id is None:
+                community_id = next_community_id
+                next_community_id += 1
+                file_to_community[node_id] = community_id
+                communities.append(
+                    {
+                        "id": community_id,
+                        "size": 1,
+                        "file_count": 1,
+                        "sample_labels": [node.get("label", node_id)],
+                        "cohesion": 1.0,
+                    }
+                )
+            node["community_id"] = community_id
+            continue
+
+        source_file = node.get("source_file")
+        if source_file:
+            file_node_id = f"file:{source_file}"
+            community_id = file_to_community.get(file_node_id)
+            if community_id is not None:
+                node["community_id"] = community_id
+                communities[community_id]["size"] += 1
+                continue
+
+        node["community_id"] = next_community_id
+        communities.append(
+            {
+                "id": next_community_id,
+                "size": 1,
+                "file_count": 0,
+                "sample_labels": [node.get("label", node_id)],
+                "cohesion": 1.0,
+            }
+        )
+        next_community_id += 1
+
     graph["communities"] = communities
     return graph
 
@@ -1495,6 +1808,11 @@ def cmd_community(args: argparse.Namespace) -> int:
     summary = community_lookup(graph).get(args.community_id, {})
     print(
         f"Community {args.community_id} ({len(nodes)} nodes)"
+        + (
+            f" | files: {summary.get('file_count')}"
+            if summary.get("file_count") is not None
+            else ""
+        )
         + (
             f" | sample: {', '.join(summary.get('sample_labels', []))}"
             if summary.get("sample_labels")

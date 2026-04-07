@@ -215,6 +215,10 @@ Prefer `omx explore` or direct reads when:
 - it’s a tiny bounded lookup
 - repo-graph returns weak/noisy signal
 
+Prefer grep/raw shell only when:
+- the need is mechanical verification or an exact literal/procedural check
+- the task is not conceptual repo understanding
+
 ### Important boundary
 Repo-graph output is:
 - **retrieval/evidence context**

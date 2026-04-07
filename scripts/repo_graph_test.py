@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -18,6 +19,19 @@ class RepoGraphPhaseTests(unittest.TestCase):
             encoding="utf-8",
         )
         (root / "README.md").write_text("# Demo\n\nSee [A](src/a.py)\n", encoding="utf-8")
+        (root / "docs").mkdir()
+        (root / "docs" / "guide.md").write_text(
+            "# Guide\n\nRelated docs: ../README.md\n\nRelevant code: src/a.py\n",
+            encoding="utf-8",
+        )
+        (root / ".omx" / "plans").mkdir(parents=True)
+        (root / ".omx" / "specs").mkdir(parents=True)
+        (root / ".omx" / "ledger").mkdir(parents=True)
+        (root / ".omx" / "state").mkdir(parents=True)
+        (root / ".omx" / "plans" / "prd-demo.md").write_text("# Demo PRD\n", encoding="utf-8")
+        (root / ".omx" / "specs" / "demo-spec.md").write_text("# Demo Spec\n", encoding="utf-8")
+        (root / ".omx" / "ledger" / "planner-ledger.json").write_text('{"project":"demo"}\n', encoding="utf-8")
+        (root / ".omx" / "state" / "runtime.json").write_text('{"ephemeral":true}\n', encoding="utf-8")
         (root / ".output").mkdir()
         (root / ".output" / "noise.js").write_text("export const noise = true;\n", encoding="utf-8")
         return root
@@ -57,11 +71,46 @@ class RepoGraphPhaseTests(unittest.TestCase):
         self.assertTrue(after["stale"])
         self.assertIn("src/a.py", after["changed"])
 
-    def test_collect_files_excludes_output_artifacts(self) -> None:
+    def test_collect_files_includes_canonical_omx_artifacts_but_excludes_runtime_noise(self) -> None:
         root = self.make_repo()
         files = [path.relative_to(root).as_posix() for path in repo_graph.collect_files(root)]
         self.assertIn("src/a.py", files)
+        self.assertIn(".omx/plans/prd-demo.md", files)
+        self.assertIn(".omx/specs/demo-spec.md", files)
+        self.assertIn(".omx/ledger/planner-ledger.json", files)
+        self.assertNotIn(".omx/state/runtime.json", files)
         self.assertNotIn(".output/noise.js", files)
+
+    def test_save_graph_indexes_canonical_omx_artifacts_without_runtime_state(self) -> None:
+        root = self.make_repo()
+        graph_dir = root / ".omx" / "graphs" / "repo-graph"
+
+        graph = repo_graph.save_graph(root, graph_dir, build_reason="build")
+        node_ids = {node["id"] for node in graph["nodes"]}
+
+        self.assertIn("file:.omx/plans/prd-demo.md", node_ids)
+        self.assertIn("file:.omx/specs/demo-spec.md", node_ids)
+        self.assertIn("file:.omx/ledger/planner-ledger.json", node_ids)
+        self.assertNotIn("file:.omx/state/runtime.json", node_ids)
+
+    def test_docs_path_references_create_doc_to_doc_and_doc_to_code_edges(self) -> None:
+        root = self.make_repo()
+        graph_dir = root / ".omx" / "graphs" / "repo-graph"
+
+        graph = repo_graph.save_graph(root, graph_dir, build_reason="build")
+        edges = {
+            (edge["source"], edge["target"], edge["relation"])
+            for edge in graph["edges"]
+        }
+
+        self.assertIn(
+            ("file:docs/guide.md", "file:README.md", "references"),
+            edges,
+        )
+        self.assertIn(
+            ("file:docs/guide.md", "file:src/a.py", "references"),
+            edges,
+        )
 
     def test_post_execution_refresh_skips_when_no_relevant_changes(self) -> None:
         root = self.make_repo()
@@ -149,6 +198,65 @@ class RepoGraphPhaseTests(unittest.TestCase):
         self.assertGreaterEqual(len(updated["communities"]), 2)
         self.assertTrue(all("cohesion" in community for community in updated["communities"]))
         self.assertTrue(all("community_id" in node for node in updated["nodes"]))
+
+    def test_apply_community_metadata_groups_headings_with_their_file_community(self) -> None:
+        graph = {
+            "nodes": [
+                {"id": "file:docs/a.md", "label": "docs/a.md", "kind": "file", "source_file": "docs/a.md", "language": "docs"},
+                {"id": "file:docs/b.md", "label": "docs/b.md", "kind": "file", "source_file": "docs/b.md", "language": "docs"},
+                {"id": "heading:docs/a.md#intro", "label": "Intro", "kind": "heading", "source_file": "docs/a.md", "language": "docs"},
+                {"id": "heading:docs/b.md#intro", "label": "Intro", "kind": "heading", "source_file": "docs/b.md", "language": "docs"},
+            ],
+            "edges": [
+                {"source": "file:docs/a.md", "target": "heading:docs/a.md#intro", "relation": "contains"},
+                {"source": "file:docs/b.md", "target": "heading:docs/b.md#intro", "relation": "contains"},
+                {"source": "file:docs/a.md", "target": "file:docs/b.md", "relation": "references"},
+            ],
+        }
+
+        updated = repo_graph.apply_community_metadata(graph)
+        community_by_id = {node["id"]: node["community_id"] for node in updated["nodes"]}
+
+        self.assertEqual(community_by_id["file:docs/a.md"], community_by_id["file:docs/b.md"])
+        self.assertEqual(community_by_id["heading:docs/a.md#intro"], community_by_id["file:docs/a.md"])
+        self.assertEqual(community_by_id["heading:docs/b.md#intro"], community_by_id["file:docs/b.md"])
+
+    def test_family_affinity_helps_separate_same_hub_docs_by_family(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="repo-graph-family-affinity-"))
+        (root / "docs").mkdir(parents=True)
+        (root / ".omx" / "ledger").mkdir(parents=True)
+        (root / "docs" / "hub.md").write_text("# Hub\n", encoding="utf-8")
+        (root / "docs" / "alpha-1.md").write_text("See docs/hub.md\n", encoding="utf-8")
+        (root / "docs" / "alpha-2.md").write_text("See docs/hub.md\n", encoding="utf-8")
+        (root / "docs" / "beta.md").write_text("See docs/hub.md\n", encoding="utf-8")
+        (root / ".omx" / "ledger" / "planner-ledger.json").write_text(
+            json.dumps(
+                {
+                    "items": [
+                        {
+                            "id": "initiative:alpha",
+                            "kind": "initiative",
+                            "tags": ["family:alpha"],
+                            "artifacts": ["docs/alpha-1.md", "docs/alpha-2.md"],
+                        },
+                        {
+                            "id": "initiative:beta",
+                            "kind": "initiative",
+                            "tags": ["family:beta"],
+                            "artifacts": ["docs/beta.md"],
+                        },
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        graph_dir = root / ".omx" / "graphs" / "repo-graph"
+        graph = repo_graph.save_graph(root, graph_dir, build_reason="build")
+        community_by_id = {node["id"]: node["community_id"] for node in graph["nodes"] if node["id"].startswith("file:")}
+
+        self.assertEqual(community_by_id["file:docs/alpha-1.md"], community_by_id["file:docs/alpha-2.md"])
+        self.assertNotEqual(community_by_id["file:docs/alpha-1.md"], community_by_id["file:docs/beta.md"])
 
 
 if __name__ == "__main__":

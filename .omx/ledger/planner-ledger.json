@@ -222,6 +222,7 @@
         ]
       },
       "tags": [
+        "family:planner-ledger/repo-graph",
         "planner-wide",
         "omx",
         "tracking"
@@ -512,6 +513,7 @@
         ]
       },
       "tags": [
+        "family:planner-solidstart",
         "planner",
         "solidstart",
         "platform"
@@ -558,6 +560,7 @@
         ]
       },
       "tags": [
+        "family:design-ui-audit",
         "design-system"
       ]
     },
@@ -611,6 +614,7 @@
         ]
       },
       "tags": [
+        "family:design-ui-audit",
         "ui-reset"
       ]
     },
@@ -648,6 +652,7 @@
         ]
       },
       "tags": [
+        "family:design-ui-audit",
         "audit",
         "remediation"
       ]
@@ -684,6 +689,7 @@
         ]
       },
       "tags": [
+        "family:import-existing-project",
         "import",
         "planner",
         "program"
@@ -745,6 +751,7 @@
         ]
       },
       "tags": [
+        "family:import-existing-project",
         "import",
         "history",
         "reconciliation"
@@ -803,6 +810,7 @@
         ]
       },
       "tags": [
+        "family:socratic",
         "socratic",
         "workspace",
         "active"
@@ -874,6 +882,7 @@
         ]
       },
       "tags": [
+        "family:builder-fusion",
         "builder",
         "fusion",
         "runtime-sync"
@@ -909,6 +918,7 @@
         ]
       },
       "tags": [
+        "family:blueprint-knowledge",
         "blueprint",
         "knowledge"
       ]
@@ -989,7 +999,7 @@
     {
       "id": "plan:planner-ledger-population-pass-2-socratic",
       "kind": "plan",
-      "title": "Planner Ledger Population Pass 2 — Socratic Family",
+      "title": "Planner Ledger Population Pass 2 \u2014 Socratic Family",
       "status": "complete",
       "routing_state": "complete",
       "summary": "Approved and executed planning artifacts for the Socratic-only deep population pass.",
@@ -1019,7 +1029,7 @@
     {
       "id": "plan:planner-ledger-population-pass-3-import-builder-blueprint",
       "kind": "plan",
-      "title": "Planner Ledger Population Pass 3 — Import Builder Blueprint",
+      "title": "Planner Ledger Population Pass 3 \u2014 Import Builder Blueprint",
       "status": "complete",
       "routing_state": "complete",
       "summary": "Approved and executed planning artifacts for the combined import / builder / blueprint+knowledge deep family pass.",
@@ -1048,7 +1058,7 @@
     {
       "id": "plan:planner-ledger-population-pass-4-design-system-ui-reset-audits",
       "kind": "plan",
-      "title": "Planner Ledger Population Pass 4 — Design System UI Reset Audits",
+      "title": "Planner Ledger Population Pass 4 \u2014 Design System UI Reset Audits",
       "status": "complete",
       "routing_state": "complete",
       "summary": "Approved and executed planning artifacts for the combined design-system, UI-reset, and audit/remediation deep family pass.",
@@ -2637,7 +2647,7 @@
     {
       "id": "plan:planner-ledger-population-pass-5-solidstart-family",
       "kind": "plan",
-      "title": "Planner Ledger Population Pass 5 — SolidStart Family",
+      "title": "Planner Ledger Population Pass 5 \u2014 SolidStart Family",
       "status": "complete",
       "routing_state": "complete",
       "summary": "Approved and executed planning artifacts for the full SolidStart family deep population pass.",
@@ -2692,7 +2702,7 @@
     {
       "id": "plan:planner-ledger-population-pass-6-solidstart-cross-family-convergence",
       "kind": "plan",
-      "title": "Planner Ledger Population Pass 6 — SolidStart Cross-Family Convergence",
+      "title": "Planner Ledger Population Pass 6 \u2014 SolidStart Cross-Family Convergence",
       "status": "complete",
       "routing_state": "complete",
       "summary": "Approved and executed planning artifacts for the broad SolidStart cross-family convergence pass.",
@@ -4456,7 +4466,7 @@
     {
       "id": "plan:planner-ledger-population-pass-7-superseded-trailer-cleanup",
       "kind": "plan",
-      "title": "Planner Ledger Population Pass 7 — Superseded Trailer Cleanup",
+      "title": "Planner Ledger Population Pass 7 \u2014 Superseded Trailer Cleanup",
       "status": "complete",
       "routing_state": "complete",
       "summary": "Approved and executed planning artifacts for the superseded-trailer cleanup pass.",

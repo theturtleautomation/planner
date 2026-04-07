@@ -13,11 +13,13 @@
     "repo-graph:update": "bash scripts/repo-graph.sh update",
     "repo-graph:cluster": "bash scripts/repo-graph.sh cluster-only",
     "repo-graph:post-refresh": "bash scripts/repo-graph.sh post-execution-refresh",
+    "repo-graph:family-audit": "node scripts/repo-graph-family-fidelity.mjs",
     "repo-graph:query": "bash scripts/repo-graph.sh query",
     "repo-graph:mcp": "bash scripts/repo-graph-mcp.sh",
     "repo-graph:mcp:status": "bash scripts/repo-graph-mcp.sh status",
     "repo-graph:mcp:ensure": "bash scripts/repo-graph-mcp.sh ensure",
     "test": "npm run test --prefix planner-solid",
+    "test:repo-graph-family-fidelity": "node --test scripts/repo-graph-family-fidelity.test.mjs",
     "test:ledger": "node --test scripts/project-ledger.test.mjs",
     "lint": "npm run lint --prefix planner-solid"
   }
