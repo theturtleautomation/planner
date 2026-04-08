@@ -36,6 +36,9 @@ here.
 - [Import Existing Project Plan](/home/thetu/planner/docs/import-existing-project-plan.md)
 - [Session Workflow Web UI Implementation Plan](/home/thetu/planner/docs/session-workflow-webui-plan.md)
 - [Planner Ledger Population Analysis And Pass Plan](/home/thetu/planner/docs/planner-ledger-population-analysis-and-pass-plan.md)
+- [Project-Picture-Centered Planning Consolidation Plan](/home/thetu/planner/docs/project-picture-centered-planning-consolidation-plan.md)
+- [Project-Picture Experience Consolidation Plan](/home/thetu/planner/docs/project-picture-experience-consolidation-plan.md)
+- [Project-Picture Structural Concerns Plan](/home/thetu/planner/docs/project-picture-structural-concerns-plan.md)
 
 ## Task-Relevant Doc Families
 

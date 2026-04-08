@@ -37,40 +37,43 @@ Project skill: `.codex/skills/project-ledger/SKILL.md`
 
 ### Needs $deep-interview
 
-- **Socratic project picture workspace** (workstream, active) — Active Socratic workstream now converges its project-picture lineage with SolidStart shell, runtime, multimodal, and continuity truth.
-- **Hidden truth-model / blueprint relationship** (deferred_item, draft) — Scopeable-now deferred item for defining the minimum truthful relationship between hidden blueprint truth and the visible project picture.
-- **Whole-project recoverability beyond same-route shell** (deferred_item, draft) — Scopeable-now deferred item for the minimal reorientation and return contract beyond the current same-route shell.
+- **Socratic project picture workspace** (workstream, active) — Active Socratic workstream now serves as the planning center for the project-picture direction, with a dedicated experience-consolidation layer and a separate active structural-concern layer.
+- **Hidden truth-model / blueprint relationship** (deferred_item, active) — Active child concern for defining the minimum truthful relationship between hidden blueprint truth and the visible project picture.
+- **Whole-project recoverability beyond same-route shell** (deferred_item, active) — Active child concern for the minimal reorientation and return contract beyond the current same-route shell.
 - **Provenance / change-inspection UX** (deferred_item, deferred) — Still needs its first user question narrowed before it becomes scopeable.
 - **Preview hierarchy refinement** (deferred_item, draft) — Low-severity scopeable-now concern for reducing remaining dashboard weight in preview mode.
+- **Project-picture structural concerns** (workstream, active) — Active structural concern layer under the project-picture center, now modeled as hidden truth-model foundation, whole-project recoverability contract, and overlay/reorientation support, with provenance/change-inspection and preview hierarchy kept as follow-on concerns.
 
 ### Ready for $ralplan
 
-- **Planner design system command center plan** (plan, draft) — Parent planning surface for the planner design system family.
-- **Planner UI reset route-by-route queue** (plan, draft) — Parent planning surface for the UI-reset family.
-- **Knowledge library project scope plan** (plan, draft) — Project-scoped knowledge hub planning surface for the knowledge family.
+- **Planner design system command center plan** (plan, draft) — Experience-layer planning surface for the design-system family beneath the project-picture-centered planning model.
+- **Planner UI reset route-by-route queue** (plan, draft) — Experience-layer planning surface for the UI-reset family beneath the project-picture-centered planning model.
+- **Knowledge library project scope plan** (plan, draft) — Experience-layer planning surface for the knowledge family beneath the project-picture-centered planning model.
+- **Project-Picture Experience Consolidation Plan** (plan, draft) — Immediate next planning layer beneath the project-picture center for design system, UI reset, and knowledge-library consolidation.
 
 ### Needs analysis
 
-- **Richer overlay / reorientation model** (deferred_item, deferred) — Not yet scopeable because multiple overlay families are still bundled together.
+- **Richer overlay / reorientation model** (deferred_item, active) — Active child concern for the richer overlay / reorientation model, still needing analysis because multiple overlay families remain bundled together.
 
 ## Active Workstreams and Initiatives
 
 - **Planner project tracking library** — Planner-wide OMX-linked ledger initiative with root governance, converged cross-family truth, a cleaned linkage spine, repo-graph-coupled automation, an explicit freshness maintenance signal, and the review-remediation pass for automation convergence, dry-run proof, and planning/plugin truth now landed. Graph output remains evidence, not blueprint truth. _(next: monitoring)_
 - **Planner SolidStart platform direction** — Convergence center for the full SolidStart tree and the cleaner cross-family truth spanning import, Socratic, UI-reset, design-system, blueprint/knowledge, builder, and audit surfaces. _(next: complete)_
-- **Planner design system** — Design-system family now converges its canonical token/hierarchy work with SolidStart typography, command-rail, and command-desk truth. _(next: complete)_
-- **Planner UI reset** — UI-reset family now converges its route-by-route reset intent with SolidStart shell, route, and session-workspace truth. _(next: complete)_
+- **Planner design system** — Design-system family now sits beneath the project-picture-centered planning model while continuing to converge its canonical token/hierarchy work with SolidStart typography, command-rail, and command-desk truth. _(next: complete)_
+- **Planner UI reset** — UI-reset family now sits beneath the project-picture-centered planning model while continuing to converge its route-by-route reset intent with SolidStart shell, route, and session-workspace truth. _(next: complete)_
 - **Planning audit remediation** — Audit/remediation family now converges its closeout/remediation surfaces with SolidStart verification, cleanup, and parity truth. _(next: complete)_
 - **Import existing project program** — Import program now converges with SolidStart import route truth across review, history/restore, and comparison surfaces. _(next: monitoring)_
 - **Import existing project history and reconciliation** — Import history/reconciliation now converges the canonical import slices with SolidStart route truth for review, restore, and comparison flows. _(next: complete)_
-- **Socratic project picture workspace** — Active Socratic workstream now converges its project-picture lineage with SolidStart shell, runtime, multimodal, and continuity truth. _(next: needs_deep_interview)_
+- **Socratic project picture workspace** — Active Socratic workstream now serves as the planning center for the project-picture direction, with a dedicated experience-consolidation layer and a separate active structural-concern layer. _(next: needs_deep_interview)_
 - **Builder fusion runtime sync** — Builder runtime-sync workstream now converges its helper/runtime diagnosis slices with SolidStart mock-runtime and builder-alignment truth. _(next: complete)_
-- **Blueprint knowledge program** — Blueprint/knowledge family now converges its canonical planning surfaces with SolidStart knowledge, blueprint, and frontend-mock truth. _(next: complete)_
+- **Blueprint knowledge program** — Blueprint/knowledge family now sits beneath the project-picture-centered planning model while continuing to converge its canonical planning surfaces with SolidStart knowledge, blueprint, and frontend-mock truth. _(next: complete)_
+- **Project-picture structural concerns** — Active structural concern layer under the project-picture center, now modeled as hidden truth-model foundation, whole-project recoverability contract, and overlay/reorientation support, with provenance/change-inspection and preview hierarchy kept as follow-on concerns. _(next: needs_deep_interview)_
 
 ## Deferred Items
 
-- **Hidden truth-model / blueprint relationship** — Scopeable-now deferred item for defining the minimum truthful relationship between hidden blueprint truth and the visible project picture. _(status: draft; next: needs_deep_interview)_
-- **Whole-project recoverability beyond same-route shell** — Scopeable-now deferred item for the minimal reorientation and return contract beyond the current same-route shell. _(status: draft; next: needs_deep_interview)_
-- **Richer overlay / reorientation model** — Not yet scopeable because multiple overlay families are still bundled together. _(status: deferred; next: needs_analysis)_
+- **Hidden truth-model / blueprint relationship** — Active child concern for defining the minimum truthful relationship between hidden blueprint truth and the visible project picture. _(status: active; next: needs_deep_interview)_
+- **Whole-project recoverability beyond same-route shell** — Active child concern for the minimal reorientation and return contract beyond the current same-route shell. _(status: active; next: needs_deep_interview)_
+- **Richer overlay / reorientation model** — Active child concern for the richer overlay / reorientation model, still needing analysis because multiple overlay families remain bundled together. _(status: active; next: needs_analysis)_
 - **Provenance / change-inspection UX** — Still needs its first user question narrowed before it becomes scopeable. _(status: deferred; next: needs_deep_interview)_
 - **Preview hierarchy refinement** — Low-severity scopeable-now concern for reducing remaining dashboard weight in preview mode. _(status: draft; next: needs_deep_interview)_
 - **Branch-management / generalized work-queue systems** — Intentionally deferred and not justified above more central thesis gaps. Still visible in the Socratic family but not promoted in Pass 2. _(status: deferred; next: monitoring)_
@@ -90,9 +93,9 @@ Project skill: `.codex/skills/project-ledger/SKILL.md`
 ## Planner Ledger Maintenance Signal
 
 - Maintenance state: **fresh**
-- Last automation run: `2026-04-08T15:09:59.040Z`
-- Tracked non-complete artifacts: **64** across **29** items
-- Latest tracked artifact change: `.omx/ledger/planner-ledger.json` at `2026-04-08T15:06:32.012Z`
+- Last automation run: `2026-04-08T19:26:41.550Z`
+- Tracked non-complete artifacts: **67** across **31** items
+- Latest tracked artifact change: `docs/project-picture-structural-concerns-plan.md` at `2026-04-08T19:26:34.950Z`
 - Artifacts newer than last automation run: **0**
 - Attention items: none
 

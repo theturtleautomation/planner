@@ -2,7 +2,8 @@
 
 **Status:** Implemented  
 **Date:** 2026-03-22  
-**Parent:** [Planner OMX Project Plan](/home/thetu/planner/.omx/ledger/project-plan.md)
+**Parent:** [Project-Picture Experience Consolidation Plan](/home/thetu/planner/docs/project-picture-experience-consolidation-plan.md)
+**Related Planning:** [Project-Picture-Centered Planning Consolidation Plan](/home/thetu/planner/docs/project-picture-centered-planning-consolidation-plan.md), [Socratic Project Picture And Convergence Workspace Spec](/home/thetu/planner/docs/socratic-project-picture-and-convergence-workspace-spec.md)
 
 ## Purpose
 

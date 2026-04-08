@@ -739,3 +739,54 @@ test("pass 7 cleanup removes verbose trailer prose while structured supersession
   assert.ok(socratic.links.children.includes("slice:planner-solidstart-phase-24-socratic-runtime-contract-reset"));
   assert.ok(socratic.links.children.includes("slice:planner-solidstart-phase-38-socratic-multimodal-command-desk"));
 });
+
+test("project-picture-centered consolidation introduces the two-layer planning structure", async () => {
+  const ledger = await loadLedger();
+  const itemById = new Map(ledger.items.map(item => [item.id, item]));
+
+  const center = itemById.get("plan:project-picture-centered-planning-consolidation");
+  const experience = itemById.get("plan:project-picture-experience-consolidation");
+  const concerns = itemById.get("workstream:project-picture-structural-concerns");
+  const designPlan = itemById.get("plan:planner-design-system-command-center");
+  const uiPlan = itemById.get("plan:planner-ui-reset-route-by-route-queue");
+  const knowledgePlan = itemById.get("plan:knowledge-library-project-scope");
+  const hiddenTruth = itemById.get("deferred_item:hidden-truth-model");
+  const recoverability = itemById.get("deferred_item:whole-project-recoverability");
+  const overlay = itemById.get("deferred_item:overlay-reorientation");
+  const socratic = itemById.get("workstream:socratic-project-picture");
+
+  assert.ok(center);
+  assert.equal(center.status, "complete");
+  assert.equal(center.routing_state, "complete");
+  assert.deepEqual(center.links.parent, ["workstream:socratic-project-picture"]);
+  assert.ok(center.links.children.includes("plan:project-picture-experience-consolidation"));
+  assert.ok(center.links.children.includes("workstream:project-picture-structural-concerns"));
+
+  assert.ok(experience);
+  assert.equal(experience.routing_state, "ready_for_ralplan");
+  assert.deepEqual(experience.links.parent, ["plan:project-picture-centered-planning-consolidation"]);
+  assert.ok(experience.links.children.includes("plan:planner-design-system-command-center"));
+  assert.ok(experience.links.children.includes("plan:planner-ui-reset-route-by-route-queue"));
+  assert.ok(experience.links.children.includes("plan:knowledge-library-project-scope"));
+
+  assert.ok(concerns);
+  assert.equal(concerns.status, "active");
+  assert.equal(concerns.routing_state, "needs_deep_interview");
+  assert.deepEqual(concerns.links.parent, ["plan:project-picture-centered-planning-consolidation"]);
+  assert.ok(concerns.links.children.includes("deferred_item:hidden-truth-model"));
+  assert.ok(concerns.links.children.includes("deferred_item:whole-project-recoverability"));
+  assert.ok(concerns.links.children.includes("deferred_item:overlay-reorientation"));
+
+  assert.ok(designPlan.links.parent.includes("plan:project-picture-experience-consolidation"));
+  assert.ok(uiPlan.links.parent.includes("plan:project-picture-experience-consolidation"));
+  assert.ok(knowledgePlan.links.parent.includes("plan:project-picture-experience-consolidation"));
+
+  assert.equal(hiddenTruth.status, "active");
+  assert.ok(hiddenTruth.links.parent.includes("workstream:project-picture-structural-concerns"));
+  assert.equal(recoverability.status, "active");
+  assert.ok(recoverability.links.parent.includes("workstream:project-picture-structural-concerns"));
+  assert.equal(overlay.status, "active");
+  assert.ok(overlay.links.parent.includes("workstream:project-picture-structural-concerns"));
+
+  assert.ok(socratic.links.children.includes("plan:project-picture-centered-planning-consolidation"));
+});

@@ -494,7 +494,7 @@
       "title": "Planner design system",
       "status": "implemented",
       "routing_state": "complete",
-      "summary": "Design-system family now converges its canonical token/hierarchy work with SolidStart typography, command-rail, and command-desk truth.",
+      "summary": "Design-system family now sits beneath the project-picture-centered planning model while continuing to converge its canonical token/hierarchy work with SolidStart typography, command-rail, and command-desk truth.",
       "artifacts": [
         "docs/planner-design-system-command-center-plan.md",
         "docs/planner-design-system-phase-1-tonal-foundation-spec.md",
@@ -526,6 +526,9 @@
         ],
         "superseded_by": [
           "slice:planner-ledger-population-pass-6-solidstart-cross-family-convergence"
+        ],
+        "informed_by": [
+          "workstream:socratic-project-picture"
         ]
       },
       "tags": [
@@ -539,7 +542,7 @@
       "title": "Planner UI reset",
       "status": "implemented",
       "routing_state": "complete",
-      "summary": "UI-reset family now converges its route-by-route reset intent with SolidStart shell, route, and session-workspace truth.",
+      "summary": "UI-reset family now sits beneath the project-picture-centered planning model while continuing to converge its route-by-route reset intent with SolidStart shell, route, and session-workspace truth.",
       "artifacts": [
         "docs/planner-ui-reset-route-by-route-spec-queue.md",
         "docs/planner-ui-reset-phase-00-shell-navigation-and-auth-spec.md",
@@ -580,6 +583,9 @@
         ],
         "superseded_by": [
           "slice:planner-ledger-population-pass-6-solidstart-cross-family-convergence"
+        ],
+        "informed_by": [
+          "workstream:socratic-project-picture"
         ]
       },
       "tags": [
@@ -732,11 +738,12 @@
       "title": "Socratic project picture workspace",
       "status": "active",
       "routing_state": "needs_deep_interview",
-      "summary": "Active Socratic workstream now converges its project-picture lineage with SolidStart shell, runtime, multimodal, and continuity truth.",
+      "summary": "Active Socratic workstream now serves as the planning center for the project-picture direction, with a dedicated experience-consolidation layer and a separate active structural-concern layer.",
       "artifacts": [
         ".omx/plans/prd-planner-ledger-population-pass-2-socratic.md",
         ".omx/plans/test-spec-planner-ledger-population-pass-2-socratic.md",
         ".omx/specs/socratic-deferred-items/index.md",
+        "docs/project-picture-centered-planning-consolidation-plan.md",
         "docs/socratic-current-state-vs-thesis-review.md",
         "docs/socratic-project-picture-and-convergence-workspace-spec.md",
         "docs/socratic-project-picture-mvp-path-and-gap-analysis-spec.md"
@@ -755,7 +762,9 @@
           "slice:planner-solidstart-phase-26-socratic-runtime-truth-completion-remediation",
           "slice:planner-solidstart-phase-38-socratic-multimodal-command-desk",
           "slice:planner-solidstart-phase-39-session-commit-continuity-and-prompt-bank-merge",
-          "slice:planner-solidstart-phase-40-project-only-entry-and-stale-draft-hardening"
+          "slice:planner-solidstart-phase-40-project-only-entry-and-stale-draft-hardening",
+          "plan:project-picture-centered-planning-consolidation",
+          "workstream:project-picture-structural-concerns"
         ],
         "follow_on": [
           "deferred_item:hidden-truth-model",
@@ -791,9 +800,9 @@
           "reason": "repo-graph evidence + linked item routing state",
           "provenance": {
             "source": "repo-graph",
-            "query": "docs/socratic-current-state-vs-thesis-review.md"
+            "query": "docs/project-picture-centered-planning-consolidation-plan.md"
           },
-          "last_evaluated_at": "2026-04-08T01:40:38.510Z"
+          "last_evaluated_at": "2026-04-08T17:22:47.222Z"
         }
       }
     },
@@ -840,7 +849,7 @@
       "title": "Blueprint knowledge program",
       "status": "implemented",
       "routing_state": "complete",
-      "summary": "Blueprint/knowledge family now converges its canonical planning surfaces with SolidStart knowledge, blueprint, and frontend-mock truth.",
+      "summary": "Blueprint/knowledge family now sits beneath the project-picture-centered planning model while continuing to converge its canonical planning surfaces with SolidStart knowledge, blueprint, and frontend-mock truth.",
       "artifacts": [
         "docs/blueprint-project-root-codegraph-integration.md",
         "docs/knowledge-library-project-scope-plan.md",
@@ -861,6 +870,9 @@
         ],
         "superseded_by": [
           "slice:planner-ledger-population-pass-6-solidstart-cross-family-convergence"
+        ],
+        "informed_by": [
+          "workstream:socratic-project-picture"
         ]
       },
       "tags": [
@@ -945,7 +957,7 @@
     {
       "id": "plan:planner-ledger-population-pass-2-socratic",
       "kind": "plan",
-      "title": "Planner Ledger Population Pass 2 — Socratic Family",
+      "title": "Planner Ledger Population Pass 2 \u2014 Socratic Family",
       "status": "complete",
       "routing_state": "complete",
       "summary": "Approved and executed planning artifacts for the Socratic-only deep population pass.",
@@ -975,7 +987,7 @@
     {
       "id": "plan:planner-ledger-population-pass-3-import-builder-blueprint",
       "kind": "plan",
-      "title": "Planner Ledger Population Pass 3 — Import Builder Blueprint",
+      "title": "Planner Ledger Population Pass 3 \u2014 Import Builder Blueprint",
       "status": "complete",
       "routing_state": "complete",
       "summary": "Approved and executed planning artifacts for the combined import / builder / blueprint+knowledge deep family pass.",
@@ -1004,7 +1016,7 @@
     {
       "id": "plan:planner-ledger-population-pass-4-design-system-ui-reset-audits",
       "kind": "plan",
-      "title": "Planner Ledger Population Pass 4 — Design System UI Reset Audits",
+      "title": "Planner Ledger Population Pass 4 \u2014 Design System UI Reset Audits",
       "status": "complete",
       "routing_state": "complete",
       "summary": "Approved and executed planning artifacts for the combined design-system, UI-reset, and audit/remediation deep family pass.",
@@ -1152,13 +1164,14 @@
       "title": "Planner design system command center plan",
       "status": "draft",
       "routing_state": "ready_for_ralplan",
-      "summary": "Parent planning surface for the planner design system family.",
+      "summary": "Experience-layer planning surface for the design-system family beneath the project-picture-centered planning model.",
       "artifacts": [
         "docs/planner-design-system-command-center-plan.md"
       ],
       "links": {
         "parent": [
-          "initiative:planner-design-system"
+          "initiative:planner-design-system",
+          "plan:project-picture-experience-consolidation"
         ]
       },
       "tags": [
@@ -1172,13 +1185,14 @@
       "title": "Planner UI reset route-by-route queue",
       "status": "draft",
       "routing_state": "ready_for_ralplan",
-      "summary": "Parent planning surface for the UI-reset family.",
+      "summary": "Experience-layer planning surface for the UI-reset family beneath the project-picture-centered planning model.",
       "artifacts": [
         "docs/planner-ui-reset-route-by-route-spec-queue.md"
       ],
       "links": {
         "parent": [
-          "initiative:planner-ui-reset"
+          "initiative:planner-ui-reset",
+          "plan:project-picture-experience-consolidation"
         ]
       },
       "tags": [
@@ -2259,13 +2273,14 @@
       "title": "Knowledge library project scope plan",
       "status": "draft",
       "routing_state": "ready_for_ralplan",
-      "summary": "Project-scoped knowledge hub planning surface for the knowledge family.",
+      "summary": "Experience-layer planning surface for the knowledge family beneath the project-picture-centered planning model.",
       "artifacts": [
         "docs/knowledge-library-project-scope-plan.md"
       ],
       "links": {
         "parent": [
-          "initiative:blueprint-knowledge-program"
+          "initiative:blueprint-knowledge-program",
+          "plan:project-picture-experience-consolidation"
         ]
       },
       "tags": [
@@ -2337,15 +2352,16 @@
       "id": "deferred_item:hidden-truth-model",
       "kind": "deferred_item",
       "title": "Hidden truth-model / blueprint relationship",
-      "status": "draft",
+      "status": "active",
       "routing_state": "needs_deep_interview",
-      "summary": "Scopeable-now deferred item for defining the minimum truthful relationship between hidden blueprint truth and the visible project picture.",
+      "summary": "Active child concern for defining the minimum truthful relationship between hidden blueprint truth and the visible project picture.",
       "artifacts": [
         ".omx/specs/socratic-deferred-items/hidden-truth-model-relationship.md"
       ],
       "links": {
         "parent": [
-          "workstream:socratic-project-picture"
+          "workstream:socratic-project-picture",
+          "workstream:project-picture-structural-concerns"
         ],
         "informed_by": [
           "review:socratic-current-state-vs-thesis"
@@ -2360,15 +2376,16 @@
       "id": "deferred_item:whole-project-recoverability",
       "kind": "deferred_item",
       "title": "Whole-project recoverability beyond same-route shell",
-      "status": "draft",
+      "status": "active",
       "routing_state": "needs_deep_interview",
-      "summary": "Scopeable-now deferred item for the minimal reorientation and return contract beyond the current same-route shell.",
+      "summary": "Active child concern for the minimal reorientation and return contract beyond the current same-route shell.",
       "artifacts": [
         ".omx/specs/socratic-deferred-items/whole-project-recoverability.md"
       ],
       "links": {
         "parent": [
-          "workstream:socratic-project-picture"
+          "workstream:socratic-project-picture",
+          "workstream:project-picture-structural-concerns"
         ],
         "informed_by": [
           "review:socratic-current-state-vs-thesis"
@@ -2383,15 +2400,16 @@
       "id": "deferred_item:overlay-reorientation",
       "kind": "deferred_item",
       "title": "Richer overlay / reorientation model",
-      "status": "deferred",
+      "status": "active",
       "routing_state": "needs_analysis",
-      "summary": "Not yet scopeable because multiple overlay families are still bundled together.",
+      "summary": "Active child concern for the richer overlay / reorientation model, still needing analysis because multiple overlay families remain bundled together.",
       "artifacts": [
         ".omx/specs/socratic-deferred-items/overlay-reorientation-model.md"
       ],
       "links": {
         "parent": [
-          "workstream:socratic-project-picture"
+          "workstream:socratic-project-picture",
+          "workstream:project-picture-structural-concerns"
         ],
         "informed_by": [
           "review:socratic-current-state-vs-thesis"
@@ -2577,7 +2595,7 @@
     {
       "id": "plan:planner-ledger-population-pass-5-solidstart-family",
       "kind": "plan",
-      "title": "Planner Ledger Population Pass 5 — SolidStart Family",
+      "title": "Planner Ledger Population Pass 5 \u2014 SolidStart Family",
       "status": "complete",
       "routing_state": "complete",
       "summary": "Approved and executed planning artifacts for the full SolidStart family deep population pass.",
@@ -2629,7 +2647,7 @@
     {
       "id": "plan:planner-ledger-population-pass-6-solidstart-cross-family-convergence",
       "kind": "plan",
-      "title": "Planner Ledger Population Pass 6 — SolidStart Cross-Family Convergence",
+      "title": "Planner Ledger Population Pass 6 \u2014 SolidStart Cross-Family Convergence",
       "status": "complete",
       "routing_state": "complete",
       "summary": "Approved and executed planning artifacts for the broad SolidStart cross-family convergence pass.",
@@ -4393,7 +4411,7 @@
     {
       "id": "plan:planner-ledger-population-pass-7-superseded-trailer-cleanup",
       "kind": "plan",
-      "title": "Planner Ledger Population Pass 7 — Superseded Trailer Cleanup",
+      "title": "Planner Ledger Population Pass 7 \u2014 Superseded Trailer Cleanup",
       "status": "complete",
       "routing_state": "complete",
       "summary": "Approved and executed planning artifacts for the superseded-trailer cleanup pass.",
@@ -4681,6 +4699,106 @@
         "root",
         "project-plan"
       ]
+    },
+    {
+      "id": "plan:project-picture-centered-planning-consolidation",
+      "kind": "plan",
+      "title": "Project-Picture-Centered Planning Consolidation Plan",
+      "status": "complete",
+      "routing_state": "complete",
+      "summary": "Canonical planning center now landed: design system, UI reset, knowledge library, and the active structural concern layer are reframed around the Socratic project picture.",
+      "artifacts": [
+        "docs/project-picture-centered-planning-consolidation-plan.md",
+        ".omx/plans/prd-project-picture-centered-planning-consolidation-pass.md",
+        ".omx/plans/test-spec-project-picture-centered-planning-consolidation-pass.md"
+      ],
+      "links": {
+        "parent": [
+          "workstream:socratic-project-picture"
+        ],
+        "children": [
+          "plan:project-picture-experience-consolidation",
+          "workstream:project-picture-structural-concerns"
+        ],
+        "informed_by": [
+          "review:socratic-current-state-vs-thesis"
+        ]
+      },
+      "tags": [
+        "socratic",
+        "project-picture",
+        "planning-center",
+        "plan"
+      ]
+    },
+    {
+      "id": "plan:project-picture-experience-consolidation",
+      "kind": "plan",
+      "title": "Project-Picture Experience Consolidation Plan",
+      "status": "draft",
+      "routing_state": "ready_for_ralplan",
+      "summary": "Immediate next planning layer beneath the project-picture center for design system, UI reset, and knowledge-library consolidation.",
+      "artifacts": [
+        "docs/project-picture-experience-consolidation-plan.md"
+      ],
+      "links": {
+        "parent": [
+          "plan:project-picture-centered-planning-consolidation"
+        ],
+        "children": [
+          "plan:planner-design-system-command-center",
+          "plan:planner-ui-reset-route-by-route-queue",
+          "plan:knowledge-library-project-scope"
+        ]
+      },
+      "tags": [
+        "project-picture",
+        "experience-layer",
+        "plan"
+      ]
+    },
+    {
+      "id": "workstream:project-picture-structural-concerns",
+      "kind": "workstream",
+      "title": "Project-picture structural concerns",
+      "status": "active",
+      "routing_state": "needs_deep_interview",
+      "summary": "Active structural concern layer under the project-picture center, now modeled as hidden truth-model foundation, whole-project recoverability contract, and overlay/reorientation support, with provenance/change-inspection and preview hierarchy kept as follow-on concerns.",
+      "artifacts": [
+        "docs/project-picture-structural-concerns-plan.md"
+      ],
+      "links": {
+        "parent": [
+          "plan:project-picture-centered-planning-consolidation"
+        ],
+        "children": [
+          "deferred_item:hidden-truth-model",
+          "deferred_item:whole-project-recoverability",
+          "deferred_item:overlay-reorientation"
+        ],
+        "informed_by": [
+          "review:socratic-current-state-vs-thesis"
+        ]
+      },
+      "tags": [
+        "project-picture",
+        "structural-concerns",
+        "workstream"
+      ],
+      "automation": {
+        "routing": {
+          "state": "applied",
+          "confidence": "medium",
+          "approval_required": false,
+          "recommended_routing_state": "needs_deep_interview",
+          "reason": "repo-graph evidence + linked item routing state",
+          "provenance": {
+            "source": "repo-graph",
+            "query": "docs/project-picture-structural-concerns-plan.md"
+          },
+          "last_evaluated_at": "2026-04-08T17:22:47.226Z"
+        }
+      }
     }
   ]
 }

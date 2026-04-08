@@ -1,5 +1,10 @@
 # Knowledge Library Project Scope Plan
 
+**Status:** Draft  
+**Date:** 2026-03-18  
+**Parent:** [Project-Picture Experience Consolidation Plan](/home/thetu/planner/docs/project-picture-experience-consolidation-plan.md)
+**Related Planning:** [Project-Picture-Centered Planning Consolidation Plan](/home/thetu/planner/docs/project-picture-centered-planning-consolidation-plan.md), [Socratic Project Picture And Convergence Workspace Spec](/home/thetu/planner/docs/socratic-project-picture-and-convergence-workspace-spec.md)
+
 This document defines the product plan for evolving the Knowledge Library from
 a global architecture graph into a project-scoped knowledge hub.
 

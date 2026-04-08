@@ -36,12 +36,14 @@ These are the main repo-wide planning families:
 
 The repo-wide planning truth currently shows:
 
-- **Planner project tracking library** as the main active planner-wide
-  initiative, with **Planner-Ledger Review Remediation Pass** now the concrete next move
-- **Planner design system command center plan** ready for `$ralplan`
-- **Planner UI reset route-by-route queue** ready for `$ralplan`
-- **Knowledge library project scope plan** ready for `$ralplan`
-- **Socratic project picture workspace** still needing `$deep-interview`
+- **Socratic project picture workspace** as the new planning center for the
+  project-picture direction
+- **Project-Picture-Centered Planning Consolidation Plan** as the current
+  concrete next move
+- **Planner design system**, **Planner UI reset**, and **Knowledge library**
+  now being reframed beneath that center as the immediate experience layer
+- hidden truth-model, whole-project recoverability, and overlay/reorientation
+  concerns staying active as a separate structural concern layer
 
 Read `.omx/ledger/current-status.md` for the canonical routed queue and
 maintenance state.
@@ -60,5 +62,9 @@ Keep planning and implementation aligned to artifact state:
 The next move is:
 
 - use `.omx/ledger/current-status.md` as the canonical routed queue
-- execute **Planner-Ledger Review Remediation Pass** as the current concrete planner-ledger next step
+- treat **Project-Picture-Centered Planning Consolidation Plan** as landed
+- advance **Project-Picture Experience Consolidation Plan** as the current
+  concrete next planning step
+- keep **Project-picture structural concerns** active for the next
+  `$deep-interview` layer
 - then return to the canonical queue for the next routed item

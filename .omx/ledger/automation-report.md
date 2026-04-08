@@ -4,7 +4,7 @@ Machine-readable canonical trace: `.omx/ledger/automation-trace.json`
 
 ## Latest Run
 
-- Generated at: `2026-04-08T15:09:59.040Z`
+- Generated at: `2026-04-08T19:26:41.550Z`
 - Mode: `apply`
 - Change count: **0**
 - Confidence mix: high=0, medium=0, low=0
@@ -13,9 +13,9 @@ Machine-readable canonical trace: `.omx/ledger/automation-trace.json`
 ## Freshness / Maintenance
 
 - Maintenance state: **fresh**
-- Last automation run: `2026-04-08T15:09:59.040Z`
-- Tracked non-complete artifacts: **64** across **29** items
-- Latest tracked artifact change: `.omx/ledger/planner-ledger.json` at `2026-04-08T15:06:32.012Z`
+- Last automation run: `2026-04-08T19:26:41.550Z`
+- Tracked non-complete artifacts: **67** across **31** items
+- Latest tracked artifact change: `docs/project-picture-structural-concerns-plan.md` at `2026-04-08T19:26:34.950Z`
 - Artifacts newer than last automation run: **0**
 - Attention items: none
 
@@ -25,6 +25,14 @@ Machine-readable canonical trace: `.omx/ledger/automation-trace.json`
 
 ## Rolling History
 
+- `2026-04-08T19:26:41.550Z` — changes=0; high=0; medium=0; low=0; applied=0; skipped=0; provisional=0
+- `2026-04-08T19:26:06.218Z` — changes=0; high=0; medium=0; low=0; applied=0; skipped=0; provisional=0
+- `2026-04-08T18:24:13.036Z` — changes=0; high=0; medium=0; low=0; applied=0; skipped=0; provisional=0
+- `2026-04-08T18:23:12.312Z` — changes=0; high=0; medium=0; low=0; applied=0; skipped=0; provisional=0
+- `2026-04-08T18:21:04.338Z` — changes=0; high=0; medium=0; low=0; applied=0; skipped=0; provisional=0
+- `2026-04-08T17:46:13.170Z` — changes=0; high=0; medium=0; low=0; applied=0; skipped=0; provisional=0
+- `2026-04-08T17:24:11.032Z` — changes=0; high=0; medium=0; low=0; applied=0; skipped=0; provisional=0
+- `2026-04-08T17:22:47.228Z` — changes=4; high=0; medium=2; low=0; applied=2; skipped=0; provisional=0
 - `2026-04-08T15:09:59.040Z` — changes=0; high=0; medium=0; low=0; applied=0; skipped=0; provisional=0
 - `2026-04-08T15:07:03.574Z` — changes=0; high=0; medium=0; low=0; applied=0; skipped=0; provisional=0
 - `2026-04-08T15:05:43.038Z` — changes=0; high=0; medium=0; low=0; applied=0; skipped=0; provisional=0
@@ -37,12 +45,4 @@ Machine-readable canonical trace: `.omx/ledger/automation-trace.json`
 - `2026-04-08T02:56:17.939Z` — changes=0; high=0; medium=0; low=0; applied=0; skipped=0; provisional=0
 - `2026-04-08T02:56:16.139Z` — changes=0; high=0; medium=0; low=0; applied=0; skipped=0; provisional=0
 - `2026-04-08T02:54:52.237Z` — changes=0; high=0; medium=0; low=0; applied=0; skipped=0; provisional=0
-- `2026-04-08T02:54:50.447Z` — changes=0; high=0; medium=0; low=0; applied=0; skipped=0; provisional=0
-- `2026-04-08T02:44:03.290Z` — changes=0; high=0; medium=0; low=0; applied=0; skipped=0; provisional=0
-- `2026-04-08T02:44:01.591Z` — changes=0; high=0; medium=0; low=0; applied=0; skipped=0; provisional=0
-- `2026-04-08T01:43:44.885Z` — changes=0; high=0; medium=0; low=0; applied=0; skipped=0; provisional=0
-- `2026-04-08T01:43:43.032Z` — changes=0; high=0; medium=0; low=0; applied=0; skipped=0; provisional=0
-- `2026-04-08T01:42:33.883Z` — changes=0; high=0; medium=0; low=0; applied=0; skipped=0; provisional=0
-- `2026-04-08T01:42:32.061Z` — changes=0; high=0; medium=0; low=0; applied=0; skipped=0; provisional=0
-- `2026-04-08T01:40:40.354Z` — changes=0; high=0; medium=0; low=0; applied=0; skipped=0; provisional=0
 
