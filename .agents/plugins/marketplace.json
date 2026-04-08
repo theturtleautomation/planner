@@ -27,6 +27,18 @@
         "authentication": "ON_INSTALL"
       },
       "category": "Coding"
+    },
+    {
+      "name": "planner-repo-graph",
+      "source": {
+        "source": "local",
+        "path": "./plugins/planner-repo-graph"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "NONE"
+      },
+      "category": "Coding"
     }
   ]
 }

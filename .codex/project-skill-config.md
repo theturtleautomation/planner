@@ -7,8 +7,8 @@
 
 ## Core Files
 
-- Doc index: `docs/session-start-and-doc-index.md`
-- Backlog or tracker: `docs/project-plan.md`
+- Doc index: `.omx/ledger/session-start-and-doc-index.md`
+- Backlog or tracker: `.omx/ledger/planner-ledger.json`
 
 ## Root Instructions
 
@@ -18,15 +18,18 @@
 ## Always-Load Docs
 
 - `README.md`
-- `docs/project-plan.md`
+- `.omx/ledger/session-start-and-doc-index.md`
+- `.omx/ledger/current-status.md`
+- `.omx/ledger/project-plan.md`
+- `.omx/ledger/README.md`
 - `docs/import-existing-project-plan.md`
 - `docs/session-workflow-webui-plan.md`
 
 ## Planning Containers
 
 - Primary planning docs directory: `docs/`
-- Planning model: project plan plus phase and feature implementation docs under `docs/`
-- Parent-child tracking model: top-level project plan plus task-relevant phase or feature plan documents
+- Planning model: OMX ledger plus phase and feature implementation docs under `docs/`
+- Parent-child tracking model: canonical ledger plus task-relevant phase or feature plan documents
 
 ## Status Model
 
@@ -52,12 +55,15 @@ Apply these during planning, implementation, and review:
 
 - preserve bounded execution against the active phase or feature plan
 - keep planning and implementation aligned to the actual artifact state
+- update the canonical ledger when durable artifacts or workflow states change
+- keep `.agents/plugins/marketplace.json` aligned with local plugin manifests in `plugins/*/.codex-plugin/plugin.json`
 - do not silently broaden scope across unrelated phases
 - do not claim verification if the relevant tests or checks were not run
 
 ## Review Red Flags
 
-- the active planning thread in `docs/project-plan.md` no longer matches the actual next move
+- the active planning thread in `.omx/ledger/current-status.md` no longer matches the actual next move
+- `.agents/plugins/marketplace.json` drifts from local plugin manifest truth in `plugins/*/.codex-plugin/plugin.json`
 - implementation docs claim completion without corresponding verification evidence
-- new durable planning docs exist but are not in the doc index
+- new durable planning docs exist but are not reflected in the OMX ledger/bootstrap surfaces
 - work drifts across phases without an explicit planning update
