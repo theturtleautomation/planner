@@ -206,6 +206,16 @@ The evidence shows that the **core committed Graphify/repo-graph lane survived**
 
 So the important Graphify/repo-graph work appears preserved. The remaining issue is **repo-local OMX overlay normalization**, not recovery of a lost repo-graph system.
 
+## Quick Verification Command
+
+After future OMX updates/setup refreshes, run:
+
+```bash
+npm run omx:post-update:verify
+```
+
+This checks the preserved repo-graph lane, the intentional absence of legacy skill links, marketplace/plugin alignment, project-skill-config expectations, repo-graph health, and targeted git status for the repo-local OMX surfaces we care about.
+
 ## Suggested Next Move
 If you want, the next best action is a bounded restore/normalize pass over:
 - `.codex/project-skill-config.md`
