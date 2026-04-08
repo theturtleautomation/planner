@@ -1,13 +1,13 @@
 {
-  "generated_at": "2026-04-08T13:50:46.604Z",
+  "generated_at": "2026-04-08T15:09:59.040Z",
   "mode": "apply",
   "change_count": 0,
   "maintenance": {
     "state": "fresh",
     "isFresh": true,
-    "automationLastRunAt": "2026-04-08T13:50:46.604Z",
-    "trackedItemCount": 30,
-    "trackedArtifactCount": 65,
+    "automationLastRunAt": "2026-04-08T15:09:59.040Z",
+    "trackedItemCount": 29,
+    "trackedArtifactCount": 64,
     "latestTrackedArtifact": {
       "path": ".omx/ledger/planner-ledger.json",
       "itemIds": [
@@ -18,7 +18,7 @@
         "Planner project tracking library",
         "Canonical ledger surfaces"
       ],
-      "modified_at": "2026-04-08T13:46:14.872Z"
+      "modified_at": "2026-04-08T15:06:32.012Z"
     },
     "staleTrackedArtifactCount": 0,
     "staleTrackedArtifacts": [],
@@ -34,22 +34,22 @@
           "id": "file:.codex/skills/project-ledger/SKILL.md",
           "label": ".codex/skills/project-ledger/SKILL.md",
           "source_file": ".codex/skills/project-ledger/SKILL.md",
-          "community_id": 6
+          "community_id": 0
         },
         {
           "id": "heading:.codex/skills/project-ledger/SKILL.md#canonical-sources",
           "label": "Canonical Sources",
           "source_file": ".codex/skills/project-ledger/SKILL.md",
-          "community_id": 6
+          "community_id": 0
         },
         {
           "id": "heading:.codex/skills/project-ledger/SKILL.md#commands",
           "label": "Commands",
           "source_file": ".codex/skills/project-ledger/SKILL.md",
-          "community_id": 6
+          "community_id": 0
         }
       ],
-      "explanation": "Explain: .codex/skills/project-ledger/SKILL.md\nID: file:.codex/skills/project-ledger/SKILL.md\nKind: file\nSource file: .codex/skills/project-ledger/SKILL.md\nCommunity: 6\nWhy it matters: this file is directly connected to 20 graph neighbors\nCommunity sample: .omx/ledger/planner-ledger.json, .omx/plans/test-spec-planner-ledger-population-pass-5-solidstart-family.md, .omx/plans/prd-combined-ledger-automation-graphify-omx-integration-pass.md, .omx/plans/prd-planner-ledger-population-pass-6-solidstart-cross-family-convergence.md, .omx/plans/prd-planner-ledger-omx-automation-lane.md\nGraph evidence:\n- .omx/ledger/automation-report.md [references]\n- .omx/ledger/current-status.md [references]\n- .omx/ledger/planner-ledger.json [references]\n- scripts/project-ledger.mjs [references]\n- Canonical Sources [contains]\n- Commands [contains]"
+      "explanation": "Explain: .codex/skills/project-ledger/SKILL.md\nID: file:.codex/skills/project-ledger/SKILL.md\nKind: file\nSource file: .codex/skills/project-ledger/SKILL.md\nCommunity: 0\nWhy it matters: this file is directly connected to 20 graph neighbors\nCommunity sample: .omx/plans/prd-planner-ledger-population-pass-5-solidstart-family.md, scripts/project-ledger.mjs, .omx/plans/test-spec-planner-ledger-population-pass-5-solidstart-family.md, scripts/project-ledger.test.mjs, .omx/ledger/current-status.md\nGraph evidence:\n- .omx/ledger/automation-report.md [references]\n- .omx/ledger/current-status.md [references]\n- .omx/ledger/planner-ledger.json [references]\n- scripts/project-ledger.mjs [references]\n- Canonical Sources [contains]\n- Commands [contains]"
     },
     "initiative:import-existing-project-program": {
       "query": "docs/import-existing-project-plan.md",
@@ -59,22 +59,22 @@
           "id": "file:docs/import-existing-project-plan.md",
           "label": "docs/import-existing-project-plan.md",
           "source_file": "docs/import-existing-project-plan.md",
-          "community_id": 25
+          "community_id": 14
         },
         {
           "id": "heading:docs/import-existing-project-plan.md#analysis-quality",
           "label": "Analysis quality",
           "source_file": "docs/import-existing-project-plan.md",
-          "community_id": 25
+          "community_id": 14
         },
         {
           "id": "heading:docs/import-existing-project-plan.md#auth",
           "label": "Auth",
           "source_file": "docs/import-existing-project-plan.md",
-          "community_id": 25
+          "community_id": 14
         }
       ],
-      "explanation": "Explain: docs/import-existing-project-plan.md\nID: file:docs/import-existing-project-plan.md\nKind: file\nSource file: docs/import-existing-project-plan.md\nCommunity: 25\nWhy it matters: this file is directly connected to 63 graph neighbors\nCommunity sample: docs/import-existing-project-plan.md, docs/import-existing-project-phase-3-analysis-draft-and-socratic-handoff-spec.md, docs/import-existing-project-phase-5-local-provider-spec.md, docs/import-existing-project-phase-2-github-acquisition-spec.md, docs/import-existing-project-phase-6-reimport-and-lifecycle-cleanup-spec.md\nGraph evidence:\n- .codex/project-skill-config.md [references]\n- .omx/ledger/automation-trace.json [references]\n- .omx/ledger/planner-ledger.json [references]\n- .omx/plans/prd-planner-ledger-population-pass-1-root-governance.md [references]\n- .omx/plans/prd-planner-ledger-population-pass-3-import-builder-blueprint.md [references]\n- planner-core/src/blueprint.rs [references]"
+      "explanation": "Explain: docs/import-existing-project-plan.md\nID: file:docs/import-existing-project-plan.md\nKind: file\nSource file: docs/import-existing-project-plan.md\nCommunity: 14\nWhy it matters: this file is directly connected to 62 graph neighbors\nCommunity sample: docs/import-existing-project-plan.md, docs/import-existing-project-phase-3-analysis-draft-and-socratic-handoff-spec.md, docs/import-existing-project-phase-5-local-provider-spec.md, docs/import-existing-project-phase-2-github-acquisition-spec.md, docs/import-existing-project-phase-6-reimport-and-lifecycle-cleanup-spec.md\nGraph evidence:\n- .codex/project-skill-config.md [references]\n- .omx/ledger/automation-trace.json [references]\n- .omx/ledger/planner-ledger.json [references]\n- .omx/plans/prd-planner-ledger-population-pass-1-root-governance.md [references]\n- .omx/plans/prd-planner-ledger-population-pass-3-import-builder-blueprint.md [references]\n- planner-core/src/blueprint.rs [references]"
     },
     "workstream:socratic-project-picture": {
       "query": "docs/socratic-current-state-vs-thesis-review.md",
@@ -84,22 +84,22 @@
           "id": "file:docs/socratic-current-state-vs-thesis-review.md",
           "label": "docs/socratic-current-state-vs-thesis-review.md",
           "source_file": "docs/socratic-current-state-vs-thesis-review.md",
-          "community_id": 12
+          "community_id": 31
         },
         {
           "id": "heading:docs/socratic-current-state-vs-thesis-review.md#1-purpose",
           "label": "1. Purpose",
           "source_file": "docs/socratic-current-state-vs-thesis-review.md",
-          "community_id": 12
+          "community_id": 31
         },
         {
           "id": "heading:docs/socratic-current-state-vs-thesis-review.md#10-recommended-interpretation",
           "label": "10. Recommended Interpretation",
           "source_file": "docs/socratic-current-state-vs-thesis-review.md",
-          "community_id": 12
+          "community_id": 31
         }
       ],
-      "explanation": "Explain: docs/socratic-current-state-vs-thesis-review.md\nID: file:docs/socratic-current-state-vs-thesis-review.md\nKind: file\nSource file: docs/socratic-current-state-vs-thesis-review.md\nCommunity: 12\nWhy it matters: this file is directly connected to 58 graph neighbors\nCommunity sample: docs/socratic-project-picture-and-convergence-workspace-spec.md, docs/socratic-project-picture-mvp-path-and-gap-analysis-spec.md, docs/socratic-current-state-vs-thesis-review.md, .omx/plans/prd-socratic-seed-handling.md, .omx/plans/prd-socratic-deferred-items-scoping.md\nGraph evidence:\n- .omx/ledger/automation-trace.json [references]\n- .omx/ledger/planner-ledger.json [references]\n- .omx/plans/prd-socratic-current-state-vs-thesis-review.md [references]\n- .omx/plans/prd-socratic-deferred-items-scoping.md [references]\n- .omx/plans/prd-socratic-drifted-items-alignment.md [references]\n- .omx/plans/prd-socratic-seed-handling.md [references]"
+      "explanation": "Explain: docs/socratic-current-state-vs-thesis-review.md\nID: file:docs/socratic-current-state-vs-thesis-review.md\nKind: file\nSource file: docs/socratic-current-state-vs-thesis-review.md\nCommunity: 31\nWhy it matters: this file is directly connected to 57 graph neighbors\nCommunity sample: docs/socratic-project-picture-and-convergence-workspace-spec.md, docs/socratic-project-picture-mvp-path-and-gap-analysis-spec.md, docs/socratic-current-state-vs-thesis-review.md, .omx/specs/socratic-deferred-items/index.md\nGraph evidence:\n- .omx/ledger/automation-trace.json [references]\n- .omx/ledger/planner-ledger.json [references]\n- .omx/plans/prd-socratic-current-state-vs-thesis-review.md [references]\n- .omx/plans/prd-socratic-deferred-items-scoping.md [references]\n- .omx/plans/prd-socratic-drifted-items-alignment.md [references]\n- .omx/plans/prd-socratic-seed-handling.md [references]"
     },
     "risk:ledger-staleness": {
       "query": "Ledger staleness if update discipline is weak",
@@ -109,6 +109,54 @@
     }
   },
   "history": [
+    {
+      "generated_at": "2026-04-08T15:09:59.040Z",
+      "mode": "apply",
+      "change_count": 0,
+      "confidence": {
+        "high": 0,
+        "medium": 0,
+        "low": 0
+      },
+      "states": {
+        "applied": 0,
+        "skipped": 0,
+        "provisional": 0
+      },
+      "changed_items": []
+    },
+    {
+      "generated_at": "2026-04-08T15:07:03.574Z",
+      "mode": "apply",
+      "change_count": 0,
+      "confidence": {
+        "high": 0,
+        "medium": 0,
+        "low": 0
+      },
+      "states": {
+        "applied": 0,
+        "skipped": 0,
+        "provisional": 0
+      },
+      "changed_items": []
+    },
+    {
+      "generated_at": "2026-04-08T15:05:43.038Z",
+      "mode": "apply",
+      "change_count": 0,
+      "confidence": {
+        "high": 0,
+        "medium": 0,
+        "low": 0
+      },
+      "states": {
+        "applied": 0,
+        "skipped": 0,
+        "provisional": 0
+      },
+      "changed_items": []
+    },
     {
       "generated_at": "2026-04-08T13:50:46.604Z",
       "mode": "apply",
@@ -382,60 +430,6 @@
         "provisional": 0
       },
       "changed_items": []
-    },
-    {
-      "generated_at": "2026-04-08T01:40:38.518Z",
-      "mode": "apply",
-      "change_count": 1,
-      "confidence": {
-        "high": 0,
-        "medium": 1,
-        "low": 0
-      },
-      "states": {
-        "applied": 1,
-        "skipped": 0,
-        "provisional": 0
-      },
-      "changed_items": [
-        "workstream:socratic-project-picture"
-      ]
-    },
-    {
-      "generated_at": "2026-04-08T00:51:36.844Z",
-      "mode": "apply",
-      "change_count": 1,
-      "confidence": {
-        "high": 0,
-        "medium": 1,
-        "low": 0
-      },
-      "states": {
-        "applied": 1,
-        "skipped": 0,
-        "provisional": 0
-      },
-      "changed_items": [
-        "workstream:socratic-project-picture"
-      ]
-    },
-    {
-      "generated_at": "2026-04-08T00:50:30.380Z",
-      "mode": "apply",
-      "change_count": 1,
-      "confidence": {
-        "high": 0,
-        "medium": 1,
-        "low": 0
-      },
-      "states": {
-        "applied": 1,
-        "skipped": 0,
-        "provisional": 0
-      },
-      "changed_items": [
-        "workstream:socratic-project-picture"
-      ]
     }
   ]
 }

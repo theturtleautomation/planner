@@ -12,13 +12,9 @@ Project skill: `.codex/skills/project-ledger/SKILL.md`
 
 ## Routing Queue
 
-### Ready for $ralph
-
-- **Planner project tracking library** (initiative, active) — Planner-wide OMX-linked ledger initiative with root governance, converged cross-family truth, a cleaned linkage spine, repo-graph-coupled automation, an explicit freshness maintenance signal, and a concrete next remediation pass for automation convergence, dry-run proof, and planning/plugin truth. Graph output remains evidence, not blueprint truth.
-- **Planner-Ledger Review Remediation Pass** (plan, ready_for_implementation) — Approved bounded follow-on to stabilize planner-ledger automation convergence, dry-run proof, project-plan truth, and local plugin-manifest alignment.
-
 ### Monitoring / watch
 
+- **Planner project tracking library** (initiative, active) — Planner-wide OMX-linked ledger initiative with root governance, converged cross-family truth, a cleaned linkage spine, repo-graph-coupled automation, an explicit freshness maintenance signal, and the review-remediation pass for automation convergence, dry-run proof, and planning/plugin truth now landed. Graph output remains evidence, not blueprint truth.
 - **Repository README** (governance_artifact, active) — Top-level repository overview that anchors planner-wide context and links into active parent lanes.
 - **Workspace operating instructions (AGENTS.md)** (governance_artifact, active) — Top-level operating contract that constrains planner-wide execution and orchestration behavior.
 - **Workspace companion instructions (CLAUDE.md)** (governance_artifact, active) — Companion repo guidance that participates in planner-wide workflow and planning grounding.
@@ -59,7 +55,7 @@ Project skill: `.codex/skills/project-ledger/SKILL.md`
 
 ## Active Workstreams and Initiatives
 
-- **Planner project tracking library** — Planner-wide OMX-linked ledger initiative with root governance, converged cross-family truth, a cleaned linkage spine, repo-graph-coupled automation, an explicit freshness maintenance signal, and a concrete next remediation pass for automation convergence, dry-run proof, and planning/plugin truth. Graph output remains evidence, not blueprint truth. _(next: ready_for_ralph)_
+- **Planner project tracking library** — Planner-wide OMX-linked ledger initiative with root governance, converged cross-family truth, a cleaned linkage spine, repo-graph-coupled automation, an explicit freshness maintenance signal, and the review-remediation pass for automation convergence, dry-run proof, and planning/plugin truth now landed. Graph output remains evidence, not blueprint truth. _(next: monitoring)_
 - **Planner SolidStart platform direction** — Convergence center for the full SolidStart tree and the cleaner cross-family truth spanning import, Socratic, UI-reset, design-system, blueprint/knowledge, builder, and audit surfaces. _(next: complete)_
 - **Planner design system** — Design-system family now converges its canonical token/hierarchy work with SolidStart typography, command-rail, and command-desk truth. _(next: complete)_
 - **Planner UI reset** — UI-reset family now converges its route-by-route reset intent with SolidStart shell, route, and session-workspace truth. _(next: complete)_
@@ -94,9 +90,9 @@ Project skill: `.codex/skills/project-ledger/SKILL.md`
 ## Planner Ledger Maintenance Signal
 
 - Maintenance state: **fresh**
-- Last automation run: `2026-04-08T13:50:46.604Z`
-- Tracked non-complete artifacts: **65** across **30** items
-- Latest tracked artifact change: `.omx/ledger/planner-ledger.json` at `2026-04-08T13:46:14.872Z`
+- Last automation run: `2026-04-08T15:09:59.040Z`
+- Tracked non-complete artifacts: **64** across **29** items
+- Latest tracked artifact change: `.omx/ledger/planner-ledger.json` at `2026-04-08T15:06:32.012Z`
 - Artifacts newer than last automation run: **0**
 - Attention items: none
 

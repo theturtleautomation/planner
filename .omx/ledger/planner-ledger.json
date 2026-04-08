@@ -144,8 +144,8 @@
       "kind": "initiative",
       "title": "Planner project tracking library",
       "status": "active",
-      "routing_state": "ready_for_ralph",
-      "summary": "Planner-wide OMX-linked ledger initiative with root governance, converged cross-family truth, a cleaned linkage spine, repo-graph-coupled automation, an explicit freshness maintenance signal, and a concrete next remediation pass for automation convergence, dry-run proof, and planning/plugin truth. Graph output remains evidence, not blueprint truth.",
+      "routing_state": "monitoring",
+      "summary": "Planner-wide OMX-linked ledger initiative with root governance, converged cross-family truth, a cleaned linkage spine, repo-graph-coupled automation, an explicit freshness maintenance signal, and the review-remediation pass for automation convergence, dry-run proof, and planning/plugin truth now landed. Graph output remains evidence, not blueprint truth.",
       "artifacts": [
         ".omx/specs/deep-interview-socratic-project-tracking-library.md",
         ".omx/plans/prd-socratic-project-tracking-library.md",
@@ -4574,9 +4574,6 @@
         ],
         "informed_by": [
           "risk:ledger-staleness"
-        ],
-        "follow_on": [
-          "plan:planner-ledger-review-remediation-pass"
         ]
       },
       "tags": [
@@ -4589,9 +4586,9 @@
       "id": "plan:planner-ledger-review-remediation-pass",
       "kind": "plan",
       "title": "Planner-Ledger Review Remediation Pass",
-      "status": "ready_for_implementation",
-      "routing_state": "ready_for_ralph",
-      "summary": "Approved bounded follow-on to stabilize planner-ledger automation convergence, dry-run proof, project-plan truth, and local plugin-manifest alignment.",
+      "status": "complete",
+      "routing_state": "complete",
+      "summary": "Approved and landed bounded follow-on to stabilize planner-ledger automation convergence, dry-run proof, project-plan truth, and local plugin-manifest alignment.",
       "artifacts": [
         ".omx/plans/prd-planner-ledger-review-remediation-pass.md",
         ".omx/plans/test-spec-planner-ledger-review-remediation-pass.md",
