@@ -7,8 +7,9 @@
     "project:status": "node scripts/project-ledger.mjs --summary",
     "project:ledger:validate": "node scripts/project-ledger.mjs --validate",
     "project:ledger:refresh": "node scripts/project-ledger.mjs --render",
-    "project:ledger:auto": "node scripts/project-ledger.mjs --auto",
-    "repo-graph:status": "bash scripts/repo-graph-status.sh",
+  "project:ledger:auto": "node scripts/project-ledger.mjs --auto",
+  "docs:report": "node scripts/docs-report.mjs",
+  "repo-graph:status": "bash scripts/repo-graph-status.sh",
     "repo-graph:build": "bash scripts/repo-graph.sh build",
     "repo-graph:update": "bash scripts/repo-graph.sh update",
     "repo-graph:cluster": "bash scripts/repo-graph.sh cluster-only",
@@ -20,7 +21,8 @@
     "repo-graph:mcp:ensure": "bash scripts/repo-graph-mcp.sh ensure",
     "test": "npm run test --prefix planner-solid",
     "test:repo-graph-family-fidelity": "node --test scripts/repo-graph-family-fidelity.test.mjs",
-    "test:ledger": "node --test scripts/project-ledger.test.mjs",
+  "test:ledger": "node --test scripts/project-ledger.test.mjs",
+  "test:docs-report": "node --test scripts/docs-report.test.mjs",
     "lint": "npm run lint --prefix planner-solid",
     "omx:post-update:verify": "bash scripts/omx-post-update-verify.sh"
   }
