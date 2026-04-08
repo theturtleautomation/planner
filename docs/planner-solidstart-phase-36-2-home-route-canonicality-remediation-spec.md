@@ -3,7 +3,7 @@
 **Status:** implemented  
 **Date:** 2026-03-31  
 **Parent:** [Planner SolidStart Phase 36 Home Project Directory Consolidation Spec](/home/thetu/planner/docs/planner-solidstart-phase-36-home-project-directory-consolidation-spec.md)  
-**Related Planning:** [Planner SolidStart Phase 36.1 Frontend Mock Vite Shell Duplication Remediation Spec](/home/thetu/planner/docs/planner-solidstart-phase-36-1-frontend-mock-vite-shell-duplication-remediation-spec.md), [Planner SolidStart Phase 35.10 Builder Frontend Mock Runtime Alignment Spec](/home/thetu/planner/docs/planner-solidstart-phase-35-10-builder-frontend-mock-runtime-alignment-spec.md), [Project Plan](/home/thetu/planner/docs/project-plan.md)  
+**Related Planning:** [Planner SolidStart Phase 36.1 Frontend Mock Vite Shell Duplication Remediation Spec](/home/thetu/planner/docs/planner-solidstart-phase-36-1-frontend-mock-vite-shell-duplication-remediation-spec.md), [Planner SolidStart Phase 35.10 Builder Frontend Mock Runtime Alignment Spec](/home/thetu/planner/docs/planner-solidstart-phase-35-10-builder-frontend-mock-runtime-alignment-spec.md), [Planner OMX Project Plan](/home/thetu/planner/.omx/ledger/project-plan.md)  
 **Source Review:** 2026-03-31 code review of the implemented Phase 36 surfaces found two remaining contract gaps: the home composer still degrades through `/projects/new`, and `/projects` is only a client-side redirect page rather than a true route-level redirect or thin alias
 
 ## 1. Executive Judgment

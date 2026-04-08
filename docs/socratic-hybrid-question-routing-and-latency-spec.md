@@ -2,7 +2,7 @@
 
 **Status:** implemented  
 **Date:** 2026-03-23  
-**Parent:** [Project Plan](/home/thetu/planner/docs/project-plan.md)  
+**Parent:** [Planner OMX Project Plan](/home/thetu/planner/.omx/ledger/project-plan.md)  
 **Source Research:** [Phase 07 Socratic Prompt Protocol Redesign Implementation](/home/thetu/planner/docs/phase-07-socratic-prompt-protocol-redesign-implementation.md), [Phase 13 Socratic Focused Question Lobby Reset Spec](/home/thetu/planner/docs/phase-13-socratic-realtime-workspace-deltas-and-warm-prompt-library-spec.md), official OpenAI models guidance reviewed on 2026-03-23
 
 ## Problem & Intent

@@ -4,7 +4,7 @@
 **Date:** 2026-03-30  
 **Parent:** [Planner SolidStart Phase 35 Backendless Mock Route Coverage Spec](/home/thetu/planner/docs/planner-solidstart-phase-35-backendless-mock-route-coverage-spec.md)  
 **Depends On:** [Planner SolidStart Phase 35.8 Backendless Mock Closeout Remediation Spec](/home/thetu/planner/docs/planner-solidstart-phase-35-8-backendless-mock-closeout-remediation-spec.md)  
-**Related Planning:** [Builder Local Workflow](/home/thetu/planner/docs/builder-local-workflow.md), [Project Plan](/home/thetu/planner/docs/project-plan.md), [README.md](/home/thetu/planner/README.md)  
+**Related Planning:** [Builder Local Workflow](/home/thetu/planner/docs/builder-local-workflow.md), [Planner OMX Project Plan](/home/thetu/planner/.omx/ledger/project-plan.md), [README.md](/home/thetu/planner/README.md)  
 **Source Review:** 2026-03-30 review of the completed Phase 35 tranche, `planner-solid/e2e`, frontend mock scenario modules, and the remaining `planner-solid` build warning
 
 ## 1. Executive Judgment

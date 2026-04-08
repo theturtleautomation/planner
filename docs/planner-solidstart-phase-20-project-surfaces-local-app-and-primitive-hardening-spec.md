@@ -3,7 +3,7 @@
 **Status:** implemented  
 **Date:** 2026-03-25  
 **Parent:** [Planner SolidStart Platform Direction Spec](/home/thetu/planner/docs/planner-solidstart-platform-direction-spec.md)  
-**Related Planning:** [Planner SolidStart Phase 03 Project Review And Build Readiness Spec](/home/thetu/planner/docs/planner-solidstart-phase-03-project-review-and-build-readiness-spec.md), [Planner SolidStart Phase 14 Project Import Review Route Spec](/home/thetu/planner/docs/planner-solidstart-phase-14-project-import-review-route-spec.md), [Planner SolidStart Phase 19 Typography, Alignment, And Visual Consistency Remediation Spec](/home/thetu/planner/docs/planner-solidstart-phase-19-typography-alignment-and-visual-consistency-remediation-spec.md), [Project Plan](/home/thetu/planner/docs/project-plan.md)  
+**Related Planning:** [Planner SolidStart Phase 03 Project Review And Build Readiness Spec](/home/thetu/planner/docs/planner-solidstart-phase-03-project-review-and-build-readiness-spec.md), [Planner SolidStart Phase 14 Project Import Review Route Spec](/home/thetu/planner/docs/planner-solidstart-phase-14-project-import-review-route-spec.md), [Planner SolidStart Phase 19 Typography, Alignment, And Visual Consistency Remediation Spec](/home/thetu/planner/docs/planner-solidstart-phase-19-typography-alignment-and-visual-consistency-remediation-spec.md), [Planner OMX Project Plan](/home/thetu/planner/.omx/ledger/project-plan.md)  
 **Source Audit:** user-provided 2026-03-25 executive-grade review of the active `planner-solid` project surfaces plus direct repo inspection of `planner-solid`
 
 ## 1. Executive Judgment

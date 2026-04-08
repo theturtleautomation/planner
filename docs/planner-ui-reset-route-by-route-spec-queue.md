@@ -2,7 +2,7 @@
 
 **Status:** Implemented  
 **Date:** 2026-03-22  
-**Parent:** [Project Plan](/home/thetu/planner/docs/project-plan.md)  
+**Parent:** [Planner OMX Project Plan](/home/thetu/planner/.omx/ledger/project-plan.md)  
 **Related Planning:** [Planner Design System Command Center Plan](/home/thetu/planner/docs/planner-design-system-command-center-plan.md), [Phase 13 Socratic Focused Question Lobby Reset Spec](/home/thetu/planner/docs/phase-13-socratic-realtime-workspace-deltas-and-warm-prompt-library-spec.md), [Project-First UI Research Sessions](/home/thetu/planner/docs/project-first-ui-research-sessions.md), [Planner UI Reset Tranche Audit Remediation Spec](/home/thetu/planner/docs/planner-ui-reset-tranche-audit-remediation-spec.md), [Planner UI Reset Residual Corrections Spec](/home/thetu/planner/docs/planner-ui-reset-residual-corrections-spec.md), [Planner UI Reset Audit Evidence Closeout Spec](/home/thetu/planner/docs/planner-ui-reset-audit-evidence-closeout-spec.md)  
 **Source Research:** route inventory from [App.tsx](/home/thetu/planner/planner-web/src/App.tsx), current page components under `planner-web/src/pages/`, current implemented design-system follow-on specs, and external research on visibility of system status, recognition rather than recall, discoverability, disclosure patterns, progress signaling, and layout hierarchy from Nielsen Norman Group, Apple, Fluent, Material, and Carbon
 
@@ -272,7 +272,7 @@ These are the first-pass route lenses each child spec should start from.
 - do not create all child specs in one pass unless the route is trivially small
 - do one child spec at a time and sync planning docs after each material change
 - if a child spec materially changes the queue order, update this parent doc and
-  [project-plan.md](/home/thetu/planner/docs/project-plan.md)
+  [Planner OMX Project Plan](/home/thetu/planner/.omx/ledger/project-plan.md)
 - if a route can be solved by tightening an existing spec instead of opening a
   new child spec, record that explicitly
 - if a route has no real product problem after review, close its ID as

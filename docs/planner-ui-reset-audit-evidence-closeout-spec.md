@@ -2,7 +2,7 @@
 
 **Status:** Implemented
 **Date:** 2026-03-22
-**Parent:** [Project Plan](/home/thetu/planner/docs/project-plan.md)
+**Parent:** [Planner OMX Project Plan](/home/thetu/planner/.omx/ledger/project-plan.md)
 **Related Planning:** [Planner UI Reset Route-By-Route Spec Queue](/home/thetu/planner/docs/planner-ui-reset-route-by-route-spec-queue.md), [Planner UI Reset Phase 00 Shell Navigation And Auth Spec](/home/thetu/planner/docs/planner-ui-reset-phase-00-shell-navigation-and-auth-spec.md), [Phase 13 Socratic Focused Question Lobby Reset Spec](/home/thetu/planner/docs/phase-13-socratic-realtime-workspace-deltas-and-warm-prompt-library-spec.md), [Planner UI Reset Tranche Audit Remediation Spec](/home/thetu/planner/docs/planner-ui-reset-tranche-audit-remediation-spec.md), [Planner UI Reset Residual Corrections Spec](/home/thetu/planner/docs/planner-ui-reset-residual-corrections-spec.md)
 **Source Audit:** 2026-03-22 UI redesign tranche audit against specs, implementation, and route tests
 
@@ -30,8 +30,8 @@ It is not a new UI redesign pass.
   - [planner-ui-reset-phase-00-shell-navigation-and-auth-spec.md](/home/thetu/planner/docs/planner-ui-reset-phase-00-shell-navigation-and-auth-spec.md)
   - [phase-13-socratic-realtime-workspace-deltas-and-warm-prompt-library-spec.md](/home/thetu/planner/docs/phase-13-socratic-realtime-workspace-deltas-and-warm-prompt-library-spec.md)
   - [planner-ui-reset-route-by-route-spec-queue.md](/home/thetu/planner/docs/planner-ui-reset-route-by-route-spec-queue.md)
-  - [project-plan.md](/home/thetu/planner/docs/project-plan.md)
-  - [session-start-and-doc-index.md](/home/thetu/planner/docs/session-start-and-doc-index.md)
+  - [Planner OMX Project Plan](/home/thetu/planner/.omx/ledger/project-plan.md)
+  - [Planner OMX Project Plan](/home/thetu/planner/.omx/ledger/project-plan.md)
 
 ### Out of scope
 
@@ -57,7 +57,7 @@ It is not a new UI redesign pass.
   [SocraticWorkspace.tsx](/home/thetu/planner/planner-web/src/components/SocraticWorkspace.tsx),
   but the current tests do not directly prove the hidden-by-default context
   shelf or the focus-transition branch state described in the spec.
-- [project-plan.md](/home/thetu/planner/docs/project-plan.md)
+- [Planner OMX Project Plan](/home/thetu/planner/.omx/ledger/project-plan.md)
   and
   [planner-ui-reset-route-by-route-spec-queue.md](/home/thetu/planner/docs/planner-ui-reset-route-by-route-spec-queue.md)
   still summarize the tranche as fully synchronized without pointing to a

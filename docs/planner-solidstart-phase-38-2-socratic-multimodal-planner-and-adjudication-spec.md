@@ -3,7 +3,7 @@
 **Status:** implemented  
 **Date:** 2026-04-02  
 **Parent:** [Planner SolidStart Phase 38 Socratic Multimodal Command Desk Spec](/home/thetu/planner/docs/planner-solidstart-phase-38-socratic-multimodal-command-desk-spec.md)  
-**Related Planning:** [Planner SolidStart Phase 38.1 Socratic Prompt Contract And Transport Widening Spec](/home/thetu/planner/docs/planner-solidstart-phase-38-1-socratic-prompt-contract-and-transport-widening-spec.md), [Phase 13 Socratic Realtime Workspace Deltas And Warm Prompt Library Spec](/home/thetu/planner/docs/phase-13-socratic-realtime-workspace-deltas-and-warm-prompt-library-spec.md), [Project Plan](/home/thetu/planner/docs/project-plan.md)  
+**Related Planning:** [Planner SolidStart Phase 38.1 Socratic Prompt Contract And Transport Widening Spec](/home/thetu/planner/docs/planner-solidstart-phase-38-1-socratic-prompt-contract-and-transport-widening-spec.md), [Phase 13 Socratic Realtime Workspace Deltas And Warm Prompt Library Spec](/home/thetu/planner/docs/phase-13-socratic-realtime-workspace-deltas-and-warm-prompt-library-spec.md), [Planner OMX Project Plan](/home/thetu/planner/.omx/ledger/project-plan.md)  
 **Source Review:** 2026-04-02 direct inspection of `planner-core/src/pipeline/steps/socratic/prompt_batch_planner.rs`, `planner-core/src/pipeline/steps/socratic/prompt_response_adjudicator.rs`, and `planner-core/src/pipeline/steps/socratic/socratic_engine.rs`
 
 ## 1. Purpose

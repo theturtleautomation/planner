@@ -2,7 +2,7 @@
 
 **Status:** implemented  
 **Date:** 2026-04-01  
-**Parent Planning:** [Builder Developer Docs Phase A Exhaustive Analysis](/home/thetu/planner/docs/builder-developer-docs-phase-a-exhaustive-analysis.md), [Project Plan](/home/thetu/planner/docs/project-plan.md)  
+**Parent Planning:** [Builder Developer Docs Phase A Exhaustive Analysis](/home/thetu/planner/docs/builder-developer-docs-phase-a-exhaustive-analysis.md), [Planner OMX Project Plan](/home/thetu/planner/.omx/ledger/project-plan.md)  
 **Related Planning:** [Builder Local Workflow](/home/thetu/planner/docs/builder-local-workflow.md), [Builder Fusion Project Management And Runtime Sync Spec](/home/thetu/planner/docs/builder-fusion-project-management-and-runtime-sync-spec.md)  
 
 ## 1. Purpose

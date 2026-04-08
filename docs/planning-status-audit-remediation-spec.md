@@ -2,7 +2,7 @@
 
 **Status:** Implemented  
 **Date:** 2026-03-19  
-**Parent:** [Project Plan](/home/thetu/planner/docs/project-plan.md)  
+**Parent:** [Planner OMX Project Plan](/home/thetu/planner/.omx/ledger/project-plan.md)  
 **Source Audit:** 2026-03-19 repo audit against code, tests, and planning docs
 
 ## Objective
@@ -110,10 +110,10 @@ The top-level tracker must reflect both truths at once:
   progress beyond scheduled migration cleanup
 - the Phase 06 and 06F docs explicitly distinguish implemented/test-covered
   behavior from pending manual regression
-- `docs/project-plan.md` tracks this remediation slice explicitly and then
+- `.omx/ledger/current-status.md` tracks this remediation slice explicitly and then
   advances cleanly back to the next import spec without changing the active
   product thread away from import
-- `docs/session-start-and-doc-index.md` includes this spec
+- `.omx/ledger/session-start-and-doc-index.md` includes this spec
 - all status changes are backed by focused verification evidence or explicitly
   cite the existing verification snapshot they rely on
 - no product implementation surface changes are introduced in this slice

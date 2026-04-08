@@ -2,7 +2,7 @@
 
 import { execFile as execFileCallback } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
@@ -15,6 +15,12 @@ const AUTOMATION_TRACE_PATH = path.join(ROOT_DIR, ".omx/ledger/automation-trace.
 const AUTOMATION_REPORT_PATH = path.join(ROOT_DIR, ".omx/ledger/automation-report.md");
 const REPO_GRAPH_SCRIPT_PATH = path.join(ROOT_DIR, "scripts/repo-graph.sh");
 const execFile = promisify(execFileCallback);
+const MAINTENANCE_TOLERANCE_MS = 5_000;
+const GENERATED_LEDGER_SURFACE_PATHS = new Set([
+  ".omx/ledger/current-status.md",
+  ".omx/ledger/automation-trace.json",
+  ".omx/ledger/automation-report.md",
+]);
 
 const REQUIRED_KINDS = [
   "governance_artifact",
@@ -145,11 +151,45 @@ export function buildSummary(ledger) {
     activeWork,
     deferredItems,
     activeRisks,
+    spineIntegrity: analyzePlannerLedgerSpine(ledger),
     routingQueues: [...groupedByRouting.entries()].map(([id, queue]) => ({
       id,
       label: routingLabelById[id] ?? id,
       items: queue,
     })),
+  };
+}
+
+export function analyzePlannerLedgerSpine(ledger) {
+  const items = ledger.items ?? [];
+  const itemById = new Map(items.map(item => [item.id, item]));
+  const root = itemById.get("initiative:planner-ledger");
+  const rootChildren = root?.links?.children ?? [];
+
+  const staleFollowOns = [];
+  const missingTargets = [];
+  for (const childId of rootChildren) {
+    const item = itemById.get(childId);
+    if (!item) {
+      continue;
+    }
+    for (const followId of item.links?.follow_on ?? []) {
+      const target = itemById.get(followId);
+      if (!target) {
+        missingTargets.push({ source: childId, target: followId });
+        continue;
+      }
+      if (["complete", "implemented"].includes(item.status) && ["complete", "implemented"].includes(target.status)) {
+        staleFollowOns.push({ source: childId, target: followId });
+      }
+    }
+  }
+
+  return {
+    rootChildCount: rootChildren.length,
+    staleFollowOnCount: staleFollowOns.length,
+    missingFollowOnTargetCount: missingTargets.length,
+    isClean: staleFollowOns.length === 0 && missingTargets.length === 0,
   };
 }
 
@@ -195,6 +235,115 @@ async function loadExistingAutomationTrace() {
   return JSON.parse(raw);
 }
 
+function loadExistingAutomationTraceSync() {
+  if (!existsSync(AUTOMATION_TRACE_PATH)) {
+    return null;
+  }
+
+  return JSON.parse(readFileSync(AUTOMATION_TRACE_PATH, "utf8"));
+}
+
+function toIsoTimestamp(timestampMs) {
+  return Number.isFinite(timestampMs) ? new Date(timestampMs).toISOString() : null;
+}
+
+function parseTraceTimestamp(trace) {
+  const parsed = Date.parse(trace?.generated_at ?? "");
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function trackedMaintenanceItems(ledger) {
+  return (ledger.items ?? []).filter(item => (
+    !(item.routing_state === "complete" && ["complete", "implemented"].includes(item.status))
+  ));
+}
+
+function collectTrackedMaintenanceArtifacts(trackedItems) {
+  const trackedByArtifact = new Map();
+
+  for (const item of trackedItems) {
+    for (const artifact of item.artifacts ?? []) {
+      if (GENERATED_LEDGER_SURFACE_PATHS.has(artifact)) {
+        continue;
+      }
+
+      const artifactPath = path.join(ROOT_DIR, artifact);
+      if (!existsSync(artifactPath)) {
+        continue;
+      }
+
+      const existing = trackedByArtifact.get(artifact) ?? {
+        path: artifact,
+        itemIds: [],
+        itemTitles: [],
+        modified_at: null,
+        modified_at_ms: null,
+      };
+
+      if (!existing.itemIds.includes(item.id)) {
+        existing.itemIds.push(item.id);
+      }
+      if (!existing.itemTitles.includes(item.title)) {
+        existing.itemTitles.push(item.title);
+      }
+
+      const modifiedAtMs = statSync(artifactPath).mtimeMs;
+      existing.modified_at_ms = modifiedAtMs;
+      existing.modified_at = toIsoTimestamp(modifiedAtMs);
+      trackedByArtifact.set(artifact, existing);
+    }
+  }
+
+  return [...trackedByArtifact.values()].sort((left, right) => (
+    (right.modified_at_ms ?? 0) - (left.modified_at_ms ?? 0)
+  ));
+}
+
+export function analyzeLedgerMaintenance(ledger, { trace = null } = {}) {
+  const resolvedTrace = trace ?? loadExistingAutomationTraceSync();
+  const automationLastRunAtMs = parseTraceTimestamp(resolvedTrace);
+  const trackedItems = trackedMaintenanceItems(ledger);
+  const trackedArtifacts = collectTrackedMaintenanceArtifacts(trackedItems);
+  const latestTrackedArtifact = trackedArtifacts[0] ?? null;
+  const staleTrackedArtifacts = automationLastRunAtMs == null
+    ? trackedArtifacts
+    : trackedArtifacts.filter(artifact => (
+      (artifact.modified_at_ms ?? 0) > (automationLastRunAtMs + MAINTENANCE_TOLERANCE_MS)
+    ));
+
+  const attentionReasons = [];
+  if (automationLastRunAtMs == null) {
+    attentionReasons.push("automation trace is missing or has no valid generated_at timestamp");
+  }
+  if (staleTrackedArtifacts.length > 0) {
+    attentionReasons.push(`${staleTrackedArtifacts.length} tracked artifact(s) changed after the last automation run`);
+  }
+
+  return {
+    state: attentionReasons.length === 0 ? "fresh" : "attention",
+    isFresh: attentionReasons.length === 0,
+    automationLastRunAt: toIsoTimestamp(automationLastRunAtMs),
+    trackedItemCount: trackedItems.length,
+    trackedArtifactCount: trackedArtifacts.length,
+    latestTrackedArtifact: latestTrackedArtifact
+      ? {
+        path: latestTrackedArtifact.path,
+        itemIds: latestTrackedArtifact.itemIds,
+        itemTitles: latestTrackedArtifact.itemTitles,
+        modified_at: latestTrackedArtifact.modified_at,
+      }
+      : null,
+    staleTrackedArtifactCount: staleTrackedArtifacts.length,
+    staleTrackedArtifacts: staleTrackedArtifacts.slice(0, 5).map(artifact => ({
+      path: artifact.path,
+      itemIds: artifact.itemIds,
+      itemTitles: artifact.itemTitles,
+      modified_at: artifact.modified_at,
+    })),
+    attentionReasons,
+  };
+}
+
 function repoGraphProvenance(evidence) {
   if (!evidence?.matched) {
     return null;
@@ -203,22 +352,37 @@ function repoGraphProvenance(evidence) {
   return {
     source: "repo-graph",
     query: evidence.query,
-    matches: evidence.matches ?? [],
-    explanation: evidence.explanation,
+  };
+}
+
+function comparableRoutingState(routingState) {
+  if (!routingState) {
+    return null;
+  }
+
+  return {
+    state: routingState.state ?? null,
+    confidence: routingState.confidence ?? null,
+    approval_required: routingState.approval_required ?? null,
+    recommended_routing_state: routingState.recommended_routing_state ?? null,
+    reason: routingState.reason ?? null,
+    provenance: routingState.provenance
+      ? {
+        source: routingState.provenance.source ?? null,
+        query: routingState.provenance.query ?? null,
+      }
+      : null,
   };
 }
 
 function setRoutingAutomationState(item, routingState, changes, itemId) {
   const automation = item.automation ?? {};
   const previousRouting = automation.routing ?? null;
-  const previousComparable = previousRouting
-    ? { ...previousRouting, last_evaluated_at: undefined }
-    : null;
-  const nextComparable = {
+  const previousComparable = comparableRoutingState(previousRouting);
+  const nextComparable = comparableRoutingState({
     ...(automation.routing ?? {}),
     ...routingState,
-    last_evaluated_at: undefined,
-  };
+  });
   const shouldUpdateTimestamp = JSON.stringify(previousComparable) !== JSON.stringify(nextComparable);
   const nextRouting = {
     ...(automation.routing ?? {}),
@@ -228,7 +392,7 @@ function setRoutingAutomationState(item, routingState, changes, itemId) {
       : previousRouting?.last_evaluated_at,
   };
 
-  if (JSON.stringify(previousRouting) !== JSON.stringify(nextRouting)) {
+  if (shouldUpdateTimestamp) {
     changes.push({
       itemId,
       field: "automation.routing",
@@ -315,11 +479,12 @@ async function collectRepoGraphEvidenceByItem(ledger, { runner = defaultRepoGrap
   return evidenceByItem;
 }
 
-function buildAutomationTrace({ changes, repoGraphEvidenceByItem, mode }) {
+function buildAutomationTrace({ changes, repoGraphEvidenceByItem, mode, maintenance = null }) {
   return {
     generated_at: new Date().toISOString(),
     mode,
     change_count: changes.length,
+    maintenance,
     changes: changes.map(change => ({
       ...change,
       repo_graph_evidence: repoGraphEvidenceByItem?.[change.itemId] ?? null,
@@ -363,7 +528,7 @@ function mergeAutomationTrace(previousTrace, nextTrace) {
   };
 }
 
-export function renderAutomationReportMarkdown(trace) {
+export function renderAutomationReportMarkdown(trace, { maintenance = trace.maintenance ?? null } = {}) {
   const lines = [];
   const history = trace.history ?? [];
   const latest = history[0] ?? summarizeTraceEntry(trace);
@@ -379,6 +544,33 @@ export function renderAutomationReportMarkdown(trace) {
   lines.push(`- Change count: **${latest.change_count}**`);
   lines.push(`- Confidence mix: high=${latest.confidence.high}, medium=${latest.confidence.medium}, low=${latest.confidence.low}`);
   lines.push(`- Routing states: applied=${latest.states.applied}, skipped=${latest.states.skipped}, provisional=${latest.states.provisional}`);
+  lines.push("");
+  lines.push("## Freshness / Maintenance");
+  lines.push("");
+  if (!maintenance) {
+    lines.push("- Maintenance signal unavailable.");
+  } else {
+    lines.push(`- Maintenance state: **${maintenance.state}**`);
+    lines.push(`- Last automation run: ${maintenance.automationLastRunAt ? `\`${maintenance.automationLastRunAt}\`` : "_missing_"}`);
+    lines.push(`- Tracked non-complete artifacts: **${maintenance.trackedArtifactCount}** across **${maintenance.trackedItemCount}** items`);
+    if (maintenance.latestTrackedArtifact) {
+      lines.push(`- Latest tracked artifact change: \`${maintenance.latestTrackedArtifact.path}\` at \`${maintenance.latestTrackedArtifact.modified_at}\``);
+    } else {
+      lines.push("- Latest tracked artifact change: _none_");
+    }
+    lines.push(`- Artifacts newer than last automation run: **${maintenance.staleTrackedArtifactCount}**`);
+    if (maintenance.attentionReasons.length === 0) {
+      lines.push("- Attention items: none");
+    } else {
+      lines.push("- Attention items:");
+      for (const reason of maintenance.attentionReasons) {
+        lines.push(`  - ${reason}`);
+      }
+      for (const artifact of maintenance.staleTrackedArtifacts) {
+        lines.push(`  - \`${artifact.path}\` (${artifact.itemTitles.join(", ")}) changed at \`${artifact.modified_at}\``);
+      }
+    }
+  }
   lines.push("");
   lines.push("## Latest Change Details");
   lines.push("");
@@ -483,7 +675,7 @@ export function applyAutomation(ledger, { repoGraphEvidenceByItem = {}, requireR
     const distinctStates = [...new Set(linkedStates)];
     const confidence = distinctStates.length === 1 ? "high" : "medium";
     const reason = evidence?.matched
-      ? `repo-graph evidence + linked item routing state (${evidence.query})`
+      ? "repo-graph evidence + linked item routing state"
       : "linked item routing state";
 
     if (confidence === "high" || confidence === "medium") {
@@ -504,7 +696,7 @@ export function applyAutomation(ledger, { repoGraphEvidenceByItem = {}, requireR
   return { ledger: nextLedger, changes };
 }
 
-export function renderStatusMarkdown(ledger) {
+export function renderStatusMarkdown(ledger, { maintenance = analyzeLedgerMaintenance(ledger) } = {}) {
   const summary = buildSummary(ledger);
   const lines = [];
 
@@ -557,6 +749,37 @@ export function renderStatusMarkdown(ledger) {
   }
   lines.push("");
 
+  lines.push("## Planner Ledger Spine Integrity");
+  lines.push("");
+  lines.push(`- Root child count: **${summary.spineIntegrity.rootChildCount}**`);
+  lines.push(`- Stale follow-on links: **${summary.spineIntegrity.staleFollowOnCount}**`);
+  lines.push(`- Missing follow-on targets: **${summary.spineIntegrity.missingFollowOnTargetCount}**`);
+  lines.push(`- Spine status: **${summary.spineIntegrity.isClean ? "clean" : "attention"}**`);
+  lines.push("");
+  lines.push("## Planner Ledger Maintenance Signal");
+  lines.push("");
+  lines.push(`- Maintenance state: **${maintenance.state}**`);
+  lines.push(`- Last automation run: ${maintenance.automationLastRunAt ? `\`${maintenance.automationLastRunAt}\`` : "_missing_"}`);
+  lines.push(`- Tracked non-complete artifacts: **${maintenance.trackedArtifactCount}** across **${maintenance.trackedItemCount}** items`);
+  if (maintenance.latestTrackedArtifact) {
+    lines.push(`- Latest tracked artifact change: \`${maintenance.latestTrackedArtifact.path}\` at \`${maintenance.latestTrackedArtifact.modified_at}\``);
+  } else {
+    lines.push("- Latest tracked artifact change: _none_");
+  }
+  lines.push(`- Artifacts newer than last automation run: **${maintenance.staleTrackedArtifactCount}**`);
+  if (maintenance.attentionReasons.length === 0) {
+    lines.push("- Attention items: none");
+  } else {
+    lines.push("- Attention items:");
+    for (const reason of maintenance.attentionReasons) {
+      lines.push(`  - ${reason}`);
+    }
+    for (const artifact of maintenance.staleTrackedArtifacts) {
+      lines.push(`  - \`${artifact.path}\` (${artifact.itemTitles.join(", ")}) changed at \`${artifact.modified_at}\``);
+    }
+  }
+  lines.push("");
+
   lines.push("## Automation Surfaces");
   lines.push("");
   lines.push("- Canonical machine-readable trace: `.omx/ledger/automation-trace.json`");
@@ -600,20 +823,26 @@ export async function automateLedger({ dryRun = false } = {}) {
     throw new Error(`Ledger validation failed after automation:\n- ${errors.join("\n- ")}`);
   }
 
-  const trace = mergeAutomationTrace(previousTrace, buildAutomationTrace({
+  const traceWithoutMaintenance = buildAutomationTrace({
     changes,
     repoGraphEvidenceByItem,
     mode: dryRun ? "dry-run" : "apply",
-  }));
+  });
 
   if (!dryRun && changes.length > 0) {
     await writeLedger(automatedLedger);
-    await writeFile(STATUS_PATH, renderStatusMarkdown(automatedLedger), "utf8");
   }
 
+  const maintenance = analyzeLedgerMaintenance(automatedLedger, { trace: traceWithoutMaintenance });
+  const trace = mergeAutomationTrace(previousTrace, {
+    ...traceWithoutMaintenance,
+    maintenance,
+  });
+
   if (!dryRun) {
+    await writeFile(STATUS_PATH, renderStatusMarkdown(automatedLedger, { maintenance }), "utf8");
     await writeFile(AUTOMATION_TRACE_PATH, `${JSON.stringify(trace, null, 2)}\n`, "utf8");
-    await writeFile(AUTOMATION_REPORT_PATH, renderAutomationReportMarkdown(trace), "utf8");
+    await writeFile(AUTOMATION_REPORT_PATH, renderAutomationReportMarkdown(trace, { maintenance }), "utf8");
   }
 
   return {

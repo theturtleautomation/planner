@@ -2,7 +2,7 @@
 
 **Status:** implemented  
 **Date:** 2026-03-24  
-**Parent:** [Project Plan](/home/thetu/planner/docs/project-plan.md)  
+**Parent:** [Planner OMX Project Plan](/home/thetu/planner/.omx/ledger/project-plan.md)  
 **Related Planning:** [Socratic Lobby Live Virtualized Document Spec](/home/thetu/planner/docs/socratic-lobby-live-virtualized-document-spec.md), [Socratic Lobby Consultant Desk Spec](/home/thetu/planner/docs/socratic-lobby-consultant-desk-spec.md), [Socratic Lobby First-Reveal Preload Gate Spec](/home/thetu/planner/docs/socratic-lobby-first-reveal-preload-gate-spec.md), [Socratic Lobby Document Chrome And Scroll De-escalation Spec](/home/thetu/planner/docs/socratic-lobby-document-chrome-and-scroll-de-escalation-spec.md), [Phase 12 Socratic Live Question Workspace Spec](/home/thetu/planner/docs/phase-12-socratic-live-question-workspace-spec.md)
 
 > Planning note (2026-03-24): this spec supersedes the live virtualized

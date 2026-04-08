@@ -2,7 +2,7 @@
 
 **Status:** Implemented  
 **Date:** 2026-03-22  
-**Parent:** [Project Plan](/home/thetu/planner/docs/project-plan.md)  
+**Parent:** [Planner OMX Project Plan](/home/thetu/planner/.omx/ledger/project-plan.md)  
 **Related Planning:** [Socratic Ethereal Cascade Redesign Spec](/home/thetu/planner/docs/socratic-ethereal-cascade-redesign-spec.md), [Phase 13 Socratic Focused Question Lobby Reset Spec](/home/thetu/planner/docs/phase-13-socratic-realtime-workspace-deltas-and-warm-prompt-library-spec.md), [Phase 12 Socratic Live Question Workspace Spec](/home/thetu/planner/docs/phase-12-socratic-live-question-workspace-spec.md)  
 **Source Audit:** 2026-03-22 implementation audit against the redesign spec, current `planner-web` code, and named verification surfaces
 

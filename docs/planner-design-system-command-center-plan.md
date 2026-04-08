@@ -2,7 +2,7 @@
 
 **Status:** Implemented  
 **Date:** 2026-03-22  
-**Parent:** [Project Plan](/home/thetu/planner/docs/project-plan.md)
+**Parent:** [Planner OMX Project Plan](/home/thetu/planner/.omx/ledger/project-plan.md)
 
 ## Purpose
 

@@ -2,7 +2,7 @@
 
 **Status:** superseded planning artifact
 **Date:** 2026-03-22
-**Parent:** [Project Plan](/home/thetu/planner/docs/project-plan.md)
+**Parent:** [Planner OMX Project Plan](/home/thetu/planner/.omx/ledger/project-plan.md)
 
 > Planning note (2026-03-24): this document is a historical early-slice
 > planning artifact from the pre-consultant-desk / pre-master-detail era of

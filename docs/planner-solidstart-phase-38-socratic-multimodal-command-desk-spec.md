@@ -3,7 +3,7 @@
 **Status:** implemented  
 **Date:** 2026-04-02  
 **Parent:** [Planner SolidStart Phase 31 Session Workspace Route Family Decomposition Spec](/home/thetu/planner/docs/planner-solidstart-phase-31-session-workspace-route-family-decomposition-spec.md)  
-**Related Planning:** [Planner SolidStart Phase 34 Session Question-Bank Workspace Reset Spec](/home/thetu/planner/docs/planner-solidstart-phase-34-session-question-bank-workspace-reset-spec.md), [Planner SolidStart Phase 37 Session Workspace Command Rail Hierarchy Spec](/home/thetu/planner/docs/planner-solidstart-phase-37-session-workspace-command-rail-hierarchy-spec.md), [Planner SolidStart Phase 37.5 Session Header Signal Consolidation Spec](/home/thetu/planner/docs/planner-solidstart-phase-37-5-session-header-signal-consolidation-spec.md), [Socratic Initial Prompt Bank And Dynamic Hydration Spec](/home/thetu/planner/docs/socratic-initial-prompt-bank-and-dynamic-hydration-spec.md), [Phase 13 Socratic Realtime Workspace Deltas And Warm Prompt Library Spec](/home/thetu/planner/docs/phase-13-socratic-realtime-workspace-deltas-and-warm-prompt-library-spec.md), [Planner SolidStart Phase 18 Prompt-Bank Conformance And Closeout Remediation Spec](/home/thetu/planner/docs/planner-solidstart-phase-18-prompt-bank-conformance-and-closeout-remediation-spec.md), [Project Plan](/home/thetu/planner/docs/project-plan.md)  
+**Related Planning:** [Planner SolidStart Phase 34 Session Question-Bank Workspace Reset Spec](/home/thetu/planner/docs/planner-solidstart-phase-34-session-question-bank-workspace-reset-spec.md), [Planner SolidStart Phase 37 Session Workspace Command Rail Hierarchy Spec](/home/thetu/planner/docs/planner-solidstart-phase-37-session-workspace-command-rail-hierarchy-spec.md), [Planner SolidStart Phase 37.5 Session Header Signal Consolidation Spec](/home/thetu/planner/docs/planner-solidstart-phase-37-5-session-header-signal-consolidation-spec.md), [Socratic Initial Prompt Bank And Dynamic Hydration Spec](/home/thetu/planner/docs/socratic-initial-prompt-bank-and-dynamic-hydration-spec.md), [Phase 13 Socratic Realtime Workspace Deltas And Warm Prompt Library Spec](/home/thetu/planner/docs/phase-13-socratic-realtime-workspace-deltas-and-warm-prompt-library-spec.md), [Planner SolidStart Phase 18 Prompt-Bank Conformance And Closeout Remediation Spec](/home/thetu/planner/docs/planner-solidstart-phase-18-prompt-bank-conformance-and-closeout-remediation-spec.md), [Planner OMX Project Plan](/home/thetu/planner/.omx/ledger/project-plan.md)  
 **Source Review:** 2026-04-02 direct inspection of `planner-schemas/src/artifacts/socratic.rs`, `planner-core/src/pipeline/steps/socratic/prompt_batch_planner.rs`, `planner-solid/src/lib/types.ts`, `planner-solid/src/routes/sessions/session-workspace-controller.ts`, `planner-solid/src/routes/sessions/session-workspace-screen.tsx`, and `planner-solid/src/app.css`
 
 ## 1. Executive Judgment
@@ -292,7 +292,7 @@ Implementation state:
    ultra-wide layouts
 4. the spec preserves backward compatibility and responsive fallback as
    first-class constraints
-5. `docs/project-plan.md` and `docs/session-start-and-doc-index.md` both point
+5. `.omx/ledger/project-plan.md` and `.omx/ledger/session-start-and-doc-index.md` both point
    to this phase as the next truthful planning branch
 
 ## 11. Verification Plan
@@ -301,8 +301,8 @@ Planning verification for this draft:
 
 - direct source review of the current schema, planner, frontend transport, and
   route layout files named above
-- planning sync in `docs/project-plan.md`
-- doc-index sync in `docs/session-start-and-doc-index.md`
+- planning sync in `.omx/ledger/project-plan.md`
+- doc-index sync in `.omx/ledger/session-start-and-doc-index.md`
 
 Implementation verification for follow-on child slices should include:
 

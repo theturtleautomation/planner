@@ -5,6 +5,8 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import {
+  analyzePlannerLedgerSpine,
+  analyzeLedgerMaintenance,
   applyAutomation,
   automateLedger,
   buildSummary,
@@ -106,6 +108,8 @@ test("rendered markdown surfaces key ledger sections", async () => {
   assert.match(markdown, /Routing Queue/);
   assert.match(markdown, /Deferred Items/);
   assert.match(markdown, /Automation Surfaces/);
+  assert.match(markdown, /Planner Ledger Spine Integrity/);
+  assert.match(markdown, /Planner Ledger Maintenance Signal/);
   assert.match(markdown, /automation-report\.md/);
   assert.match(markdown, /npm run project:status/);
   assert.match(markdown, /Planner design system command center plan/);
@@ -258,6 +262,48 @@ test("socratic pass 2 is implemented and later non-socratic passes remain queued
   ]);
 });
 
+test("planner-ledger spine integrity reports no stale follow-ons after cleanup", async () => {
+  const ledger = await loadLedger();
+  const spine = analyzePlannerLedgerSpine(ledger);
+  const itemById = new Map(ledger.items.map(item => [item.id, item]));
+
+  assert.equal(spine.staleFollowOnCount, 0);
+  assert.equal(spine.missingFollowOnTargetCount, 0);
+  assert.equal(spine.isClean, true);
+  assert.equal(itemById.get("risk:artifact-sprawl").status, "complete");
+  assert.deepEqual(itemById.get("slice:planner-ledger-population-analysis").links.follow_on, undefined);
+  assert.deepEqual(itemById.get("slice:planner-ledger-population-pass-1-root-governance").links.follow_on, undefined);
+  assert.deepEqual(itemById.get("slice:planner-ledger-population-pass-2-socratic").links.follow_on, undefined);
+  assert.deepEqual(itemById.get("slice:planner-ledger-population-pass-3-import-builder-blueprint").links.follow_on, undefined);
+  assert.deepEqual(itemById.get("slice:planner-ledger-population-pass-5-solidstart-family").links.follow_on, undefined);
+});
+
+test("maintenance signal reports fresh current ledger state when no tracked artifacts outrun automation", async () => {
+  const ledger = await loadLedger();
+  const result = await automateLedger({ dryRun: true });
+  const maintenance = analyzeLedgerMaintenance(ledger, { trace: result.trace });
+
+  assert.equal(maintenance.state, "fresh");
+  assert.equal(maintenance.isFresh, true);
+  assert.equal(maintenance.staleTrackedArtifactCount, 0);
+  assert.equal(typeof maintenance.automationLastRunAt, "string");
+  assert.ok(maintenance.trackedArtifactCount > 0);
+});
+
+test("maintenance signal reports attention when tracked artifacts outrun automation", async () => {
+  const ledger = await loadLedger();
+  const maintenance = analyzeLedgerMaintenance(ledger, {
+    trace: {
+      generated_at: "2000-01-01T00:00:00.000Z",
+    },
+  });
+
+  assert.equal(maintenance.state, "attention");
+  assert.equal(maintenance.isFresh, false);
+  assert.ok(maintenance.staleTrackedArtifactCount > 0);
+  assert.match(maintenance.attentionReasons.join(" "), /changed after the last automation run/);
+});
+
 test("touched seeded entries use canonical relation keys", async () => {
   const ledger = await loadLedger();
   const itemById = new Map(ledger.items.map(item => [item.id, item]));
@@ -385,13 +431,70 @@ test("graph-coupled automation requires repo-graph evidence and leaves a why-tra
 });
 
 test("automateLedger returns repo-graph-backed automation trace metadata in dry-run mode", async () => {
+  const stableFiles = [
+    ".omx/ledger/planner-ledger.json",
+    ".omx/ledger/current-status.md",
+    ".omx/ledger/automation-trace.json",
+    ".omx/ledger/automation-report.md",
+  ];
+  const before = await Promise.all(stableFiles.map(file => readFile(path.join(ROOT_DIR, file), "utf8")));
   const result = await automateLedger({ dryRun: true });
+  const after = await Promise.all(stableFiles.map(file => readFile(path.join(ROOT_DIR, file), "utf8")));
 
-  assert.equal(result.changeCount, 0);
+  assert.equal(result.dryRun, true);
   assert.equal(typeof result.trace.generated_at, "string");
   assert.equal(result.trace.mode, "dry-run");
   assert.ok(result.trace.item_evidence["initiative:planner-ledger"]);
   assert.equal(typeof result.trace.item_evidence["initiative:planner-ledger"].matched, "boolean");
+  assert.deepEqual(after, before);
+});
+
+test("volatile repo-graph provenance does not create synthetic routing mutations", async () => {
+  const ledger = await loadLedger();
+  const clonedLedger = JSON.parse(JSON.stringify(ledger));
+  const itemById = new Map(clonedLedger.items.map(item => [item.id, item]));
+  const socratic = itemById.get("workstream:socratic-project-picture");
+
+  socratic.automation = {
+    routing: {
+      state: "applied",
+      confidence: "medium",
+      approval_required: false,
+      recommended_routing_state: "needs_deep_interview",
+      reason: "repo-graph evidence + linked item routing state",
+      provenance: {
+        source: "repo-graph",
+        query: "docs/socratic-current-state-vs-thesis-review.md",
+      },
+      last_evaluated_at: "2026-04-08T00:00:00.000Z",
+    },
+  };
+  socratic.routing_state = "monitoring";
+
+  const evidence = {
+    "workstream:socratic-project-picture": {
+      query: "docs/socratic-current-state-vs-thesis-review.md",
+      matched: true,
+      matches: [
+        {
+          id: "file:docs/socratic-current-state-vs-thesis-review.md",
+          label: "docs/socratic-current-state-vs-thesis-review.md",
+          source_file: "docs/socratic-current-state-vs-thesis-review.md",
+          community_id: 999,
+        },
+      ],
+      explanation: "Explain: changed volatile payload",
+    },
+  };
+
+  const { changes, ledger: automatedLedger } = applyAutomation(clonedLedger, {
+    repoGraphEvidenceByItem: evidence,
+    requireRepoGraphEvidence: true,
+  });
+  const automatedById = new Map(automatedLedger.items.map(item => [item.id, item]));
+
+  assert.equal(automatedById.get("workstream:socratic-project-picture").routing_state, "needs_deep_interview");
+  assert.ok(!changes.some(change => change.itemId === "workstream:socratic-project-picture" && change.field === "automation.routing"));
 });
 
 test("medium-confidence graph-coupled routing now auto-mutates while preserving confidence/provenance", async () => {
@@ -468,6 +571,8 @@ test("current ledger surfaces durable confidence/provenance without provisional 
   assert.equal(socratic.automation.routing.confidence, "medium");
   assert.equal(socratic.automation.routing.approval_required, false);
   assert.match(markdown, /## Automation Surfaces/);
+  assert.match(markdown, /## Planner Ledger Maintenance Signal/);
+  assert.match(markdown, /Maintenance state: \*\*fresh\*\*/);
   assert.match(markdown, /automation-report\.md/);
 });
 
@@ -476,6 +581,19 @@ test("automation report renders a human-readable rolling history from the canoni
     generated_at: "2026-04-06T00:00:00.000Z",
     mode: "apply",
     change_count: 1,
+    maintenance: {
+      state: "fresh",
+      automationLastRunAt: "2026-04-06T00:00:00.000Z",
+      trackedArtifactCount: 4,
+      trackedItemCount: 2,
+      latestTrackedArtifact: {
+        path: "docs/example.md",
+        modified_at: "2026-04-05T23:59:00.000Z",
+      },
+      staleTrackedArtifactCount: 0,
+      staleTrackedArtifacts: [],
+      attentionReasons: [],
+    },
     changes: [
       {
         itemId: "workstream:socratic-project-picture",
@@ -503,6 +621,8 @@ test("automation report renders a human-readable rolling history from the canoni
 
   assert.match(report, /# Automation Operator Report/);
   assert.match(report, /Machine-readable canonical trace: `.omx\/ledger\/automation-trace\.json`/);
+  assert.match(report, /## Freshness \/ Maintenance/);
+  assert.match(report, /Maintenance state: \*\*fresh\*\*/);
   assert.match(report, /## Rolling History/);
   assert.match(report, /changes=1; high=0; medium=1; low=0; applied=1; skipped=0; provisional=0/);
 });

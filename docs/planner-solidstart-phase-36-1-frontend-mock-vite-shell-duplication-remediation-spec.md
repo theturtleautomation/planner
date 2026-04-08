@@ -3,7 +3,7 @@
 **Status:** implemented  
 **Date:** 2026-03-31  
 **Parent:** [Planner SolidStart Phase 36 Home Project Directory Consolidation Spec](/home/thetu/planner/docs/planner-solidstart-phase-36-home-project-directory-consolidation-spec.md)  
-**Related Planning:** [Planner SolidStart Phase 35.10 Builder Frontend Mock Runtime Alignment Spec](/home/thetu/planner/docs/planner-solidstart-phase-35-10-builder-frontend-mock-runtime-alignment-spec.md), [Builder Local Workflow](/home/thetu/planner/docs/builder-local-workflow.md), [Project Plan](/home/thetu/planner/docs/project-plan.md)  
+**Related Planning:** [Planner SolidStart Phase 35.10 Builder Frontend Mock Runtime Alignment Spec](/home/thetu/planner/docs/planner-solidstart-phase-35-10-builder-frontend-mock-runtime-alignment-spec.md), [Builder Local Workflow](/home/thetu/planner/docs/builder-local-workflow.md), [Planner OMX Project Plan](/home/thetu/planner/.omx/ledger/project-plan.md)  
 **Source Review:** 2026-03-31 live frontend-mock runtime inspection during Phase 36 delivery showed that `VITE_PLANNER_FRONTEND_MOCK=1 npm run dev --prefix planner-solid` renders two `.app-shell` trees in the Vite dev runtime, leaving a second duplicated shell below the fold and destabilizing the top-of-home create flow
 
 ## 1. Executive Judgment

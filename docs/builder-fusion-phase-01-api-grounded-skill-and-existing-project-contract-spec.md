@@ -3,7 +3,7 @@
 **Status:** implemented  
 **Date:** 2026-03-29  
 **Parent Spec:** [Builder Fusion Project Management And Runtime Sync Spec](/home/thetu/planner/docs/builder-fusion-project-management-and-runtime-sync-spec.md)  
-**Related Planning:** [Builder Local Workflow](/home/thetu/planner/docs/builder-local-workflow.md), [Project Plan](/home/thetu/planner/docs/project-plan.md)  
+**Related Planning:** [Builder Local Workflow](/home/thetu/planner/docs/builder-local-workflow.md), [Planner OMX Project Plan](/home/thetu/planner/.omx/ledger/project-plan.md)  
 
 ## Purpose
 
@@ -291,7 +291,7 @@ It should also require operator-facing warnings before:
 
 - [Builder Fusion Project Management And Runtime Sync Spec](/home/thetu/planner/docs/builder-fusion-project-management-and-runtime-sync-spec.md)
 - [Builder Local Workflow](/home/thetu/planner/docs/builder-local-workflow.md)
-- [Project Plan](/home/thetu/planner/docs/project-plan.md)
+- [Planner OMX Project Plan](/home/thetu/planner/.omx/ledger/project-plan.md)
 
 ### State Surface
 

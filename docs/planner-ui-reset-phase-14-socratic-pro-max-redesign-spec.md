@@ -2,7 +2,7 @@
 
 **Status:** deferred
 **Date:** 2026-03-22
-**Parent:** [Project Plan](/home/thetu/planner/docs/project-plan.md)
+**Parent:** [Planner OMX Project Plan](/home/thetu/planner/.omx/ledger/project-plan.md)
 
 > Planning sync update (2026-03-23): this doc remains deferred as a superseded
 > precursor. The selected replacement direction is now captured in

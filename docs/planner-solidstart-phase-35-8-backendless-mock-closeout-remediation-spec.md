@@ -4,7 +4,7 @@
 **Date:** 2026-03-30  
 **Parent:** [Planner SolidStart Phase 35 Backendless Mock Route Coverage Spec](/home/thetu/planner/docs/planner-solidstart-phase-35-backendless-mock-route-coverage-spec.md)  
 **Depends On:** [Planner SolidStart Phase 35.7 Events, Discovery, And Admin Frontend Mock Spec](/home/thetu/planner/docs/planner-solidstart-phase-35-7-events-discovery-and-admin-frontend-mock-spec.md)  
-**Related Planning:** [Builder Local Workflow](/home/thetu/planner/docs/builder-local-workflow.md), [Project Plan](/home/thetu/planner/docs/project-plan.md)  
+**Related Planning:** [Builder Local Workflow](/home/thetu/planner/docs/builder-local-workflow.md), [Planner OMX Project Plan](/home/thetu/planner/.omx/ledger/project-plan.md)  
 **Source Review:** 2026-03-30 implementation review of the completed Phase 35 route-family slices, including `planner-solid/src/lib/mock/store.ts`, `planner-solid/e2e`, `README.md`, and `docs/builder-local-workflow.md`
 
 ## 1. Executive Judgment

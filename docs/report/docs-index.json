@@ -321,7 +321,7 @@
       "broken": [
         "docs/home/thetu/planner/docs/builder-local-workflow.md",
         "docs/home/thetu/planner/docs/builder-fusion-project-management-and-runtime-sync-spec.md",
-        "docs/home/thetu/planner/docs/project-plan.md"
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md"
       ],
       "missingRefs": [],
       "staleDays": 0,
@@ -334,10 +334,10 @@
       "broken": [
         "docs/home/thetu/planner/docs/builder-fusion-project-management-and-runtime-sync-spec.md",
         "docs/home/thetu/planner/docs/builder-local-workflow.md",
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/builder-fusion-project-management-and-runtime-sync-spec.md",
         "docs/home/thetu/planner/docs/builder-local-workflow.md",
-        "docs/home/thetu/planner/docs/project-plan.md"
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md"
       ],
       "missingRefs": [],
       "staleDays": 0,
@@ -351,7 +351,7 @@
         "docs/home/thetu/planner/docs/builder-fusion-project-management-and-runtime-sync-spec.md",
         "docs/home/thetu/planner/docs/builder-fusion-phase-01-api-grounded-skill-and-existing-project-contract-spec.md",
         "docs/home/thetu/planner/docs/builder-local-workflow.md",
-        "docs/home/thetu/planner/docs/project-plan.md"
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md"
       ],
       "missingRefs": [],
       "staleDays": 0,
@@ -365,7 +365,7 @@
         "docs/home/thetu/planner/docs/builder-fusion-project-management-and-runtime-sync-spec.md",
         "docs/home/thetu/planner/docs/builder-fusion-phase-02-existing-project-helper-contract-spec.md",
         "docs/home/thetu/planner/docs/builder-local-workflow.md",
-        "docs/home/thetu/planner/docs/project-plan.md"
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md"
       ],
       "missingRefs": [],
       "staleDays": 0,
@@ -379,7 +379,7 @@
         "docs/home/thetu/planner/docs/builder-fusion-project-management-and-runtime-sync-spec.md",
         "docs/home/thetu/planner/docs/builder-fusion-phase-03-sync-verification-workflow-spec.md",
         "docs/home/thetu/planner/docs/builder-local-workflow.md",
-        "docs/home/thetu/planner/docs/project-plan.md"
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md"
       ],
       "missingRefs": [],
       "staleDays": 0,
@@ -393,7 +393,7 @@
         "docs/home/thetu/planner/docs/builder-fusion-project-management-and-runtime-sync-spec.md",
         "docs/home/thetu/planner/docs/builder-fusion-phase-04-project-visibility-diagnosis-and-remediation-spec.md",
         "docs/home/thetu/planner/docs/builder-local-workflow.md",
-        "docs/home/thetu/planner/docs/project-plan.md"
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md"
       ],
       "missingRefs": [],
       "staleDays": 0,
@@ -405,7 +405,7 @@
       "orphan": true,
       "broken": [
         "docs/home/thetu/planner/docs/builder-local-workflow.md",
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/admin-observability-plan.md",
         "docs/home/thetu/planner/docs/builder-local-workflow.md",
         "docs/home/thetu/planner/docs/builder-fusion-phase-01-api-grounded-skill-and-existing-project-contract-spec.md",
@@ -442,7 +442,7 @@
       "broken": [
         "docs/home/thetu/planner/docs/builder-developer-docs-phase-a-exhaustive-analysis.md",
         "docs/home/thetu/planner/docs/builder-fusion-project-management-and-runtime-sync-spec.md",
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/builder.config.json",
         "docs/home/thetu/planner/.builderrules",
         "docs/home/thetu/planner/scripts/builder-launch.sh",
@@ -461,7 +461,7 @@
       "broken": [
         "docs/home/thetu/planner/docs/builder-phase-b-documented-config-and-instruction-alignment-spec.md",
         "docs/home/thetu/planner/docs/builder-developer-docs-phase-a-exhaustive-analysis.md",
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/builder-local-workflow.md",
         "docs/home/thetu/planner/docs/builder-fusion-project-management-and-runtime-sync-spec.md",
         "docs/home/thetu/planner/scripts/builder-config-common.sh",
@@ -483,7 +483,7 @@
       "orphan": true,
       "broken": [
         "docs/home/thetu/planner/docs/builder-developer-docs-phase-a-exhaustive-analysis.md",
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/builder-local-workflow.md",
         "docs/home/thetu/planner/docs/builder-fusion-project-management-and-runtime-sync-spec.md",
         "docs/home/thetu/planner/plugins/planner-builder-dsi",
@@ -503,7 +503,7 @@
       "score": 75,
       "orphan": true,
       "broken": [
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/import-existing-project-plan.md"
       ],
       "missingRefs": [],
@@ -515,7 +515,7 @@
       "score": 65,
       "orphan": true,
       "broken": [
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/import-existing-project-plan.md",
         "docs/home/thetu/planner/docs/import-existing-project-phase-9-historical-restore-spec.md",
         "docs/home/thetu/planner/planner-server/src/import.rs",
@@ -535,7 +535,7 @@
       "score": 65,
       "orphan": true,
       "broken": [
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/import-existing-project-plan.md",
         "docs/home/thetu/planner/docs/import-existing-project-phase-10-historical-review-draft-restore-spec.md",
         "docs/home/thetu/planner/planner-web/src/pages/ProjectSessionsPage.tsx",
@@ -556,7 +556,7 @@
       "score": 65,
       "orphan": true,
       "broken": [
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/import-existing-project-plan.md",
         "docs/home/thetu/planner/docs/import-existing-project-phase-11-selective-apply-merge-controls-spec.md",
         "docs/home/thetu/planner/planner-server/src/import.rs",
@@ -575,7 +575,7 @@
       "score": 65,
       "orphan": true,
       "broken": [
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/import-existing-project-plan.md",
         "docs/home/thetu/planner/docs/import-existing-project-phase-12-historical-applied-restore-for-review-spec.md",
         "docs/home/thetu/planner/planner-server/src/api.rs",
@@ -594,7 +594,7 @@
       "score": 65,
       "orphan": true,
       "broken": [
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/import-existing-project-plan.md",
         "docs/home/thetu/planner/docs/import-existing-project-phase-13-historical-entry-comparison-spec.md",
         "docs/home/thetu/planner/planner-server/src/api.rs",
@@ -613,7 +613,7 @@
       "score": 65,
       "orphan": true,
       "broken": [
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/import-existing-project-plan.md",
         "docs/home/thetu/planner/docs/import-existing-project-phase-14-arbitrary-history-comparison-spec.md",
         "docs/home/thetu/planner/planner-server/src/api.rs",
@@ -631,7 +631,7 @@
       "score": 65,
       "orphan": true,
       "broken": [
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/import-existing-project-plan.md",
         "docs/home/thetu/planner/docs/import-existing-project-phase-15-selection-aware-history-comparison-spec.md",
         "docs/home/thetu/planner/planner-server/src/api.rs",
@@ -649,7 +649,7 @@
       "score": 65,
       "orphan": true,
       "broken": [
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/import-existing-project-plan.md",
         "docs/home/thetu/planner/docs/import-existing-project-phase-1-domain-skeleton-spec.md",
         "docs/home/thetu/planner/planner-server/src/import.rs",
@@ -679,7 +679,7 @@
       "score": 65,
       "orphan": true,
       "broken": [
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/import-existing-project-plan.md",
         "docs/home/thetu/planner/docs/import-existing-project-phase-2-github-acquisition-spec.md",
         "docs/home/thetu/planner/planner-server/src/import.rs",
@@ -711,7 +711,7 @@
       "score": 65,
       "orphan": true,
       "broken": [
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/import-existing-project-plan.md",
         "docs/home/thetu/planner/docs/import-existing-project-phase-3-analysis-draft-and-socratic-handoff-spec.md",
         "docs/home/thetu/planner/planner-server/src/import.rs",
@@ -740,7 +740,7 @@
       "score": 65,
       "orphan": true,
       "broken": [
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/import-existing-project-plan.md",
         "docs/home/thetu/planner/docs/import-existing-project-phase-4-review-apply-spec.md",
         "docs/home/thetu/planner/planner-server/src/import.rs",
@@ -771,7 +771,7 @@
       "score": 65,
       "orphan": true,
       "broken": [
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/import-existing-project-plan.md",
         "docs/home/thetu/planner/docs/import-existing-project-phase-5-local-provider-spec.md",
         "docs/home/thetu/planner/planner-server/src/import.rs",
@@ -798,7 +798,7 @@
       "score": 65,
       "orphan": true,
       "broken": [
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/import-existing-project-plan.md",
         "docs/home/thetu/planner/docs/import-existing-project-phase-6-reimport-and-lifecycle-cleanup-spec.md",
         "docs/home/thetu/planner/planner-server/src/import.rs",
@@ -819,7 +819,7 @@
       "score": 65,
       "orphan": true,
       "broken": [
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/import-existing-project-plan.md",
         "docs/home/thetu/planner/docs/import-existing-project-phase-7-history-and-draft-diff-spec.md",
         "docs/home/thetu/planner/planner-server/src/api.rs",
@@ -839,7 +839,7 @@
       "score": 65,
       "orphan": true,
       "broken": [
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/import-existing-project-plan.md",
         "docs/home/thetu/planner/docs/import-existing-project-phase-8-canonical-reconciliation-spec.md",
         "docs/home/thetu/planner/planner-server/src/import.rs",
@@ -1064,7 +1064,7 @@
       "score": 65,
       "orphan": true,
       "broken": [
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/phase-08-socratic-category-drilldown-implementation.md",
         "docs/home/thetu/planner/docs/phase-08-socratic-category-drilldown-implementation.md",
         "docs/home/thetu/planner/planner-schemas/src/artifacts/socratic.rs",
@@ -1090,7 +1090,7 @@
       "score": 65,
       "orphan": true,
       "broken": [
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/phase-08-socratic-category-drilldown-implementation.md",
         "docs/home/thetu/planner/docs/phase-09-socratic-recursive-category-synthesis-spec.md",
         "docs/home/thetu/planner/planner-schemas/src/artifacts/socratic.rs",
@@ -1112,7 +1112,7 @@
       "score": 65,
       "orphan": true,
       "broken": [
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/phase-08-socratic-category-drilldown-implementation.md",
         "docs/home/thetu/planner/docs/phase-10-socratic-category-status-and-refresh-spec.md",
         "docs/home/thetu/planner/planner-core/src/pipeline/steps/socratic/socratic_engine.rs",
@@ -1135,7 +1135,7 @@
       "score": 65,
       "orphan": true,
       "broken": [
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/phase-08-socratic-category-drilldown-implementation.md",
         "docs/home/thetu/planner/docs/phase-07-socratic-prompt-protocol-redesign-implementation.md",
         "docs/home/thetu/planner/docs/phase-11-socratic-category-replay-and-validation-spec.md",
@@ -1166,7 +1166,7 @@
       "score": 65,
       "orphan": true,
       "broken": [
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/phase-12-socratic-live-question-workspace-spec.md",
         "docs/home/thetu/planner/docs/phase-11-socratic-category-replay-and-validation-spec.md",
         "docs/home/thetu/planner/docs/phase-10-socratic-category-status-and-refresh-spec.md",
@@ -1204,7 +1204,7 @@
       "score": 65,
       "orphan": true,
       "broken": [
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/planner-web/src/index.css",
         "docs/home/thetu/planner/planner-web/src/components/Layout.tsx",
         "docs/home/thetu/planner/planner-web/src/pages/HomeHubPage.tsx",
@@ -1778,7 +1778,7 @@
         "docs/home/thetu/planner/docs/planner-solidstart-phase-17-workflow-closeout-and-react-retirement-spec.md",
         "docs/home/thetu/planner/docs/socratic-solidstart-greenfield-platform-spec.md",
         "docs/home/thetu/planner/docs/socratic-initial-prompt-bank-and-dynamic-hydration-spec.md",
-        "docs/home/thetu/planner/docs/project-plan.md"
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md"
       ],
       "missingRefs": [],
       "staleDays": 0,
@@ -1799,7 +1799,7 @@
         "docs/home/thetu/planner/docs/planner-ui-reset-phase-09-events-timeline-workspace-spec.md",
         "docs/home/thetu/planner/docs/planner-ui-reset-phase-10-admin-operations-workspace-spec.md",
         "docs/home/thetu/planner/docs/planner-design-system-phase-2-editorial-typography-and-cta-spec.md",
-        "docs/home/thetu/planner/docs/project-plan.md"
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md"
       ],
       "missingRefs": [
         "src/app.css"
@@ -1816,7 +1816,7 @@
         "docs/home/thetu/planner/docs/planner-solidstart-phase-03-project-review-and-build-readiness-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-14-project-import-review-route-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-19-typography-alignment-and-visual-consistency-remediation-spec.md",
-        "docs/home/thetu/planner/docs/project-plan.md"
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md"
       ],
       "missingRefs": [
         "src/components/ui/",
@@ -1835,7 +1835,7 @@
         "docs/home/thetu/planner/docs/planner-solidstart-phase-18-prompt-bank-conformance-and-closeout-remediation-spec.md",
         "docs/home/thetu/planner/docs/socratic-initial-prompt-bank-and-dynamic-hydration-spec.md",
         "docs/home/thetu/planner/docs/session-workflow-webui-plan.md",
-        "docs/home/thetu/planner/docs/project-plan.md"
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md"
       ],
       "missingRefs": [],
       "staleDays": 0,
@@ -1853,7 +1853,7 @@
         "docs/home/thetu/planner/docs/socratic-lobby-master-detail-local-workspace-spec.md",
         "docs/home/thetu/planner/docs/socratic-lobby-consultant-desk-spec.md",
         "docs/home/thetu/planner/docs/session-workflow-webui-plan.md",
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-23-session-live-artifact-split-spec.md"
       ],
       "missingRefs": [],
@@ -1871,7 +1871,7 @@
         "docs/home/thetu/planner/docs/socratic-initial-prompt-bank-and-dynamic-hydration-spec.md",
         "docs/home/thetu/planner/docs/socratic-lobby-live-virtualized-document-spec.md",
         "docs/home/thetu/planner/docs/session-workflow-webui-plan.md",
-        "docs/home/thetu/planner/docs/project-plan.md"
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md"
       ],
       "missingRefs": [],
       "staleDays": 0,
@@ -1888,7 +1888,7 @@
         "docs/home/thetu/planner/docs/planner-solidstart-phase-23-session-live-artifact-split-spec.md",
         "docs/home/thetu/planner/docs/socratic-initial-prompt-bank-and-dynamic-hydration-spec.md",
         "docs/home/thetu/planner/docs/socratic-solidstart-greenfield-platform-spec.md",
-        "docs/home/thetu/planner/docs/project-plan.md"
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md"
       ],
       "missingRefs": [],
       "staleDays": 0,
@@ -1905,7 +1905,7 @@
         "docs/home/thetu/planner/docs/planner-solidstart-phase-23-session-live-artifact-split-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-24-socratic-runtime-contract-reset-spec.md",
         "docs/home/thetu/planner/docs/socratic-initial-prompt-bank-and-dynamic-hydration-spec.md",
-        "docs/home/thetu/planner/docs/project-plan.md"
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md"
       ],
       "missingRefs": [],
       "staleDays": 0,
@@ -1922,8 +1922,8 @@
         "docs/home/thetu/planner/docs/planner-solidstart-phase-25-socratic-runtime-verification-hardening-remediation-spec.md",
         "docs/home/thetu/planner/docs/socratic-initial-prompt-bank-and-dynamic-hydration-spec.md",
         "docs/home/thetu/planner/docs/socratic-solidstart-greenfield-platform-spec.md",
-        "docs/home/thetu/planner/docs/project-plan.md",
-        "docs/home/thetu/planner/docs/project-plan.md"
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md"
       ],
       "missingRefs": [],
       "staleDays": 0,
@@ -1939,7 +1939,7 @@
         "docs/home/thetu/planner/docs/planner-solidstart-phase-26-socratic-runtime-truth-completion-remediation-spec.md",
         "docs/home/thetu/planner/docs/socratic-initial-prompt-bank-and-dynamic-hydration-spec.md",
         "docs/home/thetu/planner/docs/session-workflow-webui-plan.md",
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-28-session-entry-and-startup-product-flow-spec.md"
       ],
       "missingRefs": [],
@@ -1956,7 +1956,7 @@
         "docs/home/thetu/planner/docs/planner-solidstart-phase-27-new-session-startup-truth-remediation-spec.md",
         "docs/home/thetu/planner/docs/socratic-initial-prompt-bank-and-dynamic-hydration-spec.md",
         "docs/home/thetu/planner/docs/session-workflow-webui-plan.md",
-        "docs/home/thetu/planner/docs/project-plan.md"
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md"
       ],
       "missingRefs": [],
       "staleDays": 0,
@@ -1973,7 +1973,7 @@
         "docs/home/thetu/planner/docs/planner-solidstart-phase-20-project-surfaces-local-app-and-primitive-hardening-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-21-session-startup-truth-and-status-clarity-spec.md",
         "docs/home/thetu/planner/docs/session-workflow-webui-plan.md",
-        "docs/home/thetu/planner/docs/project-plan.md"
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md"
       ],
       "missingRefs": [],
       "staleDays": 0,
@@ -1987,7 +1987,7 @@
         "docs/home/thetu/planner/docs/planner-solidstart-phase-29-work-entry-summary-truth-and-workflow-continuity-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-20-project-surfaces-local-app-and-primitive-hardening-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-01-projects-and-guided-work-entry-spec.md",
-        "docs/home/thetu/planner/docs/project-plan.md"
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md"
       ],
       "missingRefs": [],
       "staleDays": 0,
@@ -2002,7 +2002,7 @@
         "docs/home/thetu/planner/docs/planner-solidstart-phase-22-session-workspace-master-detail-density-and-autosave-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-23-session-live-artifact-split-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-29-work-entry-summary-truth-and-workflow-continuity-spec.md",
-        "docs/home/thetu/planner/docs/project-plan.md"
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md"
       ],
       "missingRefs": [],
       "staleDays": 0,
@@ -2017,7 +2017,7 @@
         "docs/home/thetu/planner/docs/planner-solidstart-phase-01-projects-and-guided-work-entry-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-17-workflow-closeout-and-react-retirement-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-29-work-entry-summary-truth-and-workflow-continuity-spec.md",
-        "docs/home/thetu/planner/docs/project-plan.md"
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md"
       ],
       "missingRefs": [],
       "staleDays": 0,
@@ -2032,7 +2032,7 @@
         "docs/home/thetu/planner/docs/planner-solidstart-phase-22-session-workspace-master-detail-density-and-autosave-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-23-session-live-artifact-split-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-29-work-entry-summary-truth-and-workflow-continuity-spec.md",
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-34-session-question-bank-workspace-reset-spec.md"
       ],
       "missingRefs": [],
@@ -2049,7 +2049,7 @@
         "docs/home/thetu/planner/docs/planner-solidstart-phase-23-session-live-artifact-split-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-33-session-workspace-interaction-and-artifact-refinement-spec.md",
         "docs/home/thetu/planner/docs/socratic-initial-prompt-bank-and-dynamic-hydration-spec.md",
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/socratic-initial-prompt-bank-and-dynamic-hydration-spec.md"
       ],
       "missingRefs": [],
@@ -2064,7 +2064,7 @@
         "docs/home/thetu/planner/docs/planner-solidstart-phase-35-backendless-mock-route-coverage-spec.md",
         "docs/home/thetu/planner/docs/builder-local-workflow.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-31-session-workspace-route-family-decomposition-spec.md",
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/planner-solid/src/lib/api.ts",
         "docs/home/thetu/planner/planner-solid/src/routes/sessions/session-workspace-controller.ts",
         "docs/home/thetu/planner/planner-solid/src/app.tsx",
@@ -2083,7 +2083,7 @@
         "docs/home/thetu/planner/docs/planner-solidstart-phase-35-9-backendless-mock-residual-cleanup-spec.md",
         "docs/home/thetu/planner/docs/builder-local-workflow.md",
         "docs/home/thetu/planner/docs/builder-fusion-project-management-and-runtime-sync-spec.md",
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/builder.config.json",
         "docs/home/thetu/planner/docs/builder-local-workflow.md",
         "docs/home/thetu/planner/README.md",
@@ -2111,7 +2111,7 @@
         "docs/home/thetu/planner/docs/planner-solidstart-phase-35-1-shared-frontend-mock-foundation-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-32-work-entry-ia-and-session-route-topology-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-29-work-entry-summary-truth-and-workflow-continuity-spec.md",
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/planner-solid/src/routes/index.tsx",
         "docs/home/thetu/planner/planner-solid/src/routes/projects/index.tsx",
         "docs/home/thetu/planner/planner-solid/src/routes/projects/new.tsx",
@@ -2143,7 +2143,7 @@
         "docs/home/thetu/planner/docs/planner-solidstart-phase-34-session-question-bank-workspace-reset-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-28-session-entry-and-startup-product-flow-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-26-socratic-runtime-truth-completion-remediation-spec.md",
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/planner-solid/src/routes/sessions/session-workspace-controller.ts",
         "docs/home/thetu/planner/planner-solid/src/routes/sessions/session-workspace-screen.tsx",
         "docs/home/thetu/planner/planner-solid/src/lib/mock/scenarios.ts",
@@ -2168,7 +2168,7 @@
         "docs/home/thetu/planner/docs/planner-solidstart-phase-35-3-session-workspace-frontend-mock-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-30-project-workspace-route-family-decomposition-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-29-work-entry-summary-truth-and-workflow-continuity-spec.md",
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/planner-solid/src/routes/projects/project-workspace-controller.ts",
         "docs/home/thetu/planner/planner-solid/src/routes/projects/%5BprojectSlug%5D.tsx",
         "docs/home/thetu/planner/planner-solid/src/lib/mock/scenarios.ts",
@@ -2194,7 +2194,7 @@
         "docs/home/thetu/planner/docs/planner-solidstart-phase-14-project-import-review-route-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-15-project-import-history-and-restore-route-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-16-project-import-comparison-and-selection-summary-spec.md",
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/planner-solid/src/routes/projects/%5BprojectSlug%5D/import.tsx",
         "docs/home/thetu/planner/planner-solid/src/lib/mock/scenarios.ts",
         "docs/home/thetu/planner/planner-solid/src/lib/mock/store.ts",
@@ -2215,7 +2215,7 @@
         "docs/home/thetu/planner/docs/planner-solidstart-phase-35-1-shared-frontend-mock-foundation-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-10-knowledge-inventory-route-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-11-blueprint-graph-route-spec.md",
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/planner-solid/src/routes/knowledge/index.tsx",
         "docs/home/thetu/planner/planner-solid/src/routes/blueprint/index.tsx",
         "docs/home/thetu/planner/planner-solid/src/lib/mock/scenarios.ts",
@@ -2238,7 +2238,7 @@
         "docs/home/thetu/planner/docs/planner-solidstart-phase-08-events-timeline-and-snapshots-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-09-admin-operations-route-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-12-discovery-triage-route-spec.md",
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/planner-solid/src/routes/events/index.tsx",
         "docs/home/thetu/planner/planner-solid/src/routes/discovery/index.tsx",
         "docs/home/thetu/planner/planner-solid/src/routes/admin/index.tsx",
@@ -2262,7 +2262,7 @@
         "docs/home/thetu/planner/docs/planner-solidstart-phase-35-backendless-mock-route-coverage-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-35-7-events-discovery-and-admin-frontend-mock-spec.md",
         "docs/home/thetu/planner/docs/builder-local-workflow.md",
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/planner-solid/src/lib/mock/store.ts",
         "docs/home/thetu/planner/planner-solid/src/lib/mock/runtime.ts",
         "docs/home/thetu/planner/README.md",
@@ -2289,7 +2289,7 @@
         "docs/home/thetu/planner/docs/planner-solidstart-phase-35-backendless-mock-route-coverage-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-35-8-backendless-mock-closeout-remediation-spec.md",
         "docs/home/thetu/planner/docs/builder-local-workflow.md",
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/README.md",
         "docs/home/thetu/planner/planner-solid/playwright.frontend-mock.config.ts",
         "docs/home/thetu/planner/planner-solid/src/lib/mock/scenarios.ts",
@@ -2324,7 +2324,7 @@
         "docs/home/thetu/planner/docs/planner-solidstart-phase-35-10-builder-frontend-mock-runtime-alignment-spec.md",
         "docs/home/thetu/planner/docs/builder-local-workflow.md",
         "docs/home/thetu/planner/docs/builder-fusion-project-management-and-runtime-sync-spec.md",
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-35-1-shared-frontend-mock-foundation-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-35-2-work-entry-and-queue-routes-frontend-mock-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-35-3-session-workspace-frontend-mock-spec.md",
@@ -2348,7 +2348,7 @@
         "docs/home/thetu/planner/docs/planner-solidstart-phase-36-home-project-directory-consolidation-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-35-10-builder-frontend-mock-runtime-alignment-spec.md",
         "docs/home/thetu/planner/docs/builder-local-workflow.md",
-        "docs/home/thetu/planner/docs/project-plan.md"
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md"
       ],
       "missingRefs": [],
       "staleDays": 0,
@@ -2362,7 +2362,7 @@
         "docs/home/thetu/planner/docs/planner-solidstart-phase-36-home-project-directory-consolidation-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-36-1-frontend-mock-vite-shell-duplication-remediation-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-35-10-builder-frontend-mock-runtime-alignment-spec.md",
-        "docs/home/thetu/planner/docs/project-plan.md"
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md"
       ],
       "missingRefs": [],
       "staleDays": 0,
@@ -2378,7 +2378,7 @@
         "docs/home/thetu/planner/docs/planner-solidstart-phase-01-projects-and-guided-work-entry-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-29-work-entry-summary-truth-and-workflow-continuity-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-32-work-entry-ia-and-session-route-topology-spec.md",
-        "docs/home/thetu/planner/docs/project-plan.md"
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md"
       ],
       "missingRefs": [],
       "staleDays": 0,
@@ -2393,7 +2393,7 @@
         "docs/home/thetu/planner/docs/planner-solidstart-phase-31-session-workspace-route-family-decomposition-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-34-session-question-bank-workspace-reset-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-35-3-session-workspace-frontend-mock-spec.md",
-        "docs/home/thetu/planner/docs/project-plan.md"
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md"
       ],
       "missingRefs": [],
       "staleDays": 0,
@@ -2408,7 +2408,7 @@
         "docs/home/thetu/planner/docs/planner-solidstart-phase-35-3-session-workspace-frontend-mock-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-35-10-builder-frontend-mock-runtime-alignment-spec.md",
         "docs/home/thetu/planner/docs/builder-local-workflow.md",
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-37-3-canonical-static-runtime-parity-remediation-spec.md",
         "docs/home/thetu/planner/planner-solid/e2e/phase-37-canonical-static-runtime.spec.ts",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-37-3-canonical-static-runtime-parity-remediation-spec.md"
@@ -2426,7 +2426,7 @@
         "docs/home/thetu/planner/docs/planner-solidstart-phase-37-2-session-command-rail-canonical-runtime-proof-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-35-10-builder-frontend-mock-runtime-alignment-spec.md",
         "docs/home/thetu/planner/docs/builder-local-workflow.md",
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/planner-solid/scripts/export-static.mjs",
         "docs/home/thetu/planner/planner-solid/e2e/phase-37-canonical-static-runtime.spec.ts",
         "docs/home/thetu/planner/planner-solid/playwright.canonical-static.config.ts"
@@ -2445,7 +2445,7 @@
         "docs/home/thetu/planner/docs/planner-solidstart-phase-34-session-question-bank-workspace-reset-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-37-1-session-command-rail-narrow-width-and-focus-continuity-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-37-2-session-command-rail-canonical-runtime-proof-spec.md",
-        "docs/home/thetu/planner/docs/project-plan.md"
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md"
       ],
       "missingRefs": [],
       "staleDays": 0,
@@ -2460,7 +2460,7 @@
         "docs/home/thetu/planner/docs/planner-solidstart-phase-37-1-session-command-rail-narrow-width-and-focus-continuity-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-37-2-session-command-rail-canonical-runtime-proof-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-37-4-session-question-chrome-reduction-spec.md",
-        "docs/home/thetu/planner/docs/project-plan.md"
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md"
       ],
       "missingRefs": [],
       "staleDays": 0,
@@ -2476,7 +2476,7 @@
         "docs/home/thetu/planner/docs/planner-solidstart-phase-35-3-session-workspace-frontend-mock-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-29-work-entry-summary-truth-and-workflow-continuity-spec.md",
         "docs/home/thetu/planner/docs/planner-design-system-phase-4-utility-route-consistency-spec.md",
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-34-session-question-bank-workspace-reset-spec.md"
       ],
       "missingRefs": [],
@@ -2491,7 +2491,7 @@
         "docs/home/thetu/planner/docs/planner-solidstart-phase-38-socratic-multimodal-command-desk-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-18-prompt-bank-conformance-and-closeout-remediation-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-34-session-question-bank-workspace-reset-spec.md",
-        "docs/home/thetu/planner/docs/project-plan.md"
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md"
       ],
       "missingRefs": [],
       "staleDays": 0,
@@ -2505,7 +2505,7 @@
         "docs/home/thetu/planner/docs/planner-solidstart-phase-38-socratic-multimodal-command-desk-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-38-1-socratic-prompt-contract-and-transport-widening-spec.md",
         "docs/home/thetu/planner/docs/phase-13-socratic-realtime-workspace-deltas-and-warm-prompt-library-spec.md",
-        "docs/home/thetu/planner/docs/project-plan.md"
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md"
       ],
       "missingRefs": [],
       "staleDays": 0,
@@ -2521,7 +2521,7 @@
         "docs/home/thetu/planner/docs/planner-solidstart-phase-37-5-session-header-signal-consolidation-spec.md",
         "docs/home/thetu/planner/docs/planner-design-system-phase-5-route-hierarchy-and-operational-density-spec.md",
         "docs/home/thetu/planner/docs/planner-design-system-phase-6-operational-surfaces-and-event-density-spec.md",
-        "docs/home/thetu/planner/docs/project-plan.md"
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md"
       ],
       "missingRefs": [],
       "staleDays": 0,
@@ -2539,7 +2539,7 @@
         "docs/home/thetu/planner/docs/socratic-initial-prompt-bank-and-dynamic-hydration-spec.md",
         "docs/home/thetu/planner/docs/phase-13-socratic-realtime-workspace-deltas-and-warm-prompt-library-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-18-prompt-bank-conformance-and-closeout-remediation-spec.md",
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-38-1-socratic-prompt-contract-and-transport-widening-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-38-2-socratic-multimodal-planner-and-adjudication-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-38-3-session-command-desk-ultra-wide-layout-spec.md"
@@ -2557,7 +2557,7 @@
         "docs/home/thetu/planner/docs/planner-solidstart-phase-18-prompt-bank-conformance-and-closeout-remediation-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-38-socratic-multimodal-command-desk-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-38-3-session-command-desk-ultra-wide-layout-spec.md",
-        "docs/home/thetu/planner/docs/project-plan.md"
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md"
       ],
       "missingRefs": [],
       "staleDays": 0,
@@ -2571,7 +2571,7 @@
         "docs/home/thetu/planner/docs/planner-solidstart-platform-direction-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-32-work-entry-ia-and-session-route-topology.spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-39-session-commit-continuity-and-prompt-bank-merge-spec.md",
-        "docs/home/thetu/planner/docs/project-plan.md"
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md"
       ],
       "missingRefs": [],
       "staleDays": 0,
@@ -2582,7 +2582,7 @@
       "score": 65,
       "orphan": true,
       "broken": [
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/socratic-solidstart-greenfield-platform-spec.md",
         "docs/home/thetu/planner/docs/socratic-initial-prompt-bank-and-dynamic-hydration-spec.md",
         "docs/home/thetu/planner/docs/planner-ui-reset-route-by-route-spec-queue.md",
@@ -2599,7 +2599,7 @@
       "score": 65,
       "orphan": true,
       "broken": [
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/planner-ui-reset-route-by-route-spec-queue.md",
         "docs/home/thetu/planner/docs/planner-ui-reset-phase-00-shell-navigation-and-auth-spec.md",
         "docs/home/thetu/planner/docs/phase-13-socratic-realtime-workspace-deltas-and-warm-prompt-library-spec.md",
@@ -2610,15 +2610,15 @@
         "docs/home/thetu/planner/docs/planner-ui-reset-phase-00-shell-navigation-and-auth-spec.md",
         "docs/home/thetu/planner/docs/phase-13-socratic-realtime-workspace-deltas-and-warm-prompt-library-spec.md",
         "docs/home/thetu/planner/docs/planner-ui-reset-route-by-route-spec-queue.md",
-        "docs/home/thetu/planner/docs/project-plan.md",
-        "docs/home/thetu/planner/docs/session-start-and-doc-index.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/session-start-and-doc-index.md",
         "docs/home/thetu/planner/planner-web/src/App.tsx",
         "docs/home/thetu/planner/planner-web/src/auth/Auth0Pages.tsx",
         "docs/home/thetu/planner/planner-web/src/components/Layout.tsx",
         "docs/home/thetu/planner/planner-web/src/pages/LoginPage.tsx",
         "docs/home/thetu/planner/planner-web/src/pages/SessionPage.tsx",
         "docs/home/thetu/planner/planner-web/src/components/SocraticWorkspace.tsx",
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/planner-ui-reset-route-by-route-spec-queue.md",
         "docs/home/thetu/planner/planner-web/src/auth/__tests__/Auth0Pages.test.tsx",
         "docs/home/thetu/planner/planner-web/src/pages/__tests__/SessionPage.test.tsx"
@@ -2891,7 +2891,7 @@
       "score": 75,
       "orphan": true,
       "broken": [
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/socratic-lobby-consultant-desk-spec.md"
       ],
       "missingRefs": [],
@@ -2903,15 +2903,15 @@
       "score": 65,
       "orphan": true,
       "broken": [
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/planner-ui-reset-route-by-route-spec-queue.md",
         "docs/home/thetu/planner/docs/planner-ui-reset-tranche-audit-remediation-spec.md",
         "docs/home/thetu/planner/docs/planner-ui-reset-phase-01-home-hub-spec.md",
         "docs/home/thetu/planner/docs/planner-ui-reset-phase-07-blueprint-workspace-spec.md",
         "docs/home/thetu/planner/docs/planner-ui-reset-phase-09-events-timeline-workspace-spec.md",
         "docs/home/thetu/planner/docs/planner-ui-reset-route-by-route-spec-queue.md",
-        "docs/home/thetu/planner/docs/project-plan.md",
-        "docs/home/thetu/planner/docs/session-start-and-doc-index.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/session-start-and-doc-index.md",
         "docs/home/thetu/planner/planner-web/src/pages/HomeHubPage.tsx",
         "docs/home/thetu/planner/planner-web/src/pages/__tests__/HomeHubPage.test.tsx",
         "docs/home/thetu/planner/planner-web/src/index.css",
@@ -2920,7 +2920,7 @@
         "docs/home/thetu/planner/docs/planner-ui-reset-phase-09-events-timeline-workspace-spec.md",
         "docs/home/thetu/planner/planner-web/src/pages/__tests__/EventTimelinePage.test.tsx",
         "docs/home/thetu/planner/docs/planner-ui-reset-route-by-route-spec-queue.md",
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/planner-web/src/pages/HomeHubPage.tsx",
         "docs/home/thetu/planner/docs/planner-ui-reset-phase-01-home-hub-spec.md",
         "docs/home/thetu/planner/planner-web/src/pages/BlueprintPage.tsx",
@@ -2935,7 +2935,7 @@
       "score": 65,
       "orphan": true,
       "broken": [
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/planner-design-system-command-center-plan.md",
         "docs/home/thetu/planner/docs/phase-13-socratic-realtime-workspace-deltas-and-warm-prompt-library-spec.md",
         "docs/home/thetu/planner/docs/project-first-ui-research-sessions.md",
@@ -2945,7 +2945,7 @@
         "docs/home/thetu/planner/planner-web/src/App.tsx",
         "docs/home/thetu/planner/planner-web/src/App.tsx",
         "docs/home/thetu/planner/docs/phase-13-socratic-realtime-workspace-deltas-and-warm-prompt-library-spec.md",
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/planner-ui-reset-residual-corrections-spec.md",
         "docs/home/thetu/planner/docs/planner-ui-reset-audit-evidence-closeout-spec.md",
         "docs/home/thetu/planner/docs/planner-ui-reset-tranche-audit-remediation-spec.md",
@@ -2961,15 +2961,15 @@
       "score": 65,
       "orphan": true,
       "broken": [
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/planner-ui-reset-route-by-route-spec-queue.md",
         "docs/home/thetu/planner/docs/phase-13-socratic-realtime-workspace-deltas-and-warm-prompt-library-spec.md",
         "docs/home/thetu/planner/docs/planner-ui-reset-phase-07-blueprint-workspace-spec.md",
         "docs/home/thetu/planner/docs/planner-ui-reset-phase-09-events-timeline-workspace-spec.md",
         "docs/home/thetu/planner/docs/planner-ui-reset-phase-10-admin-operations-workspace-spec.md",
         "docs/home/thetu/planner/docs/planner-ui-reset-route-by-route-spec-queue.md",
-        "docs/home/thetu/planner/docs/project-plan.md",
-        "docs/home/thetu/planner/docs/session-start-and-doc-index.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/session-start-and-doc-index.md",
         "docs/home/thetu/planner/docs/phase-13-socratic-realtime-workspace-deltas-and-warm-prompt-library-spec.md",
         "docs/home/thetu/planner/docs/planner-ui-reset-phase-07-blueprint-workspace-spec.md",
         "docs/home/thetu/planner/docs/planner-ui-reset-phase-09-events-timeline-workspace-spec.md",
@@ -2980,9 +2980,9 @@
         "docs/home/thetu/planner/planner-web/src/pages/__tests__/EventTimelinePage.test.tsx",
         "docs/home/thetu/planner/planner-web/src/pages/__tests__/AdminPage.test.tsx",
         "docs/home/thetu/planner/docs/planner-ui-reset-route-by-route-spec-queue.md",
-        "docs/home/thetu/planner/docs/project-plan.md",
-        "docs/home/thetu/planner/docs/session-start-and-doc-index.md",
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/session-start-and-doc-index.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/planner-ui-reset-route-by-route-spec-queue.md",
         "docs/home/thetu/planner/docs/phase-13-socratic-realtime-workspace-deltas-and-warm-prompt-library-spec.md",
         "docs/home/thetu/planner/docs/planner-ui-reset-phase-07-blueprint-workspace-spec.md",
@@ -3001,7 +3001,7 @@
       "score": 65,
       "orphan": true,
       "broken": [
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/import-existing-project-phase-1-domain-skeleton-spec.md",
         "docs/home/thetu/planner/docs/phase-07-socratic-prompt-protocol-redesign-implementation.md",
         "docs/home/thetu/planner/docs/phase-07-socratic-prompt-protocol-redesign-implementation-prompt.md",
@@ -3022,7 +3022,7 @@
       "updated": 1773873660000
     },
     {
-      "path": "docs/project-plan.md",
+      "path": ".omx/ledger/project-plan.md",
       "score": 65,
       "orphan": true,
       "broken": [
@@ -3343,7 +3343,7 @@
       "updated": 0
     },
     {
-      "path": "docs/session-start-and-doc-index.md",
+      "path": ".omx/ledger/session-start-and-doc-index.md",
       "score": 65,
       "orphan": true,
       "broken": [
@@ -3353,7 +3353,7 @@
         "docs/home/thetu/planner/README.md",
         "docs/home/thetu/planner/.omx/ledger/current-status.md",
         "docs/home/thetu/planner/.omx/ledger/README.md",
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/planner-ledger-population-analysis-and-pass-plan.md",
         "docs/home/thetu/planner/docs/import-existing-project-plan.md",
         "docs/home/thetu/planner/docs/session-workflow-webui-plan.md",
@@ -3554,7 +3554,7 @@
         "docs/home/thetu/planner/docs/planner-solidstart-phase-34-session-question-bank-workspace-reset-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-38-socratic-multimodal-command-desk-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-39-session-commit-continuity-and-prompt-bank-merge-spec.md",
-        "docs/home/thetu/planner/docs/project-plan.md"
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md"
       ],
       "missingRefs": [],
       "staleDays": 0,
@@ -3571,7 +3571,7 @@
         "docs/home/thetu/planner/docs/socratic-project-picture-mvp-path-and-gap-analysis-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-39-session-commit-continuity-and-prompt-bank-merge-spec.md",
         "docs/home/thetu/planner/docs/blueprint-project-root-codegraph-integration.md",
-        "docs/home/thetu/planner/docs/project-plan.md"
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md"
       ],
       "missingRefs": [],
       "staleDays": 0,
@@ -3598,7 +3598,7 @@
       "score": 65,
       "orphan": true,
       "broken": [
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/socratic-ethereal-cascade-remediation-spec.md",
         "docs/home/thetu/planner/docs/socratic-lobby-consultant-desk-spec.md",
         "docs/home/thetu/planner/planner-web/src/components/__tests__/SocraticWorkspace.test.tsx"
@@ -3612,7 +3612,7 @@
       "score": 65,
       "orphan": true,
       "broken": [
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/socratic-ethereal-cascade-redesign-spec.md",
         "docs/home/thetu/planner/docs/phase-13-socratic-realtime-workspace-deltas-and-warm-prompt-library-spec.md",
         "docs/home/thetu/planner/docs/phase-12-socratic-live-question-workspace-spec.md",
@@ -3664,7 +3664,7 @@
       "score": 65,
       "orphan": true,
       "broken": [
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/phase-07-socratic-prompt-protocol-redesign-implementation.md",
         "docs/home/thetu/planner/docs/phase-13-socratic-realtime-workspace-deltas-and-warm-prompt-library-spec.md",
         "docs/home/thetu/planner/planner-core/src/pipeline/steps/socratic/question_planner.rs",
@@ -3695,7 +3695,7 @@
       "score": 65,
       "orphan": true,
       "broken": [
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/socratic-lobby-master-detail-local-workspace-spec.md",
         "docs/home/thetu/planner/docs/socratic-lobby-first-reveal-preload-gate-spec.md",
         "docs/home/thetu/planner/docs/socratic-hybrid-question-routing-and-latency-spec.md",
@@ -3717,7 +3717,7 @@
       "score": 65,
       "orphan": true,
       "broken": [
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/phase-12-socratic-live-question-workspace-spec.md",
         "docs/home/thetu/planner/docs/phase-13-socratic-realtime-workspace-deltas-and-warm-prompt-library-spec.md",
         "docs/home/thetu/planner/docs/socratic-ethereal-cascade-redesign-spec.md",
@@ -3737,7 +3737,7 @@
       "score": 65,
       "orphan": true,
       "broken": [
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/socratic-lobby-live-virtualized-document-spec.md",
         "docs/home/thetu/planner/docs/socratic-question-canvas-alignment-and-visual-refinement-spec.md",
         "docs/home/thetu/planner/docs/planner-design-system-phase-2-editorial-typography-and-cta-spec.md",
@@ -3766,7 +3766,7 @@
       "score": 65,
       "orphan": true,
       "broken": [
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/socratic-lobby-live-virtualized-document-spec.md",
         "docs/home/thetu/planner/docs/socratic-hybrid-question-routing-and-latency-spec.md",
         "docs/home/thetu/planner/docs/socratic-lobby-document-chrome-and-scroll-de-escalation-spec.md",
@@ -3793,7 +3793,7 @@
       "score": 65,
       "orphan": true,
       "broken": [
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/socratic-lobby-consultant-desk-spec.md",
         "docs/home/thetu/planner/docs/phase-12-socratic-live-question-workspace-spec.md",
         "docs/home/thetu/planner/docs/phase-13-socratic-realtime-workspace-deltas-and-warm-prompt-library-spec.md",
@@ -3825,7 +3825,7 @@
       "score": 65,
       "orphan": true,
       "broken": [
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/socratic-lobby-live-virtualized-document-spec.md",
         "docs/home/thetu/planner/docs/socratic-lobby-consultant-desk-spec.md",
         "docs/home/thetu/planner/docs/socratic-lobby-first-reveal-preload-gate-spec.md",
@@ -3860,7 +3860,7 @@
         "docs/home/thetu/planner/docs/planner-solidstart-phase-39-session-commit-continuity-and-prompt-bank-merge-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-40-project-only-entry-and-stale-draft-hardening-spec.md",
         "docs/home/thetu/planner/docs/blueprint-project-root-codegraph-integration.md",
-        "docs/home/thetu/planner/docs/project-plan.md"
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md"
       ],
       "missingRefs": [],
       "staleDays": 0,
@@ -3879,7 +3879,7 @@
         "docs/home/thetu/planner/docs/planner-solidstart-phase-39-session-commit-continuity-and-prompt-bank-merge-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-40-project-only-entry-and-stale-draft-hardening-spec.md",
         "docs/home/thetu/planner/docs/blueprint-project-root-codegraph-integration.md",
-        "docs/home/thetu/planner/docs/project-plan.md"
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md"
       ],
       "missingRefs": [],
       "staleDays": 0,
@@ -3896,7 +3896,7 @@
         "docs/home/thetu/planner/docs/planner-solidstart-phase-39-session-commit-continuity-and-prompt-bank-merge-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-40-project-only-entry-and-stale-draft-hardening-spec.md",
         "docs/home/thetu/planner/docs/blueprint-project-root-codegraph-integration.md",
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-40-project-only-entry-and-stale-draft-hardening-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-18-prompt-bank-conformance-and-closeout-remediation-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-38-socratic-multimodal-command-desk-spec.md",
@@ -3933,7 +3933,7 @@
         "docs/home/thetu/planner/docs/socratic-project-picture-mvp-path-and-gap-analysis-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-39-session-commit-continuity-and-prompt-bank-merge-spec.md",
         "docs/home/thetu/planner/docs/planner-solidstart-phase-40-project-only-entry-and-stale-draft-hardening-spec.md",
-        "docs/home/thetu/planner/docs/project-plan.md"
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md"
       ],
       "missingRefs": [],
       "staleDays": 0,
@@ -3944,7 +3944,7 @@
       "score": 65,
       "orphan": true,
       "broken": [
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/phase-13-socratic-realtime-workspace-deltas-and-warm-prompt-library-spec.md",
         "docs/home/thetu/planner/docs/socratic-ethereal-cascade-redesign-spec.md",
         "docs/home/thetu/planner/docs/planner-design-system-phase-2-editorial-typography-and-cta-spec.md",
@@ -3975,7 +3975,7 @@
       "score": 80,
       "orphan": true,
       "broken": [
-        "docs/home/thetu/planner/docs/project-plan.md"
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md"
       ],
       "missingRefs": [],
       "staleDays": 0,
@@ -3986,7 +3986,7 @@
       "score": 80,
       "orphan": true,
       "broken": [
-        "docs/home/thetu/planner/docs/project-plan.md"
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md"
       ],
       "missingRefs": [],
       "staleDays": 0,
@@ -3997,7 +3997,7 @@
       "score": 80,
       "orphan": true,
       "broken": [
-        "docs/home/thetu/planner/docs/project-plan.md"
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md"
       ],
       "missingRefs": [],
       "staleDays": 0,
@@ -4008,7 +4008,7 @@
       "score": 80,
       "orphan": true,
       "broken": [
-        "docs/home/thetu/planner/docs/project-plan.md"
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md"
       ],
       "missingRefs": [],
       "staleDays": 0,
@@ -4019,7 +4019,7 @@
       "score": 80,
       "orphan": true,
       "broken": [
-        "docs/home/thetu/planner/docs/project-plan.md"
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md"
       ],
       "missingRefs": [],
       "staleDays": 0,
@@ -4030,7 +4030,7 @@
       "score": 80,
       "orphan": true,
       "broken": [
-        "docs/home/thetu/planner/docs/project-plan.md"
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md"
       ],
       "missingRefs": [],
       "staleDays": 0,
@@ -4041,7 +4041,7 @@
       "score": 80,
       "orphan": true,
       "broken": [
-        "docs/home/thetu/planner/docs/project-plan.md"
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md"
       ],
       "missingRefs": [],
       "staleDays": 0,
@@ -4052,7 +4052,7 @@
       "score": 80,
       "orphan": true,
       "broken": [
-        "docs/home/thetu/planner/docs/project-plan.md"
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md"
       ],
       "missingRefs": [],
       "staleDays": 0,
@@ -4063,7 +4063,7 @@
       "score": 65,
       "orphan": true,
       "broken": [
-        "docs/home/thetu/planner/docs/project-plan.md",
+        "docs/home/thetu/planner/.omx/ledger/project-plan.md",
         "docs/home/thetu/planner/docs/socratic-initial-prompt-bank-and-dynamic-hydration-spec.md",
         "docs/home/thetu/planner/docs/socratic-lobby-local-first-browser-architecture-review.md",
         "docs/home/thetu/planner/docs/socratic-lobby-master-detail-local-workspace-spec.md",
@@ -17737,7 +17737,7 @@
       "docs/planner-solidstart-phase-21-session-startup-truth-and-status-clarity-spec.md",
       "docs/planner-solidstart-phase-27-new-session-startup-truth-remediation-spec.md",
       "docs/planner-solidstart-phase-28-session-entry-and-startup-product-flow-spec.md",
-      "docs/project-plan.md"
+      ".omx/ledger/project-plan.md"
     ],
     [
       "docs/planner-solidstart-phase-22-session-workspace-master-detail-density-and-autosave-spec.md",
@@ -17802,7 +17802,7 @@
       "planner-solid/node_modules/@vitest/snapshot/README.md"
     ],
     [
-      "docs/session-start-and-doc-index.md",
+      ".omx/ledger/session-start-and-doc-index.md",
       "docs/socratic-current-state-vs-thesis-review.md",
       "planner-web/node_modules/@eslint/plugin-kit/README.md",
       "planner-web/node_modules/d3-contour/README.md",

@@ -2,7 +2,7 @@
 
 **Status:** Implemented  
 **Date:** 2026-03-22  
-**Parent:** [Project Plan](/home/thetu/planner/docs/project-plan.md)  
+**Parent:** [Planner OMX Project Plan](/home/thetu/planner/.omx/ledger/project-plan.md)  
 **Related Planning:** [Planner UI Reset Route-By-Route Spec Queue](/home/thetu/planner/docs/planner-ui-reset-route-by-route-spec-queue.md), [Phase 13 Socratic Focused Question Lobby Reset Spec](/home/thetu/planner/docs/phase-13-socratic-realtime-workspace-deltas-and-warm-prompt-library-spec.md), [Planner UI Reset Phase 07 Blueprint Workspace Spec](/home/thetu/planner/docs/planner-ui-reset-phase-07-blueprint-workspace-spec.md), [Planner UI Reset Phase 09 Events Timeline Workspace Spec](/home/thetu/planner/docs/planner-ui-reset-phase-09-events-timeline-workspace-spec.md), [Planner UI Reset Phase 10 Admin Operations Workspace Spec](/home/thetu/planner/docs/planner-ui-reset-phase-10-admin-operations-workspace-spec.md)  
 **Source Audit:** 2026-03-22 UI redesign tranche audit against specs, implementation, and route tests
 
@@ -51,9 +51,9 @@ The tranche score at audit time was:
 - queue and tracker synchronization for the UI reset tranche:
   [planner-ui-reset-route-by-route-spec-queue.md](/home/thetu/planner/docs/planner-ui-reset-route-by-route-spec-queue.md)
   and
-  [project-plan.md](/home/thetu/planner/docs/project-plan.md)
+  [Planner OMX Project Plan](/home/thetu/planner/.omx/ledger/project-plan.md)
 - durable indexing of this remediation spec in
-  [session-start-and-doc-index.md](/home/thetu/planner/docs/session-start-and-doc-index.md)
+  [Planner OMX Project Plan](/home/thetu/planner/.omx/ledger/project-plan.md)
 - child-spec truthfulness updates for:
   - [phase-13-socratic-realtime-workspace-deltas-and-warm-prompt-library-spec.md](/home/thetu/planner/docs/phase-13-socratic-realtime-workspace-deltas-and-warm-prompt-library-spec.md)
   - [planner-ui-reset-phase-07-blueprint-workspace-spec.md](/home/thetu/planner/docs/planner-ui-reset-phase-07-blueprint-workspace-spec.md)
@@ -99,7 +99,7 @@ The tranche score at audit time was:
 
 - [planner-ui-reset-route-by-route-spec-queue.md](/home/thetu/planner/docs/planner-ui-reset-route-by-route-spec-queue.md)
   and
-  [project-plan.md](/home/thetu/planner/docs/project-plan.md)
+  [Planner OMX Project Plan](/home/thetu/planner/.omx/ledger/project-plan.md)
   must stop contradicting themselves about whether the tranche is merely ready
   or already implemented.
 - The queue must explicitly describe the tranche as implemented and audited
@@ -188,8 +188,8 @@ None blocking readiness.
 - Implemented the tranche audit remediation as a bounded planning-and-
   verification slice rather than a second redesign pass.
 - Added this durable remediation spec and synchronized:
-  [session-start-and-doc-index.md](/home/thetu/planner/docs/session-start-and-doc-index.md),
-  [project-plan.md](/home/thetu/planner/docs/project-plan.md),
+  [Planner OMX Project Plan](/home/thetu/planner/.omx/ledger/project-plan.md),
+  [Planner OMX Project Plan](/home/thetu/planner/.omx/ledger/project-plan.md),
   and
   [planner-ui-reset-route-by-route-spec-queue.md](/home/thetu/planner/docs/planner-ui-reset-route-by-route-spec-queue.md)
   so the queue and tracker now describe the tranche coherently.

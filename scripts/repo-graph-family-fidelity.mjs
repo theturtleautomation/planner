@@ -24,7 +24,7 @@ const PRODUCT_CENTRAL_PREFIXES = [
 ];
 
 const PRODUCT_CENTRAL_DOC_PREFIXES = [
-  "docs/project-plan.md",
+  ".omx/ledger/current-status.md",
   "docs/planner-solidstart-",
   "docs/import-existing-project",
   "docs/blueprint-",

@@ -144,8 +144,8 @@
       "kind": "initiative",
       "title": "Planner project tracking library",
       "status": "active",
-      "routing_state": "ready_for_ralplan",
-      "summary": "Planner-wide OMX-linked ledger initiative with root governance, converged cross-family truth, repo-graph-coupled automation, and a developing confidence-tier trust model. Graph output remains evidence, not blueprint truth.",
+      "routing_state": "ready_for_ralph",
+      "summary": "Planner-wide OMX-linked ledger initiative with root governance, converged cross-family truth, a cleaned linkage spine, repo-graph-coupled automation, an explicit freshness maintenance signal, and a concrete next remediation pass for automation convergence, dry-run proof, and planning/plugin truth. Graph output remains evidence, not blueprint truth.",
       "artifacts": [
         ".omx/specs/deep-interview-socratic-project-tracking-library.md",
         ".omx/plans/prd-socratic-project-tracking-library.md",
@@ -177,14 +177,17 @@
         ".omx/plans/prd-combined-ledger-automation-graphify-omx-integration-pass.md",
         ".omx/plans/test-spec-combined-ledger-automation-graphify-omx-integration-pass.md",
         ".omx/plans/prd-repo-graph-coupled-routing-heuristics-and-operator-trust-pass.md",
-        ".omx/plans/test-spec-repo-graph-coupled-routing-heuristics-and-operator-trust-pass.md"
+        ".omx/plans/test-spec-repo-graph-coupled-routing-heuristics-and-operator-trust-pass.md",
+        ".omx/plans/prd-planner-ledger-pass-2-automation-maintenance-capability.md",
+        ".omx/plans/test-spec-planner-ledger-pass-2-automation-maintenance-capability.md",
+        ".omx/plans/prd-planner-ledger-review-remediation-pass.md",
+        ".omx/plans/test-spec-planner-ledger-review-remediation-pass.md"
       ],
       "links": {
         "constrained_by_decision": [
           "decision:ledger-is-canonical"
         ],
         "at_risk_because": [
-          "risk:artifact-sprawl",
           "risk:ledger-staleness"
         ],
         "children": [
@@ -209,15 +212,15 @@
           "plan:combined-ledger-automation-graphify-omx-integration-pass",
           "slice:combined-ledger-automation-graphify-omx-integration-pass",
           "plan:repo-graph-coupled-routing-heuristics-and-operator-trust-pass",
-          "slice:repo-graph-coupled-routing-heuristics-and-operator-trust-pass"
+          "slice:repo-graph-coupled-routing-heuristics-and-operator-trust-pass",
+          "plan:planner-ledger-pass-2-automation-maintenance-capability",
+          "plan:planner-ledger-review-remediation-pass"
         ],
         "informed_by": [
           "governance:readme",
           "governance:agents",
           "governance:claude",
           "governance:project-skill-config",
-          "governance:session-start-doc-index",
-          "governance:project-plan",
           "governance:ledger-surfaces"
         ]
       },
@@ -226,7 +229,21 @@
         "planner-wide",
         "omx",
         "tracking"
-      ]
+      ],
+      "automation": {
+        "routing": {
+          "state": "applied",
+          "confidence": "high",
+          "approval_required": false,
+          "recommended_routing_state": "ready_for_ralph",
+          "reason": "repo-graph evidence + linked item routing state",
+          "provenance": {
+            "source": "repo-graph",
+            "query": ".codex/skills/project-ledger/SKILL.md"
+          },
+          "last_evaluated_at": "2026-04-08T13:46:14.865Z"
+        }
+      }
     },
     {
       "id": "governance:readme",
@@ -324,54 +341,6 @@
       ]
     },
     {
-      "id": "governance:session-start-doc-index",
-      "kind": "governance_artifact",
-      "title": "Session start and documentation index",
-      "status": "active",
-      "routing_state": "monitoring",
-      "summary": "Canonical bootstrap/index surface that enumerates durable planning families and required docs.",
-      "artifacts": [
-        "docs/session-start-and-doc-index.md"
-      ],
-      "links": {
-        "informs": [
-          "initiative:planner-ledger",
-          "initiative:planner-solidstart-platform-direction",
-          "initiative:import-existing-project-program",
-          "workstream:socratic-project-picture"
-        ]
-      },
-      "tags": [
-        "governance",
-        "root",
-        "index"
-      ]
-    },
-    {
-      "id": "governance:project-plan",
-      "kind": "governance_artifact",
-      "title": "Top-level project plan",
-      "status": "active",
-      "routing_state": "monitoring",
-      "summary": "Top-level planner coordination surface that exposes the current active planning spine and high-level work families.",
-      "artifacts": [
-        "docs/project-plan.md"
-      ],
-      "links": {
-        "children": [
-          "initiative:planner-ledger",
-          "initiative:planner-solidstart-platform-direction",
-          "initiative:import-existing-project-program",
-          "workstream:socratic-project-picture"
-        ]
-      },
-      "tags": [
-        "governance",
-        "root",
-        "project-plan"
-      ]
-    },
-    {
       "id": "governance:ledger-surfaces",
       "kind": "governance_artifact",
       "title": "Canonical ledger surfaces",
@@ -402,7 +371,7 @@
       "routing_state": "complete",
       "summary": "Convergence center for the full SolidStart tree and the cleaner cross-family truth spanning import, Socratic, UI-reset, design-system, blueprint/knowledge, builder, and audit surfaces.",
       "artifacts": [
-        "docs/project-plan.md",
+        ".omx/ledger/project-plan.md",
         "docs/planner-solidstart-platform-direction-spec.md",
         "docs/planner-solidstart-phase-00-shell-sessions-and-socratic-anchor-spec.md",
         "docs/planner-solidstart-phase-01-projects-and-guided-work-entry-spec.md",
@@ -472,15 +441,15 @@
           "governance:agents",
           "governance:claude",
           "governance:project-skill-config",
-          "governance:session-start-doc-index",
-          "governance:project-plan",
           "initiative:planner-design-system",
           "initiative:planner-ui-reset",
           "initiative:planning-audit-remediation",
           "initiative:import-existing-project-program",
           "workstream:import-existing-project-history-and-reconciliation",
           "initiative:blueprint-knowledge-program",
-          "workstream:socratic-project-picture"
+          "workstream:socratic-project-picture",
+          "governance:session-start-doc-index",
+          "governance:project-plan"
         ],
         "children": [
           "slice:planner-solidstart-phase-00-shell-sessions-and-socratic-anchor",
@@ -665,8 +634,8 @@
       "routing_state": "monitoring",
       "summary": "Import program now converges with SolidStart import route truth across review, history/restore, and comparison surfaces.",
       "artifacts": [
-        "docs/import-existing-project-plan.md",
-        "docs/project-plan.md"
+        ".omx/ledger/project-plan.md",
+        "docs/import-existing-project-plan.md"
       ],
       "links": {
         "informed_by": [
@@ -801,9 +770,7 @@
         "informed_by": [
           "governance:readme",
           "governance:agents",
-          "governance:claude",
-          "governance:session-start-doc-index",
-          "governance:project-plan"
+          "governance:claude"
         ],
         "superseded_by": [
           "slice:planner-ledger-population-pass-6-solidstart-cross-family-convergence"
@@ -821,33 +788,12 @@
           "confidence": "medium",
           "approval_required": false,
           "recommended_routing_state": "needs_deep_interview",
-          "reason": "repo-graph evidence + linked item routing state (docs/socratic-current-state-vs-thesis-review.md)",
+          "reason": "repo-graph evidence + linked item routing state",
           "provenance": {
             "source": "repo-graph",
-            "query": "docs/socratic-current-state-vs-thesis-review.md",
-            "matches": [
-              {
-                "id": "file:docs/socratic-current-state-vs-thesis-review.md",
-                "label": "docs/socratic-current-state-vs-thesis-review.md",
-                "source_file": "docs/socratic-current-state-vs-thesis-review.md",
-                "community_id": 91
-              },
-              {
-                "id": "heading:docs/socratic-current-state-vs-thesis-review.md#1-purpose",
-                "label": "1. Purpose",
-                "source_file": "docs/socratic-current-state-vs-thesis-review.md",
-                "community_id": 91
-              },
-              {
-                "id": "heading:docs/socratic-current-state-vs-thesis-review.md#10-recommended-interpretation",
-                "label": "10. Recommended Interpretation",
-                "source_file": "docs/socratic-current-state-vs-thesis-review.md",
-                "community_id": 91
-              }
-            ],
-            "explanation": "Explain: docs/socratic-current-state-vs-thesis-review.md\nID: file:docs/socratic-current-state-vs-thesis-review.md\nKind: file\nSource file: docs/socratic-current-state-vs-thesis-review.md\nCommunity: 91\nWhy it matters: this file is directly connected to 27 graph neighbors\nCommunity sample: docs/socratic-current-state-vs-thesis-review.md, 1. Purpose, 10. Recommended Interpretation, 11. Deferred-but-Scopeable Later Analysis Flags, 2. Review Method\nGraph evidence:\n- 1. Purpose [contains]\n- 10. Recommended Interpretation [contains]\n- 11. Deferred-but-Scopeable Later Analysis Flags [contains]\n- 2. Review Method [contains]\n- 3. Current-State Summary [contains]\n- 4.1 First visible project-picture hierarchy [contains]"
+            "query": "docs/socratic-current-state-vs-thesis-review.md"
           },
-          "last_evaluated_at": "2026-04-06T21:09:38.554Z"
+          "last_evaluated_at": "2026-04-08T01:40:38.510Z"
         }
       }
     },
@@ -999,7 +945,7 @@
     {
       "id": "plan:planner-ledger-population-pass-2-socratic",
       "kind": "plan",
-      "title": "Planner Ledger Population Pass 2 \u2014 Socratic Family",
+      "title": "Planner Ledger Population Pass 2 — Socratic Family",
       "status": "complete",
       "routing_state": "complete",
       "summary": "Approved and executed planning artifacts for the Socratic-only deep population pass.",
@@ -1029,7 +975,7 @@
     {
       "id": "plan:planner-ledger-population-pass-3-import-builder-blueprint",
       "kind": "plan",
-      "title": "Planner Ledger Population Pass 3 \u2014 Import Builder Blueprint",
+      "title": "Planner Ledger Population Pass 3 — Import Builder Blueprint",
       "status": "complete",
       "routing_state": "complete",
       "summary": "Approved and executed planning artifacts for the combined import / builder / blueprint+knowledge deep family pass.",
@@ -1058,7 +1004,7 @@
     {
       "id": "plan:planner-ledger-population-pass-4-design-system-ui-reset-audits",
       "kind": "plan",
-      "title": "Planner Ledger Population Pass 4 \u2014 Design System UI Reset Audits",
+      "title": "Planner Ledger Population Pass 4 — Design System UI Reset Audits",
       "status": "complete",
       "routing_state": "complete",
       "summary": "Approved and executed planning artifacts for the combined design-system, UI-reset, and audit/remediation deep family pass.",
@@ -1096,9 +1042,6 @@
       "links": {
         "parent": [
           "initiative:planner-ledger"
-        ],
-        "follow_on": [
-          "plan:planner-ledger-population-pass-1-root-governance"
         ]
       },
       "tags": [
@@ -1123,13 +1066,7 @@
         "parent": [
           "initiative:planner-ledger"
         ],
-        "follow_on": [
-          "plan:planner-ledger-population-pass-3-import-builder-blueprint",
-          "plan:planner-ledger-population-pass-4-design-system-ui-reset-audits"
-        ],
         "informed_by": [
-          "governance:project-plan",
-          "governance:session-start-doc-index",
           "governance:ledger-surfaces"
         ]
       },
@@ -1154,10 +1091,6 @@
       "links": {
         "parent": [
           "initiative:planner-ledger"
-        ],
-        "follow_on": [
-          "plan:planner-ledger-population-pass-3-import-builder-blueprint",
-          "plan:planner-ledger-population-pass-4-design-system-ui-reset-audits"
         ]
       },
       "tags": [
@@ -1182,9 +1115,6 @@
       "links": {
         "parent": [
           "initiative:planner-ledger"
-        ],
-        "follow_on": [
-          "plan:planner-ledger-population-pass-4-design-system-ui-reset-audits"
         ]
       },
       "tags": [
@@ -2605,9 +2535,9 @@
       "id": "risk:artifact-sprawl",
       "kind": "risk",
       "title": "Artifact sprawl and orphaned follow-ons",
-      "status": "active",
-      "routing_state": "ready_for_ralplan",
-      "summary": "Slices, reviews, deferred items, and follow-on plans can become fragmented without a canonical linkage spine.",
+      "status": "complete",
+      "routing_state": "complete",
+      "summary": "Resolved planner-ledger spine cleanup pass: previously orphaned or stale follow-on paths were normalized into cleaner parent/child/deferred structure.",
       "artifacts": [
         ".omx/plans/prd-planner-ledger-population-pass-1-root-governance.md",
         ".omx/specs/deep-interview-socratic-project-tracking-library.md",
@@ -2630,7 +2560,7 @@
       "title": "Ledger staleness if update discipline is weak",
       "status": "active",
       "routing_state": "monitoring",
-      "summary": "A canonical ledger only stays useful if new durable artifacts are linked and state transitions stay maintained.",
+      "summary": "A canonical ledger only stays useful if new durable artifacts are linked and freshness signals make stale maintenance visible.",
       "artifacts": [
         ".omx/ledger/README.md"
       ],
@@ -2647,7 +2577,7 @@
     {
       "id": "plan:planner-ledger-population-pass-5-solidstart-family",
       "kind": "plan",
-      "title": "Planner Ledger Population Pass 5 \u2014 SolidStart Family",
+      "title": "Planner Ledger Population Pass 5 — SolidStart Family",
       "status": "complete",
       "routing_state": "complete",
       "summary": "Approved and executed planning artifacts for the full SolidStart family deep population pass.",
@@ -2686,9 +2616,6 @@
         "parent": [
           "initiative:planner-ledger"
         ],
-        "follow_on": [
-          "plan:planner-ledger-population-pass-6-solidstart-cross-family-convergence"
-        ],
         "informed_by": [
           "initiative:planner-solidstart-platform-direction"
         ]
@@ -2702,7 +2629,7 @@
     {
       "id": "plan:planner-ledger-population-pass-6-solidstart-cross-family-convergence",
       "kind": "plan",
-      "title": "Planner Ledger Population Pass 6 \u2014 SolidStart Cross-Family Convergence",
+      "title": "Planner Ledger Population Pass 6 — SolidStart Cross-Family Convergence",
       "status": "complete",
       "routing_state": "complete",
       "summary": "Approved and executed planning artifacts for the broad SolidStart cross-family convergence pass.",
@@ -4466,7 +4393,7 @@
     {
       "id": "plan:planner-ledger-population-pass-7-superseded-trailer-cleanup",
       "kind": "plan",
-      "title": "Planner Ledger Population Pass 7 \u2014 Superseded Trailer Cleanup",
+      "title": "Planner Ledger Population Pass 7 — Superseded Trailer Cleanup",
       "status": "complete",
       "routing_state": "complete",
       "summary": "Approved and executed planning artifacts for the superseded-trailer cleanup pass.",
@@ -4631,6 +4558,62 @@
       ]
     },
     {
+      "id": "plan:planner-ledger-pass-2-automation-maintenance-capability",
+      "kind": "plan",
+      "title": "Planner-Ledger Pass 2 Automation Maintenance Capability",
+      "status": "complete",
+      "routing_state": "complete",
+      "summary": "Approved and landed planning artifacts for the planner-ledger freshness / maintenance signal hardening pass.",
+      "artifacts": [
+        ".omx/plans/prd-planner-ledger-pass-2-automation-maintenance-capability.md",
+        ".omx/plans/test-spec-planner-ledger-pass-2-automation-maintenance-capability.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-ledger"
+        ],
+        "informed_by": [
+          "risk:ledger-staleness"
+        ],
+        "follow_on": [
+          "plan:planner-ledger-review-remediation-pass"
+        ]
+      },
+      "tags": [
+        "ledger",
+        "maintenance",
+        "plan"
+      ]
+    },
+    {
+      "id": "plan:planner-ledger-review-remediation-pass",
+      "kind": "plan",
+      "title": "Planner-Ledger Review Remediation Pass",
+      "status": "ready_for_implementation",
+      "routing_state": "ready_for_ralph",
+      "summary": "Approved bounded follow-on to stabilize planner-ledger automation convergence, dry-run proof, project-plan truth, and local plugin-manifest alignment.",
+      "artifacts": [
+        ".omx/plans/prd-planner-ledger-review-remediation-pass.md",
+        ".omx/plans/test-spec-planner-ledger-review-remediation-pass.md",
+        ".omx/context/planner-ledger-review-remediation-pass-20260408T013000Z.md"
+      ],
+      "links": {
+        "parent": [
+          "initiative:planner-ledger"
+        ],
+        "informed_by": [
+          "risk:ledger-staleness",
+          "plan:planner-ledger-pass-2-automation-maintenance-capability"
+        ]
+      },
+      "tags": [
+        "ledger",
+        "maintenance",
+        "review-remediation",
+        "plan"
+      ]
+    },
+    {
       "id": "slice:repo-graph-coupled-routing-heuristics-and-operator-trust-pass",
       "kind": "slice",
       "title": "Repo-graph-coupled routing heuristics and operator trust pass",
@@ -4652,6 +4635,54 @@
         "repo-graph",
         "trust",
         "implemented"
+      ]
+    },
+    {
+      "id": "governance:session-start-doc-index",
+      "kind": "governance_artifact",
+      "title": "Session start and documentation index",
+      "status": "active",
+      "routing_state": "monitoring",
+      "summary": "Canonical OMX-native bootstrap/index surface that enumerates durable planning families and required docs.",
+      "artifacts": [
+        ".omx/ledger/session-start-and-doc-index.md"
+      ],
+      "links": {
+        "informs": [
+          "initiative:planner-ledger",
+          "initiative:planner-solidstart-platform-direction",
+          "initiative:import-existing-project-program",
+          "workstream:socratic-project-picture"
+        ]
+      },
+      "tags": [
+        "governance",
+        "root",
+        "index"
+      ]
+    },
+    {
+      "id": "governance:project-plan",
+      "kind": "governance_artifact",
+      "title": "Top-level project plan",
+      "status": "active",
+      "routing_state": "monitoring",
+      "summary": "Top-level OMX-native planner coordination surface that exposes the current active planning spine and high-level work families.",
+      "artifacts": [
+        ".omx/ledger/project-plan.md"
+      ],
+      "links": {
+        "children": [
+          "initiative:planner-ledger",
+          "initiative:planner-solidstart-platform-direction",
+          "initiative:import-existing-project-program",
+          "workstream:socratic-project-picture"
+        ]
+      },
+      "tags": [
+        "governance",
+        "root",
+        "project-plan"
       ]
     }
   ]

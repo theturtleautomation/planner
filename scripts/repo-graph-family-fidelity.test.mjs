@@ -209,11 +209,11 @@ test("relationship ranking prefers product-central examples while retaining lowe
       { id: "file:.codex/project-skill-config.md", kind: "file", source_file: ".codex/project-skill-config.md", category: "docs", community_id: 1 },
       { id: "file:.omx/ledger/README.md", kind: "file", source_file: ".omx/ledger/README.md", category: "docs", community_id: 1 },
       { id: "file:docs/planner-solidstart-platform-direction-spec.md", kind: "file", source_file: "docs/planner-solidstart-platform-direction-spec.md", category: "docs", community_id: 2 },
-      { id: "file:docs/project-plan.md", kind: "file", source_file: "docs/project-plan.md", category: "docs", community_id: 2 },
+      { id: "file:.omx/ledger/current-status.md", kind: "file", source_file: ".omx/ledger/current-status.md", category: "docs", community_id: 2 },
     ],
     edges: [
       { source: "file:.codex/project-skill-config.md", target: "file:.omx/ledger/README.md", relation: "references" },
-      { source: "file:docs/planner-solidstart-platform-direction-spec.md", target: "file:docs/project-plan.md", relation: "references" },
+      { source: "file:docs/planner-solidstart-platform-direction-spec.md", target: "file:.omx/ledger/current-status.md", relation: "references" },
     ],
   };
   const manifest = { built_at: "2026-04-07T00:00:00Z", total_files: 4, nodes: 4, edges: 2, communities: 2 };

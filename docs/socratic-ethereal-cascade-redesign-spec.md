@@ -2,7 +2,7 @@
 
 **Status:** Implemented  
 **Date:** 2026-03-22  
-**Parent:** [Project Plan](/home/thetu/planner/docs/project-plan.md)  
+**Parent:** [Planner OMX Project Plan](/home/thetu/planner/.omx/ledger/project-plan.md)  
 **Related Planning:** [Socratic Ethereal Cascade Remediation Spec](/home/thetu/planner/docs/socratic-ethereal-cascade-remediation-spec.md)
 
 > Planning note (2026-03-23): this spec remains the canonical record of the

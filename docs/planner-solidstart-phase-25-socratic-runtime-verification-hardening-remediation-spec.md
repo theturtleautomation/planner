@@ -3,7 +3,7 @@
 **Status:** implemented  
 **Date:** 2026-03-26  
 **Parent:** [Planner SolidStart Phase 24 Socratic Runtime Contract Reset Spec](/home/thetu/planner/docs/planner-solidstart-phase-24-socratic-runtime-contract-reset-spec.md)  
-**Related Planning:** [Planner SolidStart Phase 18 Prompt-Bank Conformance And Closeout Remediation Spec](/home/thetu/planner/docs/planner-solidstart-phase-18-prompt-bank-conformance-and-closeout-remediation-spec.md), [Planner SolidStart Phase 21 Session Startup Truth And Status Clarity Spec](/home/thetu/planner/docs/planner-solidstart-phase-21-session-startup-truth-and-status-clarity-spec.md), [Planner SolidStart Phase 23 Session Live Artifact Split Spec](/home/thetu/planner/docs/planner-solidstart-phase-23-session-live-artifact-split-spec.md), [Planner SolidStart Phase 24 Socratic Runtime Contract Reset Spec](/home/thetu/planner/docs/planner-solidstart-phase-24-socratic-runtime-contract-reset-spec.md), [Socratic Initial Prompt Bank And Dynamic Hydration Spec](/home/thetu/planner/docs/socratic-initial-prompt-bank-and-dynamic-hydration-spec.md), [Project Plan](/home/thetu/planner/docs/project-plan.md)  
+**Related Planning:** [Planner SolidStart Phase 18 Prompt-Bank Conformance And Closeout Remediation Spec](/home/thetu/planner/docs/planner-solidstart-phase-18-prompt-bank-conformance-and-closeout-remediation-spec.md), [Planner SolidStart Phase 21 Session Startup Truth And Status Clarity Spec](/home/thetu/planner/docs/planner-solidstart-phase-21-session-startup-truth-and-status-clarity-spec.md), [Planner SolidStart Phase 23 Session Live Artifact Split Spec](/home/thetu/planner/docs/planner-solidstart-phase-23-session-live-artifact-split-spec.md), [Planner SolidStart Phase 24 Socratic Runtime Contract Reset Spec](/home/thetu/planner/docs/planner-solidstart-phase-24-socratic-runtime-contract-reset-spec.md), [Socratic Initial Prompt Bank And Dynamic Hydration Spec](/home/thetu/planner/docs/socratic-initial-prompt-bank-and-dynamic-hydration-spec.md), [Planner OMX Project Plan](/home/thetu/planner/.omx/ledger/project-plan.md)  
 **Source Review:** 2026-03-26 closeout review of the delivered Phase 24 contract reset against its own verification commitments
 
 ## 1. Executive Judgment
@@ -181,7 +181,7 @@ Expected touched surfaces include:
   progression
 - `planner-solid/src/lib/*.test.ts` where local merge or startup semantics need
   tighter proof
-- `docs/project-plan.md`
+- `.omx/ledger/current-status.md`
 
 ## 8. Acceptance Criteria
 

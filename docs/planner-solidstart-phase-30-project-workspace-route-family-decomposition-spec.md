@@ -3,7 +3,7 @@
 **Status:** implemented  
 **Date:** 2026-03-26  
 **Parent:** [Planner SolidStart Phase 29 Work Entry Summary Truth And Workflow Continuity Spec](/home/thetu/planner/docs/planner-solidstart-phase-29-work-entry-summary-truth-and-workflow-continuity-spec.md)  
-**Related Planning:** [Planner SolidStart Phase 20 Project Surfaces Local-App And Primitive Hardening Spec](/home/thetu/planner/docs/planner-solidstart-phase-20-project-surfaces-local-app-and-primitive-hardening-spec.md), [Planner SolidStart Phase 01 Projects And Guided Work Entry Spec](/home/thetu/planner/docs/planner-solidstart-phase-01-projects-and-guided-work-entry-spec.md), [Project Plan](/home/thetu/planner/docs/project-plan.md)  
+**Related Planning:** [Planner SolidStart Phase 20 Project Surfaces Local-App And Primitive Hardening Spec](/home/thetu/planner/docs/planner-solidstart-phase-20-project-surfaces-local-app-and-primitive-hardening-spec.md), [Planner SolidStart Phase 01 Projects And Guided Work Entry Spec](/home/thetu/planner/docs/planner-solidstart-phase-01-projects-and-guided-work-entry-spec.md), [Planner OMX Project Plan](/home/thetu/planner/.omx/ledger/project-plan.md)  
 **Source Review:** 2026-03-26 direct inspection of `planner-solid/src/routes/projects/[projectSlug].tsx`, `planner-solid/src/components/projects/*`, `planner-solid/src/lib/advanced.ts`, `planner-solid/src/lib/projects.ts`, and the Phase 29 verification surfaces
 
 ## 1. Executive Judgment

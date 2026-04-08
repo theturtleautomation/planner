@@ -4,7 +4,7 @@
 **Date:** 2026-03-30  
 **Parent:** [Planner SolidStart Phase 35 Backendless Mock Route Coverage Spec](/home/thetu/planner/docs/planner-solidstart-phase-35-backendless-mock-route-coverage-spec.md)  
 **Depends On:** [Planner SolidStart Phase 35.1 Shared Frontend Mock Foundation Spec](/home/thetu/planner/docs/planner-solidstart-phase-35-1-shared-frontend-mock-foundation-spec.md)  
-**Related Planning:** [Planner SolidStart Phase 08 Events Timeline And Snapshots Spec](/home/thetu/planner/docs/planner-solidstart-phase-08-events-timeline-and-snapshots-spec.md), [Planner SolidStart Phase 09 Admin Operations Route Spec](/home/thetu/planner/docs/planner-solidstart-phase-09-admin-operations-route-spec.md), [Planner SolidStart Phase 12 Discovery Triage Route Spec](/home/thetu/planner/docs/planner-solidstart-phase-12-discovery-triage-route-spec.md), [Project Plan](/home/thetu/planner/docs/project-plan.md)  
+**Related Planning:** [Planner SolidStart Phase 08 Events Timeline And Snapshots Spec](/home/thetu/planner/docs/planner-solidstart-phase-08-events-timeline-and-snapshots-spec.md), [Planner SolidStart Phase 09 Admin Operations Route Spec](/home/thetu/planner/docs/planner-solidstart-phase-09-admin-operations-route-spec.md), [Planner SolidStart Phase 12 Discovery Triage Route Spec](/home/thetu/planner/docs/planner-solidstart-phase-12-discovery-triage-route-spec.md), [Planner OMX Project Plan](/home/thetu/planner/.omx/ledger/project-plan.md)  
 **Source Review:** 2026-03-30 direct inspection of `planner-solid/src/routes/events/index.tsx`, `planner-solid/src/routes/discovery/index.tsx`, and `planner-solid/src/routes/admin/index.tsx`
 
 ## 1. Executive Judgment

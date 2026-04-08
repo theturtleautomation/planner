@@ -4,7 +4,7 @@
 **Date:** 2026-04-01  
 **Parent Spec:** [Builder Fusion Project Management And Runtime Sync Spec](/home/thetu/planner/docs/builder-fusion-project-management-and-runtime-sync-spec.md)  
 **Prerequisite:** [Builder Fusion Phase 03 Sync Verification Workflow Spec](/home/thetu/planner/docs/builder-fusion-phase-03-sync-verification-workflow-spec.md)  
-**Related Planning:** [Builder Local Workflow](/home/thetu/planner/docs/builder-local-workflow.md), [Project Plan](/home/thetu/planner/docs/project-plan.md)  
+**Related Planning:** [Builder Local Workflow](/home/thetu/planner/docs/builder-local-workflow.md), [Planner OMX Project Plan](/home/thetu/planner/.omx/ledger/project-plan.md)  
 **Source Review:** 2026-04-01 inspection of the current repo Builder wrappers, the saved Fusion state file, the Builder/Fusion planning thread, and live visibility-diagnosis output from `builder-verify-sync` and `builder-diagnose-project-visibility`
 
 > Planning sync update (2026-04-02): this slice remains the diagnosis model for
@@ -165,7 +165,7 @@ diagnosis surface, for example:
   `/home/thetu/.codex/skills/builder-workflow/scripts/` when the repo wrappers
   depend on them
 - `docs/builder-local-workflow.md`
-- `docs/project-plan.md`
+- `.omx/ledger/current-status.md`
 
 The saved state file `.codex/builder-fusion-project.json` may be corrected only
 if the diagnosis proves it is stale and the correction is explicit and safe.

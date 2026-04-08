@@ -5,6 +5,8 @@ The planner ledger is the **canonical OMX-linked tracking surface** for planner-
 ## Canonical files
 
 - JSON source of truth: `.omx/ledger/planner-ledger.json`
+- OMX session-start index: `.omx/ledger/session-start-and-doc-index.md`
+- OMX top-level project plan: `.omx/ledger/project-plan.md`
 - Human/project-readable surface: `.omx/ledger/current-status.md`
 - Machine-readable automation trace: `.omx/ledger/automation-trace.json`
 - Human-readable automation operator report: `.omx/ledger/automation-report.md`
@@ -60,7 +62,7 @@ When a durable artifact is created or an item's workflow stage changes:
 2. run `npm run project:ledger:validate`
 3. run `npm run project:ledger:refresh`
 4. if the ledger model or command behavior changes, run `npm run test:ledger`
-5. add any new durable doc/skill to `docs/session-start-and-doc-index.md` and `.codex/project-skill-config.md` when appropriate
+5. add any new durable doc/skill to `.codex/project-skill-config.md`, `.omx/ledger/session-start-and-doc-index.md`, and the relevant OMX ledger surfaces when appropriate
 
 ## Commands
 

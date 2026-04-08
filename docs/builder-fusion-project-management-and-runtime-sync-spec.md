@@ -2,7 +2,7 @@
 
 **Status:** draft  
 **Date:** 2026-03-29  
-**Related Planning:** [Builder Local Workflow](/home/thetu/planner/docs/builder-local-workflow.md), [Project Plan](/home/thetu/planner/docs/project-plan.md), [Admin & Observability Plan](/home/thetu/planner/docs/admin-observability-plan.md)  
+**Related Planning:** [Builder Local Workflow](/home/thetu/planner/docs/builder-local-workflow.md), [Planner OMX Project Plan](/home/thetu/planner/.omx/ledger/project-plan.md), [Admin & Observability Plan](/home/thetu/planner/docs/admin-observability-plan.md)  
 
 ## Purpose
 

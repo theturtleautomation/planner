@@ -4,7 +4,7 @@
 **Date:** 2026-04-02  
 **Parent Spec:** [Builder Fusion Project Management And Runtime Sync Spec](/home/thetu/planner/docs/builder-fusion-project-management-and-runtime-sync-spec.md)  
 **Prerequisite:** [Builder Fusion Phase 04 Project Visibility Diagnosis And Remediation Spec](/home/thetu/planner/docs/builder-fusion-phase-04-project-visibility-diagnosis-and-remediation-spec.md)  
-**Related Planning:** [Builder Local Workflow](/home/thetu/planner/docs/builder-local-workflow.md), [Project Plan](/home/thetu/planner/docs/project-plan.md)  
+**Related Planning:** [Builder Local Workflow](/home/thetu/planner/docs/builder-local-workflow.md), [Planner OMX Project Plan](/home/thetu/planner/.omx/ledger/project-plan.md)  
 **Source Review:** 2026-04-01 and 2026-04-02 live repo diagnosis output, direct authenticated API probes from the repo auth context, and authenticated Builder web-app network evidence showing `projects/branches?projectId=...&apiKey=...`
 
 > Planning sync update (2026-04-02): this visibility slice still describes the
@@ -131,8 +131,8 @@ docs, for example:
 - `scripts/builder-verify-sync.sh`
 - `Makefile`
 - `docs/builder-local-workflow.md`
-- `docs/project-plan.md`
-- `docs/session-start-and-doc-index.md`
+- `.omx/ledger/project-plan.md`
+- `.omx/ledger/session-start-and-doc-index.md`
 
 ## 7. Acceptance Criteria
 
@@ -200,7 +200,7 @@ Implemented in:
 - `scripts/builder-verify-sync.sh`
 - `docs/builder-local-workflow.md`
 - `README.md`
-- `docs/project-plan.md`
+- `.omx/ledger/project-plan.md`
 
 Delivered behavior:
 

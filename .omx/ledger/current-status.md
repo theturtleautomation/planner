@@ -12,13 +12,10 @@ Project skill: `.codex/skills/project-ledger/SKILL.md`
 
 ## Routing Queue
 
-### Ready for $ralplan
+### Ready for $ralph
 
-- **Planner project tracking library** (initiative, active) — Planner-wide OMX-linked ledger initiative with root governance, converged cross-family truth, repo-graph-coupled automation, and a developing confidence-tier trust model. Graph output remains evidence, not blueprint truth.
-- **Planner design system command center plan** (plan, draft) — Parent planning surface for the planner design system family.
-- **Planner UI reset route-by-route queue** (plan, draft) — Parent planning surface for the UI-reset family.
-- **Knowledge library project scope plan** (plan, draft) — Project-scoped knowledge hub planning surface for the knowledge family.
-- **Artifact sprawl and orphaned follow-ons** (risk, active) — Slices, reviews, deferred items, and follow-on plans can become fragmented without a canonical linkage spine.
+- **Planner project tracking library** (initiative, active) — Planner-wide OMX-linked ledger initiative with root governance, converged cross-family truth, a cleaned linkage spine, repo-graph-coupled automation, an explicit freshness maintenance signal, and a concrete next remediation pass for automation convergence, dry-run proof, and planning/plugin truth. Graph output remains evidence, not blueprint truth.
+- **Planner-Ledger Review Remediation Pass** (plan, ready_for_implementation) — Approved bounded follow-on to stabilize planner-ledger automation convergence, dry-run proof, project-plan truth, and local plugin-manifest alignment.
 
 ### Monitoring / watch
 
@@ -26,8 +23,6 @@ Project skill: `.codex/skills/project-ledger/SKILL.md`
 - **Workspace operating instructions (AGENTS.md)** (governance_artifact, active) — Top-level operating contract that constrains planner-wide execution and orchestration behavior.
 - **Workspace companion instructions (CLAUDE.md)** (governance_artifact, active) — Companion repo guidance that participates in planner-wide workflow and planning grounding.
 - **Project skill configuration** (governance_artifact, active) — Defines planner bootstrap, always-load docs, backlog/tracker, and status model for project-wide work.
-- **Session start and documentation index** (governance_artifact, active) — Canonical bootstrap/index surface that enumerates durable planning families and required docs.
-- **Top-level project plan** (governance_artifact, active) — Top-level planner coordination surface that exposes the current active planning spine and high-level work families.
 - **Canonical ledger surfaces** (governance_artifact, active) — The canonical planner ledger JSON, readable surface, and maintenance protocol for project-wide tracking truth.
 - **Import existing project program** (initiative, active) — Import program now converges with SolidStart import route truth across review, history/restore, and comparison surfaces.
 - **Planning status audit remediation** (review, complete) — Planning status audit remediation review/remediation artifact.
@@ -40,7 +35,9 @@ Project skill: `.codex/skills/project-ledger/SKILL.md`
 - **Blueprint deferred rust features** (review, complete) — Reference research on deferred Rust features relevant to blueprint planning.
 - **Branch-management / generalized work-queue systems** (deferred_item, deferred) — Intentionally deferred and not justified above more central thesis gaps. Still visible in the Socratic family but not promoted in Pass 2.
 - **Multimodal / media-heavy capture** (deferred_item, deferred) — Intentionally deferred until more central truth/reorientation concerns are clarified. Still visible in the Socratic family but not promoted in Pass 2.
-- **Ledger staleness if update discipline is weak** (risk, active) — A canonical ledger only stays useful if new durable artifacts are linked and state transitions stay maintained.
+- **Ledger staleness if update discipline is weak** (risk, active) — A canonical ledger only stays useful if new durable artifacts are linked and freshness signals make stale maintenance visible.
+- **Session start and documentation index** (governance_artifact, active) — Canonical OMX-native bootstrap/index surface that enumerates durable planning families and required docs.
+- **Top-level project plan** (governance_artifact, active) — Top-level OMX-native planner coordination surface that exposes the current active planning spine and high-level work families.
 
 ### Needs $deep-interview
 
@@ -50,13 +47,19 @@ Project skill: `.codex/skills/project-ledger/SKILL.md`
 - **Provenance / change-inspection UX** (deferred_item, deferred) — Still needs its first user question narrowed before it becomes scopeable.
 - **Preview hierarchy refinement** (deferred_item, draft) — Low-severity scopeable-now concern for reducing remaining dashboard weight in preview mode.
 
+### Ready for $ralplan
+
+- **Planner design system command center plan** (plan, draft) — Parent planning surface for the planner design system family.
+- **Planner UI reset route-by-route queue** (plan, draft) — Parent planning surface for the UI-reset family.
+- **Knowledge library project scope plan** (plan, draft) — Project-scoped knowledge hub planning surface for the knowledge family.
+
 ### Needs analysis
 
 - **Richer overlay / reorientation model** (deferred_item, deferred) — Not yet scopeable because multiple overlay families are still bundled together.
 
 ## Active Workstreams and Initiatives
 
-- **Planner project tracking library** — Planner-wide OMX-linked ledger initiative with root governance, converged cross-family truth, repo-graph-coupled automation, and a developing confidence-tier trust model. Graph output remains evidence, not blueprint truth. _(next: ready_for_ralplan)_
+- **Planner project tracking library** — Planner-wide OMX-linked ledger initiative with root governance, converged cross-family truth, a cleaned linkage spine, repo-graph-coupled automation, an explicit freshness maintenance signal, and a concrete next remediation pass for automation convergence, dry-run proof, and planning/plugin truth. Graph output remains evidence, not blueprint truth. _(next: ready_for_ralph)_
 - **Planner SolidStart platform direction** — Convergence center for the full SolidStart tree and the cleaner cross-family truth spanning import, Socratic, UI-reset, design-system, blueprint/knowledge, builder, and audit surfaces. _(next: complete)_
 - **Planner design system** — Design-system family now converges its canonical token/hierarchy work with SolidStart typography, command-rail, and command-desk truth. _(next: complete)_
 - **Planner UI reset** — UI-reset family now converges its route-by-route reset intent with SolidStart shell, route, and session-workspace truth. _(next: complete)_
@@ -79,8 +82,23 @@ Project skill: `.codex/skills/project-ledger/SKILL.md`
 
 ## Active Risks
 
-- **Artifact sprawl and orphaned follow-ons** — Slices, reviews, deferred items, and follow-on plans can become fragmented without a canonical linkage spine. _(next: ready_for_ralplan)_
-- **Ledger staleness if update discipline is weak** — A canonical ledger only stays useful if new durable artifacts are linked and state transitions stay maintained. _(next: monitoring)_
+- **Ledger staleness if update discipline is weak** — A canonical ledger only stays useful if new durable artifacts are linked and freshness signals make stale maintenance visible. _(next: monitoring)_
+
+## Planner Ledger Spine Integrity
+
+- Root child count: **24**
+- Stale follow-on links: **0**
+- Missing follow-on targets: **0**
+- Spine status: **clean**
+
+## Planner Ledger Maintenance Signal
+
+- Maintenance state: **fresh**
+- Last automation run: `2026-04-08T13:50:46.604Z`
+- Tracked non-complete artifacts: **65** across **30** items
+- Latest tracked artifact change: `.omx/ledger/planner-ledger.json` at `2026-04-08T13:46:14.872Z`
+- Artifacts newer than last automation run: **0**
+- Attention items: none
 
 ## Automation Surfaces
 

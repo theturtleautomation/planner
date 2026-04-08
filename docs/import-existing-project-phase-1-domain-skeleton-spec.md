@@ -2,7 +2,7 @@
 
 **Status:** Implemented  
 **Date:** 2026-03-19  
-**Parent:** [Project Plan](/home/thetu/planner/docs/project-plan.md)  
+**Parent:** [Planner OMX Project Plan](/home/thetu/planner/.omx/ledger/project-plan.md)  
 **Source Research:** [Import Existing Project Plan](/home/thetu/planner/docs/import-existing-project-plan.md)
 
 > Delivery update (2026-03-19): the queued import domain skeleton is now

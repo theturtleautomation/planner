@@ -2,7 +2,7 @@
 
 **Status:** Implemented  
 **Date:** 2026-03-22  
-**Parent:** [Project Plan](/home/thetu/planner/docs/project-plan.md)  
+**Parent:** [Planner OMX Project Plan](/home/thetu/planner/.omx/ledger/project-plan.md)  
 **Related Planning:** [Planner UI Reset Route-By-Route Spec Queue](/home/thetu/planner/docs/planner-ui-reset-route-by-route-spec-queue.md), [Planner UI Reset Tranche Audit Remediation Spec](/home/thetu/planner/docs/planner-ui-reset-tranche-audit-remediation-spec.md), [Planner UI Reset Phase 01 Home Hub Spec](/home/thetu/planner/docs/planner-ui-reset-phase-01-home-hub-spec.md), [Planner UI Reset Phase 07 Blueprint Workspace Spec](/home/thetu/planner/docs/planner-ui-reset-phase-07-blueprint-workspace-spec.md), [Planner UI Reset Phase 09 Events Timeline Workspace Spec](/home/thetu/planner/docs/planner-ui-reset-phase-09-events-timeline-workspace-spec.md)  
 **Source Audit:** 2026-03-22 follow-up audit against current tranche specs, implementation, and route tests
 
@@ -46,7 +46,7 @@ Residual correction targets from that audit:
 - `UIR-07` still has moderate rather than strong verification evidence
 - `UIR-09` still lacks direct automated evidence for the failure state named in
   the spec
-- `project-plan.md` still over-compresses tranche truth into one blanket
+- `current-status.md` still over-compresses tranche truth into one blanket
   "implemented and verified" statement
 
 ## Scope
@@ -55,9 +55,9 @@ Residual correction targets from that audit:
 
 - parent planning-surface hardening in:
   - [planner-ui-reset-route-by-route-spec-queue.md](/home/thetu/planner/docs/planner-ui-reset-route-by-route-spec-queue.md)
-  - [project-plan.md](/home/thetu/planner/docs/project-plan.md)
+  - [Planner OMX Project Plan](/home/thetu/planner/.omx/ledger/project-plan.md)
 - durable indexing of this follow-up spec in
-  [session-start-and-doc-index.md](/home/thetu/planner/docs/session-start-and-doc-index.md)
+  [Planner OMX Project Plan](/home/thetu/planner/.omx/ledger/project-plan.md)
 - Home route hierarchy correction in:
   - [HomeHubPage.tsx](/home/thetu/planner/planner-web/src/pages/HomeHubPage.tsx)
   - [HomeHubPage.test.tsx](/home/thetu/planner/planner-web/src/pages/__tests__/HomeHubPage.test.tsx)
@@ -84,7 +84,7 @@ Residual correction targets from that audit:
   now has truthful implemented status and delivery notes, but it still does not
   carry the same explicit verification or fallback shape expected from the
   tranche's child specs.
-- [project-plan.md](/home/thetu/planner/docs/project-plan.md)
+- [Planner OMX Project Plan](/home/thetu/planner/.omx/ledger/project-plan.md)
   is now synchronized enough to track this follow-up spec explicitly, but the
   residual route corrections it names still need execution before the tranche
   can be treated as fully trustworthy.

@@ -4,7 +4,7 @@
 **Date:** 2026-03-30  
 **Parent:** [Planner SolidStart Phase 35 Backendless Mock Route Coverage Spec](/home/thetu/planner/docs/planner-solidstart-phase-35-backendless-mock-route-coverage-spec.md)  
 **Depends On:** [Planner SolidStart Phase 35.1 Shared Frontend Mock Foundation Spec](/home/thetu/planner/docs/planner-solidstart-phase-35-1-shared-frontend-mock-foundation-spec.md)  
-**Related Planning:** [Planner SolidStart Phase 10 Knowledge Inventory Route Spec](/home/thetu/planner/docs/planner-solidstart-phase-10-knowledge-inventory-route-spec.md), [Planner SolidStart Phase 11 Blueprint Graph Route Spec](/home/thetu/planner/docs/planner-solidstart-phase-11-blueprint-graph-route-spec.md), [Project Plan](/home/thetu/planner/docs/project-plan.md)  
+**Related Planning:** [Planner SolidStart Phase 10 Knowledge Inventory Route Spec](/home/thetu/planner/docs/planner-solidstart-phase-10-knowledge-inventory-route-spec.md), [Planner SolidStart Phase 11 Blueprint Graph Route Spec](/home/thetu/planner/docs/planner-solidstart-phase-11-blueprint-graph-route-spec.md), [Planner OMX Project Plan](/home/thetu/planner/.omx/ledger/project-plan.md)  
 **Source Review:** 2026-03-30 direct inspection of `planner-solid/src/routes/knowledge/index.tsx` and `planner-solid/src/routes/blueprint/index.tsx`
 
 ## 1. Executive Judgment

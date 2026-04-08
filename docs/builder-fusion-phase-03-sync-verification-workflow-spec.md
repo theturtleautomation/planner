@@ -4,8 +4,8 @@
 **Date:** 2026-04-01  
 **Parent Spec:** [Builder Fusion Project Management And Runtime Sync Spec](/home/thetu/planner/docs/builder-fusion-project-management-and-runtime-sync-spec.md)  
 **Prerequisite:** [Builder Fusion Phase 02 Existing Project Helper Contract Spec](/home/thetu/planner/docs/builder-fusion-phase-02-existing-project-helper-contract-spec.md)  
-**Related Planning:** [Builder Local Workflow](/home/thetu/planner/docs/builder-local-workflow.md), [Project Plan](/home/thetu/planner/docs/project-plan.md)  
-**Source Review:** 2026-04-01 inspection of the implemented Builder wrapper surface in `scripts/`, the shared Builder helper behavior in `/home/thetu/.codex/skills/builder-workflow/scripts/`, and the current Builder planning thread in `docs/project-plan.md`
+**Related Planning:** [Builder Local Workflow](/home/thetu/planner/docs/builder-local-workflow.md), [Planner OMX Project Plan](/home/thetu/planner/.omx/ledger/project-plan.md)  
+**Source Review:** 2026-04-01 inspection of the implemented Builder wrapper surface in `scripts/`, the shared Builder helper behavior in `/home/thetu/.codex/skills/builder-workflow/scripts/`, and the current Builder planning thread in `.omx/ledger/current-status.md`
 
 > Planning sync update (2026-04-02): this verification slice remains valid, but
 > it now verifies the latest saved or explicitly targeted project rather than
@@ -132,8 +132,8 @@ Required direction:
   justified
 - `Makefile`
 - `docs/builder-local-workflow.md`
-- `docs/project-plan.md`
-- `docs/session-start-and-doc-index.md` only because this new durable spec is
+- `.omx/ledger/project-plan.md`
+- `.omx/ledger/session-start-and-doc-index.md` only because this new durable spec is
   created in this session
 
 ## 8. Acceptance Criteria

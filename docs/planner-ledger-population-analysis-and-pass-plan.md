@@ -56,7 +56,7 @@ The current `docs/` tree is not random; it already clusters into major families:
 | `planner-design-system-*` | 9 | design-system phases |
 | blueprint/admin/knowledge singletons | 3 | blueprint, admin, knowledge scope docs |
 | blueprint research subfolder | 3 | research/deep-dive references |
-| top-level planning/index docs | small but critical | `project-plan.md`, `session-start-and-doc-index.md`, `project-first-ui-research-sessions.md` |
+| top-level planning/index docs | small but critical | `.omx/ledger/project-plan.md`, `.omx/ledger/session-start-and-doc-index.md`, `project-first-ui-research-sessions.md` |
 
 This means planner-wide population should be decomposed by **artifact family** and
 **planning role**, not by a flat per-file sweep.
@@ -96,8 +96,8 @@ These anchor the whole planner project:
 - `AGENTS.md`
 - `CLAUDE.md`
 - `.codex/project-skill-config.md`
-- `docs/session-start-and-doc-index.md`
-- `docs/project-plan.md`
+- `.omx/ledger/session-start-and-doc-index.md`
+- `.omx/ledger/project-plan.md`
 - `.omx/ledger/*`
 
 **Ledger role:** initiative/workstream containers, governance decisions, root risks,
