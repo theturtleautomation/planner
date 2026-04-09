@@ -127,9 +127,20 @@ test("phase 39 commit and next preserves workspace continuity as prompt-bank upd
   await expect(page.locator(".session-area-shaping-object")).toHaveCount(3);
   await expect(page.locator(".session-area-pressure-point.is-dominant")).toBeVisible();
   await expect(page.locator(".session-area-shaping .session-area-pressure-point, .session-area-shaping .session-area-preview-secondary")).toHaveCount(2);
-  await expect(page.getByText("Pending revisions")).toBeVisible();
-  await expect(page.locator(".session-area-revision-kind")).toHaveText("North-star revision");
+  const transformationCard = page.locator(".session-project-area-card").filter({ hasText: "Transformation" }).first();
+  await expect(transformationCard.locator(".session-project-area-summary")).toBeVisible();
+  await expect(transformationCard.locator(".session-project-area-relation")).toHaveCount(1);
+  await expect(transformationCard).toContainText("2 pending revisions");
+  await expect(page.getByText("Confidence refresh")).toHaveCount(0);
+  await expect(page.getByText("Pending revisions", { exact: true })).toBeVisible();
+  await expect(page.locator(".session-area-revision-card")).toHaveCount(2);
+  await expect(page.locator(".session-area-revision-card.is-conflict")).toHaveCount(1);
+  await expect(page.locator(".session-area-revision-kind")).toHaveText([
+    "Direction promotion revision",
+    "North-star revision",
+  ]);
   await expect(page.getByText("conflict", { exact: true })).toBeVisible();
+  await expect(page.getByText("pending revision", { exact: true })).toBeVisible();
   const areaCapture = page.getByPlaceholder("Capture something local to Transformation");
   await areaCapture.fill(seedText);
   await page.getByRole("button", { name: "Save as seed" }).click();

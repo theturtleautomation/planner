@@ -230,19 +230,37 @@ describe("session workspace view helpers", () => {
           revision_conflict: true,
         },
         {
+          ...queuedThread("north-star", "North-star revision", "Promote review mode as the primary goal."),
+          revision_kind: "north_star",
+          revision_area_id: "transformation",
+        },
+        {
+          ...queuedThread("promotion", "Direction promotion", "Promote the draft direction into the canonical path."),
+          revision_kind: "direction_promotion",
+          revision_area_id: "transformation",
+        },
+        {
           ...queuedThread("freshness", "Confidence refresh", "Raise confidence after recent answers"),
           low_risk_update: true,
         },
+        queuedThread("generic", "Layout note", "Minor copy cleanup for the supporting panel"),
       ],
       {},
     );
 
     const transformation = areas.find(area => area.id === "transformation");
-    expect(transformation?.pendingRevisions).toHaveLength(2);
+    expect(transformation?.pendingRevisions).toHaveLength(4);
     expect(transformation?.pendingRevisions.map(revision => revision.kindLabel)).toEqual([
       "Area identity",
       "Major relationship",
+      "North-star",
+      "Direction promotion",
     ]);
     expect(transformation?.pendingRevisions.some(revision => revision.conflict)).toBe(true);
+    expect(transformation?.pendingRevisions.every(revision => !("blocking" in revision))).toBe(true);
+    expect(transformation?.pendingRevisions.some(revision => revision.title === "Confidence refresh")).toBe(false);
+    expect(transformation?.pendingRevisions.some(revision => revision.title === "Layout note")).toBe(false);
+    expect(transformation?.summary).toBe("Calendar planning");
+    expect(transformation?.relationshipLabels).toContain("Guides Approach");
   });
 });

@@ -117,11 +117,14 @@ test("phase 37.2 canonical runtime keeps the project picture primary as addition
 
   await expect(page.locator(".session-project-area-card")).toHaveCount(5);
   await expect(page.locator(".session-project-area-card").filter({ hasText: "Constraints" }).first()).toBeVisible();
+  const transformationCard = page.locator(".session-project-area-card").filter({ hasText: "Transformation" }).first();
+  await expect(transformationCard.locator(".session-project-area-freshness")).toBeVisible();
+  await expect(transformationCard.locator(".session-project-area-summary")).toBeVisible();
+  await expect(transformationCard.locator(".session-project-area-relation")).toHaveCount(1);
   await expect(page.locator(".session-area-workspace")).toHaveCount(1);
   await page.locator(".session-area-workspace").getByRole("button", { name: /Go deeper in/i }).click();
   await expect(page.locator(".session-area-shaping")).toBeVisible();
   await expect(page.locator(".session-area-shaping-object")).toHaveCount(3);
-  await expect(page.locator(".session-project-area-freshness").first()).toBeVisible();
   const revisionCards = page.locator(".session-area-revision-card");
   if ((await revisionCards.count()) > 0) {
     await expect(revisionCards.first()).toContainText(/revision/i);

@@ -163,7 +163,10 @@ silent updates:
 - changing the current north-star definition
 - folding a speculative idea into canonical truth when that materially changes
   project direction
-- any visible restructure that materially changes project shape
+
+These four categories are the full MVP pending-revision set.
+The system must not widen the set with a generic catch-all such as “any visible
+restructure” during this slice.
 
 ### 7.4 Pending revisions are non-blocking by default
 
@@ -190,8 +193,8 @@ Escalation means:
 
 - the conflict is made more visually obvious
 - the user is steered toward resolving it
-- conflicting edits may be temporarily gated when continuing would multiply
-  incoherence
+- the affected area reads as under stronger review pressure than an ordinary
+  pending revision
 
 ### 8.2 Escalation should stay narrow
 
@@ -244,7 +247,7 @@ unless the autonomy work proves one of those contracts is still a blocker.
 4. meaning-changing updates appear as pending revisions inside the affected
    area
 5. pending revisions are non-blocking by default
-6. direct conflicts can escalate and temporarily gate conflicting edits
+6. direct conflicts escalate visually only and remain non-blocking in MVP
 7. accepted user meaning is not silently rewritten
 
 ## 12. Verification Plan

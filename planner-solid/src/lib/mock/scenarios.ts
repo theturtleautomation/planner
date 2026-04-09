@@ -833,6 +833,24 @@ export function createScenarioState(scenarioKey: MockScenarioKey): MockState {
           ],
           queued_threads: [
             {
+              category_id: "confidence-refresh",
+              title: "Confidence refresh",
+              summary: "Raise confidence after recent answers.",
+              question_count: 1,
+              status: "queued",
+              revision_area_id: "transformation",
+              low_risk_update: true,
+            },
+            {
+              category_id: "direction-promotion",
+              title: "Direction promotion",
+              summary: "Promote the weekly review lane into the canonical path for this area.",
+              question_count: 1,
+              status: "queued",
+              revision_kind: "direction_promotion",
+              revision_area_id: "transformation",
+            },
+            {
               category_id: "north-star-revision",
               title: "North-star revision",
               summary: "Promote manager review as the primary goal for the first release.",
