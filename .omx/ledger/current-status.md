@@ -37,23 +37,23 @@ Project skill: `.codex/skills/project-ledger/SKILL.md`
 
 ### Needs $deep-interview
 
-- **Socratic project picture workspace** (workstream, active) — Active Socratic workstream now serves as the planning center for the project-picture direction, with a dedicated experience-consolidation layer and a separate active structural-concern layer.
-- **Hidden truth-model / blueprint relationship** (deferred_item, active) — Active child concern for defining the minimum truthful relationship between hidden blueprint truth and the visible project picture.
-- **Whole-project recoverability beyond same-route shell** (deferred_item, active) — Active child concern for the minimal reorientation and return contract beyond the current same-route shell.
+- **Socratic project picture workspace** (workstream, active) — Active Socratic workstream now serves as the planning center for the project-picture direction, with the experience-consolidation layer clarified and hidden truth-model selected as the first structural branch.
+- **Whole-project recoverability beyond same-route shell** (deferred_item, active) — Later structural branch for the minimal reorientation and return contract beyond the current same-route shell, sequenced after hidden truth-model and overlay/reorientation.
 - **Provenance / change-inspection UX** (deferred_item, deferred) — Still needs its first user question narrowed before it becomes scopeable.
 - **Preview hierarchy refinement** (deferred_item, draft) — Low-severity scopeable-now concern for reducing remaining dashboard weight in preview mode.
-- **Project-picture structural concerns** (workstream, active) — Active structural concern layer under the project-picture center, now modeled as hidden truth-model foundation, whole-project recoverability contract, and overlay/reorientation support, with provenance/change-inspection and preview hierarchy kept as follow-on concerns.
+- **Project-picture structural concerns** (workstream, active) — Active structural concern layer under the project-picture center, with hidden truth-model now chosen as the first branch, overlay/reorientation next, and whole-project recoverability later; provenance/change-inspection and preview hierarchy remain follow-on concerns.
 
 ### Ready for $ralplan
 
 - **Planner design system command center plan** (plan, draft) — Experience-layer planning surface for the design-system family beneath the project-picture-centered planning model.
 - **Planner UI reset route-by-route queue** (plan, draft) — Experience-layer planning surface for the UI-reset family beneath the project-picture-centered planning model.
 - **Knowledge library project scope plan** (plan, draft) — Experience-layer planning surface for the knowledge family beneath the project-picture-centered planning model.
+- **Hidden truth-model / blueprint relationship** (deferred_item, active) — Selected first structural branch for defining the deeper hidden blueprint/truth model, the minimum visible truth projected from it, and an ordered downstream roadmap.
 - **Project-Picture Experience Consolidation Plan** (plan, draft) — Immediate next planning layer beneath the project-picture center for design system, UI reset, and knowledge-library consolidation.
 
 ### Needs analysis
 
-- **Richer overlay / reorientation model** (deferred_item, active) — Active child concern for the richer overlay / reorientation model, still needing analysis because multiple overlay families remain bundled together.
+- **Richer overlay / reorientation model** (deferred_item, active) — Next structural branch after hidden truth-model for the richer overlay / reorientation model, still needing bounded follow-on analysis before execution.
 
 ## Active Workstreams and Initiatives
 
@@ -64,16 +64,16 @@ Project skill: `.codex/skills/project-ledger/SKILL.md`
 - **Planning audit remediation** — Audit/remediation family now converges its closeout/remediation surfaces with SolidStart verification, cleanup, and parity truth. _(next: complete)_
 - **Import existing project program** — Import program now converges with SolidStart import route truth across review, history/restore, and comparison surfaces. _(next: monitoring)_
 - **Import existing project history and reconciliation** — Import history/reconciliation now converges the canonical import slices with SolidStart route truth for review, restore, and comparison flows. _(next: complete)_
-- **Socratic project picture workspace** — Active Socratic workstream now serves as the planning center for the project-picture direction, with a dedicated experience-consolidation layer and a separate active structural-concern layer. _(next: needs_deep_interview)_
+- **Socratic project picture workspace** — Active Socratic workstream now serves as the planning center for the project-picture direction, with the experience-consolidation layer clarified and hidden truth-model selected as the first structural branch. _(next: needs_deep_interview)_
 - **Builder fusion runtime sync** — Builder runtime-sync workstream now converges its helper/runtime diagnosis slices with SolidStart mock-runtime and builder-alignment truth. _(next: complete)_
 - **Blueprint knowledge program** — Blueprint/knowledge family now sits beneath the project-picture-centered planning model while continuing to converge its canonical planning surfaces with SolidStart knowledge, blueprint, and frontend-mock truth. _(next: complete)_
-- **Project-picture structural concerns** — Active structural concern layer under the project-picture center, now modeled as hidden truth-model foundation, whole-project recoverability contract, and overlay/reorientation support, with provenance/change-inspection and preview hierarchy kept as follow-on concerns. _(next: needs_deep_interview)_
+- **Project-picture structural concerns** — Active structural concern layer under the project-picture center, with hidden truth-model now chosen as the first branch, overlay/reorientation next, and whole-project recoverability later; provenance/change-inspection and preview hierarchy remain follow-on concerns. _(next: needs_deep_interview)_
 
 ## Deferred Items
 
-- **Hidden truth-model / blueprint relationship** — Active child concern for defining the minimum truthful relationship between hidden blueprint truth and the visible project picture. _(status: active; next: needs_deep_interview)_
-- **Whole-project recoverability beyond same-route shell** — Active child concern for the minimal reorientation and return contract beyond the current same-route shell. _(status: active; next: needs_deep_interview)_
-- **Richer overlay / reorientation model** — Active child concern for the richer overlay / reorientation model, still needing analysis because multiple overlay families remain bundled together. _(status: active; next: needs_analysis)_
+- **Hidden truth-model / blueprint relationship** — Selected first structural branch for defining the deeper hidden blueprint/truth model, the minimum visible truth projected from it, and an ordered downstream roadmap. _(status: active; next: ready_for_ralplan)_
+- **Whole-project recoverability beyond same-route shell** — Later structural branch for the minimal reorientation and return contract beyond the current same-route shell, sequenced after hidden truth-model and overlay/reorientation. _(status: active; next: needs_deep_interview)_
+- **Richer overlay / reorientation model** — Next structural branch after hidden truth-model for the richer overlay / reorientation model, still needing bounded follow-on analysis before execution. _(status: active; next: needs_analysis)_
 - **Provenance / change-inspection UX** — Still needs its first user question narrowed before it becomes scopeable. _(status: deferred; next: needs_deep_interview)_
 - **Preview hierarchy refinement** — Low-severity scopeable-now concern for reducing remaining dashboard weight in preview mode. _(status: draft; next: needs_deep_interview)_
 - **Branch-management / generalized work-queue systems** — Intentionally deferred and not justified above more central thesis gaps. Still visible in the Socratic family but not promoted in Pass 2. _(status: deferred; next: monitoring)_
@@ -93,9 +93,9 @@ Project skill: `.codex/skills/project-ledger/SKILL.md`
 ## Planner Ledger Maintenance Signal
 
 - Maintenance state: **fresh**
-- Last automation run: `2026-04-09T01:27:02.431Z`
+- Last automation run: `2026-04-09T17:17:07.595Z`
 - Tracked non-complete artifacts: **67** across **31** items
-- Latest tracked artifact change: `docs/socratic-project-picture-and-convergence-workspace-spec.md` at `2026-04-09T01:26:43.243Z`
+- Latest tracked artifact change: `docs/project-picture-structural-concerns-plan.md` at `2026-04-09T17:09:54.227Z`
 - Artifacts newer than last automation run: **0**
 - Attention items: none
 

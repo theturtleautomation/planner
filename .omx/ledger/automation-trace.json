@@ -1,22 +1,22 @@
 {
-  "generated_at": "2026-04-09T01:27:02.431Z",
+  "generated_at": "2026-04-09T17:17:07.595Z",
   "mode": "apply",
   "change_count": 0,
   "maintenance": {
     "state": "fresh",
     "isFresh": true,
-    "automationLastRunAt": "2026-04-09T01:27:02.431Z",
+    "automationLastRunAt": "2026-04-09T17:17:07.595Z",
     "trackedItemCount": 31,
     "trackedArtifactCount": 67,
     "latestTrackedArtifact": {
-      "path": "docs/socratic-project-picture-and-convergence-workspace-spec.md",
+      "path": "docs/project-picture-structural-concerns-plan.md",
       "itemIds": [
-        "workstream:socratic-project-picture"
+        "workstream:project-picture-structural-concerns"
       ],
       "itemTitles": [
-        "Socratic project picture workspace"
+        "Project-picture structural concerns"
       ],
-      "modified_at": "2026-04-09T01:26:43.243Z"
+      "modified_at": "2026-04-09T17:09:54.227Z"
     },
     "staleTrackedArtifactCount": 0,
     "staleTrackedArtifacts": [],
@@ -32,22 +32,22 @@
           "id": "file:.codex/skills/project-ledger/SKILL.md",
           "label": ".codex/skills/project-ledger/SKILL.md",
           "source_file": ".codex/skills/project-ledger/SKILL.md",
-          "community_id": 24
+          "community_id": 5
         },
         {
           "id": "heading:.codex/skills/project-ledger/SKILL.md#canonical-sources",
           "label": "Canonical Sources",
           "source_file": ".codex/skills/project-ledger/SKILL.md",
-          "community_id": 24
+          "community_id": 5
         },
         {
           "id": "heading:.codex/skills/project-ledger/SKILL.md#commands",
           "label": "Commands",
           "source_file": ".codex/skills/project-ledger/SKILL.md",
-          "community_id": 24
+          "community_id": 5
         }
       ],
-      "explanation": "Explain: .codex/skills/project-ledger/SKILL.md\nID: file:.codex/skills/project-ledger/SKILL.md\nKind: file\nSource file: .codex/skills/project-ledger/SKILL.md\nCommunity: 24\nWhy it matters: this file is directly connected to 20 graph neighbors\nCommunity sample: .omx/plans/test-spec-planner-ledger-population-pass-5-solidstart-family.md, .omx/plans/prd-planner-ledger-pass-2-automation-maintenance-capability.md, .omx/plans/prd-repo-graph-coupled-routing-heuristics-and-operator-trust-pass.md, .omx/plans/prd-planner-ledger-population-pass-4-design-system-ui-reset-audits.md, .omx/plans/prd-planner-ledger-population-pass-7-superseded-trailer-cleanup.md\nGraph evidence:\n- .omx/ledger/automation-report.md [references]\n- .omx/ledger/current-status.md [references]\n- .omx/ledger/planner-ledger.json [references]\n- scripts/project-ledger.mjs [references]\n- Canonical Sources [contains]\n- Commands [contains]"
+      "explanation": "Explain: .codex/skills/project-ledger/SKILL.md\nID: file:.codex/skills/project-ledger/SKILL.md\nKind: file\nSource file: .codex/skills/project-ledger/SKILL.md\nCommunity: 5\nWhy it matters: this file is directly connected to 20 graph neighbors\nCommunity sample: .omx/ledger/planner-ledger.json, .omx/plans/prd-planner-ledger-population-pass-5-solidstart-family.md, .omx/plans/test-spec-planner-ledger-population-pass-5-solidstart-family.md, .omx/plans/prd-combined-ledger-automation-graphify-omx-integration-pass.md, .omx/plans/prd-planner-ledger-next-lane-canonical-sync-pass.md\nGraph evidence:\n- .omx/ledger/automation-report.md [references]\n- .omx/ledger/current-status.md [references]\n- .omx/ledger/planner-ledger.json [references]\n- scripts/project-ledger.mjs [references]\n- Canonical Sources [contains]\n- Commands [contains]"
     },
     "initiative:import-existing-project-program": {
       "query": "docs/import-existing-project-plan.md",
@@ -57,22 +57,22 @@
           "id": "file:docs/import-existing-project-plan.md",
           "label": "docs/import-existing-project-plan.md",
           "source_file": "docs/import-existing-project-plan.md",
-          "community_id": 27
+          "community_id": 26
         },
         {
           "id": "heading:docs/import-existing-project-plan.md#analysis-quality",
           "label": "Analysis quality",
           "source_file": "docs/import-existing-project-plan.md",
-          "community_id": 27
+          "community_id": 26
         },
         {
           "id": "heading:docs/import-existing-project-plan.md#auth",
           "label": "Auth",
           "source_file": "docs/import-existing-project-plan.md",
-          "community_id": 27
+          "community_id": 26
         }
       ],
-      "explanation": "Explain: docs/import-existing-project-plan.md\nID: file:docs/import-existing-project-plan.md\nKind: file\nSource file: docs/import-existing-project-plan.md\nCommunity: 27\nWhy it matters: this file is directly connected to 63 graph neighbors\nCommunity sample: docs/import-existing-project-plan.md, docs/import-existing-project-phase-3-analysis-draft-and-socratic-handoff-spec.md, docs/import-existing-project-phase-5-local-provider-spec.md, docs/import-existing-project-phase-2-github-acquisition-spec.md, docs/import-existing-project-phase-6-reimport-and-lifecycle-cleanup-spec.md\nGraph evidence:\n- .codex/project-skill-config.md [references]\n- .omx/ledger/automation-trace.json [references]\n- .omx/ledger/planner-ledger.json [references]\n- .omx/plans/prd-planner-ledger-population-pass-1-root-governance.md [references]\n- .omx/plans/prd-planner-ledger-population-pass-3-import-builder-blueprint.md [references]\n- planner-core/src/blueprint.rs [references]"
+      "explanation": "Explain: docs/import-existing-project-plan.md\nID: file:docs/import-existing-project-plan.md\nKind: file\nSource file: docs/import-existing-project-plan.md\nCommunity: 26\nWhy it matters: this file is directly connected to 63 graph neighbors\nCommunity sample: docs/import-existing-project-plan.md, docs/import-existing-project-phase-3-analysis-draft-and-socratic-handoff-spec.md, docs/import-existing-project-phase-5-local-provider-spec.md, docs/import-existing-project-phase-2-github-acquisition-spec.md, docs/import-existing-project-phase-6-reimport-and-lifecycle-cleanup-spec.md\nGraph evidence:\n- .codex/project-skill-config.md [references]\n- .omx/ledger/automation-trace.json [references]\n- .omx/ledger/planner-ledger.json [references]\n- .omx/plans/prd-planner-ledger-population-pass-1-root-governance.md [references]\n- .omx/plans/prd-planner-ledger-population-pass-3-import-builder-blueprint.md [references]\n- planner-core/src/blueprint.rs [references]"
     },
     "workstream:socratic-project-picture": {
       "query": "docs/project-picture-centered-planning-consolidation-plan.md",
@@ -82,22 +82,22 @@
           "id": "file:docs/project-picture-centered-planning-consolidation-plan.md",
           "label": "docs/project-picture-centered-planning-consolidation-plan.md",
           "source_file": "docs/project-picture-centered-planning-consolidation-plan.md",
-          "community_id": 11
+          "community_id": 13
         },
         {
           "id": "heading:docs/project-picture-centered-planning-consolidation-plan.md#center",
           "label": "Center",
           "source_file": "docs/project-picture-centered-planning-consolidation-plan.md",
-          "community_id": 11
+          "community_id": 13
         },
         {
           "id": "heading:docs/project-picture-centered-planning-consolidation-plan.md#child-layer-1-experience-consolidation",
           "label": "Child Layer 1 — Experience consolidation",
           "source_file": "docs/project-picture-centered-planning-consolidation-plan.md",
-          "community_id": 11
+          "community_id": 13
         }
       ],
-      "explanation": "Explain: docs/project-picture-centered-planning-consolidation-plan.md\nID: file:docs/project-picture-centered-planning-consolidation-plan.md\nKind: file\nSource file: docs/project-picture-centered-planning-consolidation-plan.md\nCommunity: 11\nWhy it matters: this file is directly connected to 13 graph neighbors\nCommunity sample: scripts/project-ledger.test.mjs, .omx/ledger/current-status.md, .omx/plans/prd-planner-ledger-population-pass-3-import-builder-blueprint.md, .omx/plans/prd-project-picture-experience-consolidation-conceptual-model.md, .omx/plans/prd-planner-ledger-population-pass-6-solidstart-cross-family-convergence.md\nGraph evidence:\n- .omx/ledger/automation-trace.json [references]\n- .omx/ledger/planner-ledger.json [references]\n- Center [contains]\n- Child Layer 1 — Experience consolidation [contains]\n- Child Layer 2 — Structural concerns [contains]\n- Consolidation Shape [contains]"
+      "explanation": "Explain: docs/project-picture-centered-planning-consolidation-plan.md\nID: file:docs/project-picture-centered-planning-consolidation-plan.md\nKind: file\nSource file: docs/project-picture-centered-planning-consolidation-plan.md\nCommunity: 13\nWhy it matters: this file is directly connected to 13 graph neighbors\nCommunity sample: scripts/project-ledger.mjs, scripts/project-ledger.test.mjs, .omx/plans/prd-automation-trace-readability-and-operator-ux-pass.md, .omx/plans/prd-planner-ledger-population-pass-6-solidstart-cross-family-convergence.md, .omx/plans/prd-planner-ledger-omx-automation-lane.md\nGraph evidence:\n- .omx/ledger/automation-trace.json [references]\n- .omx/ledger/planner-ledger.json [references]\n- Center [contains]\n- Child Layer 1 — Experience consolidation [contains]\n- Child Layer 2 — Structural concerns [contains]\n- Consolidation Shape [contains]"
     },
     "risk:ledger-staleness": {
       "query": "Ledger staleness if update discipline is weak",
@@ -113,25 +113,59 @@
           "id": "file:docs/project-picture-structural-concerns-plan.md",
           "label": "docs/project-picture-structural-concerns-plan.md",
           "source_file": "docs/project-picture-structural-concerns-plan.md",
-          "community_id": 11
+          "community_id": 7
         },
         {
           "id": "heading:docs/project-picture-structural-concerns-plan.md#1-truth-foundation-hidden-truth-model-blueprint-relationship",
           "label": "1. Truth foundation — hidden truth-model / blueprint relationship",
           "source_file": "docs/project-picture-structural-concerns-plan.md",
-          "community_id": 11
+          "community_id": 7
         },
         {
           "id": "heading:docs/project-picture-structural-concerns-plan.md#2-recoverability-contract-whole-project-recoverability-beyond-same-route-shell",
           "label": "2. Recoverability contract — whole-project recoverability beyond same-route shell",
           "source_file": "docs/project-picture-structural-concerns-plan.md",
-          "community_id": 11
+          "community_id": 7
         }
       ],
-      "explanation": "Explain: docs/project-picture-structural-concerns-plan.md\nID: file:docs/project-picture-structural-concerns-plan.md\nKind: file\nSource file: docs/project-picture-structural-concerns-plan.md\nCommunity: 11\nWhy it matters: this file is directly connected to 27 graph neighbors\nCommunity sample: scripts/project-ledger.test.mjs, .omx/ledger/current-status.md, .omx/plans/prd-planner-ledger-population-pass-3-import-builder-blueprint.md, .omx/plans/prd-project-picture-experience-consolidation-conceptual-model.md, .omx/plans/prd-planner-ledger-population-pass-6-solidstart-cross-family-convergence.md\nGraph evidence:\n- .omx/ledger/automation-trace.json [references]\n- .omx/ledger/planner-ledger.json [references]\n- .omx/plans/prd-project-picture-structural-concerns-conceptual-model.md [references]\n- .omx/plans/test-spec-project-picture-structural-concerns-conceptual-model.md [references]\n- .omx/ledger/automation-report.md [references]\n- .omx/ledger/automation-trace.json [references]"
+      "explanation": "Explain: docs/project-picture-structural-concerns-plan.md\nID: file:docs/project-picture-structural-concerns-plan.md\nKind: file\nSource file: docs/project-picture-structural-concerns-plan.md\nCommunity: 7\nWhy it matters: this file is directly connected to 32 graph neighbors\nCommunity sample: .omx/ledger/current-status.md, .omx/plans/prd-planner-ledger-population-pass-3-import-builder-blueprint.md, docs/omx-update-change-preservation-audit.md, .omx/plans/prd-hidden-truth-model-relationship-roadmap.md, .omx/plans/prd-project-picture-experience-consolidation-conceptual-model.md\nGraph evidence:\n- .omx/ledger/automation-trace.json [references]\n- .omx/ledger/planner-ledger.json [references]\n- .omx/plans/prd-hidden-truth-model-relationship-roadmap.md [references]\n- .omx/plans/prd-project-picture-structural-concerns-conceptual-model.md [references]\n- .omx/plans/test-spec-hidden-truth-model-relationship-roadmap.md [references]\n- .omx/plans/test-spec-project-picture-structural-concerns-conceptual-model.md [references]"
     }
   },
   "history": [
+    {
+      "generated_at": "2026-04-09T17:17:07.595Z",
+      "mode": "apply",
+      "change_count": 0,
+      "confidence": {
+        "high": 0,
+        "medium": 0,
+        "low": 0
+      },
+      "states": {
+        "applied": 0,
+        "skipped": 0,
+        "provisional": 0
+      },
+      "changed_items": []
+    },
+    {
+      "generated_at": "2026-04-09T17:05:59.262Z",
+      "mode": "apply",
+      "change_count": 2,
+      "confidence": {
+        "high": 0,
+        "medium": 1,
+        "low": 0
+      },
+      "states": {
+        "applied": 1,
+        "skipped": 0,
+        "provisional": 0
+      },
+      "changed_items": [
+        "workstream:project-picture-structural-concerns"
+      ]
+    },
     {
       "generated_at": "2026-04-09T01:27:02.431Z",
       "mode": "apply",
@@ -412,38 +446,6 @@
     },
     {
       "generated_at": "2026-04-08T13:32:45.388Z",
-      "mode": "apply",
-      "change_count": 0,
-      "confidence": {
-        "high": 0,
-        "medium": 0,
-        "low": 0
-      },
-      "states": {
-        "applied": 0,
-        "skipped": 0,
-        "provisional": 0
-      },
-      "changed_items": []
-    },
-    {
-      "generated_at": "2026-04-08T03:44:24.555Z",
-      "mode": "apply",
-      "change_count": 0,
-      "confidence": {
-        "high": 0,
-        "medium": 0,
-        "low": 0
-      },
-      "states": {
-        "applied": 0,
-        "skipped": 0,
-        "provisional": 0
-      },
-      "changed_items": []
-    },
-    {
-      "generated_at": "2026-04-08T03:42:43.672Z",
       "mode": "apply",
       "change_count": 0,
       "confidence": {

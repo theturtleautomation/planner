@@ -36,14 +36,15 @@ These are the main repo-wide planning families:
 
 The repo-wide planning truth currently shows:
 
-- **Socratic project picture workspace** as the new planning center for the
+- **Socratic project picture workspace** as the planning center for the
   project-picture direction
-- **Project-Picture-Centered Planning Consolidation Plan** as the current
-  concrete next move
+- **Project-Picture-Centered Planning Consolidation Plan** as landed
 - **Planner design system**, **Planner UI reset**, and **Knowledge library**
-  now being reframed beneath that center as the immediate experience layer
-- hidden truth-model, whole-project recoverability, and overlay/reorientation
-  concerns staying active as a separate structural concern layer
+  sitting beneath that center as the immediate experience layer
+- **Hidden truth-model / blueprint relationship** now chosen as the first
+  structural branch
+- **Overlay / reorientation** next in the structural sequence
+- **Whole-project recoverability** later in that structural sequence
 
 Read `.omx/ledger/current-status.md` for the canonical routed queue and
 maintenance state.
@@ -62,9 +63,10 @@ Keep planning and implementation aligned to artifact state:
 The next move is:
 
 - use `.omx/ledger/current-status.md` as the canonical routed queue
-- treat **Project-Picture-Centered Planning Consolidation Plan** as landed
-- advance **Project-Picture Experience Consolidation Plan** as the current
-  concrete next planning step
-- keep **Project-picture structural concerns** active for the next
-  `$deep-interview` layer
+- treat **Project-Picture-Centered Planning Consolidation Plan** and the broad
+  Socratic thesis as landed parent surfaces
+- advance **Hidden truth-model / blueprint relationship** as the current first
+  structural branch
+- then approach **overlay / reorientation** as the next structural branch and
+  **whole-project recoverability** after that
 - then return to the canonical queue for the next routed item

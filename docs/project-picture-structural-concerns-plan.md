@@ -110,14 +110,21 @@ This workstream is now modeled as:
 
 That order is conceptual, not execution order.
 
-The next unresolved planning question is which implementation-facing child slice
-should be shaped first from within this model. Because that choice is still
-open, the workstream remains active and still routes through further narrowing.
+The first structural branch is now chosen: **hidden truth-model / blueprint relationship**.
+
+That branch now owns the next structural planning move by defining the deeper hidden model first, the minimum visible truth second, and an ordered roadmap of downstream consequences third.
+
+The next planned structural sequence after that is:
+- **overlay / reorientation** next
+- **whole-project recoverability** later
+
+The broader structural workstream remains active because those later branches are still unresolved, but the first child slice is no longer ambiguous.
 
 ## Sync impact
 
 Updated truth surfaces in this pass:
 - `docs/project-picture-structural-concerns-plan.md`
+- `.omx/specs/socratic-deferred-items/hidden-truth-model-relationship.md`
 - `.omx/ledger/planner-ledger.json`
 - `.omx/ledger/current-status.md`
 - `.omx/ledger/project-plan.md`
@@ -128,10 +135,10 @@ Regenerated maintenance surfaces after final sync:
 
 Routing result after sync:
 - `workstream:project-picture-structural-concerns` remains `active`
-- `routing_state` remains `needs_deep_interview`
+- `routing_state` remains `needs_deep_interview` at the broader workstream level
+- `deferred_item:hidden-truth-model` advances to `ready_for_ralplan` as the chosen first branch
 
 Reason:
-- the conceptual model is now explicit,
-- but the first implementation-facing child slice is still unresolved,
-- and `npm run project:ledger:auto` refreshed maintenance metadata after the
-  final canonical plan edit without changing routing truth.
+- the structural layer is still active overall,
+- but the first child slice is now chosen and canonically described,
+- and the broader parent/ledger surfaces have been synchronized to reflect that hidden-truth is the next structural branch, with overlay next and recoverability later while the broader structural workstream remains open.

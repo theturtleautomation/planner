@@ -738,7 +738,7 @@
       "title": "Socratic project picture workspace",
       "status": "active",
       "routing_state": "needs_deep_interview",
-      "summary": "Active Socratic workstream now serves as the planning center for the project-picture direction, with a dedicated experience-consolidation layer and a separate active structural-concern layer.",
+      "summary": "Active Socratic workstream now serves as the planning center for the project-picture direction, with the experience-consolidation layer clarified and hidden truth-model selected as the first structural branch.",
       "artifacts": [
         ".omx/plans/prd-planner-ledger-population-pass-2-socratic.md",
         ".omx/plans/test-spec-planner-ledger-population-pass-2-socratic.md",
@@ -957,7 +957,7 @@
     {
       "id": "plan:planner-ledger-population-pass-2-socratic",
       "kind": "plan",
-      "title": "Planner Ledger Population Pass 2 \u2014 Socratic Family",
+      "title": "Planner Ledger Population Pass 2 — Socratic Family",
       "status": "complete",
       "routing_state": "complete",
       "summary": "Approved and executed planning artifacts for the Socratic-only deep population pass.",
@@ -987,7 +987,7 @@
     {
       "id": "plan:planner-ledger-population-pass-3-import-builder-blueprint",
       "kind": "plan",
-      "title": "Planner Ledger Population Pass 3 \u2014 Import Builder Blueprint",
+      "title": "Planner Ledger Population Pass 3 — Import Builder Blueprint",
       "status": "complete",
       "routing_state": "complete",
       "summary": "Approved and executed planning artifacts for the combined import / builder / blueprint+knowledge deep family pass.",
@@ -1016,7 +1016,7 @@
     {
       "id": "plan:planner-ledger-population-pass-4-design-system-ui-reset-audits",
       "kind": "plan",
-      "title": "Planner Ledger Population Pass 4 \u2014 Design System UI Reset Audits",
+      "title": "Planner Ledger Population Pass 4 — Design System UI Reset Audits",
       "status": "complete",
       "routing_state": "complete",
       "summary": "Approved and executed planning artifacts for the combined design-system, UI-reset, and audit/remediation deep family pass.",
@@ -2353,8 +2353,8 @@
       "kind": "deferred_item",
       "title": "Hidden truth-model / blueprint relationship",
       "status": "active",
-      "routing_state": "needs_deep_interview",
-      "summary": "Active child concern for defining the minimum truthful relationship between hidden blueprint truth and the visible project picture.",
+      "routing_state": "ready_for_ralplan",
+      "summary": "Selected first structural branch for defining the deeper hidden blueprint/truth model, the minimum visible truth projected from it, and an ordered downstream roadmap.",
       "artifacts": [
         ".omx/specs/socratic-deferred-items/hidden-truth-model-relationship.md"
       ],
@@ -2369,7 +2369,8 @@
       },
       "tags": [
         "deferred",
-        "scopeable-now"
+        "scopeable-now",
+        "selected-first-branch"
       ]
     },
     {
@@ -2378,7 +2379,7 @@
       "title": "Whole-project recoverability beyond same-route shell",
       "status": "active",
       "routing_state": "needs_deep_interview",
-      "summary": "Active child concern for the minimal reorientation and return contract beyond the current same-route shell.",
+      "summary": "Later structural branch for the minimal reorientation and return contract beyond the current same-route shell, sequenced after hidden truth-model and overlay/reorientation.",
       "artifacts": [
         ".omx/specs/socratic-deferred-items/whole-project-recoverability.md"
       ],
@@ -2402,7 +2403,7 @@
       "title": "Richer overlay / reorientation model",
       "status": "active",
       "routing_state": "needs_analysis",
-      "summary": "Active child concern for the richer overlay / reorientation model, still needing analysis because multiple overlay families remain bundled together.",
+      "summary": "Next structural branch after hidden truth-model for the richer overlay / reorientation model, still needing bounded follow-on analysis before execution.",
       "artifacts": [
         ".omx/specs/socratic-deferred-items/overlay-reorientation-model.md"
       ],
@@ -2595,7 +2596,7 @@
     {
       "id": "plan:planner-ledger-population-pass-5-solidstart-family",
       "kind": "plan",
-      "title": "Planner Ledger Population Pass 5 \u2014 SolidStart Family",
+      "title": "Planner Ledger Population Pass 5 — SolidStart Family",
       "status": "complete",
       "routing_state": "complete",
       "summary": "Approved and executed planning artifacts for the full SolidStart family deep population pass.",
@@ -2647,7 +2648,7 @@
     {
       "id": "plan:planner-ledger-population-pass-6-solidstart-cross-family-convergence",
       "kind": "plan",
-      "title": "Planner Ledger Population Pass 6 \u2014 SolidStart Cross-Family Convergence",
+      "title": "Planner Ledger Population Pass 6 — SolidStart Cross-Family Convergence",
       "status": "complete",
       "routing_state": "complete",
       "summary": "Approved and executed planning artifacts for the broad SolidStart cross-family convergence pass.",
@@ -4411,7 +4412,7 @@
     {
       "id": "plan:planner-ledger-population-pass-7-superseded-trailer-cleanup",
       "kind": "plan",
-      "title": "Planner Ledger Population Pass 7 \u2014 Superseded Trailer Cleanup",
+      "title": "Planner Ledger Population Pass 7 — Superseded Trailer Cleanup",
       "status": "complete",
       "routing_state": "complete",
       "summary": "Approved and executed planning artifacts for the superseded-trailer cleanup pass.",
@@ -4763,7 +4764,7 @@
       "title": "Project-picture structural concerns",
       "status": "active",
       "routing_state": "needs_deep_interview",
-      "summary": "Active structural concern layer under the project-picture center, now modeled as hidden truth-model foundation, whole-project recoverability contract, and overlay/reorientation support, with provenance/change-inspection and preview hierarchy kept as follow-on concerns.",
+      "summary": "Active structural concern layer under the project-picture center, with hidden truth-model now chosen as the first branch, overlay/reorientation next, and whole-project recoverability later; provenance/change-inspection and preview hierarchy remain follow-on concerns.",
       "artifacts": [
         "docs/project-picture-structural-concerns-plan.md"
       ],
@@ -4796,7 +4797,7 @@
             "source": "repo-graph",
             "query": "docs/project-picture-structural-concerns-plan.md"
           },
-          "last_evaluated_at": "2026-04-08T17:22:47.226Z"
+          "last_evaluated_at": "2026-04-09T17:05:59.255Z"
         }
       }
     }
