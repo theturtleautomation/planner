@@ -1,22 +1,22 @@
 {
-  "generated_at": "2026-04-09T17:17:07.595Z",
+  "generated_at": "2026-04-10T00:29:02.412Z",
   "mode": "apply",
   "change_count": 0,
   "maintenance": {
     "state": "fresh",
     "isFresh": true,
-    "automationLastRunAt": "2026-04-09T17:17:07.595Z",
+    "automationLastRunAt": "2026-04-10T00:29:02.412Z",
     "trackedItemCount": 31,
     "trackedArtifactCount": 67,
     "latestTrackedArtifact": {
-      "path": "docs/project-picture-structural-concerns-plan.md",
+      "path": ".codex/skills/project-ledger/SKILL.md",
       "itemIds": [
-        "workstream:project-picture-structural-concerns"
+        "initiative:planner-ledger"
       ],
       "itemTitles": [
-        "Project-picture structural concerns"
+        "Planner project tracking library"
       ],
-      "modified_at": "2026-04-09T17:09:54.227Z"
+      "modified_at": "2026-04-09T20:15:10.344Z"
     },
     "staleTrackedArtifactCount": 0,
     "staleTrackedArtifacts": [],
@@ -41,13 +41,13 @@
           "community_id": 5
         },
         {
-          "id": "heading:.codex/skills/project-ledger/SKILL.md#commands",
-          "label": "Commands",
+          "id": "heading:.codex/skills/project-ledger/SKILL.md#code-review-handoff-guidance",
+          "label": "Code-Review Handoff Guidance",
           "source_file": ".codex/skills/project-ledger/SKILL.md",
           "community_id": 5
         }
       ],
-      "explanation": "Explain: .codex/skills/project-ledger/SKILL.md\nID: file:.codex/skills/project-ledger/SKILL.md\nKind: file\nSource file: .codex/skills/project-ledger/SKILL.md\nCommunity: 5\nWhy it matters: this file is directly connected to 20 graph neighbors\nCommunity sample: .omx/ledger/planner-ledger.json, .omx/plans/prd-planner-ledger-population-pass-5-solidstart-family.md, .omx/plans/test-spec-planner-ledger-population-pass-5-solidstart-family.md, .omx/plans/prd-combined-ledger-automation-graphify-omx-integration-pass.md, .omx/plans/prd-planner-ledger-next-lane-canonical-sync-pass.md\nGraph evidence:\n- .omx/ledger/automation-report.md [references]\n- .omx/ledger/current-status.md [references]\n- .omx/ledger/planner-ledger.json [references]\n- scripts/project-ledger.mjs [references]\n- Canonical Sources [contains]\n- Commands [contains]"
+      "explanation": "Explain: .codex/skills/project-ledger/SKILL.md\nID: file:.codex/skills/project-ledger/SKILL.md\nKind: file\nSource file: .codex/skills/project-ledger/SKILL.md\nCommunity: 5\nWhy it matters: this file is directly connected to 22 graph neighbors\nCommunity sample: .omx/ledger/planner-ledger.json, .omx/plans/prd-planner-ledger-population-pass-5-solidstart-family.md, .omx/plans/test-spec-planner-ledger-population-pass-5-solidstart-family.md, .omx/plans/prd-planner-ledger-next-lane-canonical-sync-pass.md, .omx/plans/prd-combined-ledger-automation-graphify-omx-integration-pass.md\nGraph evidence:\n- .omx/ledger/automation-report.md [references]\n- .omx/ledger/current-status.md [references]\n- .omx/ledger/planner-ledger.json [references]\n- scripts/project-ledger.mjs [references]\n- Canonical Sources [contains]\n- Code-Review Handoff Guidance [contains]"
     },
     "initiative:import-existing-project-program": {
       "query": "docs/import-existing-project-plan.md",
@@ -128,10 +128,26 @@
           "community_id": 7
         }
       ],
-      "explanation": "Explain: docs/project-picture-structural-concerns-plan.md\nID: file:docs/project-picture-structural-concerns-plan.md\nKind: file\nSource file: docs/project-picture-structural-concerns-plan.md\nCommunity: 7\nWhy it matters: this file is directly connected to 32 graph neighbors\nCommunity sample: .omx/ledger/current-status.md, .omx/plans/prd-planner-ledger-population-pass-3-import-builder-blueprint.md, docs/omx-update-change-preservation-audit.md, .omx/plans/prd-hidden-truth-model-relationship-roadmap.md, .omx/plans/prd-project-picture-experience-consolidation-conceptual-model.md\nGraph evidence:\n- .omx/ledger/automation-trace.json [references]\n- .omx/ledger/planner-ledger.json [references]\n- .omx/plans/prd-hidden-truth-model-relationship-roadmap.md [references]\n- .omx/plans/prd-project-picture-structural-concerns-conceptual-model.md [references]\n- .omx/plans/test-spec-hidden-truth-model-relationship-roadmap.md [references]\n- .omx/plans/test-spec-project-picture-structural-concerns-conceptual-model.md [references]"
+      "explanation": "Explain: docs/project-picture-structural-concerns-plan.md\nID: file:docs/project-picture-structural-concerns-plan.md\nKind: file\nSource file: docs/project-picture-structural-concerns-plan.md\nCommunity: 7\nWhy it matters: this file is directly connected to 34 graph neighbors\nCommunity sample: .omx/ledger/current-status.md, .omx/plans/prd-planner-ledger-population-pass-3-import-builder-blueprint.md, docs/omx-update-change-preservation-audit.md, .omx/plans/prd-hidden-truth-model-relationship-roadmap.md, .omx/plans/prd-project-picture-experience-consolidation-conceptual-model.md\nGraph evidence:\n- .omx/ledger/automation-report.md [references]\n- .omx/ledger/automation-trace.json [references]\n- .omx/ledger/current-status.md [references]\n- .omx/ledger/planner-ledger.json [references]\n- .omx/plans/prd-hidden-truth-model-relationship-roadmap.md [references]\n- .omx/plans/prd-project-picture-structural-concerns-conceptual-model.md [references]"
     }
   },
   "history": [
+    {
+      "generated_at": "2026-04-10T00:29:02.412Z",
+      "mode": "apply",
+      "change_count": 0,
+      "confidence": {
+        "high": 0,
+        "medium": 0,
+        "low": 0
+      },
+      "states": {
+        "applied": 0,
+        "skipped": 0,
+        "provisional": 0
+      },
+      "changed_items": []
+    },
     {
       "generated_at": "2026-04-09T17:17:07.595Z",
       "mode": "apply",
@@ -443,22 +459,6 @@
       "changed_items": [
         "initiative:planner-ledger"
       ]
-    },
-    {
-      "generated_at": "2026-04-08T13:32:45.388Z",
-      "mode": "apply",
-      "change_count": 0,
-      "confidence": {
-        "high": 0,
-        "medium": 0,
-        "low": 0
-      },
-      "states": {
-        "applied": 0,
-        "skipped": 0,
-        "provisional": 0
-      },
-      "changed_items": []
     }
   ]
 }

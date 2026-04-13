@@ -93,9 +93,9 @@ Project skill: `.codex/skills/project-ledger/SKILL.md`
 ## Planner Ledger Maintenance Signal
 
 - Maintenance state: **fresh**
-- Last automation run: `2026-04-09T17:17:07.595Z`
+- Last automation run: `2026-04-10T00:29:02.412Z`
 - Tracked non-complete artifacts: **67** across **31** items
-- Latest tracked artifact change: `docs/project-picture-structural-concerns-plan.md` at `2026-04-09T17:09:54.227Z`
+- Latest tracked artifact change: `.codex/skills/project-ledger/SKILL.md` at `2026-04-09T20:15:10.344Z`
 - Artifacts newer than last automation run: **0**
 - Attention items: none
 

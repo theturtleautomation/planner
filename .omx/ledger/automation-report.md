@@ -4,7 +4,7 @@ Machine-readable canonical trace: `.omx/ledger/automation-trace.json`
 
 ## Latest Run
 
-- Generated at: `2026-04-09T17:17:07.595Z`
+- Generated at: `2026-04-10T00:29:02.412Z`
 - Mode: `apply`
 - Change count: **0**
 - Confidence mix: high=0, medium=0, low=0
@@ -13,9 +13,9 @@ Machine-readable canonical trace: `.omx/ledger/automation-trace.json`
 ## Freshness / Maintenance
 
 - Maintenance state: **fresh**
-- Last automation run: `2026-04-09T17:17:07.595Z`
+- Last automation run: `2026-04-10T00:29:02.412Z`
 - Tracked non-complete artifacts: **67** across **31** items
-- Latest tracked artifact change: `docs/project-picture-structural-concerns-plan.md` at `2026-04-09T17:09:54.227Z`
+- Latest tracked artifact change: `.codex/skills/project-ledger/SKILL.md` at `2026-04-09T20:15:10.344Z`
 - Artifacts newer than last automation run: **0**
 - Attention items: none
 
@@ -25,6 +25,7 @@ Machine-readable canonical trace: `.omx/ledger/automation-trace.json`
 
 ## Rolling History
 
+- `2026-04-10T00:29:02.412Z` — changes=0; high=0; medium=0; low=0; applied=0; skipped=0; provisional=0
 - `2026-04-09T17:17:07.595Z` — changes=0; high=0; medium=0; low=0; applied=0; skipped=0; provisional=0
 - `2026-04-09T17:05:59.262Z` — changes=2; high=0; medium=1; low=0; applied=1; skipped=0; provisional=0
 - `2026-04-09T01:27:02.431Z` — changes=0; high=0; medium=0; low=0; applied=0; skipped=0; provisional=0
@@ -44,5 +45,4 @@ Machine-readable canonical trace: `.omx/ledger/automation-trace.json`
 - `2026-04-08T13:50:46.604Z` — changes=0; high=0; medium=0; low=0; applied=0; skipped=0; provisional=0
 - `2026-04-08T13:50:44.878Z` — changes=0; high=0; medium=0; low=0; applied=0; skipped=0; provisional=0
 - `2026-04-08T13:46:14.872Z` — changes=1; high=1; medium=0; low=0; applied=1; skipped=0; provisional=0
-- `2026-04-08T13:32:45.388Z` — changes=0; high=0; medium=0; low=0; applied=0; skipped=0; provisional=0
 
